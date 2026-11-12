@@ -9,6 +9,7 @@ on:
       - desktop/src-tauri/Cargo.toml
       - desktop/src-tauri/src/**
       - desktop/src-tauri/capabilities/**
+      - desktop/src-tauri/plugins/**
       - .github/workflows/android-app.yml
       - .github/scripts/android_smoke.sh
   workflow_dispatch:
