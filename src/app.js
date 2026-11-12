@@ -1,7 +1,7 @@
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
 const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.esm.min.js';
@@ -34,7 +34,8 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.ad
 let pdfjs, pdfLib;
 async function loadPdfjs() {
   if (pdfjs) return pdfjs;
-  pdfjs = await import(PDFJS);
+  try { pdfjs = await import(PDFJS); }
+  catch (e) { pdfjs = null; toast('The PDF reader could not start. Restart Cowdrey.PDF and try again.'); throw e; }
   // A worker from another origin can't be started directly: start it from a copy of its code.
   try {
     const code = await (await fetch(PDFJS_WORKER)).text();
@@ -773,8 +774,10 @@ async function openFiles() {
     const picked = await MAC_APP.dialog.open({ multiple: false, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     const path = typeof picked === 'string' ? picked : picked && picked.path;
     if (!path) return;
-    const f = await MAC_APP.core.invoke('read_text_file', { path });
-    await openBytes(b64ToBytes(f.content), f.name, f.path);
+    try {
+      const f = await MAC_APP.core.invoke('read_text_file', { path });
+      await openBytes(b64ToBytes(f.content), f.name, f.path);
+    } catch (e) { console.error(e); toast(`Could not open ${path.split('/').pop()}.`); }
     return;
   }
   if (window.showOpenFilePicker) {

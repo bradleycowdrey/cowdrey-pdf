@@ -10,21 +10,21 @@
 <style>
 /* Cowdrey.PDF: Cowdrey.MD's chrome (title + menus → ribbon → [sidebar | pages on a canvas] → status bar), for PDFs. */
 :root {
-  --chrome: #F5F7FB; --surface: #FFFFFF; --canvas: #E9ECF2; --ink: #1B2232; --ink-2: #566074; --ink-3: #626876;
-  --line: #DCE1EA; --hover: #E8ECF5; --press: #DCE3F2; --accent: #2448C9; --accent-ink: #FFFFFF; --accent-soft: #E4EAFF;
-  --danger: #C2362F; --page-shadow: 0 1px 2px rgba(20,30,60,.08), 0 8px 28px rgba(20,30,60,.09);
+  --chrome: #F8F6F6; --surface: #FFFFFF; --canvas: #ECE8E9; --ink: #221B1E; --ink-2: #5E5559; --ink-3: #685F63;
+  --line: #E3DCDE; --hover: #F1EBEC; --press: #E8DDE0; --accent: #8E1238; --accent-ink: #FFFFFF; --brand: #8E1238; --brand-hover: #7A0F30; --accent-soft: #F7E4EA;
+  --danger: #C2362F; --page-shadow: 0 1px 2px rgba(40,20,28,.08), 0 8px 28px rgba(40,20,28,.09);
   --font-ui: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --chrome: #161A21; --surface: #1D222B; --canvas: #0E1116; --ink: #E5E9F1; --ink-2: #A0A9BB; --ink-3: #9198A6;
-  --line: #2B313D; --hover: #252B37; --press: #2E3646; --accent: #8EA6FF; --accent-ink: #0C1330; --accent-soft: #232D52;
-  --danger: #FF8A80; --page-shadow: 0 0 0 1px #2B313D, 0 10px 30px rgba(0,0,0,.45); color-scheme: dark;
+  --chrome: #1A1719; --surface: #221E21; --canvas: #110F10; --ink: #EDE7E9; --ink-2: #B0A6AA; --ink-3: #A0969A;
+  --line: #342D31; --hover: #2C2629; --press: #3A2F34; --accent: #F0889F; --accent-ink: #2B0512; --brand: #AE1747; --brand-hover: #C21E53; --accent-soft: #42202C;
+  --danger: #FF8A80; --page-shadow: 0 0 0 1px #342D31, 0 10px 30px rgba(0,0,0,.45); color-scheme: dark;
 } }
 :root[data-theme="dark"] {
-  --chrome: #161A21; --surface: #1D222B; --canvas: #0E1116; --ink: #E5E9F1; --ink-2: #A0A9BB; --ink-3: #9198A6;
-  --line: #2B313D; --hover: #252B37; --press: #2E3646; --accent: #8EA6FF; --accent-ink: #0C1330; --accent-soft: #232D52;
-  --danger: #FF8A80; --page-shadow: 0 0 0 1px #2B313D, 0 10px 30px rgba(0,0,0,.45); color-scheme: dark;
+  --chrome: #1A1719; --surface: #221E21; --canvas: #110F10; --ink: #EDE7E9; --ink-2: #B0A6AA; --ink-3: #A0969A;
+  --line: #342D31; --hover: #2C2629; --press: #3A2F34; --accent: #F0889F; --accent-ink: #2B0512; --brand: #AE1747; --brand-hover: #C21E53; --accent-soft: #42202C;
+  --danger: #FF8A80; --page-shadow: 0 0 0 1px #342D31, 0 10px 30px rgba(0,0,0,.45); color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -48,8 +48,8 @@ button { font: inherit; color: inherit; }
 .tb-actions { display: flex; gap: 8px; align-items: center; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--hover); }
-.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-.btn.primary:hover { filter: brightness(1.06); }
+.btn.primary { background: var(--brand); color: #FFFFFF; border-color: transparent; }
+.btn.primary:hover { background: var(--brand-hover); }
 .btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
 .icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
@@ -103,9 +103,11 @@ button { font: inherit; color: inherit; }
 .page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
 .app[data-darkpage="on"] .page canvas.pdf { filter: invert(.92) hue-rotate(180deg); }
 .textLayer { z-index: 2; }
-.textLayer ::selection { background: rgba(36, 72, 201, .3); color: transparent; }
+.page .annotationLayer { --annotation-unfocused-field-background: url("data:image/svg+xml;charset=UTF-8,<svg width='1px' height='1px' xmlns='http://www.w3.org/2000/svg'><rect width='100%' height='100%' style='fill:rgba(174, 23, 71, 0.08);'/></svg>"); --input-focus-border-color: #AE1747; }
+.page .annotationLayer input[type="checkbox"], .page .annotationLayer input[type="radio"] { accent-color: #8E1238; }
+.textLayer ::selection { background: rgba(174, 23, 71, .28); color: transparent; }
 .annotationLayer { z-index: 3; }
-.annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { background: rgba(36, 72, 201, .08); color: #111; }
+.annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { background: rgba(174, 23, 71, .07); color: #111; }
 .marks { position: absolute; inset: 0; z-index: 4; overflow: visible; pointer-events: none; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
@@ -141,8 +143,8 @@ button { font: inherit; color: inherit; }
 .mi .k { color: var(--ink-3); font-size: 12px; }
 .msep { height: 1px; background: var(--line); margin: 5px 6px; }
 dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(480px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
-dialog::backdrop { background: rgba(10, 14, 24, .35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-@media (prefers-reduced-transparency: reduce) { dialog::backdrop { backdrop-filter: none; background: rgba(10, 14, 24, .55); } }
+dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+@media (prefers-reduced-transparency: reduce) { dialog::backdrop { backdrop-filter: none; background: rgba(18, 12, 15, .55); } }
 .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 6px; }
 .dlg-head h2 { margin: 0; font-size: 17px; }
 .dlg-body { padding: 6px 18px 4px; color: var(--ink-2); }

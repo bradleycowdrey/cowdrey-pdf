@@ -15,10 +15,12 @@ let html = fs.readFileSync(path.join(here, '..', 'index.html'), 'utf8');
 const copied = new Set();
 html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/]+\/)?[^@/]+)@[^/'"\s]+\/([^'"\s)]+)/g, (whole, pkg, file) => {
   const rel = `${pkg}/${file}`;
+  // WKWebView runs a module only when it is served as JavaScript, and .mjs isn't always given that type: copy it as .js.
+  const out = rel.replace(/\.mjs$/, '.js');
   const src = path.join(nm, rel);
   if (!fs.existsSync(src)) throw new Error(`Missing ${src}. Run npm ci in desktop/ first.`);
-  if (!copied.has(rel)) { const dest = path.join(dist, 'vendor', rel); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest); copied.add(rel); }
-  return `vendor/${rel}`;
+  if (!copied.has(rel)) { const dest = path.join(dist, 'vendor', out); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest); copied.add(rel); }
+  return `./vendor/${out}`;
 });
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 console.log(`desktop/dist ready (${copied.size} libraries: ${[...copied].join(', ')})`);

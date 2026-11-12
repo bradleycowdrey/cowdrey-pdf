@@ -31,6 +31,7 @@ jobs:
             echo "== check index.html is built from src/"; python3 build.py && git diff --exit-code --stat index.html
             echo "== make the sample PDF"; node tests/sample.mjs
             echo "== run the tests"; node tests/e2e.mjs
+            echo "== open a PDF in the copy the apps ship"; (cd desktop && node build.mjs) && node tests/bundle.mjs
           } 2>&1 | tee "$L"
 
       # The result goes on the tests-log branch, so it can be read without signing in to GitHub.
