@@ -1,7 +1,7 @@
 // Loads index.html in Chromium with the libraries served from desktop/node_modules (mapped from their jsDelivr URLs).
 import fs from 'node:fs'; import path from 'node:path'; import { createRequire } from 'node:module'; import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
-let pw; try { pw = require('playwright'); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); }
+let pw; try { pw = require('playwright'); } catch { try { pw = require(path.join(process.cwd(), 'node_modules/playwright')); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); } }
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NM = path.join(root, 'desktop/node_modules');
 let browser;
