@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Cowdrey.PDF",
+  "version": "0.1.0",
+  "identifier": "com.bradcowdrey.cowdreypdf",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Cowdrey.PDF",
+        "width": 1360,
+        "height": 880,
+        "minWidth": 720,
+        "minHeight": 520,
+        "label": "main",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "Productivity",
+    "publisher": "Bradley Cowdrey",
+    "copyright": "© 2026 Bradley Cowdrey",
+    "homepage": "https://bradcowdrey.com",
+    "shortDescription": "PDF viewer and editor",
+    "longDescription": "Cowdrey.PDF is a PDF viewer and editor by Bradley Cowdrey: read, mark up, sign, fill forms and rearrange pages, with nothing leaving your device.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "pdf"
+        ],
+        "name": "PDF document",
+        "description": "PDF document",
+        "role": "Editor",
+        "mimeType": "application/pdf"
+      }
+    ],
+    "iOS": {
+      "developmentTeam": "2XV97FZ86G",
+      "minimumSystemVersion": "15.0"
+    },
+    "android": {
+      "minSdkVersion": 26
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4MEY1NkM0OEZBMUY4RkUKUldUKytLR1B4RllQV0pDTU91emFwY3J2UXk5dFF6Y1ZITXVzSmdlalFGbHhLbGIyeXVZR3BFL0EK",
+      "endpoints": [
+        "https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

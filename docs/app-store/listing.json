@@ -1,0 +1,18 @@
+{
+  "bundleId": "com.bradcowdrey.cowdreypdf",
+  "locale": "en-US",
+  "subtitle": "Read, mark up and sign PDFs",
+  "privacyPolicyUrl": "https://bradcowdrey.com/legal",
+  "supportUrl": "https://bradcowdrey.com",
+  "marketingUrl": "https://bradcowdrey.com",
+  "primaryCategory": "PRODUCTIVITY",
+  "secondaryCategory": "BUSINESS",
+  "copyright": "2026 Bradley Cowdrey",
+  "review": {
+    "contactFirstName": "Bradley",
+    "contactLastName": "Cowdrey",
+    "contactEmail": "legal@bradcowdrey.com",
+    "notes": "Cowdrey.PDF is a free PDF viewer and editor. Open a PDF with the Open button (the Files picker) or from the Files app with Open With. Mark it up (highlight, draw, text, notes, signature), fill its forms, rearrange its pages, and Save PDF sends the result through the iOS share sheet. No account, no login, no in-app purchases. The only network request is a daily check of the Terms of Use on GitHub; documents never leave the device.",
+    "demoAccountRequired": false
+  }
+}

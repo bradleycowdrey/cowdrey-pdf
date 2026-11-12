@@ -1,0 +1,114 @@
+name: Mac app
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    # Build a new DMG when the version number (or this workflow) changes on main.
+    paths:
+      - desktop/src-tauri/tauri.conf.json
+      - desktop/src-tauri/Cargo.toml
+      - .github/workflows/mac-app.yml
+  workflow_dispatch:
+
+# contents: write lets the job create the GitHub release and upload the DMG. If a run fails with
+# "Resource not accessible by integration", check Settings → Actions → General → Workflow permissions.
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    name: Build Cowdrey.PDF.dmg
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - name: Install build tools and libraries
+        working-directory: desktop
+        run: npm ci
+
+      - name: Bundle the web app for offline use
+        working-directory: desktop
+        run: node build.mjs
+
+      # Apple signing and notarization use the same six secrets as Meridian and Two Degrees:
+      # DEVELOPER_ID_P12 (base64 .p12), DEVELOPER_ID_P12_PASSWORD, CODESIGN_IDENTITY,
+      # NOTARY_APPLE_ID, NOTARY_PASSWORD (app-specific password), NOTARY_TEAM_ID.
+      # They are handed to the Tauri action under its own names, and only when set: an empty
+      # APPLE_CERTIFICATE would make the build try to import a blank certificate and fail.
+      - name: Use the Apple Developer ID, if configured
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          if [[ -z "$P12" ]]; then echo "No Developer ID secrets: building an unsigned app."; exit 0; fi
+          {
+            echo "APPLE_CERTIFICATE<<P12_EOF"; echo "$P12"; echo "P12_EOF"
+            echo "APPLE_CERTIFICATE_PASSWORD=$P12_PASSWORD"
+            if [[ -n "$IDENTITY" ]]; then echo "APPLE_SIGNING_IDENTITY=$IDENTITY"; fi
+            if [[ -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && -n "$TEAM_ID" ]]; then
+              echo "APPLE_ID=$APPLE_ID"; echo "APPLE_PASSWORD=$APPLE_PASSWORD"; echo "APPLE_TEAM_ID=$TEAM_ID"
+            fi
+          } >> "$GITHUB_ENV"
+          echo "Signing with the Developer ID certificate."
+
+      # Builds a universal (Apple silicon + Intel) app and DMG, then attaches it to a GitHub Release.
+      # With the TAURI_SIGNING_PRIVATE_KEY secret set, the build also makes a signed update bundle and
+      # latest.json, so installed copies can update themselves in place. Without it, only the DMG is built.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: Cowdrey.PDF v__VERSION__
+          releaseBody: |
+            Cowdrey.PDF for Mac, a PDF viewer and editor by Bradley Cowdrey (https://bradcowdrey.com).
+
+            Download the .dmg below, open it, and drag Cowdrey.PDF into Applications. It runs on Apple silicon and Intel Macs.
+
+            ${{ secrets.DEVELOPER_ID_P12 != '' && 'Signed with an Apple Developer ID and notarized by Apple, so it opens like any other app. Later versions install themselves from Help, Check for updates.' || 'This build is not yet signed by Apple. The first time you open it, macOS asks for confirmation: open System Settings, Privacy & Security, and click Open Anyway. Later versions install themselves from Help, Check for updates.' }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && '--target universal-apple-darwin --config src-tauri/tauri.updater.conf.json' || '--target universal-apple-darwin' }}
+
+      # Without the signing secret, attach the plain app bundle so it can be signed elsewhere and
+      # published through updates/latest.json (see publish-update.yml).
+      - name: Attach the app bundle for in-place updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        if: env.HAS_KEY == 'false'
+        run: |
+          V=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+          cd desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos
+          COPYFILE_DISABLE=1 tar --no-mac-metadata -czf Cowdrey.PDF_universal.app.tar.gz Cowdrey.PDF.app
+          gh release upload "v$V" Cowdrey.PDF_universal.app.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Keep a fixed-name copy of the DMG (Cowdrey.PDF.dmg) on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+          cp "desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Cowdrey.PDF_${V}_universal.dmg" /tmp/Cowdrey.PDF.dmg
+          gh release upload "v$V" /tmp/Cowdrey.PDF.dmg --clobber --repo "$GITHUB_REPOSITORY"

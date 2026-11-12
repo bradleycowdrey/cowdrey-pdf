@@ -132,6 +132,33 @@ await test('dark pages and themes', async () => {
   eq(await p.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light');
   await p.ctx.close();
 });
+await test('Mac app: opens a PDF from Finder, saves back to the same file, menu bar matches the app', async () => {
+  const b64 = fs.readFileSync(path.join(root, 'tests/fixtures/sample.pdf')).toString('base64');
+  const p = await open({ init: [(b) => {
+    window.__calls = [];
+    window.__TAURI__ = { core: { invoke: async (c, a) => { window.__calls.push([c, a]); if (c === 'take_opened_files') { if (window.__h) return []; window.__h = 1; return [{ name: 'Report.pdf', path: '/Users/me/Report.pdf', content: b }]; } return null; } },
+      dialog: {}, event: { listen: async () => {} }, opener: {} };
+  }, b64] });
+  await p.waitForFunction(() => document.querySelector('.page canvas.pdf'), null, { timeout: 15000 });
+  eq(await p.textContent('#docTitle'), 'Report');
+  await p.evaluate(() => window.__cowdreyPdf.run('save')); await p.waitForTimeout(800);
+  const w = await p.evaluate(() => window.__calls.filter(([c]) => c === 'write_binary_file').map(([, a]) => [a.path, a.base64.length > 1000]));
+  eq(w, [['/Users/me/Report.pdf', true]], 'saved in place');
+  const menus = await p.evaluate(() => (window.__calls.find(([c]) => c === 'set_menu') || [])[1]);
+  eq(menus.menus.map((m) => m.title), ['File', 'Edit', 'View', 'Mark up', 'Pages', 'Help']);
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('iPhone app: Save PDF opens the share sheet with the PDF', async () => {
+  const p = await open({ width: 390, height: 844, touch: true, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148', init: () => {
+    window.__calls = [];
+    window.__TAURI__ = { core: { invoke: async (c, a) => { window.__calls.push([c, a]); if (c === 'write_share_file') return '/private/var/tmp/' + a.name; return c === 'take_opened_files' ? [] : null; } }, dialog: {}, event: { listen: async () => {} }, opener: {} };
+  } });
+  await openPdf(p);
+  await p.evaluate(() => window.__cowdreyPdf.run('save')); await p.waitForTimeout(800);
+  const calls = await p.evaluate(() => window.__calls.filter(([c]) => /share/.test(c)).map(([c, a]) => [c, a.name || a.url, a.mimeType || (a.base64 || '').length > 1000]));
+  eq(calls, [['write_share_file', 'Quarterly report.pdf', true], ['plugin:sharekit|share_file', 'file:///private/var/tmp/Quarterly%20report.pdf', 'application/pdf']]);
+  eq(p.errors, []); await p.ctx.close();
+});
 await test('every library URL resolves to a file in the pinned packages', async () => { eq([...missing], []); });
 
 await close();

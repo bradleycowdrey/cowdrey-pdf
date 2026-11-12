@@ -6,11 +6,12 @@ export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const NM = path.join(root, 'desktop/node_modules');
 let browser;
 export const missing = new Set();
-export async function open({ width = 1440, height = 900, scheme = 'dark', fresh = true, ua, touch = false } = {}) {
+export async function open({ width = 1440, height = 900, scheme = 'dark', fresh = true, ua, touch = false, init } = {}) {
   browser ||= await pw.chromium.launch({ executablePath: fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined });
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme, deviceScaleFactor: 1, acceptDownloads: true, hasTouch: touch, ...(ua ? { userAgent: ua } : {}) });
   const page = await ctx.newPage();
   page.errors = []; page.on('pageerror', (e) => page.errors.push(e.message));
+  if (init) await (Array.isArray(init) ? page.addInitScript(init[0], init[1]) : page.addInitScript(init));
   page.on('console', (m) => { if (m.type() === 'error') page.errors.push('console: ' + m.text()); });
   const html = fs.readFileSync(path.join(root, 'index.html'));
   await ctx.route('**/*', (r) => {

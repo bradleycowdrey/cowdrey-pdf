@@ -7,6 +7,13 @@ const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/bui
 const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.esm.min.js';
 const KEY = 'cowdrey.pdf';
 const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+// In the apps (Tauri): the Mac app, or the iPhone, iPad and Android app.
+const NATIVE = window.__TAURI__ || null;
+const MOBILE_APP = !!NATIVE && (/iPhone|iPad|iPod|Android/.test(navigator.userAgent) || navigator.maxTouchPoints > 1);
+const ANDROID_APP = MOBILE_APP && /Android/.test(navigator.userAgent);
+const MAC_APP = NATIVE && !MOBILE_APP ? NATIVE : null;
+const b64ToBytes = (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+const bytesToB64 = (u) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -64,7 +71,7 @@ async function openBytes(bytes, name, handle) {
       bytes.password = pw;
     } else { toast(`Could not open ${name}: it may not be a PDF.`); return; }
   }
-  const d = { id: uid(), name: name.replace(/\.pdf$/i, ''), sources: [bytes], pages: [], marks: {}, updated: Date.now(), handle: handle || null };
+  const d = { id: uid(), name: name.replace(/\.pdf$/i, ''), sources: [bytes], pages: [], marks: {}, updated: Date.now(), handle: typeof handle === 'object' ? handle : null, path: typeof handle === 'string' ? handle : null };
   for (let i = 0; i < pd.numPages; i++) d.pages.push({ src: 0, i, rot: 0 });
   await showDoc(d, [pd]);
   persist();
@@ -87,7 +94,7 @@ async function showDoc(d, loaded) {
 function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
 function setSaved(saved) {
   if (doc) doc.dirty = !saved;
-  $('#saveState').innerHTML = !doc ? '' : saved ? `${ic('check')} Saved on this device` : 'Edited · Save PDF to keep a copy';
+  $('#saveState').innerHTML = !doc ? '' : saved ? `${ic('check')} ${doc.path ? 'Saved' : 'Saved on this device'}` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -567,10 +574,27 @@ function download(bytes, name) {
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+async function nativeSave(bytes, copy) {
+  const name = doc.name + (copy ? ' (copy)' : '') + '.pdf';
+  if (MAC_APP) {
+    let target = !copy && doc.path;
+    if (!target) target = await MAC_APP.dialog.save({ defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    if (!target) return false;
+    await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(bytes) });
+    if (!copy) doc.path = target;
+    toast(`Saved ${target.split('/').pop()}`);
+    return true;
+  }
+  // iPhone, iPad and Android: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
+  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(bytes) });
+  await NATIVE.core.invoke('plugin:sharekit|share_file', { url: 'file://' + (ANDROID_APP ? path : encodeURI(path)), mimeType: 'application/pdf', title: name });
+  return true;
+}
 async function savePdf(copy) {
   if (!doc) return;
   try {
     const bytes = await buildPdf();
+    if (NATIVE) { if (await nativeSave(bytes, copy)) { setSaved(true); window.__lastSaved = bytes; } return; }
     if (doc.handle && !copy && doc.handle.createWritable) {
       const w = await doc.handle.createWritable(); await w.write(bytes); await w.close();
       toast(`Saved ${doc.name}.pdf`);
@@ -713,16 +737,14 @@ function db() {
 }
 async function dbDo(mode, fn) { const d = await db(); return new Promise((res, rej) => { const tx = d.transaction('docs', mode); const out = fn(tx.objectStore('docs')); tx.oncomplete = () => res(out && out.result); tx.onerror = () => rej(tx.error); }); }
 let persistTimer;
-function persist() {
-  clearTimeout(persistTimer);
-  persistTimer = setTimeout(async () => {
-    if (!doc) return;
-    doc.updated = Date.now();
-    const rec = { id: doc.id, name: doc.name, sources: doc.sources, passwords: doc.sources.map((s) => s.password || null), pages: doc.pages, marks: doc.marks, updated: doc.updated };
-    try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
-    if (S.side === 'docs') renderDocs();
-  }, 300);
+async function persistNow() {
+  if (!doc) return;
+  doc.updated = Date.now();
+  const rec = { id: doc.id, name: doc.name, path: doc.path || null, sources: doc.sources, passwords: doc.sources.map((s) => s.password || null), pages: doc.pages, marks: doc.marks, updated: doc.updated };
+  try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
+  if (S.side === 'docs') renderDocs();
 }
+function persist() { clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 300); }
 async function listDocs() { try { return (await dbDo('readonly', (s) => s.getAll())) || []; } catch { return []; } }
 async function renderDocs() {
   const panel = $('#sidePanel');
@@ -742,11 +764,19 @@ async function renderDocs() {
 async function openStored(id) {
   const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return;
   const sources = rec.sources.map((b, k) => { const u = b instanceof Uint8Array ? b : new Uint8Array(b); if (rec.passwords && rec.passwords[k]) u.password = rec.passwords[k]; return u; });
-  await showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null });
+  await showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path: rec.path || null });
 }
 
 /* ---------------- opening files ---------------- */
 async function openFiles() {
+  if (MAC_APP) {
+    const picked = await MAC_APP.dialog.open({ multiple: false, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    const path = typeof picked === 'string' ? picked : picked && picked.path;
+    if (!path) return;
+    const f = await MAC_APP.core.invoke('read_text_file', { path });
+    await openBytes(b64ToBytes(f.content), f.name, f.path);
+    return;
+  }
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({ types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }] });
@@ -920,6 +950,37 @@ function applyTheme() {
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
 window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.handle) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------------- the apps ---------------- */
+// Files the system asked us to open: Finder (Mac), Open With from Files or Mail (iPhone, iPad), Open with (Android).
+async function takeOpened() {
+  let files = [];
+  try { files = await NATIVE.core.invoke('take_opened_files'); } catch {}
+  for (const f of files || []) {
+    try {
+      if (f.content) await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null);
+      else if (f.path.includes('://') && NATIVE.fs) await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), decodeURIComponent(f.path.split('/').pop()).replace(/^.*[:%]/, '') || 'Document.pdf');
+    } catch (e) { toast(`Could not open that file: ${e}`); }
+  }
+}
+const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S' };
+function macMenu() {
+  if (!MAC_APP) return;
+  const menus = MENUS.filter(([t]) => t !== 'Help' || true).map(([title, ids]) => ({
+    title: title === 'Help' ? 'Help' : title,
+    items: (title === 'Edit' ? [{ kind: 'native', role: 'undo' }, { kind: 'native', role: 'redo' }, { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }] : [])
+      .concat(ids.filter((id) => id === '-' || (C[id] && !(title === 'Edit' && (id === 'undo' || id === 'redo')) && id !== 'about')).map((id) => id === '-' ? { kind: 'sep' } : { kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null })),
+  }));
+  MAC_APP.core.invoke('set_menu', { menus }).catch(() => {});
+}
+if (NATIVE) {
+  NATIVE.event.listen('open-files', takeOpened);
+  setTimeout(takeOpened, 0);
+  NATIVE.event.listen('menu-command', (e) => { const id = String(e.payload); if (id === 'undo' || id === 'redo') run(id); else run(id); setTimeout(macMenu, 50); });
+  // Quitting: keep the library up to date first; the app waits a moment for this.
+  NATIVE.event.listen('flush-and-quit', async () => { clearTimeout(persistTimer); try { await persistNow(); } catch {} NATIVE.core.invoke('quit_app').catch(() => {}); });
+  macMenu();
+}
 
 /* ---------------- start ---------------- */
 applyTheme();
