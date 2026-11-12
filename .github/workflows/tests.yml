@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # One step, every line logged, so the tests-log branch shows exactly where a run stopped.
       - name: Install, build and test
