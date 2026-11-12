@@ -1,0 +1,249 @@
+<title>Cowdrey.PDF</title>
+<meta name="description" content="Cowdrey.PDF, a PDF viewer and editor by Bradley Cowdrey (bradcowdrey.com)">
+<style id="font-css">
+/*FONTS_CSS*/
+</style>
+<style id="pdfjs-css">
+/* pdf.js text and form layers (Apache 2.0), copied from pdfjs-dist at build time */
+/*PDFJS_CSS*/
+</style>
+<style>
+/* Cowdrey.PDF: Cowdrey.MD's chrome (title + menus → ribbon → [sidebar | pages on a canvas] → status bar), for PDFs. */
+:root {
+  --chrome: #F5F7FB; --surface: #FFFFFF; --canvas: #E9ECF2; --ink: #1B2232; --ink-2: #566074; --ink-3: #626876;
+  --line: #DCE1EA; --hover: #E8ECF5; --press: #DCE3F2; --accent: #2448C9; --accent-ink: #FFFFFF; --accent-soft: #E4EAFF;
+  --danger: #C2362F; --page-shadow: 0 1px 2px rgba(20,30,60,.08), 0 8px 28px rgba(20,30,60,.09);
+  --font-ui: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --chrome: #161A21; --surface: #1D222B; --canvas: #0E1116; --ink: #E5E9F1; --ink-2: #A0A9BB; --ink-3: #9198A6;
+  --line: #2B313D; --hover: #252B37; --press: #2E3646; --accent: #8EA6FF; --accent-ink: #0C1330; --accent-soft: #232D52;
+  --danger: #FF8A80; --page-shadow: 0 0 0 1px #2B313D, 0 10px 30px rgba(0,0,0,.45); color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --chrome: #161A21; --surface: #1D222B; --canvas: #0E1116; --ink: #E5E9F1; --ink-2: #A0A9BB; --ink-3: #9198A6;
+  --line: #2B313D; --hover: #252B37; --press: #2E3646; --accent: #8EA6FF; --accent-ink: #0C1330; --accent-soft: #232D52;
+  --danger: #FF8A80; --page-shadow: 0 0 0 1px #2B313D, 0 10px 30px rgba(0,0,0,.45); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--chrome); color: var(--ink); font: 14px/1.4 var(--font-ui); -webkit-font-smoothing: antialiased; overflow: hidden; }
+button { font: inherit; color: inherit; }
+.ic, [data-lucide] { width: 18px; height: 18px; flex: none; stroke-width: 1.75; }
+.app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; height: 100dvh; }
+.app > *, .workspace > * { min-width: 0; } /* a wide ribbon scrolls; it never widens the window */
+
+/* title bar and menus */
+.titlebar { display: flex; align-items: center; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 4px max(16px, env(safe-area-inset-left, 0px)); }
+.logo { width: 32px; height: 32px; border-radius: 8px; flex: none; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font: 700 12px/1 var(--font-ui); letter-spacing: -.02em; }
+.tb-main { min-width: 0; flex: 1; }
+.tb-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.doc-title { font-size: 18px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-state { color: var(--ink-3); font-size: 13px; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+.menubar { display: flex; gap: 2px; margin-left: -6px; }
+.menubar > button { border: 0; background: none; padding: 2px 6px; border-radius: 5px; color: var(--ink); cursor: default; font-size: 14px; }
+.menubar > button:hover, .menubar > button[aria-expanded="true"] { background: var(--hover); }
+.menubar > button:focus-visible { outline-offset: -2px; }
+.tb-actions { display: flex; gap: 8px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
+.icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
+.icon-btn:hover { background: var(--hover); color: var(--ink); }
+
+/* ribbon */
+.ribbon { border-bottom: 1px solid var(--line); }
+.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); }
+.ribbon-tabs button { border: 0; background: none; padding: 6px 10px 8px; color: var(--ink-2); font-weight: 500; cursor: pointer; position: relative; }
+.ribbon-tabs button[aria-selected="true"] { color: var(--accent); }
+.ribbon-tabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
+.ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 6px max(12px, env(safe-area-inset-left, 0px)) 6px; overflow-x: auto; scrollbar-width: thin; min-height: 64px; }
+.r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); }
+.r-group:last-child { border-right: 0; }
+.r-items { display: flex; gap: 2px; align-items: center; flex: 1; }
+.r-label { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.rb { border: 0; background: none; border-radius: 6px; padding: 4px 8px; display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 52px; cursor: pointer; color: var(--ink); font-size: 12px; }
+.rb:hover { background: var(--hover); }
+.rb[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.rb:disabled { opacity: .4; cursor: default; background: none; }
+.swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+
+/* workspace */
+.workspace { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+.app[data-sidebar="off"] .workspace { grid-template-columns: 0 1fr; }
+.app[data-sidebar="off"] .sidebar { visibility: hidden; }
+.sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.side-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
+.side-tabs button { border: 0; background: none; border-radius: 7px; padding: 5px 4px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+.side-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+:root[data-theme="dark"] .side-tabs button[aria-selected="true"] { background: var(--press); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side-tabs button[aria-selected="true"] { background: var(--press); } }
+.side-panel { flex: 1; overflow: auto; padding: 0 10px 16px; }
+.thumbs { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 4px; }
+.thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--ink-3); font-size: 12px; }
+.thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; }
+.thumb[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
+.thumb.drag-over { outline: 2px dashed var(--accent); }
+.outline-list, .doc-list { list-style: none; margin: 0; padding: 0; }
+.outline-list button, .doc-list button.doc-open { border: 0; background: none; width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.outline-list button:hover, .doc-list button.doc-open:hover { background: var(--hover); }
+.doc-item { display: flex; align-items: center; }
+.doc-item .m { display: block; font-size: 11px; color: var(--ink-3); }
+.doc-item[aria-current="true"] .doc-open { background: var(--accent-soft); }
+.empty-note { color: var(--ink-3); font-size: 13px; padding: 8px; }
+
+/* pages */
+.viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; }
+.pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 64px; }
+.page { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; --scale-round-x: 1px; --scale-round-y: 1px; color-scheme: light; }
+.page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app[data-darkpage="on"] .page canvas.pdf { filter: invert(.92) hue-rotate(180deg); }
+.textLayer { z-index: 2; }
+.textLayer ::selection { background: rgba(36, 72, 201, .3); color: transparent; }
+.annotationLayer { z-index: 3; }
+.annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { background: rgba(36, 72, 201, .08); color: #111; }
+.marks { position: absolute; inset: 0; z-index: 4; overflow: visible; pointer-events: none; }
+.app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
+.app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
+.marks .mk { pointer-events: auto; cursor: pointer; }
+.app[data-tool="select"] .marks .mk:hover { filter: drop-shadow(0 0 2px var(--accent)); }
+.marks .mk.sel { filter: drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
+.marks text { user-select: none; }
+.find-hit { position: absolute; background: rgba(255, 200, 0, .45); z-index: 1; pointer-events: none; border-radius: 2px; }
+.find-hit.now { background: rgba(255, 120, 0, .6); }
+.drop[hidden] { display: none; }
+.drop { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--ink-2); padding: 24px; }
+.drop .card { max-width: 420px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.drop h2 { margin: 0; font-size: 22px; color: var(--ink); letter-spacing: -.01em; }
+.drop p { margin: 0; }
+.app[data-dragging="on"] .viewer { outline: 3px dashed var(--accent); outline-offset: -8px; }
+
+/* status bar */
+.statusbar { display: flex; align-items: center; gap: 16px; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+.sb-spacer { flex: 1; }
+.sb-brand { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-brand a { color: inherit; }
+.sb-zoom { display: flex; align-items: center; gap: 6px; }
+.sb-zoom input[type="range"] { width: 110px; accent-color: var(--accent); }
+.sb-zoom .icon-btn { width: 28px; height: 28px; }
+.page-jump { width: 44px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--ink); font: inherit; padding: 1px 2px; }
+
+/* popovers, dialogs, toast */
+.popover { position: fixed; z-index: 50; min-width: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
+.popover[hidden] { display: none; }
+.mi { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; cursor: pointer; color: var(--ink); }
+.mi:hover, .mi:focus-visible { background: var(--hover); outline: none; }
+.mi:disabled { opacity: .45; cursor: default; background: none; }
+.mi .k { color: var(--ink-3); font-size: 12px; }
+.msep { height: 1px; background: var(--line); margin: 5px 6px; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(480px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog::backdrop { background: rgba(10, 14, 24, .35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+@media (prefers-reduced-transparency: reduce) { dialog::backdrop { backdrop-filter: none; background: rgba(10, 14, 24, .55); } }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 6px; }
+.dlg-head h2 { margin: 0; font-size: 17px; }
+.dlg-body { padding: 6px 18px 4px; color: var(--ink-2); }
+.dlg-body a { color: var(--accent); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.field input, .field textarea { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.sig-pad { width: 100%; height: 160px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; touch-action: none; display: block; }
+.about { display: flex; gap: 14px; align-items: center; }
+.about .logo { width: 64px; height: 64px; border-radius: 15px; font-size: 22px; }
+.toast { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.toast.show { opacity: 1; }
+.findbar { position: absolute; top: 10px; right: 16px; z-index: 20; display: flex; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+.findbar[hidden] { display: none; }
+.findbar input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 200px; }
+.findbar .count { color: var(--ink-3); font-size: 12px; min-width: 56px; text-align: center; }
+
+/* phones: the ribbon becomes a scrolling tool row; the sidebar becomes an overlay */
+@media (max-width: 760px) {
+  .menubar, .sb-brand, .tb-actions .btn span, .save-state { display: none; }
+  .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
+  .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
+  .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+  .r-label { display: none; }
+  .rb { min-width: 44px; min-height: 44px; }
+  .sb-zoom input[type="range"] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media print {
+  .titlebar, .ribbon, .sidebar, .statusbar, .findbar, .popover, .toast, dialog { display: none !important; }
+  body, .app, .workspace, .viewer { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
+  .pages { padding: 0; gap: 0; }
+  .page { box-shadow: none; break-after: page; }
+  .app[data-darkpage="on"] .page canvas.pdf { filter: none; }
+}
+</style>
+
+<div class="app" id="app" data-sidebar="on" data-tool="select">
+  <header class="titlebar">
+    <div class="logo" aria-hidden="true">PDF</div>
+    <div class="tb-main">
+      <div class="tb-row"><span class="doc-title" id="docTitle">Cowdrey.PDF</span><span class="save-state" id="saveState"></span></div>
+      <nav class="menubar" id="menubar" aria-label="Menus"></nav>
+    </div>
+    <div class="tb-actions">
+      <button class="icon-btn" id="themeBtn" type="button" title="Theme"><i data-lucide="sun-moon"></i></button>
+      <button class="btn" type="button" data-cmd="open"><i data-lucide="folder-open"></i><span>Open</span></button>
+      <button class="btn primary" type="button" data-cmd="save" id="saveBtn"><i data-lucide="download"></i><span>Save PDF</span></button>
+    </div>
+  </header>
+  <div class="ribbon">
+    <div class="ribbon-tabs" role="tablist" id="ribbonTabs"></div>
+    <div class="ribbon-body" id="ribbonBody"></div>
+  </div>
+  <div class="workspace">
+    <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+      <div class="side-tabs" role="tablist">
+        <button type="button" role="tab" data-side="thumbs" aria-selected="true">Pages</button>
+        <button type="button" role="tab" data-side="outline" aria-selected="false">Outline</button>
+        <button type="button" role="tab" data-side="docs" aria-selected="false">Documents</button>
+      </div>
+      <div class="side-panel" id="sidePanel"></div>
+    </aside>
+    <main class="viewer" id="viewer" tabindex="-1">
+      <div class="findbar" id="findbar" hidden>
+        <i data-lucide="search"></i><input id="findInput" type="search" placeholder="Find in document" aria-label="Find">
+        <span class="count" id="findCount"></span>
+        <button class="icon-btn" type="button" id="findPrev" title="Previous"><i data-lucide="chevron-up"></i></button>
+        <button class="icon-btn" type="button" id="findNext" title="Next"><i data-lucide="chevron-down"></i></button>
+        <button class="icon-btn" type="button" id="findClose" title="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="pages" id="pages"></div>
+      <div class="drop" id="drop">
+        <div class="card">
+          <div class="logo" style="width:64px;height:64px;border-radius:15px;font-size:20px" aria-hidden="true">PDF</div>
+          <h2>Open a PDF</h2>
+          <p>Drop a PDF here, or open one from your device. It stays on this device.</p>
+          <button class="btn primary" type="button" data-cmd="open"><i data-lucide="folder-open"></i><span>Open a PDF</span></button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <footer class="statusbar">
+    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> of <span id="pageCount">0</span></span>
+    <span class="sb-spacer"></span>
+    <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>
+    <span class="sb-zoom">
+      <button class="icon-btn" type="button" data-cmd="zoomOut" title="Zoom out"><i data-lucide="minus"></i></button>
+      <input type="range" id="zoomRange" min="25" max="400" step="5" value="100" aria-label="Zoom">
+      <button class="icon-btn" type="button" data-cmd="zoomIn" title="Zoom in"><i data-lucide="plus"></i></button>
+      <button class="btn" type="button" data-cmd="zoomFit" id="zoomLabel" style="height:26px;padding:0 10px">Fit</button>
+    </span>
+  </footer>
+</div>
+<div class="popover" id="popover" hidden role="menu"></div>
+<dialog id="dialog"></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+<input type="file" id="mergeInput" accept="application/pdf,.pdf" multiple hidden>
+<input type="file" id="imageInput" accept="image/png,image/jpeg" multiple hidden>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.441.0/dist/umd/lucide.min.js"></script>
+<script type="module">
+/*APP_JS*/
+</script>
