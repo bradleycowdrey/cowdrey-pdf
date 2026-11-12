@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   e2e:
     name: End-to-end tests
@@ -35,5 +38,17 @@ jobs:
 
       - name: Run the tests
         run: |
+          set -o pipefail
           node tests/sample.mjs
-          node tests/e2e.mjs
+          node tests/e2e.mjs 2>&1 | tee "$RUNNER_TEMP/tests.log"
+
+      # The result goes on the tests-log branch, so it can be read without signing in to GitHub.
+      - name: Publish the result
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          D=$(mktemp -d); cd "$D" && git init -q -b tests-log
+          [[ -f "$RUNNER_TEMP/tests.log" ]] && cp "$RUNNER_TEMP/tests.log" tests.log
+          echo "${{ job.status }} · run ${{ github.run_number }} · ${{ github.sha }}" > status.txt
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Test results, run ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" tests-log
