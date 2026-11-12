@@ -2,6 +2,13 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 0.1.3
+
+- **Mac menu bar:** File, Edit, View, Mark up, Pages and Help are back (0.1.2 sent the menu in a form the Mac refused).
+- Dialogs wait their turn, so an update notice or a menu choice during a password question can't lose it and stall later opens.
+- Quitting holds the app before anything else, so the "Save changes?" question always appears, and a second Cmd+Q waits for the answer.
+- Keeping a PDF's password keeps what it allowed (printing, copying, changes), with the restrictions still enforced. The password question only counts protected files whose pages are still in the document.
+
 ## 0.1.2
 
 Everything in the Mac, iPhone and Android apps that only worked in a browser now works in the apps too.

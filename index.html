@@ -865,7 +865,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '0.1.2';
+const VERSION = '0.1.3';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
 // @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
@@ -1419,9 +1419,13 @@ function parseRange(s, max) {
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
   const L = await loadPdfLib();
-  const pw = doc.sources.map((b) => b.password).find(Boolean);
+  // Only protected files whose pages are still in the document count.
+  const used = new Set(doc.pages.map((e) => e.src));
+  const protKey = [...used].find((k) => doc.sources[k].password);
+  const pw = protKey == null ? null : doc.sources[protKey].password;
   if (pw && doc.keepPassword == null) {
-    const a = await dialog('Keep the password?', `<p>${esc(doc.name)} is protected with a password. Should the saved PDF need the same password to open?</p>`, [{ label: 'Cancel' }, { label: 'Remove password', value: 'remove' }, { label: 'Keep password', value: 'keep', primary: true }]);
+    const whose = protKey === 0 ? `${esc(doc.name)} is protected with a password.` : 'Some pages come from a PDF protected with a password.';
+    const a = await dialog('Keep the password?', `<p>${whose} Should the saved PDF need the same password to open?</p>`, [{ label: 'Cancel' }, { label: 'Remove password', value: 'remove' }, { label: 'Keep password', value: 'keep', primary: true }]);
     if (!a) return null;
     doc.keepPassword = a === 'keep';
   }
@@ -1480,7 +1484,14 @@ async function buildPdf(only) {
   }
   out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
-  if (pw && doc.keepPassword && out.encrypt) out.encrypt({ userPassword: pw, ownerPassword: pw });
+  if (pw && doc.keepPassword && out.encrypt) {
+    // Keep what the original allowed (printing, copying, changes). With any restriction, the owner password is a new
+    // random one, so the open password doesn't lift the restrictions.
+    let flags = null; try { const f = await pdfDocs.get(protKey).getPermissions(); flags = f ? [...f] : null; } catch {}
+    const F = pdfjs.PermissionFlag || {}; const can = (f) => !flags || flags.includes(f);
+    const permissions = { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) };
+    out.encrypt({ userPassword: pw, ownerPassword: flags ? uid() + uid() : pw, permissions });
+  }
   return out.save();
 }
 function download(bytes, name, type = 'application/pdf') {
@@ -1778,7 +1789,11 @@ window.addEventListener('drop', async (e) => {
 });
 
 /* ---------------- dialogs ---------------- */
-function dialog(title, body, actions, setup) {
+// One dialog at a time: a dialog asked for while another is open (an update notice during a password question)
+// waits its turn, so every question gets its answer.
+let dialogChain = Promise.resolve();
+function dialog(...args) { const p = dialogChain.then(() => showDialog(...args)); dialogChain = p.catch(() => {}); return p; }
+function showDialog(title, body, actions, setup) {
   const dlg = $('#dialog');
   dlg.innerHTML = `<div class="dlg-head"><h2>${esc(title)}</h2><button class="icon-btn" type="button" data-x aria-label="Close">${ic('x')}</button></div><div class="dlg-body">${body}</div><div class="dlg-foot">${actions.map((a, k) => `<button type="button" class="btn${a.primary ? ' primary' : ''}${a.danger ? ' danger' : ''}" data-a="${k}">${esc(a.label)}</button>`).join('')}</div>`;
   icons();
@@ -2006,11 +2021,13 @@ async function checkForUpdates(manual) {
 // Quitting with changes not yet saved to the file they came from: ask first (the app waits for the answer).
 let quitAsked = false;
 async function beforeQuit() {
+  if (quitAsked) return; // already asking: that answer decides
+  const ask = !!(doc && doc.dirty && doc.path);
+  // Hold the quit before anything slow, so the app doesn't close before the question appears.
+  if (ask) { quitAsked = true; await NATIVE.core.invoke('hold_quit', { hold: true }).catch(() => {}); }
   clearTimeout(persistTimer);
   try { await persistNow(); } catch {}
-  if (doc && doc.dirty && doc.path && !quitAsked) {
-    quitAsked = true;
-    await NATIVE.core.invoke('hold_quit', { hold: true }).catch(() => {});
+  if (ask) {
     const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Documents on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
     quitAsked = false;
     if (!a || (a === 'save' && !(await savePdf(false)))) { await NATIVE.core.invoke('hold_quit', { hold: false }).catch(() => {}); return; }
@@ -2025,7 +2042,8 @@ function macMenu() {
   if (!MAC_APP) return;
   const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null });
   const menus = MENUS.map(([title, ids]) => {
-    let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates') // both live in the Cowdrey.PDF menu.map((id) => id === '-' ? { kind: 'sep' } : item(id));
+    // About and Check for Updates live in the Cowdrey.PDF menu.
+    let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates').map((id) => id === '-' ? { kind: 'sep' } : item(id));
     if (title === 'Edit') {
       const rest = items.filter((x) => x.id !== 'cmd:undo' && x.id !== 'cmd:redo');
       while (rest.length && rest[0].kind === 'sep') rest.shift();

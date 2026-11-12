@@ -23,9 +23,9 @@ pdf.setTitle('Quarterly report');
 fs.mkdirSync(new URL('./fixtures/', import.meta.url), { recursive: true });
 fs.writeFileSync(new URL('./fixtures/sample.pdf', import.meta.url), await pdf.save());
 console.log('tests/fixtures/sample.pdf');
-// The same PDF, protected with the password "pelican" (made with @cantoo/pdf-lib, which the app saves with).
+// The same PDF, protected with the password "pelican", with copying and changes not allowed (made with @cantoo/pdf-lib, which the app saves with).
 const C = require('../desktop/node_modules/@cantoo/pdf-lib');
 const prot = await C.PDFDocument.load(fs.readFileSync(new URL('./fixtures/sample.pdf', import.meta.url)));
-prot.encrypt({ userPassword: 'pelican', ownerPassword: 'pelican-owner' });
+prot.encrypt({ userPassword: 'pelican', ownerPassword: 'pelican-owner', permissions: { printing: 'highResolution', copying: false, modifying: false, annotating: true, fillingForms: true, contentAccessibility: true, documentAssembly: false } });
 fs.writeFileSync(new URL('./fixtures/protected.pdf', import.meta.url), await prot.save());
 console.log('tests/fixtures/protected.pdf');

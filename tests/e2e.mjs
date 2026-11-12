@@ -146,6 +146,9 @@ await test('Mac app: opens a PDF from Finder, saves back to the same file, menu 
   eq(w, [['/Users/me/Report.pdf', true]], 'saved in place');
   const menus = await p.evaluate(() => (window.__calls.find(([c]) => c === 'set_menu') || [])[1]);
   eq(menus.menus.map((m) => m.title), ['File', 'Edit', 'View', 'Mark up', 'Pages', 'Help']);
+  // Every entry must be one the Mac side understands, or the whole menu bar is refused.
+  const bad = menus.menus.flatMap((m) => m.items).filter((x) => !x || typeof x !== 'object' || !['item', 'sep', 'native'].includes(x.kind) || (x.kind === 'item' && !(x.id && x.label)));
+  eq(bad, [], 'menu items'); ok(menus.menus[0].items.some((x) => x.id === 'cmd:save'), 'File has Save');
   eq(p.errors, []); await p.ctx.close();
 });
 await test('iPhone app: Save PDF opens the share sheet with the PDF', async () => {
@@ -200,6 +203,10 @@ await test('protected PDF: asks for the password, never stores it, saves with or
   const kept = Buffer.from(await out);
   await PDFDocument.load(kept).then(() => { throw new Error('kept copy opened without a password'); }, () => {});
   eq((await C.PDFDocument.load(kept, { password: 'pelican' })).getPageCount(), 3);
+  const pdfjs = await import(path.join(root, 'desktop/node_modules/pdfjs-dist/legacy/build/pdf.mjs'));
+  const perms = async (b) => [...((await (await pdfjs.getDocument({ data: new Uint8Array(b), password: 'pelican' }).promise).getPermissions()) || [])].sort((x, y) => x - y);
+  eq(await perms(kept), await perms(fs.readFileSync(path.join(root, 'tests/fixtures/protected.pdf'))), 'restrictions kept');
+  ok((await perms(kept)).length > 0 && !(await perms(kept)).includes(pdfjs.PermissionFlag.COPY), 'copying still not allowed');
   await p.evaluate(() => { window.__cowdreyPdf.doc.keepPassword = null; });
   out = build(); await answer(p, 'Remove password');
   const plain = await PDFDocument.load(Buffer.from(await out));
@@ -259,11 +266,29 @@ await test('Mac app: quitting with unsaved changes to a file asks first; menu Un
   eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages[0].rot), 0, 'menu Undo undid the rotation');
   await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(200);
   p.evaluate(() => window.__events['flush-and-quit']());
+  await p.waitForSelector('#dialog[open]');
+  eq((await calls(p, /hold_quit/)).length, 1, 'the quit is held before anything else');
+  p.evaluate(() => window.__events['flush-and-quit']()); await p.waitForTimeout(300); // a second Cmd+Q waits for the answer
+  eq((await calls(p, /quit_app/)).length, 0, 'a second Cmd+Q does not quit past the question');
   await answer(p, 'Cancel'); await p.waitForTimeout(200);
   eq((await calls(p, /hold_quit|quit_app/)).map(([c, a]) => c + (a ? ':' + a.hold : '')), ['hold_quit:true', 'hold_quit:false']);
   p.evaluate(() => window.__events['flush-and-quit']());
   await answer(p, "Don't save"); await p.waitForTimeout(300);
   eq((await calls(p, /quit_app/)).length, 1, 'quits after Don\'t save');
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('dialogs wait their turn: a notice during a password question doesn\'t lose it, and opening carries on', async () => {
+  const p = await open();
+  const b64 = fixture('protected.pdf');
+  const opening = p.evaluate(async (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return window.__cowdreyPdf.openBytes(u, 'Secret.pdf'); }, b64);
+  await p.waitForSelector('#dialog[open] #dlgInput');
+  await p.evaluate(() => window.__cowdreyPdf.run('about')); await p.waitForTimeout(200);
+  ok(await p.$('#dialog[open] #dlgInput'), 'the password question is still showing');
+  await p.fill('#dlgInput', 'pelican'); await p.click('#dialog .btn.primary');
+  eq(await opening, true);
+  await p.waitForFunction(() => /About/.test(document.querySelector('#dialog[open] h2')?.textContent || ''));
+  await answer(p, 'Close');
+  await openPdf(p); eq(await p.textContent('#docTitle'), 'Quarterly report', 'later opens still work');
   eq(p.errors, []); await p.ctx.close();
 });
 await test('drop: if the first PDF doesn\'t open, the others are not added to the open document', async () => {
