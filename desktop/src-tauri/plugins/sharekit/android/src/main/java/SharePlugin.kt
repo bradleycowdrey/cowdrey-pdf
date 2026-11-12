@@ -168,11 +168,18 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
 
     // ---- files edited in place ----
 
+    /** The name a file manager, Drive or Gmail gives a content:// address, for "Open with". */
+    @Command
+    fun displayName(invoke: Invoke) {
+        val uri = invoke.getArgs().getString("uri", "") ?: ""
+        background(invoke) { JSObject().apply { put("name", try { displayName(Uri.parse(uri)) } catch (_: Exception) { "" }) } }
+    }
+
     private fun displayName(uri: Uri): String {
         activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst() && !c.isNull(0)) return c.getString(0)
         }
-        return uri.lastPathSegment?.substringAfterLast('/') ?: "Document.md"
+        return uri.lastPathSegment?.substringAfterLast('/') ?: "Document.pdf"
     }
 
     private fun modified(uri: Uri): Long {

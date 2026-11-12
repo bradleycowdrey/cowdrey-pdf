@@ -53,6 +53,12 @@ fn read_text_file(path: String) -> Result<OpenedFile, String> {
     load(Path::new(&path)).ok_or_else(|| format!("Could not read {path}"))
 }
 
+/// When a file was last changed (milliseconds), or 0 if it isn't there: Save checks it before replacing a file.
+#[tauri::command]
+fn file_modified(path: String) -> u64 {
+    modified_ms(Path::new(&path))
+}
+
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
@@ -167,7 +173,7 @@ fn write_share_file(app: AppHandle, name: String, contents: String, base64: Opti
     #[cfg(not(target_os = "android"))]
     let dir = { let _ = &app; std::env::temp_dir() };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(if name.trim().is_empty() { "Untitled.md".into() } else { name });
+    let path = dir.join(if name.trim().is_empty() { "Document.pdf".into() } else { name });
     match base64 {
         Some(b) => std::fs::write(&path, base64::engine::general_purpose::STANDARD.decode(b).map_err(|e| e.to_string())?),
         None => std::fs::write(&path, contents),
@@ -324,7 +330,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, hold_quit])
+        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, hold_quit])
         .on_menu_event(|app, event| {
             if event.id().0 == "app:quit" || event.id().0 == "app:closeWindow" {
                 flush_then_quit(app);
@@ -342,7 +348,7 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder
         .plugin(tauri_plugin_sharekit::init())
-        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, write_text_file, write_binary_file, write_share_file, quit_app, allow_exit, hold_quit]);
+        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, write_share_file, quit_app, allow_exit, hold_quit]);
     // Automated checks in the iPhone Simulator (see .github/workflows/ios-qa.yml): with COWDREY_QA set, the page
     // opens that panel a few seconds after launch, so the check can photograph it. Nothing happens otherwise.
     #[cfg(mobile)]

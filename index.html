@@ -865,10 +865,11 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
-const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.esm.min.js';
+// @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
+const PDFLIB = 'https://cdn.jsdelivr.net/npm/@cantoo/pdf-lib@2.11.1/dist/pdf-lib.esm.min.js';
 const KEY = 'cowdrey.pdf';
 const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 // In the apps (Tauri): the Mac app, or the iPhone, iPad and Android app.
@@ -895,19 +896,41 @@ let toastTimer;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
 
 /* ---------------- libraries (loaded on first use) ---------------- */
-let pdfjs, pdfLib;
-async function loadPdfjs() {
-  if (pdfjs) return pdfjs;
-  try { pdfjs = await import(PDFJS); }
-  catch (e) { pdfjs = null; toast('The PDF reader could not start. Restart Cowdrey.PDF and try again.'); throw e; }
-  // A worker from another origin can't be started directly: start it from a copy of its code.
-  try {
-    const code = await (await fetch(PDFJS_WORKER)).text();
-    pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-  } catch { pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; }
-  return pdfjs;
+let pdfjs, pdfjsLoading, pdfLib;
+// One load, shared by every caller: pdfjs is only set once its worker is ready.
+function loadPdfjs() {
+  return pdfjsLoading || (pdfjsLoading = (async () => {
+    let mod;
+    try { mod = await import(PDFJS); }
+    catch (e) { pdfjsLoading = null; toast('The PDF reader could not start. Restart Cowdrey.PDF and try again.'); throw e; }
+    // A worker from another origin can't be started directly: start it from a copy of its code.
+    try {
+      const code = await (await fetch(PDFJS_WORKER)).text();
+      mod.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    } catch { mod.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; }
+    return (pdfjs = mod);
+  })());
 }
 async function loadPdfLib() { return pdfLib || (pdfLib = await import(PDFLIB)); }
+// Opening, reopening and adding PDFs run one at a time, in the order they were asked for, so a file opened from
+// Finder at launch can't be replaced by (or mixed up with) the document restored from last time.
+let openChain = Promise.resolve();
+function serial(fn) { const p = openChain.then(fn, fn); openChain = p.catch(() => {}); return p; }
+// Opens a pdf.js document, asking for the password when it has one. The password is kept with the bytes in memory
+// only, for saving; it is never written to this device. Returns null when the person cancels.
+async function loadProtected(bytes, name) {
+  await loadPdfjs();
+  try { return await pdfjs.getDocument({ data: bytes.slice(), password: bytes.password, isEvalSupported: false, enableXfa: false }).promise; }
+  catch (e) {
+    if (!e || e.name !== 'PasswordException') throw e;
+    for (let tries = 0; ; tries++) {
+      const pw = await askText(tries ? 'That password did not open it' : 'This PDF is protected', `Enter the password for ${name}. It is not stored.`, '', 'Open', true);
+      if (pw == null) return null;
+      try { const pd = await pdfjs.getDocument({ data: bytes.slice(), password: pw, isEvalSupported: false, enableXfa: false }).promise; bytes.password = pw; return pd; }
+      catch (e2) { if (!e2 || e2.name !== 'PasswordException') throw e2; }
+    }
+  }
+}
 
 /* ---------------- the open document ----------------
    doc.sources: the original PDF bytes (the opened file, plus any merged in); never changed.
@@ -923,38 +946,42 @@ let selMark = null; // { key, id }
 const undoStack = [], redoStack = [];
 const pageKey = (e) => `${e.src}:${e.i}`;
 
-async function openBytes(bytes, name, handle) {
-  await loadPdfjs();
+// Returns true when the PDF is open, false when it could not be (or the person cancelled).
+async function openBytes(bytes, name, handle, mtime) {
   let pd;
-  try { pd = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, enableXfa: false }).promise; }
-  catch (e) {
-    if (e && e.name === 'PasswordException') {
-      const pw = await askText('This PDF is protected', 'Enter the password to open it. It is not stored.', '', 'Open', true);
-      if (pw == null) return;
-      try { pd = await pdfjs.getDocument({ data: bytes.slice(), password: pw, isEvalSupported: false }).promise; }
-      catch { toast('That password did not open the PDF.'); return; }
-      bytes.password = pw;
-    } else { toast(`Could not open ${name}: it may not be a PDF.`); return; }
-  }
-  const d = { id: uid(), name: name.replace(/\.pdf$/i, ''), sources: [bytes], pages: [], marks: {}, updated: Date.now(), handle: typeof handle === 'object' ? handle : null, path: typeof handle === 'string' ? handle : null };
+  try { pd = await loadProtected(bytes, name); }
+  catch (e) { console.error(e); toast(`Could not open ${name}: it may not be a PDF.`); return false; }
+  if (!pd) return false;
+  const d = { id: uid(), name: name.replace(/\.pdf$/i, ''), sources: [bytes], pages: [], marks: {}, updated: Date.now(), handle: typeof handle === 'object' ? handle : null, path: typeof handle === 'string' ? handle : null, mtime: mtime || 0 };
   for (let i = 0; i < pd.numPages; i++) d.pages.push({ src: 0, i, rot: 0 });
-  await showDoc(d, [pd]);
-  persist();
+  if (!(await showDoc(d, [pd]))) return false;
+  await persistNow(); // at once, so opening several files in a row keeps every one in Documents
+  return true;
 }
+// Shows a document. Every source is loaded before anything on screen changes, so a cancelled password leaves the
+// document you had open as it was. Returns false if it was not shown.
 async function showDoc(d, loaded) {
+  const pds = [];
+  for (let k = 0; k < d.sources.length; k++) {
+    let pd = loaded && loaded[k];
+    if (!pd) {
+      try { pd = await loadProtected(d.sources[k], d.name); } catch (e) { console.error(e); pd = null; if (!loaded) toast(`Could not open ${d.name}.`); }
+    }
+    if (!pd) { for (const p of pds) try { p.destroy(); } catch {} return false; }
+    pds.push(pd);
+  }
+  // Keep the document being left in Documents before switching.
+  if (doc && persistTimer) { clearTimeout(persistTimer); persistTimer = null; await persistNow(); }
   for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
   pdfDocs.clear();
   doc = d; selMark = null; undoStack.length = redoStack.length = 0;
-  await loadPdfjs();
-  for (let k = 0; k < d.sources.length; k++) {
-    const pd = loaded && loaded[k] ? loaded[k] : await pdfjs.getDocument({ data: d.sources[k].slice(), password: d.sources[k].password, isEvalSupported: false }).promise;
-    pdfDocs.set(k, pd);
-  }
+  pds.forEach((pd, k) => pdfDocs.set(k, pd));
   $('#drop').hidden = true;
   setTitle(); setSaved(true);
   await layoutPages();
   renderSide();
   store.set('current', d.id);
+  return true;
 }
 function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
 function setSaved(saved) {
@@ -1339,28 +1366,41 @@ async function insertBlank() {
   const bytes = await pdf.save();
   await addSource(bytes, [0], current + 1);
 }
-async function addSource(bytes, indexes, at) {
+async function addSource(bytes, indexes, at, name) {
+  if (!doc) return false;
+  let pd;
+  try { pd = await loadProtected(bytes, name || 'this PDF'); }
+  catch (e) { console.error(e); toast(`Could not add ${name || 'that file'}: it may not be a PDF.`); return false; }
+  if (!pd) return false;
   const k = doc.sources.length;
-  const pd = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
   pageOp(() => {
     doc.sources.push(bytes); pdfDocs.set(k, pd);
     const ins = (indexes || [...Array(pd.numPages).keys()]).map((i) => ({ src: k, i, rot: 0 }));
     doc.pages.splice(at == null ? doc.pages.length : at, 0, ...ins);
   });
+  return true;
 }
-$('#mergeInput').addEventListener('change', async (e) => {
+$('#mergeInput').addEventListener('change', (e) => {
   const files = [...e.target.files]; e.target.value = '';
-  if (!doc) { for (const f of files.slice(0, 1)) await openBytes(new Uint8Array(await f.arrayBuffer()), f.name); files.shift(); }
-  for (const f of files) await addSource(new Uint8Array(await f.arrayBuffer()), null, null);
-  if (files.length) toast(`Added ${files.length === 1 ? files[0].name : files.length + ' PDFs'} at the end`);
+  serial(() => openOrAdd(files, !doc));
 });
+// Opens the first file (when asked) and adds the rest at the end. Stops if the first one doesn't open.
+async function openOrAdd(files, openFirst) {
+  if (!files.length) return;
+  if (openFirst) { const f = files.shift(); if (!(await openBytes(new Uint8Array(await f.arrayBuffer()), f.name))) return; }
+  let added = [];
+  for (const f of files) if (await addSource(new Uint8Array(await f.arrayBuffer()), null, null, f.name)) added.push(f.name);
+  if (added.length) toast(`Added ${added.length === 1 ? added[0] : added.length + ' PDFs'} at the end`);
+}
 async function extractPages() {
   const ans = await askText('Extract pages', `Which pages? For example 1-3, 5. This PDF has ${doc.pages.length}.`, String(current + 1), 'Extract');
   if (!ans) return;
   const want = parseRange(ans, doc.pages.length);
   if (!want.length) { toast('No pages in that range'); return; }
-  const bytes = await buildPdf(want);
-  download(bytes, `${doc.name} (pages ${ans.replace(/\s+/g, '')}).pdf`);
+  try {
+    const bytes = await buildPdf(want);
+    if (bytes) await saveFile(bytes, `${doc.name} (pages ${ans.replace(/\s+/g, '')}).pdf`, 'application/pdf');
+  } catch (e) { console.error(e); toast(`Could not extract the pages: ${e.message || e}`); }
 }
 function parseRange(s, max) {
   const out = [];
@@ -1376,8 +1416,15 @@ function parseRange(s, max) {
    With the pages unchanged, the original PDF is kept (bookmarks, forms, links, metadata) and the mark-up is added
    to it. Otherwise a new PDF is assembled from the pages in their new order. Highlights, drawings, boxes, text and
    signatures are drawn into the page so every reader shows them; notes are real PDF comments. */
+// Returns null if the person cancels the password question.
 async function buildPdf(only) {
   const L = await loadPdfLib();
+  const pw = doc.sources.map((b) => b.password).find(Boolean);
+  if (pw && doc.keepPassword == null) {
+    const a = await dialog('Keep the password?', `<p>${esc(doc.name)} is protected with a password. Should the saved PDF need the same password to open?</p>`, [{ label: 'Cancel' }, { label: 'Remove password', value: 'remove' }, { label: 'Keep password', value: 'keep', primary: true }]);
+    if (!a) return null;
+    doc.keepPassword = a === 'keep';
+  }
   const { PDFDocument, degrees, rgb, StandardFonts, BlendMode, LineCapStyle, PDFName, PDFString, PDFHexString } = L;
   // Form values typed into the page are written by pdf.js into a copy of each source first.
   const bytes = await Promise.all(doc.sources.map(async (b, k) => {
@@ -1385,7 +1432,8 @@ async function buildPdf(only) {
     try { if (pd.annotationStorage.size) return await pd.saveDocument(); } catch {}
     return b;
   }));
-  const loaded = await Promise.all(bytes.map((b) => PDFDocument.load(b, { ignoreEncryption: true, updateMetadata: false })));
+  // Protected sources are opened with their password, so what is saved is readable (pdf-lib can't save them otherwise).
+  const loaded = await Promise.all(bytes.map((b, k) => PDFDocument.load(b, doc.sources[k].password ? { password: doc.sources[k].password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false })));
   const entries = only ? only.map((n) => doc.pages[n]) : doc.pages;
   const same = !only && doc.sources.length === 1 && entries.length === loaded[0].getPageCount() && entries.every((e, n) => e.src === 0 && e.i === n);
   let out, pages;
@@ -1432,34 +1480,78 @@ async function buildPdf(only) {
   }
   out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
+  if (pw && doc.keepPassword && out.encrypt) out.encrypt({ userPassword: pw, ownerPassword: pw });
   return out.save();
 }
-function download(bytes, name) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+function download(bytes, name, type = 'application/pdf') {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+const toBytes = (data) => typeof data === 'string' ? new TextEncoder().encode(data) : data;
+// A file name the share sheet and file:// addresses accept as is.
+const safeName = (name) => name.replace(/[\/\\:#?%*"<>|]+/g, '-').trim() || 'Document.pdf';
+function shareAnchor() {
+  const b = $('#saveBtn'); const r = b ? b.getBoundingClientRect() : { left: innerWidth / 2, bottom: 0, width: 0 };
+  return { x: r.left + r.width / 2, y: r.bottom, preferredEdge: 'bottom' };
+}
+// The share sheet (iPhone, iPad, Android) or share menu (Mac): Save to Files, Drive, Mail, AirDrop, Messages, Print.
+async function shareFile(data, name, type) {
+  name = safeName(name);
+  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(toBytes(data)) });
+  const url = MAC_APP ? path : 'file://' + (ANDROID_APP ? path : encodeURI(path));
+  await NATIVE.core.invoke('plugin:sharekit|share_file', { url, mimeType: type, title: name, ...(MAC_APP ? { position: shareAnchor() } : {}) });
+}
+// Saves a new file (an export, extracted pages, a copy): a save dialog on the Mac, the share sheet on phones,
+// a download on the web. Returns the Mac path, true, or false when cancelled.
+async function saveFile(data, name, type) {
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [, 'pdf'])[1];
+  if (MAC_APP) {
+    const target = await MAC_APP.dialog.save({ defaultPath: safeName(name), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
+    if (!target) return false;
+    await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(toBytes(data)) });
+    toast(`Saved ${target.split('/').pop()}`);
+    return target;
+  }
+  if (NATIVE) { await shareFile(data, name, type); return true; }
+  download(toBytes(data), name, type);
+  return true;
+}
+const fileTime = async (path) => { try { return await MAC_APP.core.invoke('file_modified', { path }); } catch { return 0; } };
+// Saves over the file the document came from (Mac), after checking nobody else changed it since.
 async function nativeSave(bytes, copy) {
   const name = doc.name + (copy ? ' (copy)' : '') + '.pdf';
   if (MAC_APP) {
     let target = !copy && doc.path;
-    if (!target) target = await MAC_APP.dialog.save({ defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    if (target && doc.mtime) {
+      const now = await fileTime(target);
+      if (now && now !== doc.mtime) {
+        const a = await dialog('This file changed', `<p>${esc(target.split('/').pop())} was changed by another app after you opened it here. Replacing it loses those changes.</p>`, [{ label: 'Cancel' }, { label: 'Save as new file…', value: 'new' }, { label: 'Replace', value: 'replace', danger: true }]);
+        if (!a) return false;
+        if (a === 'new') target = null;
+      }
+    }
+    if (!target) target = await MAC_APP.dialog.save({ defaultPath: safeName(name), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     if (!target) return false;
     await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(bytes) });
-    if (!copy) doc.path = target;
+    if (!copy) { doc.path = target; doc.name = target.split('/').pop().replace(/\.pdf$/i, ''); doc.mtime = await fileTime(target); setTitle(); persist(); }
     toast(`Saved ${target.split('/').pop()}`);
     return true;
   }
   // iPhone, iPad and Android: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
-  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(bytes) });
-  await NATIVE.core.invoke('plugin:sharekit|share_file', { url: 'file://' + (ANDROID_APP ? path : encodeURI(path)), mimeType: 'application/pdf', title: name });
+  await shareFile(bytes, name, 'application/pdf');
   return true;
 }
 async function savePdf(copy) {
-  if (!doc) return;
+  if (!doc) return false;
   try {
     const bytes = await buildPdf();
-    if (NATIVE) { if (await nativeSave(bytes, copy)) { setSaved(true); window.__lastSaved = bytes; } return; }
+    if (!bytes) return false;
+    if (NATIVE) {
+      if (!(await nativeSave(bytes, copy))) return false;
+      if (!copy) setSaved(true); // a copy leaves the document's own file as it was
+      window.__lastSaved = bytes; return true;
+    }
     if (doc.handle && !copy && doc.handle.createWritable) {
       const w = await doc.handle.createWritable(); await w.write(bytes); await w.close();
       toast(`Saved ${doc.name}.pdf`);
@@ -1467,27 +1559,40 @@ async function savePdf(copy) {
       try {
         const h = await window.showSaveFilePicker({ suggestedName: doc.name + '.pdf', types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }] });
         const w = await h.createWritable(); await w.write(bytes); await w.close(); doc.handle = h; toast(`Saved ${h.name}`);
-      } catch (e) { if (e && e.name === 'AbortError') return; download(bytes, doc.name + '.pdf'); }
+      } catch (e) { if (e && e.name === 'AbortError') return false; download(bytes, doc.name + '.pdf'); }
     } else download(bytes, doc.name + (copy ? ' (copy)' : '') + '.pdf');
-    setSaved(true); window.__lastSaved = bytes;
-  } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); }
+    if (!copy) setSaved(true);
+    window.__lastSaved = bytes; return true;
+  } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
+}
+async function sharePdf() {
+  if (!doc) return;
+  try { const bytes = await buildPdf(); if (bytes) await shareFile(bytes, doc.name + '.pdf', 'application/pdf'); }
+  catch (e) { console.error(e); toast(`Could not share: ${e.message || e}`); }
 }
 async function exportImage() {
   const v = views[current]; if (!v) return;
   const vp = v.page.getViewport({ scale: 2, rotation: totalRot(v) });
   const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
   await v.page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: vp }).promise;
-  const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = `${doc.name} page ${current + 1}.png`; a.click();
+  const png = await new Promise((res) => c.toBlob(res, 'image/png'));
+  try { await saveFile(new Uint8Array(await png.arrayBuffer()), `${doc.name} page ${current + 1}.png`, 'image/png'); }
+  catch (e) { console.error(e); toast(`Could not export the page: ${e.message || e}`); }
 }
 async function exportText() {
   const parts = [];
   for (const e of doc.pages) { const tc = await (await pageOf(e)).getTextContent(); parts.push(tc.items.map((it) => it.str + (it.hasEOL ? '\n' : '')).join('')); }
-  const url = URL.createObjectURL(new Blob([parts.join('\n\n')], { type: 'text/plain' }));
-  const a = document.createElement('a'); a.href = url; a.download = doc.name + '.txt'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  try { await saveFile(parts.join('\n\n'), doc.name + '.txt', 'text/plain'); }
+  catch (e) { console.error(e); toast(`Could not export the text: ${e.message || e}`); }
 }
 async function printDoc() {
   for (const v of views) await renderView(v);
-  window.print();
+  try {
+    // The apps' web views ignore window.print(): the Mac app and the phone apps open the system print dialog themselves.
+    if (MAC_APP) await MAC_APP.core.invoke('print_page');
+    else if (MOBILE_APP) await NATIVE.core.invoke('plugin:sharekit|native', { method: 'printPage', args: { title: doc.name } });
+    else window.print();
+  } catch (e) { toast(`Could not print: ${e.message || e}`); }
 }
 
 /* ---------------- find ---------------- */
@@ -1605,7 +1710,8 @@ let persistTimer;
 async function persistNow() {
   if (!doc) return;
   doc.updated = Date.now();
-  const rec = { id: doc.id, name: doc.name, path: doc.path || null, sources: doc.sources, passwords: doc.sources.map((s) => s.password || null), pages: doc.pages, marks: doc.marks, updated: doc.updated };
+  // Passwords are never written to this device: a protected PDF asks for its password again when reopened.
+  const rec = { id: doc.id, name: doc.name, path: doc.path || null, mtime: doc.mtime || 0, sources: doc.sources, pages: doc.pages, marks: doc.marks, updated: doc.updated };
   try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
   if (S.side === 'docs') renderDocs();
 }
@@ -1617,7 +1723,7 @@ async function renderDocs() {
   if (S.side !== 'docs') return;
   panel.innerHTML = all.length ? `<ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from this device">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
   icons();
-  $$('[data-id]', panel).forEach((b) => { b.onclick = () => openStored(b.dataset.id); });
+  $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
     const ok = await dialog('Remove this PDF?', '<p>It is removed from this device. The file you opened it from is not touched.</p>', [{ label: 'Keep it' }, { label: 'Remove', value: 'yes', danger: true }]);
     if (ok !== 'yes') return;
@@ -1627,42 +1733,48 @@ async function renderDocs() {
   }; });
 }
 async function openStored(id) {
-  const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return;
-  const sources = rec.sources.map((b, k) => { const u = b instanceof Uint8Array ? b : new Uint8Array(b); if (rec.passwords && rec.passwords[k]) u.password = rec.passwords[k]; return u; });
-  await showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path: rec.path || null });
+  if (doc && doc.id === id) return true;
+  const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return false;
+  const sources = rec.sources.map((b) => b instanceof Uint8Array ? b : new Uint8Array(b));
+  // The file it came from is linked again only if it still exists; Save checks it hasn't changed since.
+  let path = rec.path || null;
+  if (path && MAC_APP && !(await fileTime(path))) path = null;
+  return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0 });
 }
 
 /* ---------------- opening files ---------------- */
+async function openPath(path) {
+  try {
+    const f = await MAC_APP.core.invoke('read_text_file', { path });
+    return await openBytes(b64ToBytes(f.content), f.name, f.path, await fileTime(f.path));
+  } catch (e) { console.error(e); toast(`Could not open ${path.split('/').pop()}.`); return false; }
+}
 async function openFiles() {
   if (MAC_APP) {
     const picked = await MAC_APP.dialog.open({ multiple: false, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     const path = typeof picked === 'string' ? picked : picked && picked.path;
-    if (!path) return;
-    try {
-      const f = await MAC_APP.core.invoke('read_text_file', { path });
-      await openBytes(b64ToBytes(f.content), f.name, f.path);
-    } catch (e) { console.error(e); toast(`Could not open ${path.split('/').pop()}.`); }
+    if (path) await serial(() => openPath(path));
     return;
   }
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({ types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }] });
       const f = await h.getFile();
-      await openBytes(new Uint8Array(await f.arrayBuffer()), f.name, h);
+      await serial(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name, h));
       return;
     } catch (e) { if (e && e.name === 'AbortError') return; }
   }
   $('#fileInput').click();
 }
-$('#fileInput').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await openBytes(new Uint8Array(await f.arrayBuffer()), f.name); });
+$('#fileInput').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) serial(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name)); });
 ['dragenter', 'dragover'].forEach((t) => window.addEventListener(t, (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); app.dataset.dragging = 'on'; } }));
 ['dragleave', 'drop'].forEach((t) => window.addEventListener(t, () => { app.dataset.dragging = 'off'; }));
 window.addEventListener('drop', async (e) => {
   const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter((f) => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
   if (!files.length) return;
   e.preventDefault();
-  if (!doc || !e.shiftKey) { await openBytes(new Uint8Array(await files[0].arrayBuffer()), files[0].name); files.shift(); }
-  for (const f of files) await addSource(new Uint8Array(await f.arrayBuffer()), null, null);
+  // Shift-drop adds to the open PDF; otherwise the first file opens and the rest are added to it.
+  serial(() => openOrAdd(files, !doc || !e.shiftKey));
 });
 
 /* ---------------- dialogs ---------------- */
@@ -1690,6 +1802,13 @@ function askText(title, note, value, ok, password, multiline) {
   const field = multiline ? `<textarea id="dlgInput" rows="4">${esc(value)}</textarea>` : `<input id="dlgInput" type="${password ? 'password' : 'text'}" value="${esc(value)}" autocomplete="off">`;
   return dialog(title, `${note ? `<p>${esc(note)}</p>` : ''}<label class="field">${field}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
 }
+// Links open in the browser. The apps' web views ignore target=_blank and window.open, so they hand links to the system.
+const openExternal = (url) => { if (NATIVE && NATIVE.opener) NATIVE.opener.openUrl(url).catch(() => {}); else window.open(url, '_blank', 'noopener'); };
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href]');
+  if (!a || !NATIVE || !/^(https?:|mailto:)/i.test(a.getAttribute('href'))) return;
+  e.preventDefault(); openExternal(a.href);
+});
 function about() {
   dialog('About Cowdrey.PDF', `<div class="about"><img class="logo" src="data:image/png;base64,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" alt="" aria-hidden="true"><div><strong style="font-size:18px;color:var(--ink)">Cowdrey.PDF ${VERSION}</strong><br>by Bradley Cowdrey · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></div></div>
   <p>A PDF viewer and editor in the spirit of Cowdrey.MD: read, mark up, sign, fill forms, and rearrange pages. Your PDFs stay on this device.</p>
@@ -1734,19 +1853,22 @@ cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => se
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
 cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', run: () => dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${Object.values(C).filter((c) => c.key).map((c) => `<span>${esc(c.label)}</span><span style="color:var(--ink-3)">${fmtKey(c.key)}</span>`).join('')}</div>`, [{ label: 'Close', primary: true }]) });
-cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => window.open('https://bradcowdrey.com/legal', '_blank', 'noopener') });
+cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
+cmd('share', { label: 'Share…', icon: 'share', enabled: has, hidden: !NATIVE, run: sharePdf });
+cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP, run: () => checkForUpdates(true) });
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
+  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
-  ['Help', ['shortcuts', 'legal', '-', 'about']],
+  ['Help', ['shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
+const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
 function menuHtml(ids) {
-  return ids.map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
+  return ids.filter(shown).map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
 }
 const pop = $('#popover');
 function openPopover(anchor, html) {
@@ -1768,7 +1890,7 @@ const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   markup: ['Mark up', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
   pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
-  export: ['Export', [['Save', ['save', 'saveCopy']], ['Export', ['exportImage', 'exportText', 'print']]]],
+  export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
 function renderRibbon() {
@@ -1777,13 +1899,14 @@ function renderRibbon() {
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
   $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group"><div class="r-items">${ids === 'COLORS'
     ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
-    : ids.map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
+    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
   icons(); refreshRibbon();
 }
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
   $('#saveBtn').disabled = !has();
+  scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
@@ -1808,6 +1931,7 @@ document.addEventListener('keydown', (e) => {
 
 /* ---------------- theme ---------------- */
 function applyTheme() {
+  scheduleMacMenu();
   const root = document.documentElement;
   if (S.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
   app.dataset.darkpage = S.darkPage ? 'on' : 'off';
@@ -1820,32 +1944,112 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
 
 /* ---------------- the apps ---------------- */
 // Files the system asked us to open: Finder (Mac), Open With from Files or Mail (iPhone, iPad), Open with (Android).
+// Returns how many opened. Runs inside serial(), like every other open.
 async function takeOpened() {
-  let files = [];
+  let files = [], opened = 0;
   try { files = await NATIVE.core.invoke('take_opened_files'); } catch {}
   for (const f of files || []) {
     try {
-      if (f.content) await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null);
-      else if (f.path.includes('://') && NATIVE.fs) await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), decodeURIComponent(f.path.split('/').pop()).replace(/^.*[:%]/, '') || 'Document.pdf');
+      if (f.content) { if (await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null, MAC_APP ? await fileTime(f.path) : 0)) opened++; }
+      else if (f.path.includes('://') && NATIVE.fs) { if (await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), await contentName(f.path))) opened++; }
     } catch (e) { toast(`Could not open that file: ${e}`); }
   }
+  return opened;
+}
+// Android "Open with" hands over a content:// address: ask Android for the file's real name.
+async function contentName(uri) {
+  try { const r = await NATIVE.core.invoke('plugin:sharekit|native', { method: 'displayName', args: { uri } }); if (r && r.name) return r.name; } catch {}
+  let last = uri;
+  try { last = decodeURIComponent(uri); } catch {}
+  last = last.split(/[/:]/).pop() || '';
+  return /\.pdf$/i.test(last) ? last : 'Document.pdf';
+}
+// Mac updates: a signed in-place update when the release has one, otherwise the downloads page.
+const RELEASES_PAGE = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest';
+const RELEASES_API = 'https://api.github.com/repos/bradleycowdrey/cowdrey-pdf/releases/latest';
+const isNewer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+async function checkForUpdates(manual) {
+  if (!MAC_APP) return;
+  if (manual) toast('Checking for updates…');
+  if (MAC_APP.updater) {
+    let update = null, ok = false;
+    try { update = await MAC_APP.updater.check(); ok = true; } catch {}
+    if (ok) {
+      store.set('updateChecked', Date.now());
+      if (!update) { if (manual) toast(`You have the latest version (${VERSION}).`); return; }
+      if (!manual && store.get('skipVersion', '') === update.version) return;
+      const a = await dialog(`Cowdrey.PDF ${update.version} is available`, `<p>You have version ${esc(VERSION)}. Cowdrey.PDF will keep your documents, install the update and reopen.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Install and restart', value: 'go', primary: true }]);
+      if (a === 'skip') store.set('skipVersion', update.version);
+      if (a !== 'go') return;
+      try {
+        toast('Downloading the update…');
+        clearTimeout(persistTimer); await persistNow();
+        await update.downloadAndInstall();
+        await MAC_APP.core.invoke('allow_exit').catch(() => {});
+        await MAC_APP.process.relaunch();
+      } catch (e) { if (await dialog('The update could not be installed', `<p>${esc(e.message || String(e))}</p><p>You can download the new version from the downloads page.</p>`, [{ label: 'Close' }, { label: 'Open downloads page', value: 'go', primary: true }]) === 'go') openExternal(RELEASES_PAGE); }
+      return;
+    }
+  }
+  let rel;
+  try { const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }); if (!r.ok) throw new Error(`GitHub answered ${r.status}`); rel = await r.json(); }
+  catch (e) { if (manual && await dialog('Could not check for updates', `<p>${esc(e.message || String(e))}. Check your internet connection, or see the downloads page.</p>`, [{ label: 'Close' }, { label: 'Open downloads page', value: 'go', primary: true }]) === 'go') openExternal(RELEASES_PAGE); return; }
+  store.set('updateChecked', Date.now());
+  const latest = String(rel.tag_name || '').replace(/^v/i, '');
+  if (!latest || !isNewer(latest, VERSION)) { if (manual) toast(`You have the latest version (${VERSION}).`); return; }
+  if (!manual && store.get('skipVersion', '') === latest) return;
+  const file = (rel.assets || []).find((x) => /\.dmg$/i.test(x.name));
+  const a = await dialog(`Cowdrey.PDF ${latest} is available`, `<p>You have version ${esc(VERSION)}. Download the new version, open it, and drag Cowdrey.PDF into Applications to replace this one. Your documents are kept.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Download', value: 'go', primary: true }]);
+  if (a === 'skip') store.set('skipVersion', latest);
+  if (a === 'go') { openExternal(file ? file.browser_download_url : (rel.html_url || RELEASES_PAGE)); toast('Downloading in your browser'); }
+}
+// Quitting with changes not yet saved to the file they came from: ask first (the app waits for the answer).
+let quitAsked = false;
+async function beforeQuit() {
+  clearTimeout(persistTimer);
+  try { await persistNow(); } catch {}
+  if (doc && doc.dirty && doc.path && !quitAsked) {
+    quitAsked = true;
+    await NATIVE.core.invoke('hold_quit', { hold: true }).catch(() => {});
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Documents on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    quitAsked = false;
+    if (!a || (a === 'save' && !(await savePdf(false)))) { await NATIVE.core.invoke('hold_quit', { hold: false }).catch(() => {}); return; }
+  }
+  NATIVE.core.invoke('quit_app').catch(() => {});
 }
 const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S' };
+// The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
+// Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
+var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
 function macMenu() {
   if (!MAC_APP) return;
-  const menus = MENUS.filter(([t]) => t !== 'Help' || true).map(([title, ids]) => ({
-    title: title === 'Help' ? 'Help' : title,
-    items: (title === 'Edit' ? [{ kind: 'native', role: 'undo' }, { kind: 'native', role: 'redo' }, { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }] : [])
-      .concat(ids.filter((id) => id === '-' || (C[id] && !(title === 'Edit' && (id === 'undo' || id === 'redo')) && id !== 'about')).map((id) => id === '-' ? { kind: 'sep' } : { kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null })),
-  }));
-  MAC_APP.core.invoke('set_menu', { menus }).catch(() => {});
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null });
+  const menus = MENUS.map(([title, ids]) => {
+    let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates') // both live in the Cowdrey.PDF menu.map((id) => id === '-' ? { kind: 'sep' } : item(id));
+    if (title === 'Edit') {
+      const rest = items.filter((x) => x.id !== 'cmd:undo' && x.id !== 'cmd:redo');
+      while (rest.length && rest[0].kind === 'sep') rest.shift();
+      items = [item('undo'), item('redo'), { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }, ...rest];
+    }
+    return { title, items };
+  });
+  const json = JSON.stringify(menus);
+  if (json === lastMenu) return;
+  lastMenu = json;
+  MAC_APP.core.invoke('set_menu', { menus }).catch(() => { lastMenu = ''; });
 }
+function scheduleMacMenu() { if (!MAC_APP) return; clearTimeout(menuTimer); menuTimer = setTimeout(macMenu, 120); }
 if (NATIVE) {
-  NATIVE.event.listen('open-files', takeOpened);
-  setTimeout(takeOpened, 0);
-  NATIVE.event.listen('menu-command', (e) => { const id = String(e.payload); if (id === 'undo' || id === 'redo') run(id); else run(id); setTimeout(macMenu, 50); });
-  // Quitting: keep the library up to date first; the app waits a moment for this.
-  NATIVE.event.listen('flush-and-quit', async () => { clearTimeout(persistTimer); try { await persistNow(); } catch {} NATIVE.core.invoke('quit_app').catch(() => {}); });
+  NATIVE.event.listen('open-files', () => serial(takeOpened));
+  NATIVE.event.listen('menu-command', (e) => {
+    const id = String(e.payload);
+    // In a text field (a dialog, a form field), Undo and Redo edit the text, as everywhere on the Mac.
+    const el = document.activeElement;
+    if ((id === 'undo' || id === 'redo') && el && (/INPUT|TEXTAREA/.test(el.tagName) || el.isContentEditable)) { document.execCommand(id); return; }
+    run(id); scheduleMacMenu();
+  });
+  // Quitting: keep Documents up to date, and ask about unsaved changes to a file; the app waits for this.
+  NATIVE.event.listen('flush-and-quit', beforeQuit);
   macMenu();
 }
 
@@ -1854,10 +2058,13 @@ applyTheme();
 app.dataset.sidebar = S.sidebar ? 'on' : 'off';
 $$('.side-tabs [data-side]').forEach((b) => b.setAttribute('aria-selected', b.dataset.side === S.side));
 renderRibbon(); renderSide(); updateStatus(); icons();
-(async () => {
+// A file the app was opened with (Finder, Files, Open with) comes first; otherwise the last document comes back.
+serial(async () => {
+  if (NATIVE && (await takeOpened())) return;
   const last = store.get('current', null);
-  if (last) { try { await openStored(last); } catch (e) { console.warn(e); } }
-})();
+  if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
+});
+if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
 window.__cowdreyPdf = { get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; } };
 

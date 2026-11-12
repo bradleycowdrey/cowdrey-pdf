@@ -1,10 +1,11 @@
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
-const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.esm.min.js';
+// @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
+const PDFLIB = 'https://cdn.jsdelivr.net/npm/@cantoo/pdf-lib@2.11.1/dist/pdf-lib.esm.min.js';
 const KEY = 'cowdrey.pdf';
 const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 // In the apps (Tauri): the Mac app, or the iPhone, iPad and Android app.
@@ -31,19 +32,41 @@ let toastTimer;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
 
 /* ---------------- libraries (loaded on first use) ---------------- */
-let pdfjs, pdfLib;
-async function loadPdfjs() {
-  if (pdfjs) return pdfjs;
-  try { pdfjs = await import(PDFJS); }
-  catch (e) { pdfjs = null; toast('The PDF reader could not start. Restart Cowdrey.PDF and try again.'); throw e; }
-  // A worker from another origin can't be started directly: start it from a copy of its code.
-  try {
-    const code = await (await fetch(PDFJS_WORKER)).text();
-    pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
-  } catch { pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; }
-  return pdfjs;
+let pdfjs, pdfjsLoading, pdfLib;
+// One load, shared by every caller: pdfjs is only set once its worker is ready.
+function loadPdfjs() {
+  return pdfjsLoading || (pdfjsLoading = (async () => {
+    let mod;
+    try { mod = await import(PDFJS); }
+    catch (e) { pdfjsLoading = null; toast('The PDF reader could not start. Restart Cowdrey.PDF and try again.'); throw e; }
+    // A worker from another origin can't be started directly: start it from a copy of its code.
+    try {
+      const code = await (await fetch(PDFJS_WORKER)).text();
+      mod.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    } catch { mod.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; }
+    return (pdfjs = mod);
+  })());
 }
 async function loadPdfLib() { return pdfLib || (pdfLib = await import(PDFLIB)); }
+// Opening, reopening and adding PDFs run one at a time, in the order they were asked for, so a file opened from
+// Finder at launch can't be replaced by (or mixed up with) the document restored from last time.
+let openChain = Promise.resolve();
+function serial(fn) { const p = openChain.then(fn, fn); openChain = p.catch(() => {}); return p; }
+// Opens a pdf.js document, asking for the password when it has one. The password is kept with the bytes in memory
+// only, for saving; it is never written to this device. Returns null when the person cancels.
+async function loadProtected(bytes, name) {
+  await loadPdfjs();
+  try { return await pdfjs.getDocument({ data: bytes.slice(), password: bytes.password, isEvalSupported: false, enableXfa: false }).promise; }
+  catch (e) {
+    if (!e || e.name !== 'PasswordException') throw e;
+    for (let tries = 0; ; tries++) {
+      const pw = await askText(tries ? 'That password did not open it' : 'This PDF is protected', `Enter the password for ${name}. It is not stored.`, '', 'Open', true);
+      if (pw == null) return null;
+      try { const pd = await pdfjs.getDocument({ data: bytes.slice(), password: pw, isEvalSupported: false, enableXfa: false }).promise; bytes.password = pw; return pd; }
+      catch (e2) { if (!e2 || e2.name !== 'PasswordException') throw e2; }
+    }
+  }
+}
 
 /* ---------------- the open document ----------------
    doc.sources: the original PDF bytes (the opened file, plus any merged in); never changed.
@@ -59,38 +82,42 @@ let selMark = null; // { key, id }
 const undoStack = [], redoStack = [];
 const pageKey = (e) => `${e.src}:${e.i}`;
 
-async function openBytes(bytes, name, handle) {
-  await loadPdfjs();
+// Returns true when the PDF is open, false when it could not be (or the person cancelled).
+async function openBytes(bytes, name, handle, mtime) {
   let pd;
-  try { pd = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, enableXfa: false }).promise; }
-  catch (e) {
-    if (e && e.name === 'PasswordException') {
-      const pw = await askText('This PDF is protected', 'Enter the password to open it. It is not stored.', '', 'Open', true);
-      if (pw == null) return;
-      try { pd = await pdfjs.getDocument({ data: bytes.slice(), password: pw, isEvalSupported: false }).promise; }
-      catch { toast('That password did not open the PDF.'); return; }
-      bytes.password = pw;
-    } else { toast(`Could not open ${name}: it may not be a PDF.`); return; }
-  }
-  const d = { id: uid(), name: name.replace(/\.pdf$/i, ''), sources: [bytes], pages: [], marks: {}, updated: Date.now(), handle: typeof handle === 'object' ? handle : null, path: typeof handle === 'string' ? handle : null };
+  try { pd = await loadProtected(bytes, name); }
+  catch (e) { console.error(e); toast(`Could not open ${name}: it may not be a PDF.`); return false; }
+  if (!pd) return false;
+  const d = { id: uid(), name: name.replace(/\.pdf$/i, ''), sources: [bytes], pages: [], marks: {}, updated: Date.now(), handle: typeof handle === 'object' ? handle : null, path: typeof handle === 'string' ? handle : null, mtime: mtime || 0 };
   for (let i = 0; i < pd.numPages; i++) d.pages.push({ src: 0, i, rot: 0 });
-  await showDoc(d, [pd]);
-  persist();
+  if (!(await showDoc(d, [pd]))) return false;
+  await persistNow(); // at once, so opening several files in a row keeps every one in Documents
+  return true;
 }
+// Shows a document. Every source is loaded before anything on screen changes, so a cancelled password leaves the
+// document you had open as it was. Returns false if it was not shown.
 async function showDoc(d, loaded) {
+  const pds = [];
+  for (let k = 0; k < d.sources.length; k++) {
+    let pd = loaded && loaded[k];
+    if (!pd) {
+      try { pd = await loadProtected(d.sources[k], d.name); } catch (e) { console.error(e); pd = null; if (!loaded) toast(`Could not open ${d.name}.`); }
+    }
+    if (!pd) { for (const p of pds) try { p.destroy(); } catch {} return false; }
+    pds.push(pd);
+  }
+  // Keep the document being left in Documents before switching.
+  if (doc && persistTimer) { clearTimeout(persistTimer); persistTimer = null; await persistNow(); }
   for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
   pdfDocs.clear();
   doc = d; selMark = null; undoStack.length = redoStack.length = 0;
-  await loadPdfjs();
-  for (let k = 0; k < d.sources.length; k++) {
-    const pd = loaded && loaded[k] ? loaded[k] : await pdfjs.getDocument({ data: d.sources[k].slice(), password: d.sources[k].password, isEvalSupported: false }).promise;
-    pdfDocs.set(k, pd);
-  }
+  pds.forEach((pd, k) => pdfDocs.set(k, pd));
   $('#drop').hidden = true;
   setTitle(); setSaved(true);
   await layoutPages();
   renderSide();
   store.set('current', d.id);
+  return true;
 }
 function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
 function setSaved(saved) {
@@ -475,28 +502,41 @@ async function insertBlank() {
   const bytes = await pdf.save();
   await addSource(bytes, [0], current + 1);
 }
-async function addSource(bytes, indexes, at) {
+async function addSource(bytes, indexes, at, name) {
+  if (!doc) return false;
+  let pd;
+  try { pd = await loadProtected(bytes, name || 'this PDF'); }
+  catch (e) { console.error(e); toast(`Could not add ${name || 'that file'}: it may not be a PDF.`); return false; }
+  if (!pd) return false;
   const k = doc.sources.length;
-  const pd = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
   pageOp(() => {
     doc.sources.push(bytes); pdfDocs.set(k, pd);
     const ins = (indexes || [...Array(pd.numPages).keys()]).map((i) => ({ src: k, i, rot: 0 }));
     doc.pages.splice(at == null ? doc.pages.length : at, 0, ...ins);
   });
+  return true;
 }
-$('#mergeInput').addEventListener('change', async (e) => {
+$('#mergeInput').addEventListener('change', (e) => {
   const files = [...e.target.files]; e.target.value = '';
-  if (!doc) { for (const f of files.slice(0, 1)) await openBytes(new Uint8Array(await f.arrayBuffer()), f.name); files.shift(); }
-  for (const f of files) await addSource(new Uint8Array(await f.arrayBuffer()), null, null);
-  if (files.length) toast(`Added ${files.length === 1 ? files[0].name : files.length + ' PDFs'} at the end`);
+  serial(() => openOrAdd(files, !doc));
 });
+// Opens the first file (when asked) and adds the rest at the end. Stops if the first one doesn't open.
+async function openOrAdd(files, openFirst) {
+  if (!files.length) return;
+  if (openFirst) { const f = files.shift(); if (!(await openBytes(new Uint8Array(await f.arrayBuffer()), f.name))) return; }
+  let added = [];
+  for (const f of files) if (await addSource(new Uint8Array(await f.arrayBuffer()), null, null, f.name)) added.push(f.name);
+  if (added.length) toast(`Added ${added.length === 1 ? added[0] : added.length + ' PDFs'} at the end`);
+}
 async function extractPages() {
   const ans = await askText('Extract pages', `Which pages? For example 1-3, 5. This PDF has ${doc.pages.length}.`, String(current + 1), 'Extract');
   if (!ans) return;
   const want = parseRange(ans, doc.pages.length);
   if (!want.length) { toast('No pages in that range'); return; }
-  const bytes = await buildPdf(want);
-  download(bytes, `${doc.name} (pages ${ans.replace(/\s+/g, '')}).pdf`);
+  try {
+    const bytes = await buildPdf(want);
+    if (bytes) await saveFile(bytes, `${doc.name} (pages ${ans.replace(/\s+/g, '')}).pdf`, 'application/pdf');
+  } catch (e) { console.error(e); toast(`Could not extract the pages: ${e.message || e}`); }
 }
 function parseRange(s, max) {
   const out = [];
@@ -512,8 +552,15 @@ function parseRange(s, max) {
    With the pages unchanged, the original PDF is kept (bookmarks, forms, links, metadata) and the mark-up is added
    to it. Otherwise a new PDF is assembled from the pages in their new order. Highlights, drawings, boxes, text and
    signatures are drawn into the page so every reader shows them; notes are real PDF comments. */
+// Returns null if the person cancels the password question.
 async function buildPdf(only) {
   const L = await loadPdfLib();
+  const pw = doc.sources.map((b) => b.password).find(Boolean);
+  if (pw && doc.keepPassword == null) {
+    const a = await dialog('Keep the password?', `<p>${esc(doc.name)} is protected with a password. Should the saved PDF need the same password to open?</p>`, [{ label: 'Cancel' }, { label: 'Remove password', value: 'remove' }, { label: 'Keep password', value: 'keep', primary: true }]);
+    if (!a) return null;
+    doc.keepPassword = a === 'keep';
+  }
   const { PDFDocument, degrees, rgb, StandardFonts, BlendMode, LineCapStyle, PDFName, PDFString, PDFHexString } = L;
   // Form values typed into the page are written by pdf.js into a copy of each source first.
   const bytes = await Promise.all(doc.sources.map(async (b, k) => {
@@ -521,7 +568,8 @@ async function buildPdf(only) {
     try { if (pd.annotationStorage.size) return await pd.saveDocument(); } catch {}
     return b;
   }));
-  const loaded = await Promise.all(bytes.map((b) => PDFDocument.load(b, { ignoreEncryption: true, updateMetadata: false })));
+  // Protected sources are opened with their password, so what is saved is readable (pdf-lib can't save them otherwise).
+  const loaded = await Promise.all(bytes.map((b, k) => PDFDocument.load(b, doc.sources[k].password ? { password: doc.sources[k].password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false })));
   const entries = only ? only.map((n) => doc.pages[n]) : doc.pages;
   const same = !only && doc.sources.length === 1 && entries.length === loaded[0].getPageCount() && entries.every((e, n) => e.src === 0 && e.i === n);
   let out, pages;
@@ -568,34 +616,78 @@ async function buildPdf(only) {
   }
   out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
+  if (pw && doc.keepPassword && out.encrypt) out.encrypt({ userPassword: pw, ownerPassword: pw });
   return out.save();
 }
-function download(bytes, name) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+function download(bytes, name, type = 'application/pdf') {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+const toBytes = (data) => typeof data === 'string' ? new TextEncoder().encode(data) : data;
+// A file name the share sheet and file:// addresses accept as is.
+const safeName = (name) => name.replace(/[\/\\:#?%*"<>|]+/g, '-').trim() || 'Document.pdf';
+function shareAnchor() {
+  const b = $('#saveBtn'); const r = b ? b.getBoundingClientRect() : { left: innerWidth / 2, bottom: 0, width: 0 };
+  return { x: r.left + r.width / 2, y: r.bottom, preferredEdge: 'bottom' };
+}
+// The share sheet (iPhone, iPad, Android) or share menu (Mac): Save to Files, Drive, Mail, AirDrop, Messages, Print.
+async function shareFile(data, name, type) {
+  name = safeName(name);
+  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(toBytes(data)) });
+  const url = MAC_APP ? path : 'file://' + (ANDROID_APP ? path : encodeURI(path));
+  await NATIVE.core.invoke('plugin:sharekit|share_file', { url, mimeType: type, title: name, ...(MAC_APP ? { position: shareAnchor() } : {}) });
+}
+// Saves a new file (an export, extracted pages, a copy): a save dialog on the Mac, the share sheet on phones,
+// a download on the web. Returns the Mac path, true, or false when cancelled.
+async function saveFile(data, name, type) {
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [, 'pdf'])[1];
+  if (MAC_APP) {
+    const target = await MAC_APP.dialog.save({ defaultPath: safeName(name), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
+    if (!target) return false;
+    await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(toBytes(data)) });
+    toast(`Saved ${target.split('/').pop()}`);
+    return target;
+  }
+  if (NATIVE) { await shareFile(data, name, type); return true; }
+  download(toBytes(data), name, type);
+  return true;
+}
+const fileTime = async (path) => { try { return await MAC_APP.core.invoke('file_modified', { path }); } catch { return 0; } };
+// Saves over the file the document came from (Mac), after checking nobody else changed it since.
 async function nativeSave(bytes, copy) {
   const name = doc.name + (copy ? ' (copy)' : '') + '.pdf';
   if (MAC_APP) {
     let target = !copy && doc.path;
-    if (!target) target = await MAC_APP.dialog.save({ defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    if (target && doc.mtime) {
+      const now = await fileTime(target);
+      if (now && now !== doc.mtime) {
+        const a = await dialog('This file changed', `<p>${esc(target.split('/').pop())} was changed by another app after you opened it here. Replacing it loses those changes.</p>`, [{ label: 'Cancel' }, { label: 'Save as new file…', value: 'new' }, { label: 'Replace', value: 'replace', danger: true }]);
+        if (!a) return false;
+        if (a === 'new') target = null;
+      }
+    }
+    if (!target) target = await MAC_APP.dialog.save({ defaultPath: safeName(name), filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     if (!target) return false;
     await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(bytes) });
-    if (!copy) doc.path = target;
+    if (!copy) { doc.path = target; doc.name = target.split('/').pop().replace(/\.pdf$/i, ''); doc.mtime = await fileTime(target); setTitle(); persist(); }
     toast(`Saved ${target.split('/').pop()}`);
     return true;
   }
   // iPhone, iPad and Android: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
-  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(bytes) });
-  await NATIVE.core.invoke('plugin:sharekit|share_file', { url: 'file://' + (ANDROID_APP ? path : encodeURI(path)), mimeType: 'application/pdf', title: name });
+  await shareFile(bytes, name, 'application/pdf');
   return true;
 }
 async function savePdf(copy) {
-  if (!doc) return;
+  if (!doc) return false;
   try {
     const bytes = await buildPdf();
-    if (NATIVE) { if (await nativeSave(bytes, copy)) { setSaved(true); window.__lastSaved = bytes; } return; }
+    if (!bytes) return false;
+    if (NATIVE) {
+      if (!(await nativeSave(bytes, copy))) return false;
+      if (!copy) setSaved(true); // a copy leaves the document's own file as it was
+      window.__lastSaved = bytes; return true;
+    }
     if (doc.handle && !copy && doc.handle.createWritable) {
       const w = await doc.handle.createWritable(); await w.write(bytes); await w.close();
       toast(`Saved ${doc.name}.pdf`);
@@ -603,27 +695,40 @@ async function savePdf(copy) {
       try {
         const h = await window.showSaveFilePicker({ suggestedName: doc.name + '.pdf', types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }] });
         const w = await h.createWritable(); await w.write(bytes); await w.close(); doc.handle = h; toast(`Saved ${h.name}`);
-      } catch (e) { if (e && e.name === 'AbortError') return; download(bytes, doc.name + '.pdf'); }
+      } catch (e) { if (e && e.name === 'AbortError') return false; download(bytes, doc.name + '.pdf'); }
     } else download(bytes, doc.name + (copy ? ' (copy)' : '') + '.pdf');
-    setSaved(true); window.__lastSaved = bytes;
-  } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); }
+    if (!copy) setSaved(true);
+    window.__lastSaved = bytes; return true;
+  } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
+}
+async function sharePdf() {
+  if (!doc) return;
+  try { const bytes = await buildPdf(); if (bytes) await shareFile(bytes, doc.name + '.pdf', 'application/pdf'); }
+  catch (e) { console.error(e); toast(`Could not share: ${e.message || e}`); }
 }
 async function exportImage() {
   const v = views[current]; if (!v) return;
   const vp = v.page.getViewport({ scale: 2, rotation: totalRot(v) });
   const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
   await v.page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: vp }).promise;
-  const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = `${doc.name} page ${current + 1}.png`; a.click();
+  const png = await new Promise((res) => c.toBlob(res, 'image/png'));
+  try { await saveFile(new Uint8Array(await png.arrayBuffer()), `${doc.name} page ${current + 1}.png`, 'image/png'); }
+  catch (e) { console.error(e); toast(`Could not export the page: ${e.message || e}`); }
 }
 async function exportText() {
   const parts = [];
   for (const e of doc.pages) { const tc = await (await pageOf(e)).getTextContent(); parts.push(tc.items.map((it) => it.str + (it.hasEOL ? '\n' : '')).join('')); }
-  const url = URL.createObjectURL(new Blob([parts.join('\n\n')], { type: 'text/plain' }));
-  const a = document.createElement('a'); a.href = url; a.download = doc.name + '.txt'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  try { await saveFile(parts.join('\n\n'), doc.name + '.txt', 'text/plain'); }
+  catch (e) { console.error(e); toast(`Could not export the text: ${e.message || e}`); }
 }
 async function printDoc() {
   for (const v of views) await renderView(v);
-  window.print();
+  try {
+    // The apps' web views ignore window.print(): the Mac app and the phone apps open the system print dialog themselves.
+    if (MAC_APP) await MAC_APP.core.invoke('print_page');
+    else if (MOBILE_APP) await NATIVE.core.invoke('plugin:sharekit|native', { method: 'printPage', args: { title: doc.name } });
+    else window.print();
+  } catch (e) { toast(`Could not print: ${e.message || e}`); }
 }
 
 /* ---------------- find ---------------- */
@@ -741,7 +846,8 @@ let persistTimer;
 async function persistNow() {
   if (!doc) return;
   doc.updated = Date.now();
-  const rec = { id: doc.id, name: doc.name, path: doc.path || null, sources: doc.sources, passwords: doc.sources.map((s) => s.password || null), pages: doc.pages, marks: doc.marks, updated: doc.updated };
+  // Passwords are never written to this device: a protected PDF asks for its password again when reopened.
+  const rec = { id: doc.id, name: doc.name, path: doc.path || null, mtime: doc.mtime || 0, sources: doc.sources, pages: doc.pages, marks: doc.marks, updated: doc.updated };
   try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
   if (S.side === 'docs') renderDocs();
 }
@@ -753,7 +859,7 @@ async function renderDocs() {
   if (S.side !== 'docs') return;
   panel.innerHTML = all.length ? `<ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from this device">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
   icons();
-  $$('[data-id]', panel).forEach((b) => { b.onclick = () => openStored(b.dataset.id); });
+  $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
     const ok = await dialog('Remove this PDF?', '<p>It is removed from this device. The file you opened it from is not touched.</p>', [{ label: 'Keep it' }, { label: 'Remove', value: 'yes', danger: true }]);
     if (ok !== 'yes') return;
@@ -763,42 +869,48 @@ async function renderDocs() {
   }; });
 }
 async function openStored(id) {
-  const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return;
-  const sources = rec.sources.map((b, k) => { const u = b instanceof Uint8Array ? b : new Uint8Array(b); if (rec.passwords && rec.passwords[k]) u.password = rec.passwords[k]; return u; });
-  await showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path: rec.path || null });
+  if (doc && doc.id === id) return true;
+  const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return false;
+  const sources = rec.sources.map((b) => b instanceof Uint8Array ? b : new Uint8Array(b));
+  // The file it came from is linked again only if it still exists; Save checks it hasn't changed since.
+  let path = rec.path || null;
+  if (path && MAC_APP && !(await fileTime(path))) path = null;
+  return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0 });
 }
 
 /* ---------------- opening files ---------------- */
+async function openPath(path) {
+  try {
+    const f = await MAC_APP.core.invoke('read_text_file', { path });
+    return await openBytes(b64ToBytes(f.content), f.name, f.path, await fileTime(f.path));
+  } catch (e) { console.error(e); toast(`Could not open ${path.split('/').pop()}.`); return false; }
+}
 async function openFiles() {
   if (MAC_APP) {
     const picked = await MAC_APP.dialog.open({ multiple: false, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     const path = typeof picked === 'string' ? picked : picked && picked.path;
-    if (!path) return;
-    try {
-      const f = await MAC_APP.core.invoke('read_text_file', { path });
-      await openBytes(b64ToBytes(f.content), f.name, f.path);
-    } catch (e) { console.error(e); toast(`Could not open ${path.split('/').pop()}.`); }
+    if (path) await serial(() => openPath(path));
     return;
   }
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({ types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }] });
       const f = await h.getFile();
-      await openBytes(new Uint8Array(await f.arrayBuffer()), f.name, h);
+      await serial(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name, h));
       return;
     } catch (e) { if (e && e.name === 'AbortError') return; }
   }
   $('#fileInput').click();
 }
-$('#fileInput').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await openBytes(new Uint8Array(await f.arrayBuffer()), f.name); });
+$('#fileInput').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) serial(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name)); });
 ['dragenter', 'dragover'].forEach((t) => window.addEventListener(t, (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); app.dataset.dragging = 'on'; } }));
 ['dragleave', 'drop'].forEach((t) => window.addEventListener(t, () => { app.dataset.dragging = 'off'; }));
 window.addEventListener('drop', async (e) => {
   const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter((f) => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
   if (!files.length) return;
   e.preventDefault();
-  if (!doc || !e.shiftKey) { await openBytes(new Uint8Array(await files[0].arrayBuffer()), files[0].name); files.shift(); }
-  for (const f of files) await addSource(new Uint8Array(await f.arrayBuffer()), null, null);
+  // Shift-drop adds to the open PDF; otherwise the first file opens and the rest are added to it.
+  serial(() => openOrAdd(files, !doc || !e.shiftKey));
 });
 
 /* ---------------- dialogs ---------------- */
@@ -826,6 +938,13 @@ function askText(title, note, value, ok, password, multiline) {
   const field = multiline ? `<textarea id="dlgInput" rows="4">${esc(value)}</textarea>` : `<input id="dlgInput" type="${password ? 'password' : 'text'}" value="${esc(value)}" autocomplete="off">`;
   return dialog(title, `${note ? `<p>${esc(note)}</p>` : ''}<label class="field">${field}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
 }
+// Links open in the browser. The apps' web views ignore target=_blank and window.open, so they hand links to the system.
+const openExternal = (url) => { if (NATIVE && NATIVE.opener) NATIVE.opener.openUrl(url).catch(() => {}); else window.open(url, '_blank', 'noopener'); };
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href]');
+  if (!a || !NATIVE || !/^(https?:|mailto:)/i.test(a.getAttribute('href'))) return;
+  e.preventDefault(); openExternal(a.href);
+});
 function about() {
   dialog('About Cowdrey.PDF', `<div class="about"><img class="logo" src="__APP_ICON__" alt="" aria-hidden="true"><div><strong style="font-size:18px;color:var(--ink)">Cowdrey.PDF ${VERSION}</strong><br>by Bradley Cowdrey · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></div></div>
   <p>A PDF viewer and editor in the spirit of Cowdrey.MD: read, mark up, sign, fill forms, and rearrange pages. Your PDFs stay on this device.</p>
@@ -870,19 +989,22 @@ cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => se
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
 cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', run: () => dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${Object.values(C).filter((c) => c.key).map((c) => `<span>${esc(c.label)}</span><span style="color:var(--ink-3)">${fmtKey(c.key)}</span>`).join('')}</div>`, [{ label: 'Close', primary: true }]) });
-cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => window.open('https://bradcowdrey.com/legal', '_blank', 'noopener') });
+cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
+cmd('share', { label: 'Share…', icon: 'share', enabled: has, hidden: !NATIVE, run: sharePdf });
+cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP, run: () => checkForUpdates(true) });
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
+  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
-  ['Help', ['shortcuts', 'legal', '-', 'about']],
+  ['Help', ['shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
+const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
 function menuHtml(ids) {
-  return ids.map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
+  return ids.filter(shown).map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
 }
 const pop = $('#popover');
 function openPopover(anchor, html) {
@@ -904,7 +1026,7 @@ const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   markup: ['Mark up', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
   pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
-  export: ['Export', [['Save', ['save', 'saveCopy']], ['Export', ['exportImage', 'exportText', 'print']]]],
+  export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
 function renderRibbon() {
@@ -913,13 +1035,14 @@ function renderRibbon() {
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
   $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group"><div class="r-items">${ids === 'COLORS'
     ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
-    : ids.map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
+    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
   icons(); refreshRibbon();
 }
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
   $('#saveBtn').disabled = !has();
+  scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
@@ -944,6 +1067,7 @@ document.addEventListener('keydown', (e) => {
 
 /* ---------------- theme ---------------- */
 function applyTheme() {
+  scheduleMacMenu();
   const root = document.documentElement;
   if (S.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
   app.dataset.darkpage = S.darkPage ? 'on' : 'off';
@@ -956,32 +1080,112 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
 
 /* ---------------- the apps ---------------- */
 // Files the system asked us to open: Finder (Mac), Open With from Files or Mail (iPhone, iPad), Open with (Android).
+// Returns how many opened. Runs inside serial(), like every other open.
 async function takeOpened() {
-  let files = [];
+  let files = [], opened = 0;
   try { files = await NATIVE.core.invoke('take_opened_files'); } catch {}
   for (const f of files || []) {
     try {
-      if (f.content) await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null);
-      else if (f.path.includes('://') && NATIVE.fs) await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), decodeURIComponent(f.path.split('/').pop()).replace(/^.*[:%]/, '') || 'Document.pdf');
+      if (f.content) { if (await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null, MAC_APP ? await fileTime(f.path) : 0)) opened++; }
+      else if (f.path.includes('://') && NATIVE.fs) { if (await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), await contentName(f.path))) opened++; }
     } catch (e) { toast(`Could not open that file: ${e}`); }
   }
+  return opened;
+}
+// Android "Open with" hands over a content:// address: ask Android for the file's real name.
+async function contentName(uri) {
+  try { const r = await NATIVE.core.invoke('plugin:sharekit|native', { method: 'displayName', args: { uri } }); if (r && r.name) return r.name; } catch {}
+  let last = uri;
+  try { last = decodeURIComponent(uri); } catch {}
+  last = last.split(/[/:]/).pop() || '';
+  return /\.pdf$/i.test(last) ? last : 'Document.pdf';
+}
+// Mac updates: a signed in-place update when the release has one, otherwise the downloads page.
+const RELEASES_PAGE = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest';
+const RELEASES_API = 'https://api.github.com/repos/bradleycowdrey/cowdrey-pdf/releases/latest';
+const isNewer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+async function checkForUpdates(manual) {
+  if (!MAC_APP) return;
+  if (manual) toast('Checking for updates…');
+  if (MAC_APP.updater) {
+    let update = null, ok = false;
+    try { update = await MAC_APP.updater.check(); ok = true; } catch {}
+    if (ok) {
+      store.set('updateChecked', Date.now());
+      if (!update) { if (manual) toast(`You have the latest version (${VERSION}).`); return; }
+      if (!manual && store.get('skipVersion', '') === update.version) return;
+      const a = await dialog(`Cowdrey.PDF ${update.version} is available`, `<p>You have version ${esc(VERSION)}. Cowdrey.PDF will keep your documents, install the update and reopen.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Install and restart', value: 'go', primary: true }]);
+      if (a === 'skip') store.set('skipVersion', update.version);
+      if (a !== 'go') return;
+      try {
+        toast('Downloading the update…');
+        clearTimeout(persistTimer); await persistNow();
+        await update.downloadAndInstall();
+        await MAC_APP.core.invoke('allow_exit').catch(() => {});
+        await MAC_APP.process.relaunch();
+      } catch (e) { if (await dialog('The update could not be installed', `<p>${esc(e.message || String(e))}</p><p>You can download the new version from the downloads page.</p>`, [{ label: 'Close' }, { label: 'Open downloads page', value: 'go', primary: true }]) === 'go') openExternal(RELEASES_PAGE); }
+      return;
+    }
+  }
+  let rel;
+  try { const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }); if (!r.ok) throw new Error(`GitHub answered ${r.status}`); rel = await r.json(); }
+  catch (e) { if (manual && await dialog('Could not check for updates', `<p>${esc(e.message || String(e))}. Check your internet connection, or see the downloads page.</p>`, [{ label: 'Close' }, { label: 'Open downloads page', value: 'go', primary: true }]) === 'go') openExternal(RELEASES_PAGE); return; }
+  store.set('updateChecked', Date.now());
+  const latest = String(rel.tag_name || '').replace(/^v/i, '');
+  if (!latest || !isNewer(latest, VERSION)) { if (manual) toast(`You have the latest version (${VERSION}).`); return; }
+  if (!manual && store.get('skipVersion', '') === latest) return;
+  const file = (rel.assets || []).find((x) => /\.dmg$/i.test(x.name));
+  const a = await dialog(`Cowdrey.PDF ${latest} is available`, `<p>You have version ${esc(VERSION)}. Download the new version, open it, and drag Cowdrey.PDF into Applications to replace this one. Your documents are kept.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Download', value: 'go', primary: true }]);
+  if (a === 'skip') store.set('skipVersion', latest);
+  if (a === 'go') { openExternal(file ? file.browser_download_url : (rel.html_url || RELEASES_PAGE)); toast('Downloading in your browser'); }
+}
+// Quitting with changes not yet saved to the file they came from: ask first (the app waits for the answer).
+let quitAsked = false;
+async function beforeQuit() {
+  clearTimeout(persistTimer);
+  try { await persistNow(); } catch {}
+  if (doc && doc.dirty && doc.path && !quitAsked) {
+    quitAsked = true;
+    await NATIVE.core.invoke('hold_quit', { hold: true }).catch(() => {});
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Documents on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    quitAsked = false;
+    if (!a || (a === 'save' && !(await savePdf(false)))) { await NATIVE.core.invoke('hold_quit', { hold: false }).catch(() => {}); return; }
+  }
+  NATIVE.core.invoke('quit_app').catch(() => {});
 }
 const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S' };
+// The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
+// Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
+var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
 function macMenu() {
   if (!MAC_APP) return;
-  const menus = MENUS.filter(([t]) => t !== 'Help' || true).map(([title, ids]) => ({
-    title: title === 'Help' ? 'Help' : title,
-    items: (title === 'Edit' ? [{ kind: 'native', role: 'undo' }, { kind: 'native', role: 'redo' }, { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }] : [])
-      .concat(ids.filter((id) => id === '-' || (C[id] && !(title === 'Edit' && (id === 'undo' || id === 'redo')) && id !== 'about')).map((id) => id === '-' ? { kind: 'sep' } : { kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null })),
-  }));
-  MAC_APP.core.invoke('set_menu', { menus }).catch(() => {});
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null });
+  const menus = MENUS.map(([title, ids]) => {
+    let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates') // both live in the Cowdrey.PDF menu.map((id) => id === '-' ? { kind: 'sep' } : item(id));
+    if (title === 'Edit') {
+      const rest = items.filter((x) => x.id !== 'cmd:undo' && x.id !== 'cmd:redo');
+      while (rest.length && rest[0].kind === 'sep') rest.shift();
+      items = [item('undo'), item('redo'), { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }, ...rest];
+    }
+    return { title, items };
+  });
+  const json = JSON.stringify(menus);
+  if (json === lastMenu) return;
+  lastMenu = json;
+  MAC_APP.core.invoke('set_menu', { menus }).catch(() => { lastMenu = ''; });
 }
+function scheduleMacMenu() { if (!MAC_APP) return; clearTimeout(menuTimer); menuTimer = setTimeout(macMenu, 120); }
 if (NATIVE) {
-  NATIVE.event.listen('open-files', takeOpened);
-  setTimeout(takeOpened, 0);
-  NATIVE.event.listen('menu-command', (e) => { const id = String(e.payload); if (id === 'undo' || id === 'redo') run(id); else run(id); setTimeout(macMenu, 50); });
-  // Quitting: keep the library up to date first; the app waits a moment for this.
-  NATIVE.event.listen('flush-and-quit', async () => { clearTimeout(persistTimer); try { await persistNow(); } catch {} NATIVE.core.invoke('quit_app').catch(() => {}); });
+  NATIVE.event.listen('open-files', () => serial(takeOpened));
+  NATIVE.event.listen('menu-command', (e) => {
+    const id = String(e.payload);
+    // In a text field (a dialog, a form field), Undo and Redo edit the text, as everywhere on the Mac.
+    const el = document.activeElement;
+    if ((id === 'undo' || id === 'redo') && el && (/INPUT|TEXTAREA/.test(el.tagName) || el.isContentEditable)) { document.execCommand(id); return; }
+    run(id); scheduleMacMenu();
+  });
+  // Quitting: keep Documents up to date, and ask about unsaved changes to a file; the app waits for this.
+  NATIVE.event.listen('flush-and-quit', beforeQuit);
   macMenu();
 }
 
@@ -990,9 +1194,12 @@ applyTheme();
 app.dataset.sidebar = S.sidebar ? 'on' : 'off';
 $$('.side-tabs [data-side]').forEach((b) => b.setAttribute('aria-selected', b.dataset.side === S.side));
 renderRibbon(); renderSide(); updateStatus(); icons();
-(async () => {
+// A file the app was opened with (Finder, Files, Open with) comes first; otherwise the last document comes back.
+serial(async () => {
+  if (NATIVE && (await takeOpened())) return;
   const last = store.get('current', null);
-  if (last) { try { await openStored(last); } catch (e) { console.warn(e); } }
-})();
+  if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
+});
+if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
 window.__cowdreyPdf = { get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; } };

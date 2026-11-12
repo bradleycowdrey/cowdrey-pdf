@@ -159,6 +159,138 @@ await test('iPhone app: Save PDF opens the share sheet with the PDF', async () =
   eq(calls, [['write_share_file', 'Quarterly report.pdf', true], ['plugin:sharekit|share_file', 'file:///private/var/tmp/Quarterly%20report.pdf', 'application/pdf']]);
   eq(p.errors, []); await p.ctx.close();
 });
+// A pretend Mac app: records every call to the native side. `files` are what Finder opened the app with.
+const fixture = (n) => fs.readFileSync(path.join(root, 'tests/fixtures', n)).toString('base64');
+function macApp(opts = {}) {
+  return [(o) => {
+    window.__calls = []; window.__events = {}; window.__mtime = o.mtime || 1000;
+    const pending = o.files || [];
+    window.__TAURI__ = {
+      core: { invoke: async (c, a) => {
+        window.__calls.push([c, a]);
+        if (c === 'take_opened_files') return pending.splice(0);
+        if (c === 'file_modified') return window.__mtime;
+        if (c === 'read_text_file') return { name: a.path.split('/').pop(), path: a.path, content: o.read };
+        if (c === 'write_share_file') return '/tmp/' + a.name;
+        return null;
+      } },
+      dialog: { save: async (a) => { window.__calls.push(['dialog.save', a]); return '/Users/me/Desktop/' + a.defaultPath; }, open: async () => '/Users/me/Picked.pdf' },
+      event: { listen: async (n, f) => { window.__events[n] = f; } },
+      opener: { openUrl: async (u) => { window.__calls.push(['openUrl', u]); } },
+    };
+  }, opts];
+}
+const calls = (p, re) => p.evaluate((r) => window.__calls.filter(([c]) => new RegExp(r).test(c)), re.source);
+const answer = async (p, label) => { await p.waitForSelector('#dialog[open]'); await p.click(`#dialog .dlg-foot button:has-text("${label}")`); };
+const waitPages = (p) => p.waitForFunction(() => document.querySelector('.page canvas.pdf'), null, { timeout: 15000 });
+
+await test('protected PDF: asks for the password, never stores it, saves with or without it as chosen', async () => {
+  const p = await open();
+  const b64 = fixture('protected.pdf');
+  const opening = p.evaluate(async (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return window.__cowdreyPdf.openBytes(u, 'Secret.pdf'); }, b64);
+  await p.waitForSelector('#dialog[open] #dlgInput'); await p.fill('#dlgInput', 'wrong'); await p.click('#dialog .btn.primary');
+  await p.waitForFunction(() => /did not open/.test(document.querySelector('#dialog h2').textContent));
+  await p.fill('#dlgInput', 'pelican'); await p.click('#dialog .btn.primary');
+  eq(await opening, true); await waitPages(p); await p.waitForTimeout(400);
+  const stored = await p.evaluate(() => new Promise((res) => { const r = indexedDB.open('cowdrey.pdf', 1); r.onsuccess = () => { const q = r.result.transaction('docs').objectStore('docs').getAll(); q.onsuccess = () => res(JSON.stringify(q.result.map((d) => Object.keys(d)))); }; }));
+  ok(!/password/i.test(stored), 'no password in the library: ' + stored);
+  const C = require('../desktop/node_modules/@cantoo/pdf-lib');
+  const build = () => p.evaluate(async () => { const b = await window.__cowdreyPdf.buildPdf(); return b && Array.from(b); });
+  let out = build(); await answer(p, 'Keep password');
+  const kept = Buffer.from(await out);
+  await PDFDocument.load(kept).then(() => { throw new Error('kept copy opened without a password'); }, () => {});
+  eq((await C.PDFDocument.load(kept, { password: 'pelican' })).getPageCount(), 3);
+  await p.evaluate(() => { window.__cowdreyPdf.doc.keepPassword = null; });
+  out = build(); await answer(p, 'Remove password');
+  const plain = await PDFDocument.load(Buffer.from(await out));
+  eq(plain.getPageCount(), 3); eq(plain.getForm().getFields().length, 2, 'form kept');
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('Mac app: a file opened from Finder at launch wins over last time\'s document', async () => {
+  const first = await open(); await openPdf(first, undefined, 'Last time.pdf');
+  const p = await first.ctx.newPage(); p.errors = []; p.on('pageerror', (e) => p.errors.push(e.message));
+  const [fn, arg] = macApp({ files: [{ name: 'Report.pdf', path: '/Users/me/Report.pdf', content: fixture('sample.pdf') }] });
+  await p.addInitScript(fn, arg); await p.goto('https://app.test/'); await waitPages(p); await p.waitForTimeout(1500);
+  eq(await p.textContent('#docTitle'), 'Report');
+  eq(await p.evaluate(() => window.__cowdreyPdf.doc.path), '/Users/me/Report.pdf');
+  eq(p.errors, []); await first.ctx.close();
+});
+await test('Mac app: print, export, extract and share use the Mac, not the browser', async () => {
+  const p = await open({ init: macApp({ files: [{ name: 'Report.pdf', path: '/Users/me/Report.pdf', content: fixture('sample.pdf') }] }) });
+  await waitPages(p);
+  await p.evaluate(() => window.__cowdreyPdf.run('print')); await p.waitForTimeout(300);
+  eq((await calls(p, /^print_page$/)).length, 1, 'print');
+  await p.evaluate(() => window.__cowdreyPdf.run('exportText')); await p.waitForTimeout(500);
+  await p.evaluate(() => window.__cowdreyPdf.run('exportImage')); await p.waitForTimeout(1200);
+  await p.evaluate(() => window.__cowdreyPdf.run('extract')); await p.fill('#dlgInput', '2-3'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(800);
+  const writes = (await calls(p, /^write_binary_file$/)).map(([, a]) => a.path);
+  eq(writes, ['/Users/me/Desktop/Report.txt', '/Users/me/Desktop/Report page 1.png', '/Users/me/Desktop/Report (pages 2-3).pdf']);
+  await p.evaluate(() => window.__cowdreyPdf.run('share')); await p.waitForTimeout(800);
+  const share = (await calls(p, /sharekit\|share_file/)).map(([, a]) => [a.url, a.mimeType, !!a.position]);
+  eq(share, [['/tmp/Report.pdf', 'application/pdf', true]]);
+  await p.evaluate(() => window.__cowdreyPdf.run('legal')); await p.waitForTimeout(100);
+  eq((await calls(p, /^openUrl$/)).map(([, u]) => u), ['https://bradcowdrey.com/legal']);
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('Mac app: Save a copy leaves the file edited; a file changed elsewhere is not replaced without asking', async () => {
+  const p = await open({ init: macApp({ files: [{ name: 'Report.pdf', path: '/Users/me/Report.pdf', content: fixture('sample.pdf') }] }) });
+  await waitPages(p);
+  await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(200);
+  await p.evaluate(() => window.__cowdreyPdf.run('saveCopy')); await p.waitForTimeout(800);
+  eq(await p.evaluate(() => window.__cowdreyPdf.doc.dirty), true, 'still edited after a copy');
+  eq(await p.evaluate(() => window.__cowdreyPdf.doc.path), '/Users/me/Report.pdf');
+  await p.evaluate(() => { window.__mtime = 2000; window.__calls.length = 0; });
+  p.evaluate(() => window.__cowdreyPdf.run('save'));
+  await answer(p, 'Cancel'); await p.waitForTimeout(300);
+  eq((await calls(p, /^write_binary_file$/)).length, 0, 'nothing written after Cancel');
+  p.evaluate(() => window.__cowdreyPdf.run('save'));
+  await answer(p, 'Replace'); await p.waitForTimeout(800);
+  eq((await calls(p, /^write_binary_file$/)).map(([, a]) => a.path), ['/Users/me/Report.pdf']);
+  eq(await p.evaluate(() => window.__cowdreyPdf.doc.dirty), false);
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('Mac app: quitting with unsaved changes to a file asks first; menu Undo is the app\'s', async () => {
+  const p = await open({ init: macApp({ files: [{ name: 'Report.pdf', path: '/Users/me/Report.pdf', content: fixture('sample.pdf') }] }) });
+  await waitPages(p);
+  const menu = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu').pop()[1].menus.find((m) => m.title === 'Edit').items.slice(0, 2).map((x) => x.id));
+  eq(menu, ['cmd:undo', 'cmd:redo']);
+  await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(200);
+  await p.evaluate(() => window.__events['menu-command']({ payload: 'undo' })); await p.waitForTimeout(200);
+  eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages[0].rot), 0, 'menu Undo undid the rotation');
+  await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(200);
+  p.evaluate(() => window.__events['flush-and-quit']());
+  await answer(p, 'Cancel'); await p.waitForTimeout(200);
+  eq((await calls(p, /hold_quit|quit_app/)).map(([c, a]) => c + (a ? ':' + a.hold : '')), ['hold_quit:true', 'hold_quit:false']);
+  p.evaluate(() => window.__events['flush-and-quit']());
+  await answer(p, "Don't save"); await p.waitForTimeout(300);
+  eq((await calls(p, /quit_app/)).length, 1, 'quits after Don\'t save');
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('drop: if the first PDF doesn\'t open, the others are not added to the open document', async () => {
+  const p = await open(); await openPdf(p);
+  await p.evaluate(async (b) => {
+    const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    const dt = new DataTransfer(); dt.items.add(new File(['not a pdf'], 'Broken.pdf', { type: 'application/pdf' })); dt.items.add(new File([u], 'Other.pdf', { type: 'application/pdf' }));
+    window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, fixture('sample.pdf'));
+  await p.waitForTimeout(1500);
+  eq(await p.evaluate(() => [window.__cowdreyPdf.doc.name, window.__cowdreyPdf.doc.pages.length]), ['Quarterly report', 3]);
+  await p.ctx.close();
+});
+await test('phone apps: Print uses the system print dialog; Android "Open with" gets the real file name', async () => {
+  const p = await open({ width: 412, height: 915, touch: true, ua: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36', init: [(b) => {
+    window.__calls = [];
+    const pending = [{ name: '', path: 'content://com.android.providers.downloads.documents/document/msf%3A1000001234', content: '' }];
+    window.__TAURI__ = { core: { invoke: async (c, a) => { window.__calls.push([c, a]); if (c === 'take_opened_files') return pending.splice(0); if (c === 'plugin:sharekit|native' && a.method === 'displayName') return { name: 'Lease agreement.pdf' }; return null; } },
+      fs: { readFile: async () => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } },
+      dialog: {}, event: { listen: async () => {} }, opener: {} };
+  }, fixture('sample.pdf')] });
+  await waitPages(p); await p.waitForTimeout(400);
+  eq(await p.textContent('#docTitle'), 'Lease agreement');
+  await p.evaluate(() => window.__cowdreyPdf.run('print')); await p.waitForTimeout(400);
+  eq((await calls(p, /sharekit\|native/)).map(([, a]) => a.method), ['displayName', 'printPage']);
+  eq(p.errors, []); await p.ctx.close();
+});
 await test('every library URL resolves to a file in the pinned packages', async () => { eq([...missing], []); });
 
 await close();

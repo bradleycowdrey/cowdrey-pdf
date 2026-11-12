@@ -1,6 +1,6 @@
 {
   "name": "cowdrey-pdf-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Cowdrey.PDF by Bradley Cowdrey: the libraries the web app loads, and the Tauri app shell",
   "scripts": {
@@ -13,5 +13,8 @@
     "lucide": "0.441.0",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.4.299"
+  },
+  "dependencies": {
+    "@cantoo/pdf-lib": "2.11.1"
   }
 }

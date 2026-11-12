@@ -22,10 +22,10 @@ try {
   if (fs.readdirSync(path.join(dist, 'vendor'), { recursive: true }).some((f) => f.endsWith('.mjs'))) throw new Error('a vendored file still ends in .mjs');
   await page.setInputFiles('#fileInput', { name: 'sample.pdf', mimeType: 'application/pdf', buffer: fs.readFileSync(path.join(root, 'tests/fixtures/sample.pdf')) });
   await page.waitForFunction(() => document.querySelectorAll('.page canvas').length === 3, null, { timeout: 15000 });
-  const lib = await page.evaluate(async () => { const m = await import('./vendor/pdf-lib/dist/pdf-lib.esm.min.js'); return typeof m.PDFDocument; });
-  if (lib !== 'function') throw new Error('pdf-lib did not load, so Save would fail');
+  const head = await page.evaluate(async () => String.fromCharCode(...(await window.__cowdreyPdf.buildPdf()).slice(0, 5)));
+  if (head !== '%PDF-') throw new Error('Save did not produce a PDF');
   if (errors.length) throw new Error(errors.join('\n'));
   await page.screenshot({ path: process.env.SHOT || '/dev/null' }).catch(() => {});
-  ok = true; console.log('✓ the app bundle opens a PDF and loads the save library offline');
+  ok = true; console.log('✓ the app bundle opens a PDF and saves it, offline');
 } catch (e) { console.log('✗ the app bundle could not open a PDF:', e.message, errors); }
 await browser.close(); srv.close(); process.exit(ok ? 0 : 1);
