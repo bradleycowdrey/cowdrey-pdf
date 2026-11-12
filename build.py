@@ -21,6 +21,8 @@ def first_block(sel):
         if depth == 0: return css[j + 1:p + 1]
 html = html.replace('/*PDFJS_CSS*/', first_block('.textLayer') + '\n' + first_block('.annotationLayer'))
 html = html.replace('/*APP_JS*/', (root / 'src/app.js').read_text())
+# The app icon (made from desktop/src-tauri/icons/ios-source.png at 144 px), embedded for the title bar and About.
+html = html.replace('__APP_ICON__', 'data:image/png;base64,' + base64.b64encode((root / 'desktop/src-tauri/icons/about-icon.png').read_bytes()).decode())
 doc = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
        '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
        '<link rel="icon" href="data:,">\n</head>\n<body>\n' + html + '\n</body>\n</html>\n')

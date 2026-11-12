@@ -36,7 +36,7 @@ button { font: inherit; color: inherit; }
 
 /* title bar and menus */
 .titlebar { display: flex; align-items: center; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 4px max(16px, env(safe-area-inset-left, 0px)); }
-.logo { width: 32px; height: 32px; border-radius: 8px; flex: none; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font: 700 12px/1 var(--font-ui); letter-spacing: -.02em; }
+.logo { width: 32px; height: 32px; border-radius: 8px; flex: none; display: block; }
 .tb-main { min-width: 0; flex: 1; }
 .tb-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .doc-title { font-size: 18px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -182,7 +182,7 @@ dialog::backdrop { background: rgba(10, 14, 24, .35); backdrop-filter: blur(6px)
 
 <div class="app" id="app" data-sidebar="on" data-tool="select">
   <header class="titlebar">
-    <div class="logo" aria-hidden="true">PDF</div>
+    <img class="logo" src="__APP_ICON__" alt="" aria-hidden="true">
     <div class="tb-main">
       <div class="tb-row"><span class="doc-title" id="docTitle">Cowdrey.PDF</span><span class="save-state" id="saveState"></span></div>
       <nav class="menubar" id="menubar" aria-label="Menus"></nav>
@@ -217,7 +217,7 @@ dialog::backdrop { background: rgba(10, 14, 24, .35); backdrop-filter: blur(6px)
       <div class="pages" id="pages"></div>
       <div class="drop" id="drop">
         <div class="card">
-          <div class="logo" style="width:64px;height:64px;border-radius:15px;font-size:20px" aria-hidden="true">PDF</div>
+          <img class="logo" src="__APP_ICON__" alt="" aria-hidden="true" style="width:64px;height:64px;border-radius:15px">
           <h2>Open a PDF</h2>
           <p>Drop a PDF here, or open one from your device. It stays on this device.</p>
           <button class="btn primary" type="button" data-cmd="open"><i data-lucide="folder-open"></i><span>Open a PDF</span></button>
