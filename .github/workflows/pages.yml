@@ -1,0 +1,48 @@
+name: Web app (GitHub Pages)
+
+# Publishes index.html, the whole web app, at https://bradleycowdrey.github.io/cowdrey-pdf/ on every push to main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Turn on GitHub Pages (if it is off) and set it to publish from this workflow
+        id: setup
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+        continue-on-error: true
+      - name: Collect the site
+        run: mkdir -p _site && cp index.html _site/ && touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # The result goes on the pages-log branch, so it can be read without signing in to GitHub.
+      - name: Publish the result
+        if: always()
+        run: |
+          D=$(mktemp -d); cd "$D" && git init -q -b pages-log
+          echo "setup: ${{ steps.setup.outcome }} · deploy: ${{ steps.deploy.outcome }} · url: ${{ steps.deploy.outputs.page_url }} · run ${{ github.run_number }} · ${{ github.sha }}" > status.txt
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Pages result, run ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" pages-log
