@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { PDFDocument, StandardFonts, rgb } = require('../desktop/node_modules/pdf-lib');
+const { PDFDocument, StandardFonts, rgb, PDFName } = require('../desktop/node_modules/pdf-lib');
 const pdf = await PDFDocument.create();
 const font = await pdf.embedFont(StandardFonts.Helvetica), bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 const form = pdf.getForm();
@@ -29,3 +29,18 @@ const prot = await C.PDFDocument.load(fs.readFileSync(new URL('./fixtures/sample
 prot.encrypt({ userPassword: 'pelican', ownerPassword: 'pelican-owner', permissions: { printing: 'highResolution', copying: false, modifying: false, annotating: true, fillingForms: true, contentAccessibility: true, documentAssembly: false } });
 fs.writeFileSync(new URL('./fixtures/protected.pdf', import.meta.url), await prot.save());
 console.log('tests/fixtures/protected.pdf');
+// A PDF with content structures that are easy to get wrong when editing (tests/fixtures/tricky.pdf):
+// a regular word followed by a bold one on the same line, lines broken with the ' operator, and the page's
+// content stored as a reference to an array of streams.
+{
+  const t = await PDFDocument.create();
+  const reg = await t.embedFont(StandardFonts.Helvetica), bold = await t.embedFont(StandardFonts.HelveticaBold);
+  const pg = t.addPage([612, 792]);
+  pg.node.setFontDictionary(PDFName.of('F1'), reg.ref); pg.node.setFontDictionary(PDFName.of('F2'), bold.ref);
+  const w = reg.widthOfTextAtSize('Hello ', 12);
+  const s1 = t.context.register(t.context.stream(`BT /F1 12 Tf 1 0 0 1 72 700 Tm (Hello ) Tj ET BT /F2 12 Tf 1 0 0 1 ${(72 + w).toFixed(2)} 700 Tm (world) Tj ET`));
+  const s2 = t.context.register(t.context.stream('BT /F1 12 Tf 14 TL 72 650 Td (Line one) Tj (Line two) \' (Line three) \' ET'));
+  pg.node.set(PDFName.of('Contents'), t.context.register(t.context.obj([s1, s2])));
+  fs.writeFileSync(new URL('./fixtures/tricky.pdf', import.meta.url), await t.save({ useObjectStreams: false }));
+  console.log('tests/fixtures/tricky.pdf');
+}

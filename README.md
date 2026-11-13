@@ -19,6 +19,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 
 - **Read:** smooth scrolling pages, thumbnails, the PDF's outline, find with every match marked, zoom and fit width, dark mode for the app and an optional dark page.
 - **Mark up:** highlight selected text, draw, boxes, text, sticky notes (saved as real PDF comments), signatures (kept on this device for next time) and pictures. Select a mark to move or delete it; undo and redo.
+- **Edit the PDF itself:** click a line to retype it in its own font and colour; move, resize or delete pictures; change or delete comments from other apps; erase any area. Saving removes the old content from the file.
 - **Forms:** fill text fields, checkboxes, radio buttons and lists; the values are saved in the PDF.
 - **Pages:** rotate one or all, move, duplicate, insert blank, add other PDFs at the end, delete, extract a range as a new PDF; drag thumbnails to reorder.
 - **Passwords:** open protected PDFs; when saving, choose whether the copy keeps the password (and its restrictions). Passwords are never stored.
@@ -47,6 +48,6 @@ pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web v
 (cd desktop && npm ci)
 python3 build.py          # src/ -> index.html
 node tests/sample.mjs     # makes the test PDFs in tests/fixtures
-node tests/e2e.mjs        # 23 end-to-end tests in Chromium, including the Mac and phone app paths
+node tests/e2e.mjs        # 30 end-to-end tests in Chromium, including the Mac and phone app paths
 (cd desktop && node build.mjs) && node tests/bundle.mjs   # the copy the apps ship, offline
 ```

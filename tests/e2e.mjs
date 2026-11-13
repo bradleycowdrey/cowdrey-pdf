@@ -379,12 +379,12 @@ await test('Edit PDF: a picture is moved, resized and deleted; the saved PDF dra
   const [sx, sy] = await at(p, 460, 480), [tx, ty] = await at(p, 360, 460);
   await p.mouse.move(sx, sy); await p.mouse.down(); await p.mouse.move(tx, ty, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(600);
   let m = (await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat()))[0];
-  eq([m.type, Math.round(m.x), Math.round(m.y), Math.round(m.w)], ['ie', 300, 400, 120], 'moved');
-  // resize from the corner handle (bottom right)
-  const [hx, hy] = await at(p, 420, 400), [h2x, h2y] = await at(p, 480, 400);
+  eq([m.type, ...m.mat.map(Math.round)], ['ie', 120, 0, 0, 120, 300, 400], 'moved');
+  // resize from the corner handle (bottom right), along the diagonal
+  const [hx, hy] = await at(p, 420, 400), [h2x, h2y] = await at(p, 480, 340);
   await p.mouse.move(hx, hy); await p.mouse.down(); await p.mouse.move(h2x, h2y, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(400);
   m = (await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat()))[0];
-  eq([Math.round(m.w), Math.round(m.h), Math.round(m.y + m.h)], [180, 180, 520], 'resized, top kept');
+  eq(m.mat.map(Math.round), [180, 0, 0, 180, 300, 340], 'resized, top-left kept');
   await reopen(p, await savedOf(p));
   const imgs = await p.evaluate(async () => (await window.__cowdreyPdf.contentMap(0)).images.map((i) => i.quad.flat().map(Math.round)));
   eq(imgs, [[300, 340, 480, 340, 480, 520, 300, 520]], 'one picture, in its new place');
@@ -415,6 +415,7 @@ await test('Edit PDF: a comment from another app is edited, another deleted; Era
   const annots = d.getPage(0).node.Annots().asArray().map((r) => d.context.lookup(r));
   eq(annots.map((a) => String(a.get(L.PDFName.of('Subtype')))), ['/Text'], 'square deleted');
   eq(annots[0].lookup(L.PDFName.of('Contents')).decodeText(), 'Budget confirmed.');
+  ok(!d.context.enumerateIndirectObjects().some(([, o]) => o instanceof L.PDFDict && String(o.get(L.PDFName.of('Subtype'))) === '/Square'), 'the deleted square is not left in the file');
   // the erased area is clipped out of the page
   const content = d.getPage(0).node.Contents(); ok(content, 'content');
   await reopen(p, out);
@@ -438,6 +439,26 @@ await test('Edit PDF: a PDF from Chrome keeps its subset fonts; letters they lac
   const t = (await pageText(p)).replace(/\s+/g, '');
   ok(t.includes('Revenuegrewby12%ineveryregion,quickly.') && t.includes('Nextreview:21July.') && !t.includes('14June'), t);
   eq(p.errors, []); await p.ctx.close();
+});
+await test('Edit PDF: saving keeps the next word in another font, lines broken with \', and content stored as an array', async () => {
+  const p = await open(); await openPdf(p, path.join(root, 'tests/fixtures/tricky.pdf'), 'Tricky.pdf');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  for (const [find, typed] of [['Hello', 'Howdy'], ['Line two', 'Line 2']]) {
+    const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
+    await p.mouse.click(b.x + 5, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+    await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+  }
+  await reopen(p, await savedOf(p));
+  const items = await p.evaluate(async () => { const v = window.__cowdreyPdf.views()[0]; const tc = await v.page.getTextContent(); return tc.items.filter((i) => i.str.trim()).map((i) => [i.str, Math.round(i.transform[5])]); });
+  const y = Object.fromEntries(items);
+  eq([y.Howdy, y.world, y['Line one'], y['Line 2'], y['Line three']], [700, 700, 650, 636, 622], JSON.stringify(items));
+  ok(!items.some(([t]) => /Hello|Line two/.test(t)), 'old text gone');
+  eq(p.errors, []); await p.ctx.close();
+});
+await test('Edit PDF: the content reader never hangs on a malformed stream', async () => {
+  const p = await open();
+  const n = await p.evaluate(() => [window.__cowdreyPdf.tokenize('BT <414243'), window.__cowdreyPdf.tokenize('q > } { Q (open'), window.__cowdreyPdf.tokenize('BI /W 2 /H 2 ID abc')]);
+  ok(n.every((x) => x > 0), JSON.stringify(n)); await p.ctx.close();
 });
 await test('every library URL resolves to a file in the pinned packages', async () => { eq([...missing], []); });
 

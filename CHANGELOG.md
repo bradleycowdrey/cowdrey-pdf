@@ -2,6 +2,17 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 0.2.0
+
+**Edit what's already in a PDF.** The new Edit PDF tool (Mark up tab) changes the PDF's own content:
+
+- **Text:** click a line and type. It keeps the line's own font, size and colour, on the colour that was behind it. Saving takes the old words out of the file (search and copy find only the new ones) and writes the new line with the PDF's own font; a letter the embedded font doesn't have uses the closest standard font. Words in another font on the same line (a bold word, a link) are left as they are.
+- **Pictures:** click to select, drag to move, drag the corner to resize (rotated pictures keep their angle), Delete to remove.
+- **Comments from other apps:** double-click to change a note's words, Delete to remove one (its words go from the file too).
+- **Erase area:** drag over anything to clear it.
+- Works on PDFs from Word, Chrome and pdf-lib, on scanned PDFs with OCR text, on PDFs with only an owner password (their restrictions are kept), and with undo, Documents and Save like every other change.
+- Comments without a look of their own now show pdf.js's icons. 30 end-to-end tests.
+
 ## 0.1.4
 
 - **Try a sample PDF:** a two-page guide, made on the spot, to try every tool without a file of your own (also Help > Open the sample PDF).

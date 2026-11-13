@@ -1,6 +1,6 @@
 {
   "name": "cowdrey-pdf-desktop",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "description": "Cowdrey.PDF by Bradley Cowdrey: the libraries the web app loads, and the Tauri app shell",
   "scripts": {
