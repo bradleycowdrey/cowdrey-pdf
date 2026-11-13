@@ -145,7 +145,8 @@ await test('Mac app: opens a PDF from Finder, saves back to the same file, menu 
   const w = await p.evaluate(() => window.__calls.filter(([c]) => c === 'write_binary_file').map(([, a]) => [a.path, a.base64.length > 1000]));
   eq(w, [['/Users/me/Report.pdf', true]], 'saved in place');
   const menus = await p.evaluate(() => (window.__calls.find(([c]) => c === 'set_menu') || [])[1]);
-  eq(menus.menus.map((m) => m.title), ['File', 'Edit', 'View', 'Mark up', 'Pages', 'Help']);
+  const titles = menus.menus.map((m) => m.title);
+  eq([titles.slice(0, 5), titles[titles.length - 1]], [['File', 'Edit', 'View', 'Mark up', 'Pages'], 'Help']);
   // Every entry must be one the Mac side understands, or the whole menu bar is refused.
   const bad = menus.menus.flatMap((m) => m.items).filter((x) => !x || typeof x !== 'object' || !['item', 'sep', 'native'].includes(x.kind) || (x.kind === 'item' && !(x.id && x.label)));
   eq(bad, [], 'menu items'); ok(menus.menus[0].items.some((x) => x.id === 'cmd:save'), 'File has Save');
@@ -460,6 +461,13 @@ await test('Edit PDF: the content reader never hangs on a malformed stream', asy
   const n = await p.evaluate(() => [window.__cowdreyPdf.tokenize('BT <414243'), window.__cowdreyPdf.tokenize('q > } { Q (open'), window.__cowdreyPdf.tokenize('BI /W 2 /H 2 ID abc')]);
   ok(n.every((x) => x > 0), JSON.stringify(n)); await p.ctx.close();
 });
+// Feature tests: tests/features/*.test.mjs, each exporting a function that receives these helpers.
+{
+  const dir = path.join(root, 'tests/features');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.test.mjs')).sort() : [];
+  const helpers = { test, eq, ok, open, openPdf, root, path, fs, require, PDFDocument, saved, savedOf, marks, reopen, pageText, at, fixture, macApp, calls, answer, waitPages, WORD, selectText };
+  for (const f of files) { const mod = await import(path.join(dir, f)); await mod.default(helpers); }
+}
 await test('every library URL resolves to a file in the pinned packages', async () => { eq([...missing], []); });
 
 await close();

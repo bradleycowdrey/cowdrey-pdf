@@ -20,7 +20,11 @@ def first_block(sel):
         depth += {'{': 1, '}': -1}.get(css[p], 0)
         if depth == 0: return css[j + 1:p + 1]
 html = html.replace('/*PDFJS_CSS*/', first_block('.textLayer') + '\n' + first_block('.annotationLayer'))
-html = html.replace('/*APP_JS*/', (root / 'src/app.js').read_text())
+# Feature modules (src/features/*.js, in name order) go in where app.js has /*FEATURES*/.
+app_js = (root / 'src/app.js').read_text()
+features = sorted((root / 'src/features').glob('*.js')) if (root / 'src/features').is_dir() else []
+app_js = app_js.replace('/*FEATURES*/', '\n'.join(f'// ---- src/features/{f.name}\n' + f.read_text() for f in features))
+html = html.replace('/*APP_JS*/', app_js)
 # The app icon (made from desktop/src-tauri/icons/ios-source.png at 144 px), embedded for the title bar and About.
 html = html.replace('__APP_ICON__', 'data:image/png;base64,' + base64.b64encode((root / 'desktop/src-tauri/icons/about-icon.png').read_bytes()).decode())
 doc = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'

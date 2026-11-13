@@ -36,6 +36,20 @@ const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: stor
 let toastTimer;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
 
+/* ---------------- features ----------------
+   Feature modules in src/features/*.js are joined into this file by build.py (where /*FEATURES*\/ stands, before
+   the apps and start sections) and plug in through this registry. See src/features/README.md. */
+const FEATURE = {
+  markTypes: {},   // type -> { draw(v, m, svg) -> SVG element, save: async ({ L, out, p, m, entry, ctx }), under?: true (drawn and saved before other marks), move?(m, orig, dx, dy) }
+  tools: {},       // tool id -> { down(e, v), move?(e, v) } — pointer handling on the page while the tool is chosen
+  savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
+  saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
+  afterRender: [], // (v) — after a page is drawn on screen
+  onDocShown: [],  // (doc) — when a document is shown
+};
+function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
+const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
+
 /* ---------------- libraries (loaded on first use) ---------------- */
 let pdfjs, pdfjsLoading, pdfLib;
 // One load, shared by every caller: pdfjs is only set once its worker is ready.
@@ -123,6 +137,7 @@ async function showDoc(d, loaded) {
   await layoutPages();
   renderSide();
   store.set('current', d.id);
+  for (const f of FEATURE.onDocShown) { try { f(d); } catch (e) { console.warn(e); } }
   return true;
 }
 function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
@@ -222,6 +237,7 @@ async function renderView(v) {
   if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   if (stale()) return;
   drawMarks(v);
+  for (const f of FEATURE.afterRender) { try { f(v); } catch (e) { console.warn(e); } }
   if (findState.q) paintFind(v);
 }
 async function goToDest(dest) {
@@ -271,6 +287,9 @@ const toView = (v, x, y) => v.viewport.convertToViewportPoint(x, y);
 const toPdf = (v, x, y) => v.viewport.convertToPdfPoint(x, y);
 const totalRot = (v) => (v.page.rotate + v.entry.rot) % 360;
 function marksOf(entry) { return doc.marks[pageKey(entry)] || (doc.marks[pageKey(entry)] = []); }
+// Document-wide settings (a watermark, headers and footers…): a list of { type, … } objects kept with the marks,
+// so they are stored, undone and restored the same way.
+function docMarks() { return doc.marks.__doc || (doc.marks.__doc = []); }
 function svgEl(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
 function drawMarks(v) {
   let svg = v.el.querySelector('svg.marks');
@@ -278,16 +297,18 @@ function drawMarks(v) {
     svg = svgEl('svg', { class: 'marks' });
     v.el.appendChild(svg);
     svg.addEventListener('pointerdown', (e) => onMarksDown(e, v));
-    svg.addEventListener('pointermove', (e) => onEditHover(e, v));
+    svg.addEventListener('pointermove', (e) => { onEditHover(e, v); const ft = FEATURE.tools[app.dataset.tool]; if (ft && ft.move) ft.move(e, v); });
     svg.addEventListener('dblclick', (e) => onMarksDblClick(e, v));
   }
   svg.setAttribute('viewBox', `0 0 ${v.viewport.width} ${v.viewport.height}`);
   svg.innerHTML = '';
   const rotNow = totalRot(v);
   const all = marksOf(v.entry);
-  for (const m of all.filter((x) => CONTENT_TYPES.has(x.type)).concat(all.filter((x) => !CONTENT_TYPES.has(x.type)))) {
+  const under = (x) => CONTENT_TYPES.has(x.type) || !!(FEATURE.markTypes[x.type] && FEATURE.markTypes[x.type].under);
+  for (const m of all.filter(under).concat(all.filter((x) => !under(x)))) {
     let g;
-    if (CONTENT_TYPES.has(m.type)) g = drawContentMark(v, m, svg);
+    if (FEATURE.markTypes[m.type]) g = FEATURE.markTypes[m.type].draw(v, m, svg);
+    else if (CONTENT_TYPES.has(m.type)) g = drawContentMark(v, m, svg);
     else if (m.type === 'hl') {
       g = svgEl('g', { class: 'mk' });
       for (const r of m.rects) {
@@ -341,6 +362,7 @@ function onMarksDown(e, v) {
   const tool = app.dataset.tool;
   if (tool === 'edit') return onEditDown(e, v);
   if (tool === 'erase') return startErase(e, v);
+  if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
   const hit = e.target.closest('.mk');
   if (tool === 'select') {
     if (!hit) { selectMark(null); return; }
@@ -397,6 +419,7 @@ function startMove(e, v, m) {
     if (o.pts) m.pts = o.pts.map((p) => [p[0] + dx, p[1] + dy]);
     if ('x1' in o) { m.x1 = o.x1 + dx; m.x2 = o.x2 + dx; m.y1 = o.y1 + dy; m.y2 = o.y2 + dy; }
     if ('x' in o) { m.x = o.x + dx; m.y = o.y + dy; }
+    if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
     moved = true; drawMarks(v);
   };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (moved) changed(before); };
@@ -1357,8 +1380,11 @@ async function buildPdf(only) {
     // Changes to the PDF's own content first (they replace what was there), then the mark-up on top.
     await saveContentEdits(L, out, p, pageMarks, editCtx);
     saveCommentEdits(L, out, p, pageMarks, same);
+    const fm = (m) => FEATURE.markTypes[m.type];
+    for (const m of pageMarks.filter((x) => fm(x) && fm(x).under && fm(x).save)) await fm(m).save({ L, out, p, m, entry: e, ctx: editCtx });
     for (const m of pageMarks) {
       if (CONTENT_TYPES.has(m.type)) continue;
+      if (fm(m)) { if (!fm(m).under && fm(m).save) await fm(m).save({ L, out, p, m, entry: e, ctx: editCtx }); continue; }
       if (m.type === 'hl') for (const r of m.rects) p.drawRectangle({ x: Math.min(r[0], r[2]), y: Math.min(r[1], r[3]), width: Math.abs(r[2] - r[0]), height: Math.abs(r[3] - r[1]), color: col(m.color), opacity: .4, blendMode: BlendMode.Multiply });
       if (m.type === 'ink') for (let k = 1; k < m.pts.length; k++) p.drawLine({ start: { x: m.pts[k - 1][0], y: m.pts[k - 1][1] }, end: { x: m.pts[k][0], y: m.pts[k][1] }, thickness: m.w, color: col(m.color), lineCap: LineCapStyle.Round });
       if (m.type === 'rect') p.drawRectangle({ x: Math.min(m.x1, m.x2), y: Math.min(m.y1, m.y2), width: Math.abs(m.x2 - m.x1), height: Math.abs(m.y2 - m.y1), borderColor: col(m.color), borderWidth: m.w });
@@ -1385,7 +1411,9 @@ async function buildPdf(only) {
         annots.push(ref);
       }
     }
+    for (const h of FEATURE.savePage) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
+  for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
   out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
   const ownerOnlyKey = doc.sources.findIndex((s0) => s0.ownerOnly);
@@ -1867,15 +1895,33 @@ $$('#menubar > button').forEach((b) => b.addEventListener('click', () => {
   closePopover(); if (open) return;
   b.setAttribute('aria-expanded', 'true'); openPopover(b, menuHtml(MENUS[+b.dataset.menu][1]));
 }));
+// Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
-  markup: ['Mark up', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Change the PDF', ['tool_edit', 'tool_erase']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
+  edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
   pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
+  forms: ['Forms', []],
+  protect: ['Protect', []],
   export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
+// Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of).
+function ribbonAdd(tab, group, ids, before) {
+  const t = RIBBON[tab]; if (!t) throw new Error('No ribbon tab ' + tab);
+  let g = t[1].find(([label]) => label === group);
+  if (!g) { g = [group, []]; const k = before ? t[1].findIndex(([label]) => label === before) : -1; k >= 0 ? t[1].splice(k, 0, g) : t[1].push(g); }
+  for (const id of ids) if (!g[1].includes(id)) g[1].push(id);
+}
+// Adds commands to a menu (made before Help if missing), after a separator.
+function menuAdd(title, ids) {
+  let m = MENUS.find(([t]) => t === title);
+  if (!m) { m = [title, []]; MENUS.splice(MENUS.findIndex(([t]) => t === 'Help'), 0, m); }
+  if (m[1].length && m[1][m[1].length - 1] !== '-') m[1].push('-');
+  for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
+}
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
 function renderRibbon() {
-  $('#ribbonTabs').innerHTML = Object.entries(RIBBON).map(([k, [t]]) => `<button type="button" role="tab" data-rt="${k}" aria-selected="${S.ribbon === k}">${t}</button>`).join('');
+  $('#ribbonTabs').innerHTML = Object.entries(RIBBON).filter(([, [, groups]]) => groups.length).map(([k, [t]]) => `<button type="button" role="tab" data-rt="${k}" aria-selected="${S.ribbon === k}">${t}</button>`).join('');
   $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => { S.ribbon = b.dataset.rt; saveSettings(); renderRibbon(); });
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
   $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group"><div class="r-items">${ids === 'COLORS'
@@ -1922,6 +1968,8 @@ function applyTheme() {
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
 window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.handle) { e.preventDefault(); e.returnValue = ''; } });
+
+/*FEATURES*/
 
 /* ---------------- the apps ---------------- */
 // Files the system asked us to open: Finder (Mac), Open With from Files or Mail (iPhone, iPad), Open with (Android).
@@ -2052,4 +2100,4 @@ serial(async () => {
 });
 if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
-window.__cowdreyPdf = { get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; }, contentMap: (n) => contentMap(views[n].page), tokenize: (t) => tokenizeContent(t).length };
+window.__cowdreyPdf = { ...TEST_HOOKS, get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; }, contentMap: (n) => contentMap(views[n].page), tokenize: (t) => tokenizeContent(t).length };
