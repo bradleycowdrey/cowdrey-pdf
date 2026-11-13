@@ -1,0 +1,36 @@
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/jwt/algorithms.py", line 619, in prepare_key
+    crypto_key = load_pem_public_key(key_bytes)  # type: ignore[assignment]
+ValueError: Unable to load PEM file. See https://cryptography.io/en/latest/faq/#why-can-t-i-import-my-pem-file for more details. MalformedFraming
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/runner/work/cowdrey-pdf/cowdrey-pdf/.github/scripts/testflight_public.py", line 69, in <module>
+    app = call('GET', f"/v1/apps?filter[bundleId]={L['bundleId']}")['data'][0]
+          ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/cowdrey-pdf/cowdrey-pdf/.github/scripts/testflight_public.py", line 41, in call
+    headers={'Authorization': 'Bearer ' + token(), 'Content-Type': 'application/json'})
+                                          ~~~~~^^
+  File "/home/runner/work/cowdrey-pdf/cowdrey-pdf/.github/scripts/testflight_public.py", line 30, in token
+    return jwt.encode({'iss': os.environ['APPLE_API_ISSUER'].strip(), 'iat': now, 'exp': now + 900, 'aud': 'appstoreconnect-v1'},
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      os.environ['P8'].replace('\r', '').strip(), algorithm='ES256',
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                      headers={'kid': os.environ['APPLE_API_KEY'].strip(), 'typ': 'JWT'})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/jwt/api_jwt.py", line 78, in encode
+    return api_jws.encode(
+           ~~~~~~~~~~~~~~^
+        json_payload,
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        sort_headers=sort_headers,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/lib/python3/dist-packages/jwt/api_jws.py", line 181, in encode
+    key = alg_obj.prepare_key(key)
+  File "/usr/lib/python3/dist-packages/jwt/algorithms.py", line 621, in prepare_key
+    crypto_key = load_pem_private_key(key_bytes, password=None)  # type: ignore[assignment]
+ValueError: Unable to load PEM file. See https://cryptography.io/en/latest/faq/#why-can-t-i-import-my-pem-file for more details. MalformedFraming
