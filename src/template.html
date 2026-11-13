@@ -115,6 +115,12 @@ button { font: inherit; color: inherit; }
 .app[data-tool="select"] .marks .mk:hover { filter: drop-shadow(0 0 2px var(--accent)); }
 .marks .mk.sel { filter: drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
 .marks text { user-select: none; }
+.app[data-tool="edit"] .marks { cursor: default; }
+.app[data-tool="erase"] .marks { cursor: crosshair; }
+.marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
+.marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
+.marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
+.line-editor { position: absolute; z-index: 6; padding: 0 1px; margin: 0 -1px; white-space: pre; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; cursor: text; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
 .find-hit { position: absolute; background: rgba(255, 200, 0, .45); z-index: 1; pointer-events: none; border-radius: 2px; }
 .find-hit.now { background: rgba(255, 120, 0, .6); }
 .drop[hidden] { display: none; }

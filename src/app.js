@@ -6,6 +6,8 @@ const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
 // @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
 const PDFLIB = 'https://cdn.jsdelivr.net/npm/@cantoo/pdf-lib@2.11.1/dist/pdf-lib.esm.min.js';
+// pdf.js's icons for comments that have no look of their own (a sticky note from some apps)
+const PDFJS_ICONS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/web/images/';
 const KEY = 'cowdrey.pdf';
 const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 // In the apps (Tauri): the Mac app, or the iPhone, iPad and Android app.
@@ -59,13 +61,13 @@ function serial(fn) { const p = openChain.then(fn, fn); openChain = p.catch(() =
 // only, for saving; it is never written to this device. Returns null when the person cancels.
 async function loadProtected(bytes, name) {
   await loadPdfjs();
-  try { return await pdfjs.getDocument({ data: bytes.slice(), password: bytes.password, isEvalSupported: false, enableXfa: false }).promise; }
+  try { return await pdfjs.getDocument({ data: bytes.slice(), password: bytes.password, isEvalSupported: false, enableXfa: false, fontExtraProperties: true }).promise; }
   catch (e) {
     if (!e || e.name !== 'PasswordException') throw e;
     for (let tries = 0; ; tries++) {
       const pw = await askText(tries ? 'That password did not open it' : 'This PDF is protected', `Enter the password for ${name}. It is not stored.`, '', 'Open', true);
       if (pw == null) return null;
-      try { const pd = await pdfjs.getDocument({ data: bytes.slice(), password: pw, isEvalSupported: false, enableXfa: false }).promise; bytes.password = pw; return pd; }
+      try { const pd = await pdfjs.getDocument({ data: bytes.slice(), password: pw, isEvalSupported: false, enableXfa: false, fontExtraProperties: true }).promise; bytes.password = pw; return pd; }
       catch (e2) { if (!e2 || e2.name !== 'PasswordException') throw e2; }
     }
   }
@@ -185,6 +187,7 @@ async function renderView(v) {
   el.appendChild(canvas);
   const pd = pdfDocs.get(v.entry.src);
   const canvasMap = new Map(); // pdf.js draws form widgets' looks (a checkbox ticked or not) here, for the form layer
+  syncHiddenComments();
   try {
     await page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage }).promise;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); }
@@ -195,16 +198,24 @@ async function renderView(v) {
   } catch (e) { console.warn('text layer', e); }
   // Form fields and links
   try {
-    const annots = await page.getAnnotations({ intent: 'display' });
+    let annots = await page.getAnnotations({ intent: 'display' });
+    // Comments deleted or changed with the Edit tool
+    const ae = marksOf(v.entry).filter((m) => m.type === 'ae');
+    if (ae.length) {
+      const gone = new Set(ae.filter((m) => m.deleted).map((m) => m.ref));
+      annots = annots.filter((a) => !gone.has(a.id) && !(a.parentId && gone.has(a.parentId)));
+      for (const m of ae) if (m.contents != null) { const a = annots.find((x) => x.id === m.ref); if (a) a.contentsObj = { str: m.contents, dir: 'ltr' }; }
+    }
     if (annots.length) {
       const al = document.createElement('div'); al.className = 'annotationLayer'; el.appendChild(al);
       linkService.pagesCount = doc.pages.length;
       const layer = new pdfjs.AnnotationLayer({ div: al, page, viewport: viewport.clone({ dontFlip: true }), accessibilityManager: null, annotationCanvasMap: canvasMap, annotationEditorUIManager: null, structTreeLayer: null, commentManager: null, linkService, annotationStorage: pd.annotationStorage });
-      await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: '', downloadManager: null });
+      await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: PDFJS_ICONS, downloadManager: null });
       al.addEventListener('input', () => setSaved(false));
       al.addEventListener('change', () => setSaved(false));
     }
   } catch (e) { console.warn('annotation layer', e); }
+  if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   drawMarks(v);
   if (findState.q) paintFind(v);
 }
@@ -262,13 +273,17 @@ function drawMarks(v) {
     svg = svgEl('svg', { class: 'marks' });
     v.el.appendChild(svg);
     svg.addEventListener('pointerdown', (e) => onMarksDown(e, v));
+    svg.addEventListener('pointermove', (e) => onEditHover(e, v));
+    svg.addEventListener('dblclick', (e) => onMarksDblClick(e, v));
   }
   svg.setAttribute('viewBox', `0 0 ${v.viewport.width} ${v.viewport.height}`);
   svg.innerHTML = '';
   const rotNow = totalRot(v);
-  for (const m of marksOf(v.entry)) {
+  const all = marksOf(v.entry);
+  for (const m of all.filter((x) => CONTENT_TYPES.has(x.type)).concat(all.filter((x) => !CONTENT_TYPES.has(x.type)))) {
     let g;
-    if (m.type === 'hl') {
+    if (CONTENT_TYPES.has(m.type)) g = drawContentMark(v, m, svg);
+    else if (m.type === 'hl') {
       g = svgEl('g', { class: 'mk' });
       for (const r of m.rects) {
         const [x1, y1] = toView(v, r[0], r[1]), [x2, y2] = toView(v, r[2], r[3]);
@@ -299,6 +314,7 @@ function drawMarks(v) {
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
   }
+  drawSelection(v, svg);
 }
 function redrawPage(entry) { for (const v of views) if (v.entry === entry && v.rendered) drawMarks(v); }
 function snapshot() { return JSON.stringify({ pages: doc.pages, marks: doc.marks }); }
@@ -308,7 +324,8 @@ function changed(before) {
   setSaved(false); persist(); refreshRibbon();
 }
 function restore(s, layout) {
-  const o = JSON.parse(s); doc.pages = o.pages; doc.marks = o.marks; selMark = null;
+  const o = JSON.parse(s); doc.pages = o.pages; doc.marks = o.marks; selMark = null; selContent = null;
+  syncHiddenComments();
   layout ? layoutPages(true).then(renderSide) : views.forEach((v) => v.rendered && drawMarks(v));
   setSaved(false); persist(); refreshRibbon();
 }
@@ -317,6 +334,8 @@ function redo() { if (!redoStack.length) return; const now = snapshot(); const n
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
+  if (tool === 'edit') return onEditDown(e, v);
+  if (tool === 'erase') return startErase(e, v);
   const hit = e.target.closest('.mk');
   if (tool === 'select') {
     if (!hit) { selectMark(null); return; }
@@ -335,8 +354,22 @@ function onMarksDown(e, v) {
   if (tool === 'note') { e.preventDefault(); return addNote(v, x, y); }
   if (tool === 'sign' || tool === 'image') { e.preventDefault(); return placeImage(v, px, py); }
 }
+// Double-click: change a note's or a text box's words (Select), or a comment's (Edit PDF).
+async function onMarksDblClick(e, v) {
+  const tool = app.dataset.tool, hit = e.target.closest && e.target.closest('.mk');
+  if (tool === 'select' && hit) {
+    const m = marksOf(v.entry).find((x) => x.id === hit.dataset.id);
+    if (m && m.type === 'note') editNote(v, m); else if (m && m.type === 'text') editText(v, m);
+    return;
+  }
+  if (tool === 'edit') {
+    const [x, y] = toPdf(v, ...localPoint(e, v)), hit = await contentAt(v, x, y);
+    if (hit && hit.kind === 'annot') { selectContent({ v, ...hit }); editComment(v, hit.a, hit.mark); }
+  }
+}
 function selectMark(s) { selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon(); }
 function deleteSelected() {
+  if (selContent) return deleteContent();
   if (!selMark) return;
   const before = snapshot();
   const list = doc.marks[selMark.key] || [];
@@ -443,7 +476,672 @@ function highlightSelection() {
   return any;
 }
 document.addEventListener('pointerup', () => { if (app.dataset.tool === 'highlight') setTimeout(highlightSelection, 0); });
-function setTool(t) { app.dataset.tool = t; if (t !== 'select') selectMark(null); refreshRibbon(); }
+function setTool(t) {
+  closeLineEditor(true);
+  const was = app.dataset.tool;
+  app.dataset.tool = t;
+  if (t !== 'select') selectMark(null);
+  if (t !== 'edit' && selContent) selectContent(null);
+  if (t === 'edit' && was !== 'edit') toast('Click text to change it, or a picture or comment to move or delete it');
+  if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
+  refreshRibbon();
+}
+
+/* ---------------- editing what is already in the PDF ----------------
+   The Edit tool changes the PDF's own content; Erase area clears anything in a rectangle. Each change is a mark like
+   any other, so undo, Documents and Save treat it the same way:
+     te     a line of text rewritten, in the line's own font, size and colour
+     ie     a picture moved, resized or deleted
+     erase  an area cleared
+     ae     a comment from another app deleted, or its text changed
+   On screen the original is covered with the colour that was behind it. On saving, the original text and pictures
+   are taken out of the page's content (so search and copy find only the new text); anything that can't be found
+   there, and erased areas, are clipped out instead. New text uses the PDF's own font object, so it looks the same;
+   letters the embedded font doesn't have use the closest standard font. */
+const CONTENT_TYPES = new Set(['te', 'ie', 'erase', 'ae']);
+const mul = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+// A line's corners, from its text matrix: local x runs along the baseline, local y up from it.
+function lineFrame(m) {
+  const [a, b, c, d, e, f] = m.tm, size = Math.hypot(c, d) || Math.hypot(a, b) || 1, hs = Math.hypot(a, b) || size;
+  return { u: [a / hs, b / hs], v: [c / size, d / size], o: [e, f], size };
+}
+function lineQuad(m, pad = 0) {
+  const { u, v, o, size } = lineFrame(m);
+  const P = (x, y) => [o[0] + u[0] * x + v[0] * y, o[1] + u[1] * x + v[1] * y];
+  const y0 = m.descent * size - pad, y1 = m.ascent * size + pad, x0 = -pad, x1 = m.width + pad;
+  return [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)];
+}
+function inQuad(q, x, y) {
+  let s = 0;
+  for (let i = 0; i < 4; i++) {
+    const [x1, y1] = q[i], [x2, y2] = q[(i + 1) % 4];
+    const c = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1);
+    if (c !== 0) { if (s && Math.sign(c) !== s) return false; s = Math.sign(c); }
+  }
+  return true;
+}
+const quadBox = (q) => { const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+const sameOrigin = (a, b) => Math.abs(a[4] - b[4]) < .5 && Math.abs(a[5] - b[5]) < .5;
+const stdFamily = (name) => /times|georgia|garamond|cambria|caladea|serif|antiqua|palatino|minion|baskerville|bookman|century/i.test(name) && !/sans/i.test(name) ? 'serif' : /courier|mono|consolas|menlo/i.test(name) ? 'mono' : 'sans';
+const cssFamily = (fam) => ({ serif: '"Times New Roman", Times, serif', mono: '"Courier New", Courier, monospace', sans: 'Helvetica, Arial, sans-serif' }[fam]);
+
+// What a page holds, for editing: its lines of text, pictures and comments, and how each font draws each letter.
+function contentMap(page) {
+  return page._cmap || (page._cmap = (async () => {
+    const [tc, ops, annots] = await Promise.all([
+      page.getTextContent(),
+      page.getOperatorList({ annotationMode: pdfjs.AnnotationMode.DISABLE }),
+      page.getAnnotations({ intent: 'display' }).catch(() => []),
+    ]);
+    const O = pdfjs.OPS, glyphs = new Map(), images = [], stack = [];
+    let font = null, ctm = [1, 0, 0, 1, 0, 0];
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn = ops.fnArray[i], a = ops.argsArray[i];
+      if (fn === O.setFont) font = a[0];
+      else if (fn === O.showText && font) {
+        let g = glyphs.get(font); if (!g) glyphs.set(font, g = new Map());
+        for (const gl of a[0] || []) if (gl && gl.unicode && gl.fontChar != null && !g.has(gl.unicode)) g.set(gl.unicode, { fc: gl.fontChar, w: gl.width });
+      } else if (fn === O.save) stack.push(ctm);
+      else if (fn === O.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+      else if (fn === O.transform) ctm = mul(a, ctm);
+      else if (fn === O.paintFormXObjectBegin) { stack.push(ctm); if (a && a[0]) ctm = mul(a[0], ctm); }
+      else if (fn === O.paintFormXObjectEnd) ctm = stack.pop() || ctm;
+      else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) {
+        const quad = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(ctm, x, y));
+        const [x0, y0, x1, y1] = quadBox(quad);
+        if (x1 - x0 > 2 && y1 - y0 > 2) images.push({ n: images.length, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad });
+      }
+    }
+    // Lines: neighbouring pieces of text on one baseline, in one font and size, joined.
+    const lines = [];
+    for (const it of tc.items) {
+      if (!it.str || !it.transform) continue;
+      const tm = it.transform.slice(), st = tc.styles[it.fontName] || {};
+      const L = lines[lines.length - 1];
+      if (L && L.fontName === it.fontName) {
+        const f = lineFrame(L), sz = lineFrame({ tm }).size;
+        const dx = tm[4] - f.o[0], dy = tm[5] - f.o[1];
+        const along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1], gap = along - L.width;
+        if (Math.abs(sz - f.size) < .05 && Math.abs(perp) < f.size * .2 && gap > -f.size * .5 && gap < f.size * 1.2) {
+          if (gap > f.size * .15 && !/\s$/.test(L.str) && !/^\s/.test(it.str)) L.str += ' ';
+          L.str += it.str; L.width = Math.max(L.width, along + it.width); continue;
+        }
+      }
+      lines.push({ str: it.str, fontName: it.fontName, tm, width: it.width, ascent: st.ascent ?? .8, descent: st.descent ?? -.2, family: st.fontFamily || 'sans-serif' });
+    }
+    for (const L of lines) { L.str = L.str.replace(/\s+$/, ''); L.quad = lineQuad(L, .3); }
+    const A = pdfjs.AnnotationType;
+    const comments = annots.filter((a) => a.rect && a.id && ![A.WIDGET, A.LINK, A.POPUP].includes(a.annotationType));
+    return { lines: lines.filter((L) => L.str && L.width > 0), images, comments, glyphs };
+  })());
+}
+const fontObj = (page, name) => new Promise((res) => { try { page.commonObjs.get(name, res); } catch { res(null); } setTimeout(() => res(null), 3000); });
+
+// The colours behind and of a piece of the page, read from what was drawn.
+function sampleColors(v, quad) {
+  const c = v.el.querySelector('canvas.pdf'); if (!c) return { bg: '#ffffff', fg: '#111111' };
+  const k = c.width / v.viewport.width, pts = quad.map(([x, y]) => toView(v, x, y));
+  const xs = pts.map((p) => p[0] * k), ys = pts.map((p) => p[1] * k);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs)) - 3), y0 = Math.max(0, Math.floor(Math.min(...ys)) - 3);
+  const x1 = Math.min(c.width, Math.ceil(Math.max(...xs)) + 3), y1 = Math.min(c.height, Math.ceil(Math.max(...ys)) + 3);
+  const w = x1 - x0, h = y1 - y0; if (w < 3 || h < 3) return { bg: '#ffffff', fg: '#111111' };
+  let d; try { d = c.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, w, h).data; } catch { return { bg: '#ffffff', fg: '#111111' }; }
+  const px = (x, y) => { const i = (y * w + x) * 4; return d[i + 3] < 8 ? [255, 255, 255] : [d[i], d[i + 1], d[i + 2]]; };
+  const buckets = new Map();
+  for (let x = 0; x < w; x++) for (const y of [0, 1, h - 2, h - 1]) { const p = px(x, y), key = (p[0] >> 4) << 8 | (p[1] >> 4) << 4 | (p[2] >> 4); const b = buckets.get(key) || buckets.set(key, { n: 0, s: [0, 0, 0] }).get(key); b.n++; b.s[0] += p[0]; b.s[1] += p[1]; b.s[2] += p[2]; }
+  for (let y = 0; y < h; y++) for (const x of [0, 1, w - 2, w - 1]) { const p = px(x, y), key = (p[0] >> 4) << 8 | (p[1] >> 4) << 4 | (p[2] >> 4); const b = buckets.get(key) || buckets.set(key, { n: 0, s: [0, 0, 0] }).get(key); b.n++; b.s[0] += p[0]; b.s[1] += p[1]; b.s[2] += p[2]; }
+  const top = [...buckets.values()].sort((a, b) => b.n - a.n)[0];
+  const bg = top.s.map((s) => Math.round(s / top.n));
+  const dist = (p) => Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]);
+  let best = 0; for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) best = Math.max(best, dist(px(x, y)));
+  let fg = [17, 17, 17];
+  if (best > 30) {
+    const s = [0, 0, 0]; let n = 0;
+    for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) { const p = px(x, y); if (dist(p) >= best * .9) { s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; n++; } }
+    fg = s.map((t) => Math.round(t / n));
+  }
+  const hex = (p) => '#' + p.map((t) => t.toString(16).padStart(2, '0')).join('');
+  return { bg: hex(bg), fg: hex(fg) };
+}
+
+// What's under a point, for the Edit tool: a line, a picture or a comment (in that order).
+async function contentAt(v, x, y) {
+  const cm = await contentMap(v.page);
+  const own = marksOf(v.entry);
+  // A comment drawn as an icon or a box of text wins; a shape drawn around something wins only near its edge.
+  const hiddenC = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
+  const A = pdfjs.AnnotationType;
+  for (const a of cm.comments) {
+    if (hiddenC.has(a.id)) continue;
+    const [x0, y0, x1, y1] = a.rect; if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+    const icon = [A.TEXT, A.FREETEXT, A.STAMP, A.FILEATTACHMENT, A.SOUND].includes(a.annotationType);
+    const edge = Math.min(x - x0, x1 - x, y - y0, y1 - y) < 5;
+    if (icon || edge) return { kind: 'annot', a, mark: own.find((m) => m.type === 'ae' && m.ref === a.id) };
+  }
+  const L = cm.lines.find((l) => inQuad(l.quad, x, y));
+  if (L) return { kind: 'text', L, mark: own.find((m) => m.type === 'te' && sameOrigin(m.tm, L.tm)) };
+  for (let k = cm.images.length - 1; k >= 0; k--) { const im = cm.images[k]; if (inQuad(im.quad, x, y) && !own.some((m) => m.type === 'ie' && m.n === im.n && m.deleted)) return { kind: 'image', im, mark: own.find((m) => m.type === 'ie' && m.n === im.n) }; }
+  const hidden = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
+  for (const a of cm.comments) { const [x0, y0, x1, y1] = a.rect; if (x >= x0 && x <= x1 && y >= y0 && y <= y1 && !hidden.has(a.id)) return { kind: 'annot', a, mark: own.find((m) => m.type === 'ae' && m.ref === a.id) }; }
+  return null;
+}
+
+// Drawing a rewritten line on screen, with the font pdf.js loaded for it (the same letters the page itself uses).
+const teCache = new Map();
+function teImage(v, m) {
+  const cm = v.page._cmapValue, ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm));
+  const loaded = L ? L.fontName : null, map = loaded && cm.glyphs.get(loaded);
+  const key = [m.id, m.text, m.color, scale, ratio, loaded].join('|');
+  if (teCache.has(key)) return teCache.get(key);
+  const { size, u } = lineFrame(m), hsc = Math.hypot(m.tm[0], m.tm[1]) / (Math.hypot(m.tm[2], m.tm[3]) || 1);
+  const px = size * scale * ratio, fb = `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`, own = `${px}px "${loaded}", ${cssFamily(m.fam)}`;
+  // Runs of letters drawn with the PDF's font, and runs the font doesn't have (drawn in the closest standard font).
+  // A letter pdf.js maps to a control code (a space, usually) is not drawn, only advanced by its width.
+  const runs = [];
+  for (const ch of m.text) {
+    const gl = map && map.get(ch), blank = !!gl && /^[\x00-\x1f\x7f-\x9f]$/.test(gl.fc);
+    const kind = blank ? 'gap' : gl ? 'own' : 'fb', last = runs[runs.length - 1];
+    if (kind === 'gap') runs.push({ kind, s: '', adv: (gl.w || 250) / 1000 * px * hsc });
+    else if (last && last.kind === kind) last.s += kind === 'own' ? gl.fc : ch;
+    else runs.push({ kind, s: kind === 'own' ? gl.fc : ch });
+  }
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  let w = 0; for (const r of runs) { if (r.kind === 'gap') { r.w = r.adv; w += r.w; continue; } g.font = r.kind === 'own' ? own : fb; r.w = g.measureText(r.s).width * hsc; w += r.w; }
+  const asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px;
+  c.width = Math.ceil(w + 4); c.height = Math.ceil(asc + desc + 2);
+  g.fillStyle = m.color; let x = 0;
+  for (const r of runs) { if (r.s) { g.save(); g.font = r.kind === 'own' ? own : fb; g.translate(x, asc); g.scale(hsc, 1); g.fillText(r.s, 0, 0); g.restore(); } x += r.w; }
+  const out = { url: c.toDataURL('image/png'), w: c.width / ratio, h: c.height / ratio, asc: asc / ratio };
+  void u; if (teCache.size > 200) teCache.clear(); teCache.set(key, out);
+  return out;
+}
+// Marks that clear part of the page are drawn first, under everything else.
+function drawContentMark(v, m, svg) {
+  const poly = (q, fill) => svgEl('polygon', { points: q.map(([x, y]) => toView(v, x, y).map((n) => n.toFixed(1)).join(',')).join(' '), fill });
+  if (m.type === 'erase') { const g = poly(m.quad, m.bg); g.setAttribute('class', 'mk'); if (m.drafting) { g.setAttribute('fill', 'none'); g.setAttribute('stroke', 'var(--accent)'); g.setAttribute('stroke-dasharray', '4 3'); } return g; }
+  if (m.type === 'te') {
+    const g = svgEl('g', { class: 'mk' });
+    g.appendChild(poly(m.quad, m.bg));
+    if (!editingIds.has(m.id)) {
+      const im = teImage(v, m), [ox, oy] = toView(v, m.tm[4], m.tm[5]), { u } = lineFrame(m);
+      const [ax, ay] = toView(v, m.tm[4] + u[0], m.tm[5] + u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
+      g.appendChild(svgEl('image', { x: ox, y: oy - im.asc, width: im.w, height: im.h, href: im.url, transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` }));
+    }
+    return g;
+  }
+  if (m.type === 'ie') {
+    const g = svgEl('g', { class: 'mk' });
+    g.appendChild(poly(m.quad, m.bg));
+    if (!m.deleted) { const [x1, y1] = toView(v, m.x, m.y + m.h), [x2, y2] = toView(v, m.x + m.w, m.y); g.appendChild(svgEl('image', { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), href: m.data, preserveAspectRatio: 'none' })); }
+    return g;
+  }
+  return null;
+}
+const editingIds = new Set();
+
+// Comments deleted with the Edit tool disappear from the page: pdf.js skips annotations it is told were changed.
+const hiddenNow = new Map();
+function syncHiddenComments() {
+  if (!doc) return;
+  for (const [k, pd] of pdfDocs) {
+    const ids = [];
+    for (const [key, list] of Object.entries(doc.marks)) if (key.startsWith(k + ':')) for (const m of list) if (m.type === 'ae' && m.deleted) ids.push(m.ref);
+    const sig = ids.sort().join(',');
+    if (hiddenNow.get(pd) === sig) continue;
+    const first = !hiddenNow.has(pd); hiddenNow.set(pd, sig);
+    try { Object.defineProperty(pd.annotationStorage, 'modifiedIds', { configurable: true, get: () => ({ ids: new Set(ids), hash: sig ? 'cpdf-' + sig : '' }) }); } catch {}
+    if (!first || sig) for (const v of views) if (v.entry.src === k && v.rendered) rerenderView(v);
+  }
+}
+function rerenderView(v) { v.rendered = false; v.el.innerHTML = ''; renderView(v); }
+
+// The Edit tool.
+let selContent = null; // { v, kind: 'image' | 'annot', im?, a?, mark? }
+async function onEditDown(e, v) {
+  e.preventDefault();
+  closeLineEditor(true);
+  const [x, y] = toPdf(v, ...localPoint(e, v));
+  // An edit made earlier: change it again.
+  const own = e.target.closest && e.target.closest('.mk');
+  const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
+  if (om && om.type === 'te') { selectContent(null); return openLineEditor(v, om, false); }
+  if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: cm.images[om.n] || { n: om.n, quad: om.quad }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
+  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return startMove(e, v, om); }
+  // A picture already selected: its corner handle resizes it, anywhere on it moves it.
+  if (selContent && selContent.v === v && selContent.kind === 'image') {
+    const r = imageRect(selContent);
+    const [hx, hy] = toView(v, r[2], r[1]), [lx, ly] = localPoint(e, v);
+    if (Math.hypot(hx - lx, hy - ly) < 14) return startImageDrag(e, v, selContent, 'resize');
+    if (x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]) return startImageDrag(e, v, selContent, 'move');
+  }
+  const hit = await contentAt(v, x, y);
+  if (!hit) { selectContent(null); return; }
+  if (hit.kind === 'text') { selectContent(null); return editLine(v, hit.L, hit.mark); }
+  selectContent({ v, ...hit });
+  if (hit.kind === 'image') return startImageDrag(e, v, selContent, 'move');
+  if (hit.kind === 'annot' && e.detail === 2) return editComment(v, hit.a, hit.mark);
+}
+function selectContent(s) {
+  selContent = s;
+  if (s) selectMark(null);
+  views.forEach((vv) => vv.rendered && drawMarks(vv));
+  refreshRibbon();
+}
+function imageRect(s) {
+  const m = s.mark;
+  if (m) return [m.x, m.y, m.x + m.w, m.y + m.h];
+  return quadBox(s.im.quad);
+}
+function drawSelection(v, svg) {
+  if (!selContent || selContent.v !== v) return;
+  let q;
+  if (selContent.kind === 'image') { const [x0, y0, x1, y1] = selContent.preview || imageRect(selContent); q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]; }
+  else { const [x0, y0, x1, y1] = selContent.a.rect; q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]; }
+  const pts = q.map(([x, y]) => toView(v, x, y));
+  svg.appendChild(svgEl('polygon', { class: 'content-sel', points: pts.map((p) => p.join(',')).join(' ') }));
+  if (selContent.kind === 'image') { const [hx, hy] = toView(v, q[1][0], q[1][1]); svg.appendChild(svgEl('rect', { class: 'content-handle', x: hx - 6, y: hy - 6, width: 12, height: 12, rx: 3 })); }
+}
+// Pixels of a picture in the PDF, as a PNG.
+async function imagePng(v, im) {
+  const obj = im.inline || await new Promise((res) => { try { v.page.objs.get(im.objId, res); } catch { res(null); } setTimeout(() => res(null), 4000); });
+  if (!obj) return null;
+  const c = document.createElement('canvas'); c.width = obj.width; c.height = obj.height; const g = c.getContext('2d');
+  if (obj.bitmap) g.drawImage(obj.bitmap, 0, 0);
+  else if (obj.data) {
+    const id = g.createImageData(obj.width, obj.height), src = obj.data, n = obj.width * obj.height;
+    const bpp = src.length / n;
+    for (let i = 0; i < n; i++) {
+      if (bpp >= 4) { id.data[i * 4] = src[i * 4]; id.data[i * 4 + 1] = src[i * 4 + 1]; id.data[i * 4 + 2] = src[i * 4 + 2]; id.data[i * 4 + 3] = src[i * 4 + 3]; }
+      else if (bpp >= 3) { id.data[i * 4] = src[i * 3]; id.data[i * 4 + 1] = src[i * 3 + 1]; id.data[i * 4 + 2] = src[i * 3 + 2]; id.data[i * 4 + 3] = 255; }
+      else { id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = src[i]; id.data[i * 4 + 3] = 255; }
+    }
+    g.putImageData(id, 0, 0);
+  } else return null;
+  return c.toDataURL('image/png');
+}
+// The first change to a picture turns it into an ie mark: the original is cleared, and the picture drawn where it now goes.
+async function imageMark(v, s) {
+  if (s.mark) return s.mark;
+  const data = await imagePng(v, s.im);
+  if (!data) { toast('This picture can’t be moved, but it can be deleted or erased.'); return null; }
+  const [x0, y0, x1, y1] = quadBox(s.im.quad);
+  const m = { id: uid(), type: 'ie', n: s.im.n, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  marksOf(v.entry).push(m); s.mark = m;
+  return m;
+}
+function startImageDrag(e, v, s, mode) {
+  const [sx, sy] = toPdf(v, ...localPoint(e, v));
+  const start = imageRect(s), aspect = (start[3] - start[1]) / ((start[2] - start[0]) || 1);
+  let moved = false, rect = start.slice();
+  const move = (ev) => {
+    const [cx, cy] = toPdf(v, ...localPoint(ev, v)), dx = cx - sx, dy = cy - sy;
+    if (!moved && Math.hypot(dx, dy) < 2) return;
+    moved = true;
+    if (mode === 'move') rect = [start[0] + dx, start[1] + dy, start[2] + dx, start[3] + dy];
+    else { const w = Math.max(8, start[2] - start[0] + dx), h = w * aspect; rect = [start[0], start[3] - h, start[0] + w, start[3]]; }
+    s.preview = rect; drawMarks(v);
+  };
+  const up = async () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    delete s.preview;
+    if (!moved) { drawMarks(v); return; }
+    const before = snapshot();
+    const m = await imageMark(v, s);
+    if (!m) { drawMarks(v); return; }
+    m.x = rect[0]; m.y = rect[1]; m.w = rect[2] - rect[0]; m.h = rect[3] - rect[1]; m.deleted = false;
+    drawMarks(v); changed(before);
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+function deleteContent() {
+  const s = selContent; if (!s) return;
+  const before = snapshot(), list = marksOf(s.v.entry);
+  if (s.kind === 'image') {
+    if (s.mark) s.mark.deleted = true;
+    else list.push({ id: uid(), type: 'ie', n: s.im.n, quad: s.im.quad, bg: sampleColors(s.v, s.im.quad).bg, data: '', x: 0, y: 0, w: 0, h: 0, deleted: true });
+  } else {
+    if (s.mark) s.mark.deleted = true;
+    else list.push({ id: uid(), type: 'ae', ref: s.a.id, rect: s.a.rect, subtype: s.a.subtype || '', deleted: true });
+  }
+  selContent = null; changed(before); syncHiddenComments(); drawMarks(s.v);
+}
+async function editComment(v, a, mark) {
+  const now = mark && mark.contents != null ? mark.contents : (a.contentsObj && a.contentsObj.str) || '';
+  const text = await askText('Comment', a.titleObj && a.titleObj.str ? `By ${a.titleObj.str}` : '', now, 'Save', false, true);
+  if (text == null || text === now) return;
+  const before = snapshot();
+  if (mark) mark.contents = text;
+  else marksOf(v.entry).push({ id: uid(), type: 'ae', ref: a.id, rect: a.rect, subtype: a.subtype || '', contents: text });
+  changed(before); rerenderView(v);
+}
+
+// Editing a line in place: a box with the line's text, over the line, in its colours.
+let lineEditor = null;
+async function editLine(v, L, mark) {
+  const cm = await contentMap(v.page); v.page._cmapValue = cm;
+  let m = mark;
+  if (!m) {
+    const fo = await fontObj(v.page, L.fontName) || {};
+    const name = String(fo.name || ''), { bg, fg } = sampleColors(v, L.quad);
+    m = { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: fg };
+  }
+  openLineEditor(v, m, !mark);
+}
+function openLineEditor(v, m, isNew) {
+  const { size, u } = lineFrame(m), px = size * scale;
+  const [ox, oy] = toView(v, m.tm[4], m.tm[5]), [ax, ay] = toView(v, m.tm[4] + u[0], m.tm[5] + u[1]);
+  const ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px;
+  const ed = document.createElement('div');
+  ed.className = 'line-editor'; ed.spellcheck = false; ed.setAttribute('role', 'textbox'); ed.setAttribute('aria-label', 'Edit this line');
+  try { ed.contentEditable = 'plaintext-only'; } catch { ed.contentEditable = 'true'; }
+  if (ed.contentEditable !== 'plaintext-only') ed.contentEditable = 'true';
+  ed.textContent = m.text;
+  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale + 4) + 'px', font: `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`, color: m.color, background: m.bg, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` });
+  v.el.appendChild(ed);
+  editingIds.add(m.id); drawMarks(v);
+  lineEditor = { ed, v, m, isNew };
+  ed.focus();
+  const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  ed.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
+    if (e.key === 'Escape') { e.preventDefault(); closeLineEditor(false); }
+    e.stopPropagation();
+  });
+  ed.addEventListener('blur', () => setTimeout(() => closeLineEditor(true), 0));
+}
+function closeLineEditor(commit) {
+  if (!lineEditor) return;
+  const { ed, v, m, isNew } = lineEditor; lineEditor = null;
+  editingIds.delete(m.id);
+  const text = ed.textContent.replace(/[\r\n]+/g, ' ');
+  ed.remove();
+  if (commit && text !== m.text) {
+    const before = snapshot(), list = marksOf(v.entry);
+    if (text === m.orig && !isNew) list.splice(list.indexOf(m), 1); // back to the original: no edit left
+    else { m.text = text; if (isNew) list.push(m); }
+    changed(before);
+  }
+  drawMarks(v);
+}
+
+// Erase area: drag a rectangle; everything in it is cleared to the colour around it.
+function startErase(e, v) {
+  e.preventDefault();
+  const before = snapshot();
+  const [x, y] = toPdf(v, ...localPoint(e, v));
+  const m = { id: uid(), type: 'erase', quad: [[x, y], [x, y], [x, y], [x, y]], bg: '#ffffff', drafting: true };
+  marksOf(v.entry).push(m);
+  const set = (x2, y2) => { m.quad = [[x, y], [x2, y], [x2, y2], [x, y2]]; };
+  const move = (ev) => { set(...toPdf(v, ...localPoint(ev, v))); drawMarks(v); };
+  const up = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    const [x0, y0, x1, y1] = quadBox(m.quad);
+    if (x1 - x0 < 3 || y1 - y0 < 3) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
+    delete m.drafting; m.bg = sampleColors(v, m.quad).bg;
+    drawMarks(v); changed(before);
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+// Hover feedback for the Edit tool: what a click would edit is outlined.
+let hoverTimer = 0;
+function onEditHover(e, v) {
+  if (app.dataset.tool !== 'edit' || lineEditor) return;
+  const t = Date.now(); if (t - hoverTimer < 40) return; hoverTimer = t;
+  const [x, y] = toPdf(v, ...localPoint(e, v));
+  contentAt(v, x, y).then((hit) => {
+    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+    svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
+    if (!hit) return;
+    const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark && !hit.mark.deleted ? [[hit.mark.x, hit.mark.y], [hit.mark.x + hit.mark.w, hit.mark.y], [hit.mark.x + hit.mark.w, hit.mark.y + hit.mark.h], [hit.mark.x, hit.mark.y + hit.mark.h]] : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
+    svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  });
+}
+
+/* Saving content edits. A small reader for page content streams: it finds where each piece of text and each picture
+   is drawn, so edited lines and moved or deleted pictures can be taken out. */
+function tokenizeContent(s) {
+  const out = []; let i = 0; const n = s.length;
+  const ws = (c) => c === 32 || c === 10 || c === 13 || c === 9 || c === 12 || c === 0;
+  const delim = (c) => '()<>[]{}/%'.includes(String.fromCharCode(c));
+  while (i < n) {
+    const c = s.charCodeAt(i);
+    if (ws(c)) { i++; continue; }
+    if (c === 37) { while (i < n && s[i] !== '\n' && s[i] !== '\r') i++; continue; }
+    const start = i;
+    if (c === 40) { // (literal string)
+      let depth = 0, str = '';
+      for (; i < n; i++) {
+        const ch = s[i];
+        if (ch === '\\') { const nx = s[++i]; const esc = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }[nx]; if (esc) str += esc; else if (/[0-7]/.test(nx)) { let o = nx; while (o.length < 3 && /[0-7]/.test(s[i + 1])) o += s[++i]; str += String.fromCharCode(parseInt(o, 8) & 255); } else if (nx === '\r') { if (s[i + 1] === '\n') i++; } else if (nx !== '\n') str += nx; continue; }
+        if (ch === '(') { if (depth++ > 0) str += ch; continue; }
+        if (ch === ')') { if (--depth === 0) { i++; break; } str += ch; continue; }
+        str += ch;
+      }
+      out.push({ t: 'str', v: str, start, end: i }); continue;
+    }
+    if (c === 60 && s[i + 1] === '<') { out.push({ t: 'dict<', start, end: i + 2 }); i += 2; continue; }
+    if (c === 62 && s[i + 1] === '>') { out.push({ t: 'dict>', start, end: i + 2 }); i += 2; continue; }
+    if (c === 60) { const j = s.indexOf('>', i); const h = s.slice(i + 1, j).replace(/\s+/g, ''); let str = ''; for (let k = 0; k < h.length; k += 2) str += String.fromCharCode(parseInt((h.slice(k, k + 2) + '0').slice(0, 2), 16)); out.push({ t: 'str', v: str, start, end: j + 1 }); i = j + 1; continue; }
+    if (c === 91 || c === 93) { out.push({ t: c === 91 ? '[' : ']', start, end: i + 1 }); i++; continue; }
+    if (c === 47) { i++; while (i < n && !ws(s.charCodeAt(i)) && !delim(s.charCodeAt(i))) i++; out.push({ t: 'name', v: s.slice(start + 1, i), start, end: i }); continue; }
+    while (i < n && !ws(s.charCodeAt(i)) && !delim(s.charCodeAt(i))) i++;
+    const w = s.slice(start, i);
+    if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(w)) out.push({ t: 'num', v: parseFloat(w), start, end: i });
+    else {
+      out.push({ t: 'op', v: w, start, end: i });
+      if (w === 'ID') { // inline image data runs to EI
+        let j = i + 1; while (j < n && !(/\sEI(\s|$)/.test(s.slice(j - 1, j + 3)))) j++;
+        out.push({ t: 'data', start: i, end: j }); i = j;
+      }
+    }
+  }
+  return out;
+}
+// Walks a content stream with a text and graphics state, and calls back with each text-showing and image operator.
+function walkContent(s, fontWidth, onShow, onImage) {
+  const toks = tokenizeContent(s);
+  let ctm = [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0;
+  const gstack = [], ops = []; let operands = [], opStart = null, arrStack = [], bi = null;
+  for (const t of toks) {
+    if (t.t === 'op') {
+      const o = t.v, a = operands, start = opStart ?? t.start, end = t.end;
+      operands = []; opStart = null;
+      const num = (k) => (a[k] && a[k].t === 'num' ? a[k].v : 0);
+      if (o === 'BI') { bi = { start }; continue; }
+      if (o === 'ID') continue;
+      if (o === 'EI') { if (bi) { onImage({ start: bi.start, end, ctm, inline: true }); bi = null; } continue; }
+      if (bi) continue;
+      if (o === 'q') gstack.push([ctm, font, fs, tc, tw, th, tl]);
+      else if (o === 'Q') { const g = gstack.pop(); if (g) [ctm, font, fs, tc, tw, th, tl] = g; }
+      else if (o === 'cm') ctm = mul([0, 1, 2, 3, 4, 5].map(num), ctm);
+      else if (o === 'BT') { tm = tlm = [1, 0, 0, 1, 0, 0]; }
+      else if (o === 'Tf') { font = a[0] && a[0].v; fs = num(1); }
+      else if (o === 'Tc') tc = num(0);
+      else if (o === 'Tw') tw = num(0);
+      else if (o === 'Tz') th = num(0) / 100;
+      else if (o === 'TL') tl = num(0);
+      else if (o === 'Td' || o === 'TD') { if (o === 'TD') tl = -num(1); tlm = mul([1, 0, 0, 1, num(0), num(1)], tlm); tm = tlm; }
+      else if (o === 'Tm') { tm = tlm = [0, 1, 2, 3, 4, 5].map(num); }
+      else if (o === 'T*') { tlm = mul([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; }
+      else if (o === 'Tj' || o === 'TJ' || o === "'" || o === '"') {
+        if (o === "'" || o === '"') { if (o === '"') { tw = num(0); tc = num(1); } tlm = mul([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; }
+        const origin = apply(mul(tm, ctm), 0, 0);
+        const parts = o === 'TJ' ? a.filter((x) => x.t === 'str' || x.t === 'num') : a.filter((x) => x.t === 'str').slice(-1);
+        let adv = 0;
+        for (const p of parts) {
+          if (p.t === 'num') { adv -= p.v / 1000 * fs * th; continue; }
+          for (const { code, w, space } of fontWidth(font, p.v)) adv += (w / 1000 * fs + tc + (space ? tw : 0)) * th;
+        }
+        ops.push({ start, end, origin, font, strings: parts.filter((p) => p.t === 'str').map((p) => p.v) });
+        onShow && onShow(ops[ops.length - 1]);
+        tm = mul([1, 0, 0, 1, adv, 0], tm);
+      } else if (o === 'Do') onImage({ start, end, ctm, name: a[0] && a[0].v });
+      continue;
+    }
+    if (opStart == null) opStart = t.start;
+    if (t.t === '[') { arrStack.push(operands); operands = []; continue; }
+    if (t.t === ']') { const arr = operands; operands = arrStack.pop() || []; operands.push(...arr); continue; }
+    operands.push(t);
+  }
+  return ops;
+}
+// A page's fonts, by resource name: codes and widths, and the code for each character (from the font's ToUnicode).
+function parseCMap(txt) {
+  const map = new Map(); let bytes = 1;
+  const cs = txt.match(/begincodespacerange\s*<([0-9a-fA-F]+)>/); if (cs) bytes = Math.max(1, cs[1].length / 2);
+  const hexToStr = (h) => { let s = ''; for (let i = 0; i + 4 <= h.length; i += 4) s += String.fromCharCode(parseInt(h.slice(i, i + 4), 16)); if (h.length === 2) s = String.fromCharCode(parseInt(h, 16)); return s; };
+  for (const b of txt.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) for (const m of b[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]*)>/g)) map.set(parseInt(m[1], 16), hexToStr(m[2]));
+  for (const b of txt.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) for (const m of b[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(<[0-9a-fA-F]*>|\[[^\]]*\])/g)) {
+    const lo = parseInt(m[1], 16), hi = parseInt(m[2], 16); if (hi - lo > 65535) continue;
+    if (m[3][0] === '[') { const arr = [...m[3].matchAll(/<([0-9a-fA-F]*)>/g)].map((x) => x[1]); for (let c = lo; c <= hi; c++) map.set(c, hexToStr(arr[c - lo] || '')); }
+    else { const base = m[3].slice(1, -1), tail = base.slice(-4), last = parseInt(tail, 16); for (let c = lo; c <= hi; c++) map.set(c, hexToStr(base.slice(0, -4) + (last + c - lo).toString(16).padStart(4, '0'))); }
+  }
+  return { map, bytes };
+}
+function pageFonts(L, out, pageNode) {
+  const { PDFName, PDFDict, PDFArray, PDFRawStream, PDFNumber, decodePDFRawStream } = L;
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  const fonts = new Map();
+  const res = pageNode.Resources && pageNode.Resources();
+  const fd = res && res.lookup(PDFName.of('Font'));
+  if (fd instanceof PDFDict) for (const [key, ref] of fd.entries()) {
+    const d = out.context.lookup(ref); if (!(d instanceof PDFDict)) continue;
+    const type0 = String(d.lookup(PDFName.of('Subtype'))) === '/Type0';
+    const tu = d.lookup(PDFName.of('ToUnicode'));
+    const cm = tu ? parseCMap(text(tu)) : { map: new Map(), bytes: type0 ? 2 : 1 };
+    if (!tu && !type0) for (let c = 32; c < 127; c++) cm.map.set(c, String.fromCharCode(c));
+    const rev = new Map(); for (const [code, u] of cm.map) if (u && !rev.has(u)) rev.set(u, code);
+    // widths, for working out where each piece of text starts
+    const widths = new Map(); let dw = type0 ? 1000 : 0;
+    if (type0) {
+      const df = d.lookup(PDFName.of('DescendantFonts')); const cid = df instanceof PDFArray ? df.lookup(0) : null;
+      if (cid instanceof PDFDict) {
+        const DW = cid.lookup(PDFName.of('DW')); if (DW instanceof PDFNumber) dw = DW.asNumber();
+        const W = cid.lookup(PDFName.of('W'));
+        if (W instanceof PDFArray) { const arr = W.asArray().map((x) => out.context.lookup(x)); for (let k = 0; k < arr.length;) { const c0 = arr[k].asNumber(); const nx = arr[k + 1]; if (nx instanceof PDFArray) { nx.asArray().forEach((w, j) => widths.set(c0 + j, out.context.lookup(w).asNumber())); k += 2; } else { const c1 = nx.asNumber(), w = arr[k + 2].asNumber(); for (let c = c0; c <= c1; c++) widths.set(c, w); k += 3; } } }
+      }
+    } else {
+      const fc = d.lookup(PDFName.of('FirstChar')), W = d.lookup(PDFName.of('Widths'));
+      if (fc instanceof PDFNumber && W instanceof PDFArray) W.asArray().forEach((w, j) => widths.set(fc.asNumber() + j, out.context.lookup(w).asNumber()));
+      if (!W) dw = 500;
+    }
+    fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw });
+  }
+  const fontWidth = (name, str) => {
+    const f = fonts.get(name), out2 = [], b = f ? f.bytes : 1;
+    for (let i = 0; i + b <= str.length; i += b) { let code = 0; for (let k = 0; k < b; k++) code = code * 256 + str.charCodeAt(i + k); out2.push({ code, w: f ? (f.widths.get(code) ?? f.dw) : 500, space: b === 1 && code === 32 }); }
+    return out2;
+  };
+  return { fonts, fontWidth, text };
+}
+const baseName = (n) => String(n || '').replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
+// Applies a page's content edits while saving: takes out what was replaced, then paints the new content.
+async function saveContentEdits(L, out, p, marks, ctx) {
+  const edits = marks.filter((m) => CONTENT_TYPES.has(m.type) && !m.drafting);
+  if (!edits.length) return;
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFOperator, PDFNumber, PDFHexString, PDFRawStream, StandardFonts } = L;
+  const node = p.node;
+  const { fonts, fontWidth, text } = pageFonts(L, out, node);
+  // 1. Take edited lines and changed pictures out of the page's own content.
+  const lines = edits.filter((m) => m.type === 'te'), pics = edits.filter((m) => m.type === 'ie');
+  const raw = node.get(PDFName.of('Contents'));
+  const parts = raw instanceof PDFArray ? raw.asArray() : raw ? [raw] : [];
+  let src = parts.map((r) => { const st = out.context.lookup(r); return st ? text(st) : ''; }).join('\n');
+  const cut = [], removed = new Set();
+  const xo = (() => { const res = node.Resources && node.Resources(); const x = res && res.lookup(PDFName.of('XObject')); return x instanceof PDFDict ? x : null; })();
+  const isImage = (name) => { const o = xo && xo.lookup(PDFName.of(name)); return o && o.dict && String(o.dict.lookup(PDFName.of('Subtype'))) === '/Image'; };
+  try {
+    walkContent(src, fontWidth, (op) => {
+      for (const m of lines) {
+        const q = lineQuad(m, Math.max(1, lineFrame(m).size * .3));
+        if (inQuad(q, op.origin[0], op.origin[1])) { cut.push([op.start, op.end]); removed.add(m.id); break; }
+      }
+    }, (im) => {
+      if (!im.inline && !isImage(im.name)) return;
+      const q = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)), b = quadBox(q);
+      for (const m of pics) { const mb = quadBox(m.quad); if (b.every((n, k) => Math.abs(n - mb[k]) < .75)) { cut.push([im.start, im.end]); removed.add(m.id); break; } }
+    });
+  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); }
+  if (cut.length) {
+    cut.sort((a, b) => b[0] - a[0]);
+    for (const [a, b] of cut) src = src.slice(0, a) + ' ' + src.slice(b);
+    const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
+    node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
+  }
+  // 2. Anything not found there (text inside a form, an erased area) is clipped out.
+  const clips = edits.filter((m) => (m.type === 'erase') || ((m.type === 'te' || m.type === 'ie') && !removed.has(m.id))).map((m) => m.type === 'te' ? lineQuad(m, .3) : m.quad);
+  if (clips.length) {
+    const f = (n) => (+n).toFixed(3);
+    let pre = 'q\n';
+    for (const q of clips) pre += `-100000 -100000 m 100000 -100000 l 100000 100000 l -100000 100000 l h ${f(q[0][0])} ${f(q[0][1])} m ${q.slice(1).map((pt) => `${f(pt[0])} ${f(pt[1])} l`).join(' ')} h W* n\n`;
+    node.normalize && node.normalize();
+    const preRef = out.context.register(out.context.flateStream(pre)), postRef = out.context.register(out.context.flateStream('\nQ\n'));
+    const cur = node.get(PDFName.of('Contents'));
+    const list = cur instanceof PDFArray ? cur.asArray() : cur ? [cur] : [];
+    node.set(PDFName.of('Contents'), out.context.obj([preRef, ...list, postRef]));
+  }
+  // 3. Paint: the colour that was behind each change, then new pictures and text.
+  const rgbOf = (hex) => { const n = parseInt(String(hex || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map((x) => PDFNumber.of(+x.toFixed(4))); };
+  const O = (name, args = []) => PDFOperator.of(name, args);
+  for (const m of edits) {
+    if (m.type === 'ae') continue;
+    const q = m.type === 'te' ? lineQuad(m, .3) : m.quad;
+    // Taken out of the content, the original leaves what was behind it untouched; clipped, it needs its background.
+    if (m.type === 'erase' || !removed.has(m.id)) p.pushOperators(O('q'), O('rg', rgbOf(m.bg)), O('m', q[0].map((n) => PDFNumber.of(n))), ...q.slice(1).map((pt) => O('l', pt.map((n) => PDFNumber.of(n)))), O('h'), O('f'), O('Q'));
+  }
+  for (const m of pics) {
+    if (m.deleted || !m.data) continue;
+    let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); }
+    p.drawImage(im, { x: m.x, y: m.y, width: m.w, height: m.h });
+  }
+  for (const m of lines) {
+    if (!m.text.trim()) continue;
+    const want = baseName(m.font);
+    let f = [...fonts.values()].find((x) => baseName(x.base) === want && x.rev.size);
+    const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
+    const runs = [];
+    for (const ch of m.text) { const code = f ? f.rev.get(ch) : undefined; const own = code != null; const last = runs[runs.length - 1]; if (last && last.own === own) last.chars.push(own ? code : ch); else runs.push({ own, chars: [own ? code : ch] }); }
+    const ops = [O('q'), O('rg', rgbOf(m.color)), O('BT'), O('Tm', m.tm.map((n) => PDFNumber.of(+(+n).toFixed(4))))];
+    for (const r of runs) {
+      if (r.own) {
+        ops.push(O('Tf', [f.key, PDFNumber.of(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
+      } else {
+        let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); }
+        const key = node.newFontDictionary ? node.newFontDictionary('CPDF', sf.ref) : (() => { throw new Error('no font dictionary'); })();
+        let hex; try { hex = sf.encodeText(r.chars.join('')); } catch { hex = sf.encodeText(r.chars.map((c) => (/[\x20-\x7E]/.test(c) ? c : '?')).join('')); }
+        ops.push(O('Tf', [key, PDFNumber.of(1)]), O('Tj', [hex]));
+      }
+    }
+    ops.push(O('ET'), O('Q'));
+    p.pushOperators(...ops);
+  }
+  void PDFRef; void PDFRawStream;
+}
+// Comments from other apps that were deleted or changed.
+function saveCommentEdits(L, out, p, marks, same) {
+  const edits = marks.filter((m) => m.type === 'ae'); if (!edits.length) return;
+  const { PDFName, PDFArray, PDFDict, PDFHexString, PDFRef } = L;
+  const annots = p.node.lookup(PDFName.of('Annots')); if (!(annots instanceof PDFArray)) return;
+  const refOf = (id) => { const mm = /^(\d+)R(\d*)$/.exec(id || ''); return mm ? [+mm[1], +(mm[2] || 0)] : null; };
+  for (let k = annots.size() - 1; k >= 0; k--) {
+    const r = annots.get(k), d = out.context.lookup(r); if (!(d instanceof PDFDict)) continue;
+    const rect = d.lookup(PDFName.of('Rect')); const rc = rect instanceof PDFArray ? rect.asArray().map((x) => out.context.lookup(x).asNumber()) : null;
+    const sub = String(d.lookup(PDFName.of('Subtype')) || '').slice(1);
+    const parent = d.get(PDFName.of('Parent'));
+    const match = (m) => {
+      const id = refOf(m.ref);
+      if (same && r instanceof PDFRef && id) return r.objectNumber === id[0] && r.generationNumber === id[1];
+      return rc && m.rect && rc.every((n, j) => Math.abs(n - m.rect[j]) < .6) && (!m.subtype || m.subtype === sub);
+    };
+    const m = edits.find(match);
+    const parentDeleted = parent instanceof PDFRef && edits.some((e) => e.deleted && same && (() => { const id = refOf(e.ref); return id && parent.objectNumber === id[0]; })());
+    if ((m && m.deleted) || parentDeleted) { annots.remove(k); continue; }
+    if (m && m.contents != null) { d.set(PDFName.of('Contents'), PDFHexString.fromText(m.contents)); d.delete(PDFName.of('RC')); }
+  }
+}
 
 /* ---------------- signature and pictures ---------------- */
 async function signature() {
@@ -589,11 +1287,16 @@ async function buildPdf(only) {
   const font = await out.embedFont(StandardFonts.Helvetica);
   const col = (hex) => { const n = parseInt(hex.slice(1), 16); return rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); };
   const vec = (r) => { const a = r * Math.PI / 180; return { right: [Math.cos(a), Math.sin(a)], down: [Math.sin(a), -Math.cos(a)] }; };
-  const imgCache = new Map();
+  const imgCache = new Map(), editCtx = { images: imgCache, std: new Map() };
   for (let n = 0; n < entries.length; n++) {
     const e = entries[n], p = pages[n];
     if (e.rot) p.setRotation(degrees((p.getRotation().angle + e.rot) % 360));
-    for (const m of (doc.marks[pageKey(e)] || [])) {
+    const pageMarks = doc.marks[pageKey(e)] || [];
+    // Changes to the PDF's own content first (they replace what was there), then the mark-up on top.
+    await saveContentEdits(L, out, p, pageMarks, editCtx);
+    saveCommentEdits(L, out, p, pageMarks, same);
+    for (const m of pageMarks) {
+      if (CONTENT_TYPES.has(m.type)) continue;
       if (m.type === 'hl') for (const r of m.rects) p.drawRectangle({ x: Math.min(r[0], r[2]), y: Math.min(r[1], r[3]), width: Math.abs(r[2] - r[0]), height: Math.abs(r[3] - r[1]), color: col(m.color), opacity: .4, blendMode: BlendMode.Multiply });
       if (m.type === 'ink') for (let k = 1; k < m.pts.length; k++) p.drawLine({ start: { x: m.pts[k - 1][0], y: m.pts[k - 1][1] }, end: { x: m.pts[k][0], y: m.pts[k][1] }, thickness: m.w, color: col(m.color), lineCap: LineCapStyle.Round });
       if (m.type === 'rect') p.drawRectangle({ x: Math.min(m.x1, m.x2), y: Math.min(m.y1, m.y2), width: Math.abs(m.x2 - m.x1), height: Math.abs(m.y2 - m.y1), borderColor: col(m.color), borderWidth: m.w });
@@ -1036,8 +1739,8 @@ cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, r
 cmd('undo', { label: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
 cmd('redo', { label: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
-cmd('deleteMark', { label: 'Delete selected mark', icon: 'trash-2', enabled: () => !!selMark, run: deleteSelected });
-const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Text', 'type'], ['note', 'Note', 'sticky-note']];
+cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
+const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
 for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
@@ -1068,7 +1771,7 @@ const MENUS = [
   ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image']],
+  ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image', '-', 'tool_edit', 'tool_erase']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -1094,7 +1797,7 @@ $$('#menubar > button').forEach((b) => b.addEventListener('click', () => {
 }));
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
-  markup: ['Mark up', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
+  markup: ['Mark up', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Change the PDF', ['tool_edit', 'tool_erase']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
   pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
   export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
@@ -1129,8 +1832,8 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selMark) { e.preventDefault(); deleteSelected(); }
-  if (e.key === 'Escape') { if (!$('#findbar').hidden) closeFind(); else { setTool('select'); pendingImage = null; selectMark(null); } }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && (selMark || selContent)) { e.preventDefault(); deleteSelected(); }
+  if (e.key === 'Escape') { if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
   if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
   if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
@@ -1277,4 +1980,4 @@ serial(async () => {
 });
 if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
-window.__cowdreyPdf = { get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; } };
+window.__cowdreyPdf = { get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; }, contentMap: (n) => contentMap(views[n].page) };

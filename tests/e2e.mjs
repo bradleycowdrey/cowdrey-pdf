@@ -324,6 +324,121 @@ await test('sample PDF: Try a sample opens a two-page guide with a form and a pe
   ok((await p.textContent('.page[data-n="0"] .textLayer')).includes('pelican'), 'text layer');
   eq(p.errors, []); await p.ctx.close();
 });
+// Editing what's already in a PDF (tests/fixtures/word.pdf: CID fonts as Word saves them, a tinted panel, a picture,
+// a red line, and a sticky note and a square from "another app").
+const WORD = path.join(root, 'tests/fixtures/word.pdf');
+const savedOf = async (p) => Buffer.from(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.buildPdf())));
+async function reopen(p, bytes) {
+  await p.evaluate(async (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); await window.__cowdreyPdf.openBytes(u, 'Saved.pdf'); }, bytes.toString('base64'));
+  await p.waitForFunction(() => document.querySelector('.page canvas.pdf') && document.querySelector('.textLayer span'), null, { timeout: 15000 }); await p.waitForTimeout(500);
+}
+const pageText = (p) => p.$$eval('.page[data-n="0"] .textLayer span', (s) => s.map((x) => x.textContent).join(' '));
+// A point in PDF coordinates on page 1, on screen.
+const at = (p, x, y) => p.evaluate(([x, y]) => { const v = window.__cowdreyPdf.views()[0]; const [vx, vy] = v.viewport.convertToViewportPoint(x, y); const r = v.el.getBoundingClientRect(); return [r.left + vx, r.top + vy]; }, [x, y]);
+
+await test('Edit PDF: a line is rewritten in its own font and colour; the saved PDF has only the new text', async () => {
+  const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Budget' }).first().boundingBox();
+  await p.mouse.click(b.x + 20, b.y + b.height / 2);
+  await p.waitForSelector('.line-editor'); eq(await p.textContent('.line-editor'), 'Budget: 42,000 dollars, on track.');
+  await p.keyboard.type('Budget: 45,500 dollars, on track.'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+  const [m] = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat());
+  eq([m.type, m.text, /Carlito-Bold/.test(m.font), m.bg], ['te', 'Budget: 45,500 dollars, on track.', true, '#edf2fc'], 'edit');
+  ok(parseInt(m.color.slice(1, 3), 16) < 60, 'dark text colour ' + m.color);
+  const out = await savedOf(p);
+  // The new line is set in the PDF's own Carlito Bold, not a substitute
+  const d = await PDFDocument.load(out), fonts = d.getPage(0).node.Resources().lookup(require('../desktop/node_modules/pdf-lib').PDFName.of('Font'));
+  ok(fonts.entries().every(([, r]) => /Carlito/.test(String(d.context.lookup(r).get(require('../desktop/node_modules/pdf-lib').PDFName.of('BaseFont'))))), 'no substitute font added');
+  await reopen(p, out);
+  const t = await pageText(p);
+  ok(t.includes('Budget: 45,500 dollars, on track.') && !t.includes('42,000'), t);
+  eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
+});
+await test('Edit PDF: Escape cancels; typing the original back removes the edit; undo brings it back', async () => {
+  const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Prepared' }).first().boundingBox();
+  await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+  await p.keyboard.type('Nothing kept'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+  eq(await marks(p), [], 'Escape keeps nothing');
+  await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+  await p.keyboard.type('Prepared by Alex on 4 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+  eq(await marks(p), ['te']);
+  await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+  eq(await p.textContent('.line-editor'), 'Prepared by Alex on 4 March.', 'reopens the edit');
+  await p.keyboard.type('Prepared by the delivery team on 3 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+  eq(await marks(p), [], 'back to the original');
+  await p.evaluate(() => window.__cowdreyPdf.run('undo')); await p.waitForTimeout(200);
+  eq(await marks(p), ['te'], 'undo');
+  await p.ctx.close();
+});
+await test('Edit PDF: a picture is moved, resized and deleted; the saved PDF draws it in its new place only', async () => {
+  const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  const [sx, sy] = await at(p, 460, 480), [tx, ty] = await at(p, 360, 460);
+  await p.mouse.move(sx, sy); await p.mouse.down(); await p.mouse.move(tx, ty, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(600);
+  let m = (await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat()))[0];
+  eq([m.type, Math.round(m.x), Math.round(m.y), Math.round(m.w)], ['ie', 300, 400, 120], 'moved');
+  // resize from the corner handle (bottom right)
+  const [hx, hy] = await at(p, 420, 400), [h2x, h2y] = await at(p, 480, 400);
+  await p.mouse.move(hx, hy); await p.mouse.down(); await p.mouse.move(h2x, h2y, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(400);
+  m = (await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat()))[0];
+  eq([Math.round(m.w), Math.round(m.h), Math.round(m.y + m.h)], [180, 180, 520], 'resized, top kept');
+  await reopen(p, await savedOf(p));
+  const imgs = await p.evaluate(async () => (await window.__cowdreyPdf.contentMap(0)).images.map((i) => i.quad.flat().map(Math.round)));
+  eq(imgs, [[300, 340, 480, 340, 480, 520, 300, 520]], 'one picture, in its new place');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  const [cx, cy] = await at(p, 390, 430); await p.mouse.click(cx, cy); await p.waitForTimeout(300);
+  await p.keyboard.press('Delete'); await p.waitForTimeout(300);
+  await reopen(p, await savedOf(p));
+  eq(await p.evaluate(async () => (await window.__cowdreyPdf.contentMap(0)).images.length), 0, 'deleted');
+  eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
+});
+await test('Edit PDF: a comment from another app is edited, another deleted; Erase area clears a line', async () => {
+  const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  // the sticky note: double-click to change its text
+  const [nx, ny] = await at(p, 570, 700);
+  await p.mouse.dblclick(nx, ny); await p.waitForSelector('#dialog[open] #dlgInput');
+  eq(await p.inputValue('#dlgInput'), 'Please check the budget figure.');
+  await p.fill('#dlgInput', 'Budget confirmed.'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(300);
+  // the square drawn around a sentence: click its edge, then Delete
+  const [ex, ey] = await at(p, 71, 583); await p.mouse.click(ex, ey); await p.waitForTimeout(200); await p.keyboard.press('Delete'); await p.waitForTimeout(500);
+  // Erase area over the red line
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_erase'));
+  const [a1, b1] = await at(p, 60, 408), [a2, b2] = await at(p, 560, 392);
+  await p.mouse.move(a1, b1); await p.mouse.down(); await p.mouse.move(a2, b2, { steps: 5 }); await p.mouse.up(); await p.waitForTimeout(300);
+  eq((await marks(p)).sort(), ['ae', 'ae', 'erase']);
+  const out = await savedOf(p);
+  const d = await PDFDocument.load(out), L = require('../desktop/node_modules/pdf-lib');
+  const annots = d.getPage(0).node.Annots().asArray().map((r) => d.context.lookup(r));
+  eq(annots.map((a) => String(a.get(L.PDFName.of('Subtype')))), ['/Text'], 'square deleted');
+  eq(annots[0].lookup(L.PDFName.of('Contents')).decodeText(), 'Budget confirmed.');
+  // the erased area is clipped out of the page
+  const content = d.getPage(0).node.Contents(); ok(content, 'content');
+  await reopen(p, out);
+  const px = await p.evaluate(async () => { const v = window.__cowdreyPdf.views()[0]; const c = v.el.querySelector('canvas.pdf'); const [x, y] = v.viewport.convertToViewportPoint(300, 400); const k = c.width / v.viewport.width; return [...c.getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data].slice(0, 3); });
+  ok(px.every((n) => n > 240), 'the red line is gone: ' + px);
+  await p.ctx.close();
+});
+await test('Edit PDF: a PDF from Chrome keeps its subset fonts; letters they lack use the closest standard font', async () => {
+  const p = await open(); await openPdf(p, path.join(root, 'tests/fixtures/chrome.pdf'), 'Summary.pdf');
+  await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+  for (const [find, typed] of [['Revenue', 'Revenue grew by 12% in every region, quickly.'], ['Next review', 'Next review: 21 July.']]) {
+    const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
+    await p.mouse.click(b.x + 8, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+    await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+  }
+  const ms = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat());
+  eq(ms.map((m) => [/Carlito/.test(m.font), m.fam, m.bold]), [[true, 'sans', false], [true, 'sans', true]]);
+  const g = parseInt(ms[1].color.slice(3, 5), 16), r = parseInt(ms[1].color.slice(1, 3), 16);
+  ok(g > r + 40, 'the green line stays green: ' + ms[1].color);
+  await reopen(p, await savedOf(p));
+  const t = (await pageText(p)).replace(/\s+/g, '');
+  ok(t.includes('Revenuegrewby12%ineveryregion,quickly.') && t.includes('Nextreview:21July.') && !t.includes('14June'), t);
+  eq(p.errors, []); await p.ctx.close();
+});
 await test('every library URL resolves to a file in the pinned packages', async () => { eq([...missing], []); });
 
 await close();

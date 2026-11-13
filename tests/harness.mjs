@@ -18,7 +18,7 @@ export async function open({ width = 1440, height = 900, scheme = 'dark', fresh 
     const u = r.request().url();
     if (u === 'https://app.test/') return r.fulfill({ body: html, contentType: 'text/html' });
     const m = u.match(/^https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/]+\/)?[^@/]+)@[^/]+\/(.+)$/);
-    if (m) { const f = path.join(NM, m[1], m[2]); if (fs.existsSync(f)) return r.fulfill({ body: fs.readFileSync(f), contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } }); missing.add(u); }
+    if (m) { const f = path.join(NM, m[1], m[2]); if (fs.existsSync(f)) return r.fulfill({ body: fs.readFileSync(f), contentType: f.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript', headers: { 'access-control-allow-origin': '*' } }); missing.add(u); }
     return r.abort();
   });
   await page.goto('https://app.test/');
