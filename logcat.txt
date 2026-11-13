@@ -1,0 +1,177 @@
+11-13 19:57:58.578  2582  2582 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-13 19:57:58.606  2582  2582 I AndroidRuntime: Using default boot image
+11-13 19:57:58.607  2582  2582 I AndroidRuntime: Leaving lock profiling enabled
+11-13 19:57:58.927  2582  2582 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so
+11-13 19:57:58.932  1566  2610 W chromium: [1113/195758.925971:WARNING:url_request_context_config.cc(716)] Unrecognized Cronet experimental option "enable_telemetry" with params "false
+11-13 19:57:58.932  1566  2610 W chromium: 
+11-13 19:57:59.075  2582  2582 D AndroidRuntime: Calling main entry com.android.commands.monkey.Monkey
+11-13 19:57:59.076  2582  2582 W Monkey  : args: [-p, com.bradcowdrey.cowdreypdf, -c, android.intent.category.LAUNCHER, 1]
+11-13 19:57:59.078  2582  2582 W Monkey  :  arg: "com.bradcowdrey.cowdreypdf"
+11-13 19:57:59.078  2582  2582 W Monkey  : data="com.bradcowdrey.cowdreypdf"
+11-13 19:57:59.492   560   722 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-13 19:57:59.510   917   961 V WindowManagerShell: Transition requested (#11): android.os.BinderProxy@f0eee9a TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=8 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } baseActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} topActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} origActivity=null realActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} numActivities=1 lastActiveTime=51066 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@b2ab3cb} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 136 - 0, 0) topActivityInfo=ActivityInfo{df897a8 com.bradcowdrey.cowdreypdf.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= true isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2400 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 11 }
+11-13 19:57:59.596   560   580 I AppsFilter: interaction: PackageSetting{61ed40d com.android.microdroid.empty_payload/10198} -> PackageSetting{eca6fc2 com.bradcowdrey.cowdreypdf/10209} BLOCKED
+11-13 19:57:59.636   560  1674 D CoreBackPreview: Window{23f6047 u0 Splash Screen com.bradcowdrey.cowdreypdf}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@257c82f, mPriority=0, mIsAnimationCallback=false}
+11-13 19:57:59.641  1195  1195 I TopTaskTracker: onTaskMovedToFront: (moved taskInfo to front) taskId=8, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity }
+11-13 19:57:59.805  2582  2582 I AndroidRuntime: VM exiting with result code 0.
+11-13 19:57:59.876  2640  2640 I drey.cowdreypdf: Using CollectorTypeCMC GC.
+11-13 19:57:59.880  2640  2640 W drey.cowdreypdf: Unexpected CPU variant for x86: x86_64.
+11-13 19:57:59.880  2640  2640 W drey.cowdreypdf: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, default
+11-13 19:57:59.885   560   597 I ActivityManager: Start proc 2640:com.bradcowdrey.cowdreypdf/u0a209 for next-top-activity {com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity}
+11-13 19:57:59.889  2640  2640 E drey.cowdreypdf: Not starting debugger since process cannot load the jdwp agent.
+11-13 19:58:00.146   560   584 V WindowManager: Sent Transition (#11) createdAt=11-13 19:57:59.387 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=8 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } baseActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} topActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} origActivity=null realActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} numActivities=1 lastActiveTime=51066 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{d3511f4 Task{9c60de4 #8 type=standard A=10209:com.bradcowdrey.cowdreypdf}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 136 - 0, 0) topActivityInfo=ActivityInfo{1c92d1d com.bradcowdrey.cowdreypdf.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= true isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2400 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 11 }
+11-13 19:58:00.146   560   584 V WindowManager:         {WCT{RemoteToken{d3511f4 Task{9c60de4 #8 type=standard A=10209:com.bradcowdrey.cowdreypdf}}} m=OPEN f=NONE leash=Surface(name=Task=8)/@0xdd2e2e sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},
+11-13 19:58:00.211  2640  2640 W ziparchive: Unable to open '/data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.dm': No such file or directory
+11-13 19:58:00.240  2640  2640 W ziparchive: Unable to open '/data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.dm': No such file or directory
+11-13 19:58:00.425   560   865 I AppWidgetServiceImpl: Updating package stopped masked state for uid 10209 package com.bradcowdrey.cowdreypdf isStopped false
+11-13 19:58:00.542   560   890 I SdkSandboxManager: No SDKs used. Skipping SDK data reconcilation for CallingInfo{mUid=10209, mPackageName='com.bradcowdrey.cowdreypdf, mAppProcessToken='null'}
+11-13 19:58:00.764  2640  2640 D nativeloader: Configuring clns-7 for other apk /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk. target_sdk_version=37, uses_libraries=, library_path=/data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/lib/x86_64:/data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.bradcowdrey.cowdreypdf
+11-13 19:58:00.889   560   560 I AppsFilter: interaction: PackageSetting{61ed40d com.android.microdroid.empty_payload/10198} -> PackageSetting{eca6fc2 com.bradcowdrey.cowdreypdf/10209} BLOCKED
+11-13 19:58:01.243   560   880 D ShortcutService: adding package: com.bradcowdrey.cowdreypdf userId0
+11-13 19:58:01.243   560   880 D ShortcutService: handlePackageAdded: com.bradcowdrey.cowdreypdf user=0
+11-13 19:58:01.243   560   880 D ShortcutService: rescanPackageIfNeeded 0@com.bradcowdrey.cowdreypdf, forceRescan=true , isNewApp=true
+11-13 19:58:01.243   560   880 D ShortcutService: Package com.bradcowdrey.cowdreypdf has 0 manifest shortcut(s), and 0 share target(s)
+11-13 19:58:01.243   560   880 D ShortcutService: changing package: com.bradcowdrey.cowdreypdf userId0
+11-13 19:58:01.243   560   880 D ShortcutService: handlePackageChanged: com.bradcowdrey.cowdreypdf user=0
+11-13 19:58:01.243   560   880 D ShortcutService: rescanPackageIfNeeded 0@com.bradcowdrey.cowdreypdf, forceRescan=true , isNewApp=true
+11-13 19:58:01.243   560   880 D ShortcutService: Package com.bradcowdrey.cowdreypdf has 0 manifest shortcut(s), and 0 share target(s)
+11-13 19:58:01.445  1195  1258 D SessionCommitReceiver: Removing PromiseIcon for package: com.bradcowdrey.cowdreypdf, install reason: 0, alreadyAddedPromiseIcon: false
+11-13 19:58:01.475  2640  2640 W drey.cowdreypdf: Verification of android.view.View u3.onCreateView(android.view.View, java.lang.String, android.content.Context, android.util.AttributeSet) took 107.416ms (223.43 bytecodes/s) (2832B approximate peak alloc)
+11-13 19:58:01.774  2640  2640 W drey.cowdreypdf: Verification of void y7.run() took 165.263ms (1452.23 bytecodes/s) (8440B approximate peak alloc)
+11-13 19:58:01.893  2640  2640 W drey.cowdreypdf: Verification of android.view.View w4.onCreateView(android.view.View, java.lang.String, android.content.Context, android.util.AttributeSet) took 114.829ms (6287.56 bytecodes/s) (23112B approximate peak alloc)
+11-13 19:58:01.979   929   929 I SafetyLabelChangedBroadcastReceiver: received broadcast packageName: com.bradcowdrey.cowdreypdf, current user: UserHandle{0}, packageChangeEvent: NEW_INSTALL, intent user: UserHandle{0}
+11-13 19:58:02.013  2674  2722 D nativeloader: Load /data/app/~~1mFDZCyRLlrN5L-Ut2Hgdg==/com.android.chrome-BhYe-rTVDwG03yYYrcjsJg==/Chrome.apk!/lib/x86_64/libchromium_android_linker.so using ns clns-8 from class loader (caller=/data/app/~~1mFDZCyRLlrN5L-Ut2Hgdg==/com.android.chrome-BhYe-rTVDwG03yYYrcjsJg==/Chrome.apk): ok
+11-13 19:58:02.346  1382  1709 I SuperDelight: SuperDelightManager.getDelightMetadataUriAndVersion():1009 getDelightMetadataUriAndVersion(): Phenotype : 2024043000 : https://www.gstatic.com/android/keyboard/dictionarypack/GalileoGalilei-normal/metadata.json
+11-13 19:58:02.411  2640  2640 D nativeloader: Load /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk!/lib/x86_64/libcowdrey_pdf_lib.so using ns clns-7 from class loader (caller=/data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk): ok
+11-13 19:58:02.644  1195  1258 D PackageUpdatedTask: Package updated: mOp=ADD packages=[com.bradcowdrey.cowdreypdf]
+11-13 19:58:02.744   560  1659 D CoreBackPreview: Window{f999bd u0 com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@eaba9d, mPriority=0, mIsAnimationCallback=false}
+11-13 19:58:03.510   560   650 D CoreBackPreview: Window{23f6047 u0 Splash Screen com.bradcowdrey.cowdreypdf}: Setting back callback null
+11-13 19:58:03.511   560   722 W InputManager-JNI: Input channel object '23f6047 Splash Screen com.bradcowdrey.cowdreypdf (client)' was disposed without first being removed with the input manager!
+11-13 19:58:03.682  1464  1464 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.bradcowdrey.cowdreypdf], userId:[0], reason:[package is added.].
+11-13 19:58:03.728  2640  2640 W drey.cowdreypdf: Entry not found
+11-13 19:58:03.880  2640  2640 D nativeloader: Load /system/lib64/libwebviewchromium_plat_support.so using ns clns-9 from class loader (caller=/data/app/~~KRN4OOt-TOieUi8uQ3W6Wg==/com.google.android.webview-ctlFfD4svZ6SMZCvToG08Q==/WebViewGoogle.apk): ok
+11-13 19:58:03.887   560   584 W ziparchive: Unable to open '/data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.dm': No such file or directory
+11-13 19:58:03.967  2640  2794 I chromium: [1113/195803.953106:INFO:variations_seed_loader.cc(66)] Failed to open file for reading.: No such file or directory (2)
+11-13 19:58:03.970  2640  2749 I RustStdoutStderr: [1113/195803.953106:INFO:variations_seed_loader.cc(66)] Failed to open file for reading.: No such file or directory (2)
+11-13 19:58:03.972  2640  2794 I cr_VariationsUtils: Failed reading seed file "/data/user/0/com.bradcowdrey.cowdreypdf/app_webview/variations_seed_new"
+11-13 19:58:03.975  2640  2794 I chromium: [INFO:variations_seed_loader.cc(66)] Failed to open file for reading.: No such file or directory (2)
+11-13 19:58:03.976  2640  2794 I cr_VariationsUtils: Failed reading seed file "/data/user/0/com.bradcowdrey.cowdreypdf/app_webview/variations_seed"
+11-13 19:58:03.977  2640  2749 I RustStdoutStderr: [INFO:variations_seed_loader.cc(66)] Failed to open file for reading.: No such file or directory (2)
+11-13 19:58:04.004   560   584 I ActivityTaskManager: Displayed com.bradcowdrey.cowdreypdf/.MainActivity for user 0: +4s224ms
+11-13 19:58:04.251   560   597 I ActivityManager: Start proc 2812:com.google.android.webview:webview_service/u0a151 for service {com.google.android.webview/org.chromium.android_webview.services.VariationsSeedServer}
+11-13 19:58:04.443  2640  2828 W chromium: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+11-13 19:58:04.443  2640  2749 I RustStdoutStderr: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+11-13 19:58:04.567   560   597 I ActivityManager: Start proc 2833:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0ai9000 for  {com.bradcowdrey.cowdreypdf/org.chromium.content.app.SandboxedProcessService0:0}
+11-13 19:58:04.665  1464  1464 I AiAiEcho: AppFetcherImpl onPackageChanged com.bradcowdrey.cowdreypdf.
+11-13 19:58:04.668  1464  2338 I AiAiEcho: AppIndexer Package:[com.bradcowdrey.cowdreypdf] UserProfile:[0] Enabled:[true].
+11-13 19:58:04.673  1464  2338 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.bradcowdrey.cowdreypdf], userId:[0], reason:[package is updated.].
+11-13 19:58:04.893  2833  2833 I cr_WebViewApkApp: Launched version=124.0.6367.219 minSdkVersion=29 isBundle=false processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0
+11-13 19:58:04.897   560   689 I ImeTracker: com.bradcowdrey.cowdreypdf:abe6fe5d: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-13 19:58:04.897   560   689 I ImeTracker: com.bradcowdrey.cowdreypdf:abe6fe5d: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-13 19:58:04.918  1382  1382 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=com.bradcowdrey.cowdreypdf, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, false)
+11-13 19:58:04.929   560  1014 W PackageConfigPersister: App-specific configuration not found for packageName: com.bradcowdrey.cowdreypdf and userId: 0
+11-13 19:58:05.147  2833  2872 W chromium: [WARNING:runtime_features.cc(694)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM118 in addition.
+11-13 19:58:05.148  2833  2872 W chromium: [WARNING:runtime_features.cc(730)] AttributionReportingCrossAppWeb cannot be enabled in this configuration. Use --enable-features=ConversionMeasurement,AttributionReportingCrossAppWeb in addition.
+11-13 19:58:05.400  2833  2872 I chromium: [INFO:viewport_data.cc(133)] E2E_Used ViewportFitCover
+11-13 19:58:05.447  1085  1085 D CarrierSvcBindHelper: onPackageAdded: com.bradcowdrey.cowdreypdf
+11-13 19:58:05.485  2833  2872 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-13 19:58:05.522   560   597 I ActivityManager: Start proc 2902:com.google.android.webview:webview_apk/u0a151 for service {com.google.android.webview/org.chromium.android_webview.nonembedded.AwComponentUpdateService}
+11-13 19:58:05.627  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-13 19:58:05.628  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-13 19:58:05.628  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-13 19:58:05.749  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-13 19:58:05.758  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-13 19:58:05.758  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-13 19:58:05.772  1085  1290 D ImsResolver: maybeAddedImsService, packageName: com.bradcowdrey.cowdreypdf
+11-13 19:58:05.923  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-13 19:58:05.923  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-13 19:58:05.987  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-13 19:58:05.994  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-13 19:58:05.994  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-13 19:58:06.001  1085  1085 D CarrierSvcBindHelper: onPackageModified: com.bradcowdrey.cowdreypdf
+11-13 19:58:06.051  1195  1258 D PackageUpdatedTask: Package updated: mOp=UPDATE packages=[com.bradcowdrey.cowdreypdf]
+11-13 19:58:06.065  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-13 19:58:06.065  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-13 19:58:06.179  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-13 19:58:06.179  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-13 19:58:06.179  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-13 19:58:06.255  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-13 19:58:06.255  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-13 19:58:06.330  1085  1290 D ImsResolver: maybeAddedImsService, packageName: com.bradcowdrey.cowdreypdf
+11-13 19:58:06.412  2640  2940 D ProfileInstaller: Installing profile for com.bradcowdrey.cowdreypdf
+11-13 19:58:06.457  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-13 19:58:06.457  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name p01
+11-13 19:58:06.457  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name p23
+11-13 19:58:06.457  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 3 name fanPointAttrib
+11-13 19:58:06.673  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-13 19:58:06.674  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-13 19:58:06.713  1411  1420 W gle.android.gms: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:06.824  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name fillBounds
+11-13 19:58:06.824  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-13 19:58:06.824  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name locations
+11-13 19:58:06.940  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-13 19:58:06.942  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-13 19:58:06.942  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-13 19:58:07.011  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-13 19:58:07.013  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-13 19:58:07.013  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-13 19:58:07.109  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-13 19:58:07.109  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-13 19:58:07.109  2640  2749 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inQuadEdge
+11-13 19:58:07.608  2902  2950 W cr_AWNetworkFetcherTask: 	at org.chromium.android_webview.nonembedded.NetworkFetcherTask.download(chromium-TrichromeWebViewGoogle6432.apk-stable-636771938:56)
+11-13 19:58:07.744  1208  2983 I FontLog : Package com.bradcowdrey.cowdreypdf has no metadata [CONTEXT service_id=132 ]
+11-13 19:58:07.808  1411  1980 I Blockstore: [DataStoreImpl] Clearing Blockstore Data for package com.bradcowdrey.cowdreypdf [CONTEXT service_id=258 ]
+11-13 19:58:09.573  1195  1202 W s.nexuslauncher: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:10.224  1464  1493 W ogle.android.as: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:11.107  1411  1420 W gle.android.gms: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:11.930  1091  1105 W ndroid.settings: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:17.760  1370  1379 W .apps.wellbeing: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:18.583  2640  2649 W drey.cowdreypdf: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~KRN4OOt-TOieUi8uQ3W6Wg==/com.google.android.webview-ctlFfD4svZ6SMZCvToG08Q==/WebViewGoogle.apk' with 2 weak references
+11-13 19:58:20.873  1370  1379 W .apps.wellbeing: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:21.744  1566  3681 W chromium: [1113/195821.744342:WARNING:url_request_context_config.cc(716)] Unrecognized Cronet experimental option "enable_telemetry" with params "false
+11-13 19:58:21.744  1566  3681 W chromium: 
+11-13 19:58:22.171  1370  1379 W .apps.wellbeing: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:25.383  3769  3769 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-13 19:58:25.398  3769  3769 I AndroidRuntime: Using default boot image
+11-13 19:58:25.398  3769  3769 I AndroidRuntime: Leaving lock profiling enabled
+11-13 19:58:25.560  3769  3769 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so
+11-13 19:58:25.748  3769  3769 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-13 19:58:26.170  1370  1379 W .apps.wellbeing: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:26.941  1091  1105 W ndroid.settings: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:26.961  2833  2872 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-13 19:58:27.075  3769  3769 D AndroidRuntime: Shutting down VM
+11-13 19:58:29.893  1382  1382 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=com.bradcowdrey.cowdreypdf, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, true)
+11-13 19:58:29.897   560   581 W PackageConfigPersister: App-specific configuration not found for packageName: com.bradcowdrey.cowdreypdf and userId: 0
+11-13 19:58:29.968  2833  2872 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-13 19:58:31.470  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.getEnabledCronetProviders(PG:25)
+11-13 19:58:31.470  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.createBuilderDelegate(PG:16)
+11-13 19:58:31.470  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.470  3360  3530 D StrictMode: 	at org.chromium.net.ExperimentalCronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.getEnabledCronetProviders(PG:25)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.createBuilderDelegate(PG:16)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.ExperimentalCronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.getEnabledCronetProviders(PG:25)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.createBuilderDelegate(PG:16)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.486  3360  3530 D StrictMode: 	at org.chromium.net.ExperimentalCronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.495  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.getEnabledCronetProviders(PG:25)
+11-13 19:58:31.495  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.createBuilderDelegate(PG:16)
+11-13 19:58:31.495  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.495  3360  3530 D StrictMode: 	at org.chromium.net.ExperimentalCronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.getEnabledCronetProviders(PG:25)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.createBuilderDelegate(PG:16)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.ExperimentalCronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.getEnabledCronetProviders(PG:25)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.createBuilderDelegate(PG:16)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.CronetEngine$Builder.<init>(PG:1)
+11-13 19:58:31.499  3360  3530 D StrictMode: 	at org.chromium.net.ExperimentalCronetEngine$Builder.<init>(PG:1)
+11-13 19:58:32.553  3360  3940 I cr_CronetUrlRequestContext: destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@e06ac3b
+11-13 19:58:33.371  1411  3705 I cr_CronetUrlRequestContext: destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@63ed4da
+11-13 19:58:34.792  3360  3940 I cr_CronetUrlRequestContext: destroyNativeStreamLocked org.chromium.net.impl.CronetBidirectionalStream@91b1e05
+11-13 19:58:34.874   560   577 W system_server: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:35.622  1370  1379 W .apps.wellbeing: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~5ckxMxhjcIi_sqMpNVDV8w==/com.bradcowdrey.cowdreypdf-2TRiycPixZe_8biWsqA4qQ==/base.apk' with 1 weak references
+11-13 19:58:36.276  1382  1382 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=com.bradcowdrey.cowdreypdf, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, true)
+11-13 19:58:36.296  2833  2872 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-13 19:58:36.309   560  1016 W PackageConfigPersister: App-specific configuration not found for packageName: com.bradcowdrey.cowdreypdf and userId: 0
