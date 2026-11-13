@@ -2,6 +2,11 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 0.1.4
+
+- **Try a sample PDF:** a two-page guide, made on the spot, to try every tool without a file of your own (also Help > Open the sample PDF).
+- The web app now lives at bradcowdrey.com/cowdrey-pdf/app, with a product page at bradcowdrey.com/cowdrey-pdf. GitHub Pages shows this repo's landing page.
+
 ## 0.1.3
 
 - **Mac menu bar:** File, Edit, View, Mark up, Pages and Help are back (0.1.2 sent the menu in a form the Mac refused).

@@ -1,6 +1,7 @@
-name: Web app (GitHub Pages)
+name: Landing page (GitHub Pages)
 
-# Publishes index.html, the whole web app, at https://bradleycowdrey.github.io/cowdrey-pdf/ on every push to main.
+# Publishes the landing page in site/ at https://bradleycowdrey.github.io/cowdrey-pdf/ on every push to main.
+# The web app itself lives at https://bradcowdrey.com/cowdrey-pdf/app (bradcowdrey.com serves this repo's index.html).
 on:
   push:
     branches: [main]
@@ -30,7 +31,7 @@ jobs:
           enablement: true
         continue-on-error: true
       - name: Collect the site
-        run: mkdir -p _site && cp index.html _site/ && touch _site/.nojekyll
+        run: mkdir -p _site && cp -R site/. _site/ && touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

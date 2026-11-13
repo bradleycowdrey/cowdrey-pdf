@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cowdrey.PDF · Bradley Cowdrey</title>
+<meta name="description" content="Cowdrey.PDF: a free PDF viewer and editor. Read, highlight, sign, fill in forms and rearrange pages, with your PDFs kept on your device. For Mac and the web, with iPhone, iPad and Android on the way, by Bradley Cowdrey.">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://bradcowdrey.com/cowdrey-pdf">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Meridian's product-page palette and Apple-style layout. */
+  :root {
+    --bg: #1A1816; --tile: #23201D; --raised: #1C1A18; --border: #2A2520; --border-strong: #3A3530;
+    --text: #FFFFFF; --cream: #FFF1E5; --secondary: #E0D8D0; --muted: #B0A898; --faint: #807870;
+    --crimson: #990F3D; --accent: #E04A7A;
+    --nav-glass: rgba(26,24,22,.72); --panel-shadow: 0 0 0 .5px var(--border), 0 40px 100px rgba(0,0,0,.55);
+    --traffic-red: #FF5F57; --traffic-yellow: #FEBC2E; --traffic-green: #28C840;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-font-smoothing: antialiased; scroll-padding-top: 72px; }
+  body { background: var(--bg); color: var(--text); font: 400 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; letter-spacing: 0; }
+  a { color: inherit; text-decoration: none; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+  .globalnav { position: sticky; top: 0; z-index: 10; background: var(--nav-glass); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: .5px solid var(--border); }
+  .globalnav .in { max-width: 1024px; margin: 0 auto; padding: 0 16px; height: 48px; display: flex; align-items: center; gap: 24px; font-size: 15px; color: var(--secondary); }
+  .globalnav .brand { font-weight: 600; font-size: 17px; color: var(--text); margin-right: auto; white-space: nowrap; }
+  .globalnav a:hover, .globalnav .share-btn:hover { color: var(--text); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+  .globalnav .cta { background: var(--text); color: var(--bg); border-radius: 980px; padding: 4px 12px; font-weight: 500; }
+  .share-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 4px 2px; font: inherit; color: inherit; cursor: pointer; white-space: nowrap; }
+  .share-btn svg { width: 13px; height: 13px; display: block; }
+  .toast { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); z-index: 20; background: rgba(26,24,22,.94); color: var(--cream); border: .5px solid var(--border-strong); border-radius: 980px; padding: 10px 20px; font-size: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.45); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .toast.show { opacity: 1; }
+  .wrap { max-width: 1024px; margin: 0 auto; padding: 0 16px 96px; }
+  .hero { text-align: center; padding: 88px 0 56px; }
+  .hero img { display: block; width: 120px; height: 120px; border-radius: 26px; margin: 0 auto 24px; }
+  .eyebrow-l { color: var(--accent); font-size: 21px; font-weight: 600; margin-bottom: 6px; }
+  h1 { font-size: 80px; font-weight: 600; line-height: 1.05; }
+  .sub { font-size: 28px; font-weight: 600; color: var(--muted); margin: 8px auto 28px; max-width: 640px; line-height: 1.15; text-wrap: balance; }
+  .actions { display: flex; justify-content: center; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 980px; font-size: 17px; font-weight: 500; background: var(--text); color: var(--bg); transition: background .15s; }
+  .pill:hover { background: var(--cream); }
+  .textlink { color: var(--cream); font-size: 17px; }
+  .textlink:hover { text-decoration: underline; }
+  .fine { font-size: 14px; color: var(--faint); margin-top: 16px; }
+  .section-h { font-size: 48px; font-weight: 600; line-height: 1.08; margin: 96px 0 24px; max-width: 760px; text-wrap: balance; }
+  .demo { scroll-margin-top: 24px; }
+  .panel { position: relative; overflow: hidden; background: var(--raised); border-radius: 14px; box-shadow: var(--panel-shadow); }
+  .panel::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--crimson); z-index: 1; }
+  .titlebar { position: relative; display: flex; align-items: center; justify-content: center; height: 44px; padding: 3px 64px 0; border-bottom: .5px solid var(--border-strong); color: var(--secondary); font-size: 13px; font-weight: 500; }
+  .traffic { position: absolute; left: 16px; display: flex; gap: 8px; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; background: var(--traffic-red); }
+  .traffic i:nth-child(2) { background: var(--traffic-yellow); }
+  .traffic i:nth-child(3) { background: var(--traffic-green); }
+  .editor { display: block; border: 0; width: 100%; height: 760px; background: var(--raised); }
+  .caption { text-align: center; margin: 24px auto 0; color: var(--muted); font-size: 14px; }
+  .caption .textlink { display: inline-block; margin-top: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+  .ftile { background: var(--tile); border-radius: 28px; padding: 32px; min-height: 220px; display: flex; flex-direction: column; }
+  .ftile .k { color: var(--accent); font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .ftile h3 { font-size: 28px; font-weight: 600; line-height: 1.12; margin-bottom: 12px; }
+  .ftile p { color: var(--muted); font-size: 17px; }
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .step { background: var(--tile); border-radius: 28px; padding: 28px; }
+  .step .num { font-size: 48px; font-weight: 600; color: var(--faint); line-height: 1; margin-bottom: 16px; }
+  .step p { color: var(--secondary); font-size: 17px; }
+  .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .platform { background: var(--tile); border-radius: 28px; padding: 32px; min-width: 0; }
+  .platform svg { display: block; width: 28px; height: 28px; fill: currentColor; color: var(--cream); margin-bottom: 16px; }
+  .platform h3 { font-size: 28px; font-weight: 600; line-height: 1.12; }
+  .platform .meta { color: var(--muted); font-size: 15px; margin-top: 8px; }
+  .platform .pill { margin-top: 20px; height: auto; min-height: 44px; padding-top: 10px; padding-bottom: 10px; max-width: 100%; }
+  .platform { display: grid; grid-row: span 5; grid-template-rows: subgrid; row-gap: 0; align-content: start; }
+  .platform .pill { justify-self: start; align-self: start; }
+  .pill.soon, .pill.soon:hover { background: transparent; border: .5px solid var(--border-strong); color: var(--secondary); cursor: default; }
+  .how { color: var(--secondary); font-size: 15px; padding-left: 20px; margin-top: 20px; overflow-wrap: anywhere; }
+  .how li { margin-bottom: 6px; }
+  .how a { color: var(--cream); }
+  .browser-note { color: var(--faint); font-size: 14px; margin-top: 24px; }
+  .browser-note a { color: var(--cream); }
+  footer { border-top: .5px solid var(--border); margin-top: 96px; padding-top: 20px; font-size: 12px; color: var(--faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; }
+  footer .bar { height: 3px; background: var(--crimson); width: 48px; border-radius: 2px; margin-bottom: 12px; }
+  footer .made { flex-basis: 100%; margin-top: 16px; }
+  footer a:hover { color: var(--cream); }
+  footer .socials { display: flex; align-items: center; gap: 4.5px; }
+  footer .socials a { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 4px; color: var(--faint); }
+  footer .socials a:hover { color: var(--cream); background: rgba(255,255,255,.06); }
+  footer .socials svg { width: 19px; height: 19px; display: block; }
+  @media (max-width: 1000px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 720px) {
+    .hero { padding: 56px 0 40px; }
+    h1 { font-size: 56px; }
+    .sub { font-size: 23px; }
+    .section-h { font-size: 36px; margin-top: 72px; }
+    .globalnav .hide-s { display: none; }
+    .globalnav .in { gap: 14px; font-size: 14px; }
+    .globalnav .brand { font-size: 14px; }
+    .globalnav .cta { padding: 4px 10px; }
+    .editor { height: 75vh; height: 75dvh; }
+    .steps { grid-template-columns: 1fr; }
+    .platforms { grid-template-columns: 1fr; }
+    .ftile { padding: 28px; }
+  }
+  @media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
+  @media (max-width: 440px) { h1 { font-size: 48px; } }
+  @media (max-width: 360px) {
+    h1 { font-size: 44px; }
+    .sub { font-size: 21px; }
+    .eyebrow-l { font-size: 19px; }
+    .globalnav .source { display: none; }
+    .actions { gap: 16px 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<nav class="globalnav" aria-label="Product navigation"><div class="in">
+  <a class="brand" href="https://bradcowdrey.com">Bradley Cowdrey</a>
+  <a class="hide-s" href="#demo" target="_self">Overview</a>
+  <a class="hide-s" href="#features" target="_self">Features</a>
+  <a class="hide-s" href="#get" target="_self">Get the app</a>
+  <a class="source" href="https://github.com/bradleycowdrey/cowdrey-pdf">Source</a>
+  <button class="share-btn" type="button" data-share aria-label="Share Cowdrey.PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8"/><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/></svg>Share</button>
+  <a class="cta" href="#get" target="_self">Download</a>
+</div></nav>
+<main class="wrap">
+  <section class="hero" aria-labelledby="product-title">
+    <img src="icon.png" width="120" height="120" alt="Cowdrey.PDF app icon">
+    <div class="eyebrow-l">Free for Mac and the web</div>
+    <h1 id="product-title">Cowdrey.PDF.</h1>
+    <p class="sub">Read, mark up, sign and fill in PDFs. Your files stay on your device.</p>
+    <div class="actions">
+      <a class="pill" href="https://bradcowdrey.com/cowdrey-pdf/app">Open Cowdrey.PDF</a>
+      <a class="textlink" href="https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg">Download for Mac ›</a>
+      <a class="textlink" href="#get" target="_self">iPhone, iPad and Android ›</a>
+      <button class="share-btn textlink" type="button" data-share aria-label="Share Cowdrey.PDF">Share ›</button>
+    </div>
+    <p class="fine">Web · Mac · iPhone, iPad and Android coming soon · Free and open source · No account, no upload</p>
+  </section>
+
+  <section class="demo" id="demo" aria-label="Live Cowdrey.PDF app">
+    <div class="panel">
+      <div class="titlebar"><span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>Cowdrey.PDF</div>
+      <iframe class="editor" src="https://bradcowdrey.com/cowdrey-pdf/app?sample&amp;theme=dark" title="Cowdrey.PDF with a sample PDF" loading="lazy"></iframe>
+    </div>
+    <p class="caption">This is the real app, with a sample PDF open. Highlight, draw, sign or fill in the form. Nothing is uploaded.<br><a class="textlink" href="https://bradcowdrey.com/cowdrey-pdf/app">Open full screen ›</a></p>
+  </section>
+
+  <section id="features" aria-labelledby="features-title">
+    <h2 class="section-h" id="features-title">A PDF editor that stays out of the way.</h2>
+    <div class="tiles">
+      <article class="ftile"><div class="k">Read</div><h3>Sharp pages, fast.</h3><p>Thumbnails, the outline and zoom down the side. Find any word across every page. Dark mode for the app, and dark pages for reading at night.</p></article>
+      <article class="ftile"><div class="k">Mark up</div><h3>Highlight, draw, box and type.</h3><p>Select text and highlight it, draw freehand, add boxes and text in any colour. Move or delete a mark, with undo and redo.</p></article>
+      <article class="ftile"><div class="k">Notes</div><h3>Comments every app can read.</h3><p>Notes are saved as real PDF comments, so they show up in Preview, Acrobat and the rest.</p></article>
+      <article class="ftile"><div class="k">Sign</div><h3>Draw it once.</h3><p>Draw your signature and place it on any page. It is kept on your device for next time.</p></article>
+      <article class="ftile"><div class="k">Forms</div><h3>Fill in and tick.</h3><p>Type into a PDF’s form fields and tick its boxes. What you enter is saved into the PDF.</p></article>
+      <article class="ftile"><div class="k">Pages</div><h3>Put pages in order.</h3><p>Rotate, move, duplicate, insert a blank page or delete one. Drag thumbnails to reorder.</p></article>
+      <article class="ftile"><div class="k">Merge and extract</div><h3>Combine PDFs, or pull pages out.</h3><p>Add other PDFs at the end, or save a few pages as a new PDF.</p></article>
+      <article class="ftile"><div class="k">Passwords</div><h3>Protected PDFs too.</h3><p>Open a password-protected PDF, then choose whether the saved copy keeps the password. Passwords are never stored.</p></article>
+      <article class="ftile"><div class="k">Export</div><h3>Images, text, print and share.</h3><p>Save a page as an image, the text as a .txt file, print, or share the PDF by Mail, Messages or AirDrop.</p></article>
+      <article class="ftile"><div class="k">Your files</div><h3>Save back to the file.</h3><p>On the Mac, open a PDF from Finder and Save writes back to it. If another app changed it first, Cowdrey.PDF asks.</p></article>
+      <article class="ftile"><div class="k">Documents</div><h3>Everything you opened, kept.</h3><p>PDFs you open, and your mark-up, are kept on this device, so you can pick up where you left off.</p></article>
+      <article class="ftile"><div class="k">Private</div><h3>Nothing leaves your device.</h3><p>No account and no upload. Cowdrey.PDF works on the PDF right where it is, even offline in the Mac app.</p></article>
+    </div>
+  </section>
+
+  <section id="get" aria-labelledby="get-title">
+    <h2 class="section-h" id="get-title">Get Cowdrey.PDF.</h2>
+    <div class="platforms">
+      <article class="platform">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm6.9 6h-3a15.7 15.7 0 00-1.4-3.6A8 8 0 0118.9 8zM12 4c.8 1.2 1.5 2.5 1.9 4h-3.8c.4-1.5 1.1-2.8 1.9-4zM4.3 14a8 8 0 010-4h3.4a16.5 16.5 0 000 4H4.3zm.8 2h3a15.7 15.7 0 001.4 3.6A8 8 0 015.1 16zm3-8h-3a8 8 0 014.4-3.6C8.9 5.5 8.4 6.7 8.1 8zM12 20c-.8-1.2-1.5-2.5-1.9-4h3.8c-.4 1.5-1.1 2.8-1.9 4zm2.3-6H9.7a14.7 14.7 0 010-4h4.6a14.7 14.7 0 010 4zm.2 5.6c.6-1.1 1.1-2.3 1.4-3.6h3a8 8 0 01-4.4 3.6zm1.8-5.6a16.5 16.5 0 000-4h3.4a8 8 0 010 4h-3.4z"/></svg>
+        <h3>Web</h3><p class="meta">Any modern browser · Chrome, Safari, Edge, Firefox</p>
+        <a class="pill" href="https://bradcowdrey.com/cowdrey-pdf/app">Open Cowdrey.PDF</a>
+        <ol class="how"><li>Open it and drop a PDF in, or choose Open.</li><li>Your PDFs and mark-up are kept in this browser, on this device. Nothing is uploaded.</li><li>Save PDF downloads the edited PDF. In Chrome and Edge it can save straight back to the file.</li></ol>
+      </article>
+      <article class="platform">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9s-2-.9-3.4-.9C5.9 6.8 4.3 7.8 3.4 9.4c-1.8 3.1-.5 7.8 1.3 10.3.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.4.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.3zM13.9 5c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.7-1.2 1.9-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>
+        <h3>Mac</h3><p class="meta">macOS 10.15 or later · Apple silicon and Intel</p>
+        <a class="pill" href="https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg">Download for Mac</a>
+        <ol class="how"><li>Open Cowdrey.PDF.dmg and drag Cowdrey.PDF into Applications.</li><li>This early version isn’t notarized by Apple yet, so the first time, Control-click Cowdrey.PDF and choose Open.</li><li>To open every PDF with it: select one in Finder, press ⌘I, choose Cowdrey.PDF under Open with, then Change All.</li></ol>
+      </article>
+      <article class="platform">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9s-2-.9-3.4-.9C5.9 6.8 4.3 7.8 3.4 9.4c-1.8 3.1-.5 7.8 1.3 10.3.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.4.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.3zM13.9 5c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.7-1.2 1.9-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>
+        <h3>iPhone, iPad and Android</h3><p class="meta">iOS 15 or later · Android 8.0 or later</p>
+        <span class="pill soon" aria-disabled="true">Coming soon</span>
+        <ol class="how"><li>The phone and tablet apps are built and being tested.</li><li>Until then, Cowdrey.PDF on the web works in your phone’s browser.</li></ol>
+      </article>
+    </div>
+    <p class="browser-note">Free and open source. Read the code, or report a problem, on <a href="https://github.com/bradleycowdrey/cowdrey-pdf"><b>GitHub</b> →</a></p>
+  </section>
+
+  <footer><div><div class="bar"></div>© 2026 Bradley Cowdrey</div><nav class="socials" aria-label="Social profiles"><a href="https://www.instagram.com/bradleycowdrey/" target="_blank" rel="noopener noreferrer" aria-label="Bradley Cowdrey on Instagram" title="Instagram"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="17.5" cy="6.5" r="1.1"/></svg></a><a href="https://www.linkedin.com/in/cowdrey/" target="_blank" rel="noopener noreferrer" aria-label="Bradley Cowdrey on LinkedIn" title="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M20.45 2H3.55C2.69 2 2 2.68 2 3.52v16.96c0 .84.69 1.52 1.55 1.52h16.9c.86 0 1.55-.68 1.55-1.52V3.52c0-.84-.69-1.52-1.55-1.52ZM7.93 18.75H4.98V9.2h2.95v9.55ZM6.45 7.9a1.71 1.71 0 1 1 0-3.42 1.71 1.71 0 0 1 0 3.42Zm12.3 10.85H15.8V14.1c0-1.11-.02-2.54-1.55-2.54-1.55 0-1.79 1.21-1.79 2.46v4.73H9.51V9.2h2.83v1.3h.04c.39-.74 1.36-1.52 2.79-1.52 2.99 0 3.58 1.97 3.58 4.53v5.24Z"/></svg></a><a href="https://x.com/bradcowdrey" target="_blank" rel="noopener noreferrer" aria-label="Bradley Cowdrey on X" title="X"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.64 7.584H.47l8.6-9.835L0 1.154h7.594l5.243 6.932 6.064-6.933Zm-1.29 19.49h2.039L6.487 3.24H4.3l13.31 17.403Z"/></svg></a><a href="https://github.com/bradleycowdrey" target="_blank" rel="noopener noreferrer" aria-label="Bradley Cowdrey on GitHub" title="GitHub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 .3a12 12 0 0 0-3.793 23.385c.6.111.82-.261.82-.577v-2.234c-3.338.725-4.043-1.416-4.043-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.729.083-.729 1.205.085 1.839 1.237 1.839 1.237 1.07 1.835 2.807 1.305 3.492.998.108-.776.418-1.305.762-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.31.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 0 1 6.006 0c2.291-1.553 3.297-1.23 3.297-1.23.654 1.652.243 2.873.119 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.216.694.825.576A12.001 12.001 0 0 0 12 .3Z"/></svg></a></nav><span>Free and open source · <a href="https://github.com/bradleycowdrey/cowdrey-pdf">GitHub</a> · <a href="https://bradcowdrey.com/legal">Terms &amp; Privacy</a></span><a class="made" href="https://bradcowdrey.com">Made by Bradley Cowdrey. Free. Forever. · bradcowdrey.com ↗</a></footer>
+</main>
+  <div class="toast" id="share-toast" role="status" aria-live="polite">Link copied</div>
+<script>
+(function () {
+  var SHARE = { title: "Cowdrey.PDF", text: "Cowdrey.PDF: a free PDF viewer and editor. Highlight, sign, fill in forms and rearrange pages, with your PDFs kept on your device.", url: "https://bradcowdrey.com/cowdrey-pdf" };
+  var toast = document.getElementById("share-toast");
+  var toastTimer = null;
+  function showToast() {
+    toast.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove("show"); }, 2000);
+  }
+  function copyLink() {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(SHARE.url).then(showToast, function () { fallbackCopy(); });
+    } else { fallbackCopy(); }
+  }
+  function fallbackCopy() {
+    var t = document.createElement("textarea");
+    t.value = SHARE.url;
+    t.style.position = "fixed"; t.style.opacity = "0";
+    document.body.appendChild(t);
+    t.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(t);
+    showToast();
+  }
+  function doShare(e) {
+    e.preventDefault();
+    if (navigator.share) {
+      navigator.share(SHARE).catch(function (err) {
+        if (err && err.name === "AbortError") return; // user cancelled the share sheet
+        copyLink();
+      });
+    } else { copyLink(); }
+  }
+  var buttons = document.querySelectorAll("[data-share]");
+  for (var i = 0; i < buttons.length; i++) buttons[i].addEventListener("click", doShare);
+})();
+</script>
+</body>
+</html>

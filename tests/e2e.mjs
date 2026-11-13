@@ -316,6 +316,14 @@ await test('phone apps: Print uses the system print dialog; Android "Open with" 
   eq((await calls(p, /sharekit\|native/)).map(([, a]) => a.method), ['displayName', 'printPage']);
   eq(p.errors, []); await p.ctx.close();
 });
+await test('sample PDF: Try a sample opens a two-page guide with a form and a pelican to find', async () => {
+  const p = await open();
+  await p.click('#drop [data-cmd="sample"]'); await waitPages(p); await p.waitForTimeout(600);
+  eq(await p.textContent('#docTitle'), 'Welcome to Cowdrey.PDF'); eq(await p.textContent('#pageCount'), '2');
+  ok(await p.$('.annotationLayer input[type="text"]'), 'form field');
+  ok((await p.textContent('.page[data-n="0"] .textLayer')).includes('pelican'), 'text layer');
+  eq(p.errors, []); await p.ctx.close();
+});
 await test('every library URL resolves to a file in the pinned packages', async () => { eq([...missing], []); });
 
 await close();

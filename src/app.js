@@ -1,7 +1,7 @@
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '0.1.3';
+const VERSION = '0.1.4';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
 // @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
@@ -27,7 +27,10 @@ const store = {
   set(k, v) { try { localStorage.setItem(KEY + ':' + k, JSON.stringify(v)); } catch {} },
 };
 const S = Object.assign({ theme: 'system', sidebar: true, side: 'thumbs', zoom: 'fit', darkPage: false, color: '#FFD43B', width: 2, ribbon: 'home' }, store.get('settings', {}));
-const saveSettings = () => store.set('settings', S);
+// ?theme=dark or ?theme=light (the live demo on the product page) sets the look for this visit only.
+const URL_THEME = (location.search.match(/[?&]theme=(dark|light)\b/) || [])[1];
+if (URL_THEME) S.theme = URL_THEME;
+const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: store.get('settings', {}).theme || 'system' } : S);
 let toastTimer;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
 
@@ -889,6 +892,57 @@ async function openStored(id) {
   return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0 });
 }
 
+/* ---------------- the sample PDF ----------------
+   A two-page welcome document, made here with pdf-lib, so there is something to try without a file. */
+async function makeSample() {
+  const { PDFDocument, StandardFonts, rgb } = await loadPdfLib();
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica), bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const maroon = rgb(.557, .071, .22), ink = rgb(.13, .11, .12), grey = rgb(.38, .34, .35);
+  const W = 612, H = 792, M = 72;
+  const wrap = (text, f, size, width) => {
+    const out = []; let line = '';
+    for (const w of text.split(' ')) { const t = line ? line + ' ' + w : w; if (f.widthOfTextAtSize(t, size) > width && line) { out.push(line); line = w; } else line = t; }
+    if (line) out.push(line); return out;
+  };
+  const para = (p, text, y, o = {}) => { const size = o.size || 12, f = o.font || font; for (const l of wrap(text, f, size, W - 2 * M)) { p.drawText(l, { x: M, y, size, font: f, color: o.color || ink }); y -= size * 1.5; } return y - (o.after ?? 8); };
+  const head = (p, n) => {
+    p.drawRectangle({ x: 0, y: H - 10, width: W, height: 10, color: maroon });
+    p.drawText('Cowdrey.PDF', { x: M, y: H - 46, size: 10, font: bold, color: maroon });
+    p.drawText(`Sample · page ${n} of 2`, { x: W - M - font.widthOfTextAtSize(`Sample · page ${n} of 2`, 10), y: H - 46, size: 10, font, color: grey });
+  };
+  let p = pdf.addPage([W, H]); head(p, 1);
+  let y = para(p, 'Welcome to Cowdrey.PDF', H - 120, { size: 30, font: bold, after: 4 });
+  y = para(p, 'A free PDF viewer and editor by Bradley Cowdrey. Your PDFs stay on your device.', y, { size: 14, color: grey, after: 22 });
+  y = para(p, 'Try it on this page', y, { size: 16, font: bold, color: maroon, after: 2 });
+  for (const t of [
+    'Highlight: select these words with the mouse, then choose Highlight on the Mark up tab.',
+    'Draw, add a box, type text or leave a note anywhere on the page.',
+    'Sign: draw your signature once and place it wherever you need it.',
+    'Find: press Cmd+F (Ctrl+F on Windows) and search for the word pelican.',
+  ]) y = para(p, '•  ' + t, y, { after: 2 });
+  y = para(p, 'Fill in a form', y - 18, { size: 16, font: bold, color: maroon, after: 6 });
+  const form = pdf.getForm();
+  p.drawText('Your name', { x: M, y: y - 4, size: 12, font, color: ink });
+  const name = form.createTextField('name'); name.addToPage(p, { x: M + 80, y: y - 12, width: 260, height: 24, font });
+  y -= 44;
+  const agree = form.createCheckBox('agree'); agree.addToPage(p, { x: M, y: y - 4, width: 16, height: 16 });
+  p.drawText('I tried the sample', { x: M + 26, y: y, size: 12, font, color: ink });
+  para(p, 'Then choose Save PDF: what you typed and drew is saved into the PDF, readable in any app.', y - 50, { color: grey });
+  p = pdf.addPage([W, H]); head(p, 2);
+  y = para(p, 'Arrange the pages', H - 120, { size: 24, font: bold, after: 10 });
+  y = para(p, 'On the Pages tab you can rotate, move, duplicate, insert and delete pages, add other PDFs at the end, or extract a few pages into a new PDF. Drag the thumbnails in the sidebar to reorder them.', y, { after: 18 });
+  y = para(p, 'Everywhere you work', y, { size: 16, font: bold, color: maroon, after: 2 });
+  y = para(p, 'Cowdrey.PDF runs in your browser and as an app for Mac, iPhone, iPad and Android. The pelican on this page is here so Find has something to find.', y, { after: 18 });
+  para(p, 'bradcowdrey.com/cowdrey-pdf', y, { size: 11, color: maroon });
+  pdf.setTitle('Welcome to Cowdrey.PDF'); pdf.setAuthor('Bradley Cowdrey');
+  return pdf.save();
+}
+async function openSample() {
+  try { await openBytes(await makeSample(), 'Welcome to Cowdrey.PDF.pdf'); }
+  catch (e) { console.error(e); toast('Could not make the sample PDF.'); }
+}
+
 /* ---------------- opening files ---------------- */
 async function openPath(path) {
   try {
@@ -974,6 +1028,7 @@ function run(id) { const c = C[id]; if (!c) return; if (c.enabled && !c.enabled(
 cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFiles });
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
+cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
 cmd('merge', { label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
 cmd('exportImage', { label: 'Export this page as an image', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
@@ -1015,7 +1070,7 @@ const MENUS = [
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
-  ['Help', ['shortcuts', 'legal', '-', 'checkUpdates', 'about']],
+  ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
 const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
 function menuHtml(ids) {
@@ -1215,6 +1270,8 @@ renderRibbon(); renderSide(); updateStatus(); icons();
 // A file the app was opened with (Finder, Files, Open with) comes first; otherwise the last document comes back.
 serial(async () => {
   if (NATIVE && (await takeOpened())) return;
+  // bradcowdrey.com/cowdrey-pdf/app?sample (the live demo on the product page) opens the sample.
+  if (/[?&]sample\b/.test(location.search)) { await openSample(); return; }
   const last = store.get('current', null);
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
 });

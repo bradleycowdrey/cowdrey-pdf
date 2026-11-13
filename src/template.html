@@ -122,6 +122,8 @@ button { font: inherit; color: inherit; }
 .drop .card { max-width: 420px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .drop h2 { margin: 0; font-size: 22px; color: var(--ink); letter-spacing: -.01em; }
 .drop p { margin: 0; }
+.btn.link { background: none; border-color: transparent; color: var(--accent); }
+.btn.link:hover { text-decoration: underline; background: none; }
 .app[data-dragging="on"] .viewer { outline: 3px dashed var(--accent); outline-offset: -8px; }
 
 /* status bar */
@@ -223,6 +225,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
           <h2>Open a PDF</h2>
           <p>Drop a PDF here, or open one from your device. It stays on this device.</p>
           <button class="btn primary" type="button" data-cmd="open"><i data-lucide="folder-open"></i><span>Open a PDF</span></button>
+          <button class="btn link" type="button" data-cmd="sample">Try a sample PDF</button>
         </div>
       </div>
     </main>
