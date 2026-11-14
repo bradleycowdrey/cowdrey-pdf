@@ -46,6 +46,7 @@ const FEATURE = {
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
+  outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
 };
 function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
 const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
@@ -357,6 +358,7 @@ function restore(s, layout) {
   const o = JSON.parse(s); doc.pages = o.pages; doc.marks = o.marks; selMark = null; selContent = null;
   syncHiddenComments();
   layout ? layoutPages(true).then(renderSide) : views.forEach((v) => v.rendered && drawMarks(v));
+  if (!layout && S.side === 'outline') renderSide(); // bookmarks are kept with the marks
   setSaved(false); persist(); refreshRibbon();
 }
 function undo() { if (!undoStack.length) return; const now = snapshot(); const prev = undoStack.pop(); redoStack.push(now); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); }
@@ -1596,7 +1598,8 @@ async function buildPdf(only) {
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
   if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written
-  if (!out.getTitle()) out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
+  if (out.getTitle() === undefined) out.setTitle(doc.name); // keep the PDF's own title (or the one set in Document properties)
+  out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
   const ownerOnlyKey = doc.sources.findIndex((s0) => s0.ownerOnly);
   if (!(pw && doc.keepPassword) && ownerOnlyKey >= 0 && out.encrypt) {
@@ -1796,6 +1799,7 @@ async function renderSide() {
   if (S.side === 'docs') return renderDocs();
   if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its pages.</p>'; return; }
   if (S.side === 'outline') {
+    if (FEATURE.outlinePanel) return FEATURE.outlinePanel(panel);
     const outline = await pdfDocs.get(0).getOutline().catch(() => null);
     const list = (items) => `<ul class="outline-list">${items.map((o, k) => `<li><button type="button" data-o="${esc(k)}" style="padding-left:${8}px">${esc(o.title)}</button>${o.items && o.items.length ? `<div style="padding-left:12px">${list(o.items)}</div>` : ''}</li>`).join('')}</ul>`;
     panel.innerHTML = outline && outline.length ? list(outline) : '<p class="empty-note">This PDF has no outline.</p>';
