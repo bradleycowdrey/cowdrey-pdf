@@ -3633,9 +3633,12 @@ function showDialog(title, body, actions, setup) {
     // Start on the first field you type in (with a mouse and keyboard; a touch screen would open its keyboard), or else
     // on the first field, or else on the main button, never on the close button: what's typed at once isn't lost.
     // (not a field that belongs to a choice not made: focusing "Pages [1-3]" would choose it)
-    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return !(l && $('input[type="radio"]:not(:checked)', l)); });
-    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    // (and not one that is hidden: focus() on it does nothing, so the browser's own pick, the close button, would stay)
+    const shown = (f) => f.getClientRects().length && !f.closest('[hidden]');
+    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return shown(f) && !(l && $('input[type="radio"]:not(:checked)', l)); });
+    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $$('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg).find(shown) || $('.dlg-body [role="tab"][aria-selected="true"]', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
     if (first && (document.activeElement === $('[data-x]', dlg) || !dlg.contains(document.activeElement))) { first.focus(); if (fine && first === texty && first.select) first.select(); }
+    if (document.activeElement === $('[data-x]', dlg)) { const b = $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn', dlg); if (b) b.focus(); }
     // Enter in a one-line field presses the main button (fields with their own Enter, like lists, say so first).
     dlg.onkeydown = (e) => {
       if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || !e.target.matches(`:is(${DLG_TEXTY}):not(textarea)`)) return;

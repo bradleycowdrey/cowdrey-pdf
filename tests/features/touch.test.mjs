@@ -128,4 +128,22 @@ export default async (h) => {
       await p.ctx.close();
     }
   });
+
+  await test('dialogs open with the focus on their first field or tab, never on Close (Signature: the Draw tab)', async () => {
+    const p = await open(); await openPdf(p);
+    const ids = ['sign', 'extract', 'txtReplace', 'docProps', 'pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'cm_stamp', 'protRedSearch', 'protPassword', 'protFlatten', 'protCompress', 'protClean', 'ocr', 'crdBlank', 'shortcuts'];
+    const bad = [], seen = [];
+    for (const id of ids) {
+      await p.evaluate((i) => { window.__cowdreyPdf.run(i); }, id); await p.waitForTimeout(400);
+      const r = await p.evaluate(() => { const d = document.querySelector('dialog[open]'); if (!d) return null; const a = document.activeElement; return { x: a.matches('[data-x]'), inDlg: d.contains(a), what: a.id || a.dataset.sigMode || a.textContent.trim().slice(0, 20) || a.tagName }; });
+      if (!r) continue; seen.push(id);
+      if (r.x || !r.inDlg) bad.push(id + ':' + r.what);
+      if (id === 'sign') { eq(r.what, 'draw', 'Signature starts on the Draw tab'); await p.keyboard.press('ArrowRight'); await p.keyboard.press('Tab'); eq(await p.evaluate(() => document.activeElement.id), 'sigName', 'Type, then Tab: the name field'); }
+      await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+      await p.evaluate(() => document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+    }
+    ok(seen.length >= 10, 'dialogs checked: ' + seen.join(' '));
+    eq(bad, [], 'focus on Close or outside');
+    await p.ctx.close();
+  });
 };
