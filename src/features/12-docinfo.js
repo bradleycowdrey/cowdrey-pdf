@@ -160,7 +160,7 @@ cmd('docProps', { label: 'Document properties…', icon: 'file-text', key: 'Mod-
 ribbonAdd('home', 'File', ['docProps']);
 setTimeout(() => { try { ACCEL['Mod-d'] = 'CmdOrCtrl+D'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
-  if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'd') return;
+  if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'd' || selMark) return; // with a mark selected, Ctrl+D duplicates it
   e.preventDefault(); run('docProps');
 });
 TEST_HOOKS.diFonts = diFonts;
