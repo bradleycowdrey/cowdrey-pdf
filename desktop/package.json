@@ -15,6 +15,9 @@
     "pdfjs-dist": "6.4.299"
   },
   "dependencies": {
-    "@cantoo/pdf-lib": "2.11.1"
+    "@cantoo/pdf-lib": "2.11.1",
+    "@tesseract.js-data/eng": "1.0.0",
+    "tesseract.js": "5.1.1",
+    "tesseract.js-core": "5.1.1"
   }
 }
