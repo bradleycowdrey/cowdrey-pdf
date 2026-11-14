@@ -40,8 +40,13 @@ const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a
 let toastTimer;
 // Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
 const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
+let toolHint = '', toolJustSet = null; // the mode chip's hint, and the tool chosen in this task (see setTool)
+const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
 function toast(msg) {
-  if (coarse()) msg = String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap');
+  msg = touchWords(msg);
+  // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
+  // of a toast that goes after a moment and covers the page (toasts are for what happened).
+  if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); return; }
   const t = $('#toast'); t.textContent = msg;
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
@@ -66,6 +71,7 @@ const FEATURE = {
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
+  markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
 };
 function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
 const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
@@ -249,6 +255,10 @@ async function renderView(v) {
   try {
     const tl = document.createElement('div'); tl.className = 'textLayer'; el.appendChild(tl);
     await new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: tl, viewport }).render();
+    // As pdf.js's own viewer does: while selecting, an unselectable layer under the text fills the gaps, so a drag
+    // that ends past a line's last word stops there instead of reaching the next line.
+    const eoc = document.createElement('div'); eoc.className = 'endOfContent'; tl.append(eoc); tl.__eoc = eoc;
+    tl.addEventListener('pointerdown', () => tl.classList.add('selecting'));
   } catch (e) { console.warn('text layer', e); }
   if (stale()) return;
   // Form fields and links
@@ -482,11 +492,83 @@ function drawMarks(v) {
       g = svgEl('image', { class: 'mk', x, y, width: m.w * scale, height: m.h * scale, href: m.data, transform: `rotate(${(rotNow - m.rot + 360) % 360} ${x} ${y})` });
     }
     if (!g) continue;
-    g.dataset.id = m.id;
+    g.dataset.id = m.id; g.dataset.type = m.type;
+    if (g.classList.contains('mk')) { g.setAttribute('role', 'img'); g.setAttribute('aria-label', markLabel(m, true)); }
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
   }
   drawSelection(v, svg);
+  drawMarkBox(v, svg);
+}
+/* The selected mark: a dashed box around it, with handles that resize it.
+   Shapes, lines, drawings and area highlights stretch either way; stamps, text, callouts and pictures keep their
+   proportions (corner handles only). Notes and text mark-up only show the box. */
+const MARK_STRETCH = (m) => ['rect', 'ink', 'cmShape'].includes(m.type) || (m.type === 'hl' && m.area);
+const MARK_SCALE = { text: ['size', 'bw', 'w'], cmType: ['size'], cmCallout: ['size', 'bw', 'bh'], cmStamp: ['size', 'bw', 'bh'] };
+const MARK_HANDLES = { nw: [0, 0], n: [.5, 0], ne: [1, 0], e: [1, .5], se: [1, 1], s: [.5, 1], sw: [0, 1], w: [0, .5] };
+// The mark's box on screen (page pixels), from its geometry (strokes left out).
+function markViewBox(svg, el) {
+  let b; try { b = el.getBBox(); } catch { return null; }
+  const m = svg.getScreenCTM && svg.getScreenCTM() && el.getScreenCTM ? svg.getScreenCTM().inverse().multiply(el.getScreenCTM()) : null;
+  const pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => m ? [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f] : [x, y]);
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+function drawMarkBox(v, svg) {
+  if (!selMark || pageKey(v.entry) !== selMark.key) return;
+  const m = selectedMark(), el = m && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`);
+  if (!el || m.type === 'ff' || !el.classList.contains('mk')) return;
+  const b = markViewBox(svg, el); if (!b) return;
+  const pad = 4, [x0, y0, x1, y1] = [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
+  const g = svgEl('g', { class: 'mk-selbox-g' });
+  g.appendChild(svgEl('rect', { class: 'mk-selbox', x: x0, y: y0, width: x1 - x0, height: y1 - y0 }));
+  const stretch = MARK_STRETCH(m), keep = !!MARK_SCALE[m.type];
+  if (stretch || keep) {
+    const big = coarse(), s = big ? 14 : 9;
+    for (const [h, [fx, fy]] of Object.entries(MARK_HANDLES)) {
+      if (keep && h.length < 2) continue;
+      const hx = x0 + (x1 - x0) * fx, hy = y0 + (y1 - y0) * fy;
+      if (big) g.appendChild(svgEl('rect', { class: 'mk-handle mk-handle-hit', 'data-h': h, x: hx - 16, y: hy - 16, width: 32, height: 32 }));
+      g.appendChild(svgEl('rect', { class: 'mk-handle', 'data-h': h, x: hx - s / 2, y: hy - s / 2, width: s, height: s, rx: 2 }));
+    }
+  }
+  svg.appendChild(g);
+}
+// Moves the points of mark m (from its original o) by P, a map of PDF points; k scales its sizes (kept proportions).
+function resizeMark(m, o, P, k) {
+  const own = FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].resize;
+  if (own) return own(m, o, P, k);
+  if (o.rects) m.rects = o.rects.map((r) => [...P([r[0], r[1]]), ...P([r[2], r[3]])]);
+  if (o.pts) m.pts = o.pts.map(P);
+  if ('x1' in o) { [m.x1, m.y1] = P([o.x1, o.y1]); [m.x2, m.y2] = P([o.x2, o.y2]); }
+  if ('x' in o) [m.x, m.y] = P([o.x, o.y]);
+  if ('tx' in o) [m.tx, m.ty] = P([o.tx, o.ty]);
+  for (const f of MARK_SCALE[m.type] || []) if (typeof o[f] === 'number' && o[f] > 0) m[f] = o[f] * k;
+  if (m.type === 'text' && Array.isArray(o.lw)) m.lw = o.lw.map((n) => n * k);
+}
+// Dragging a handle: the opposite side stays where it is. One undo step.
+function startResize(e, v, h) {
+  const m = selectedMark(), svg = v.el.querySelector('svg.marks'), el = m && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`);
+  const b = el && markViewBox(svg, el); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const before = snapshot(), orig = JSON.parse(JSON.stringify(m)), keep = !MARK_STRETCH(m), [fx, fy] = MARK_HANDLES[h];
+  const ax = b[0] + (b[2] - b[0]) * (1 - fx), ay = b[1] + (b[3] - b[1]) * (1 - fy), w0 = Math.max(1, b[2] - b[0]), h0 = Math.max(1, b[3] - b[1]);
+  const [sx0, sy0] = localPoint(e, v);
+  let moved = false;
+  const move = (ev) => {
+    const [px, py] = localPoint(ev, v);
+    if (!moved && Math.hypot(px - sx0, py - sy0) < 2) return;
+    moved = true;
+    // the handle's side follows the pointer; a box can't be turned inside out
+    let sx = fx === .5 ? 1 : Math.max(4 / w0, (w0 + (fx ? px - sx0 : sx0 - px)) / w0);
+    let sy = fy === .5 ? 1 : Math.max(4 / h0, (h0 + (fy ? py - sy0 : sy0 - py)) / h0);
+    if (keep) sx = sy = Math.max(sx, sy, 8 / Math.max(w0, h0));
+    const P = ([x, y]) => { const [vx, vy] = toView(v, x, y); return toPdf(v, ax + (vx - ax) * sx, ay + (vy - ay) * sy); };
+    resizeMark(m, orig, P, sx);
+    drawMarks(v);
+  };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); if (moved) changed(before); };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
 }
 function redrawPage(entry) { for (const v of views) if (v.entry === entry && v.rendered) drawMarks(v); }
 function snapshot() { return JSON.stringify({ pages: doc.pages, marks: doc.marks }); }
@@ -511,6 +593,8 @@ function onMarksDown(e, v) {
   if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
   if (tool === 'edit') return onEditDown(e, v);
   if (tool === 'erase') return startErase(e, v);
+  const handle = e.target.closest('.mk-handle');
+  if (handle) return startResize(e, v, handle.dataset.h);
   if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
   const hit = e.target.closest('.mk');
   if (tool === 'select') {
@@ -543,7 +627,22 @@ async function onMarksDblClick(e, v) {
     if (hit && hit.kind === 'annot') { selectContent({ v, ...hit }); editComment(v, hit.a, hit.mark); }
   }
 }
-function selectMark(s) { selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon(); }
+function selectMark(s) {
+  const was = selMark; selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon();
+  if (s && (!was || was.id !== s.id)) { const m = selectedMark(); if (m) announce(`${markLabel(m)} selected. ${coarse() ? 'Drag it to move it.' : 'Arrow keys move it, Delete removes it.'}`); }
+}
+// What a mark is, in words ('Oval'; with its text too when `full`). Features add names for their marks.
+const MARK_NAMES = { hl: 'Highlight', ink: 'Drawing', rect: 'Rectangle', text: 'Text', note: 'Note', img: 'Picture', pic: 'Picture', tpara: 'Edited text', ff: 'Form field', redact: 'Redaction', link: 'Link' };
+function markLabel(m, full) {
+  let name = '', text = '';
+  for (const f of FEATURE.markLabels || []) { const d = f(m); if (d && d.label) { name = d.label; text = d.text || ''; break; } }
+  name ||= MARK_NAMES[m.type] || 'Item';
+  if (!text && typeof m.text === 'string') text = m.text;
+  text = String(text).replace(/\s+/g, ' ').trim();
+  return full && text ? `${name}: ${text.length > 80 ? text.slice(0, 79) + '…' : text}` : name;
+}
+// Said by screen readers, not shown.
+function announce(msg) { const a = $('#announce'); if (!a) return; a.textContent = ''; setTimeout(() => { a.textContent = msg; }, 30); }
 // A mark just drawn is selected, so it can be restyled at once (the tool stays on for the next one).
 const selectNew = (v, m) => { if (marksOf(v.entry).includes(m)) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry }); };
 function deleteSelected() {
@@ -671,21 +770,72 @@ function placeImage(v, px, py) {
   const m = marksOf(v.entry)[marksOf(v.entry).length - 1];
   pendingImage = null; drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
+/* Selecting text, as pdf.js's viewer does it (TextLayerBuilder): while a selection is made, each text layer's
+   endOfContent covers the layer, and (in browsers that need it: Safari, Chromium before 148) it is moved right after
+   the span the selection ends in, so the gap past a line's last word selects nothing more. */
+const TL = { down: false, prev: null, modern: undefined };
+function tlReset(tl) { const end = tl.__eoc; if (!end) return; if (tl.lastChild !== end) tl.append(end); end.style.width = end.style.height = end.style.userSelect = ''; tl.classList.remove('selecting'); }
+const tlResetAll = () => $$('.page .textLayer').forEach(tlReset);
+document.addEventListener('pointerdown', () => { TL.down = true; }, true);
+// after the text tools have read the selection (they do so as the button is let go)
+document.addEventListener('pointerup', () => { TL.down = false; setTimeout(tlResetAll, 30); });
+window.addEventListener('blur', () => { TL.down = false; tlResetAll(); });
+document.addEventListener('keyup', () => { if (!TL.down) tlResetAll(); });
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection(), layers = $$('.page .textLayer').filter((t) => t.__eoc);
+  if (!sel || !sel.rangeCount) { layers.forEach(tlReset); TL.prev = null; return; }
+  const range = sel.getRangeAt(0);
+  for (const t of layers) { if (range.intersectsNode(t)) t.classList.add('selecting'); else tlReset(t); }
+  if (TL.modern === undefined && layers.length) {
+    const ff = getComputedStyle(layers[0]).getPropertyValue('-moz-user-select') === 'none';
+    const v = navigator.userAgentData && navigator.userAgentData.brands ? (navigator.userAgentData.brands.find((b) => b.brand === 'Chromium') || {}).version : (/\bChrome\/(\d+)\b/.exec(navigator.userAgent) || [])[1];
+    TL.modern = ff || (!!v && parseInt(v, 10) >= 148);
+  }
+  if (TL.modern || !layers.length) return;
+  const prev = TL.prev, modifyStart = !!prev && (range.compareBoundaryPoints(Range.END_TO_END, prev) === 0 || range.compareBoundaryPoints(Range.START_TO_END, prev) === 0);
+  let anchor = modifyStart ? range.startContainer : range.endContainer;
+  if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+  if (anchor.classList && anchor.classList.contains('highlight')) anchor = anchor.parentNode;
+  if (!modifyStart && range.endOffset === 0) {
+    try { do { while (!anchor.previousSibling) anchor = anchor.parentNode; anchor = anchor.previousSibling; } while (!anchor.childNodes.length); } catch { anchor = null; }
+  }
+  const tl = anchor && anchor.parentElement && anchor.parentElement.closest('.textLayer'), end = tl && tl.__eoc;
+  if (end && anchor !== end) {
+    end.style.width = tl.style.width; end.style.height = tl.style.height; end.style.userSelect = 'text';
+    anchor.parentElement.insertBefore(end, modifyStart ? anchor : anchor.nextSibling);
+  }
+  TL.prev = range.cloneRange();
+});
+// A selection's rectangles on screen, without the ones that repeat another (a browser can give a line twice: once
+// for its text and once for the element around it), and without empty ones.
+function selectionRects(sel) {
+  const out = [];
+  const inter = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  for (let r = 0; r < sel.rangeCount; r++) {
+    for (const rect of sel.getRangeAt(r).getClientRects()) {
+      if (rect.width < 1 || rect.height < 1) continue;
+      const area = rect.width * rect.height;
+      const k = out.findIndex((o) => inter(o, rect) > .8 * Math.min(area, o.width * o.height));
+      if (k < 0) out.push(rect); else if (area > out[k].width * out[k].height) out[k] = rect;
+    }
+  }
+  return out;
+}
+const selectionText = (sel) => String(sel).replace(/\s+/g, ' ').trim().slice(0, 500);
 // Highlight: select text with the Highlight tool (or select it, then press Highlight).
 function highlightSelection() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return false;
-  const before = snapshot();
+  const before = snapshot(), text = selectionText(sel);
   let any = false;
-  for (let r = 0; r < sel.rangeCount; r++) {
-    for (const rect of sel.getRangeAt(r).getClientRects()) {
-      if (rect.width < 1 || rect.height < 1) continue;
+  {
+    for (const rect of selectionRects(sel)) {
       const v = views.find((vv) => { const b = vv.el.getBoundingClientRect(); return rect.top >= b.top - 2 && rect.bottom <= b.bottom + 2 && rect.left >= b.left - 2 && rect.right <= b.right + 2; });
       if (!v) continue;
       const b = v.el.getBoundingClientRect();
       const [x1, y1] = toPdf(v, rect.left - b.left, rect.top - b.top), [x2, y2] = toPdf(v, rect.right - b.left, rect.bottom - b.top);
       let list = marksOf(v.entry), m = list.find((mm) => mm.pending);
-      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: toolColor('highlight'), pending: true }; list.push(m); }
+      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: toolColor('highlight'), text, pending: true }; list.push(m); }
       m.rects.push([x1, y1, x2, y2]); any = true;
     }
   }
@@ -750,10 +900,31 @@ function setTool(t) {
   if (t in COLOR_TOOLS) S.colorTool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
-  if (t === 'edit' && was !== 'edit') toast(coarse() ? 'Tap text to change it, or a picture or comment to move it. Undo takes a change back.' : `Click text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
-  if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
+  if (t !== was) toolHint = TOOL_HINTS[t] || '';
+  toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
+  modeChip();
   refreshRibbon();
 }
+/* ---- the mode chip: while a tool other than Select is on, the status bar says which, and how to use it ---- */
+// How to use a tool, for tools that don't say when chosen (features can add theirs).
+const TOOL_HINTS = {
+  highlight: 'Select text to highlight it', pen: 'Drag to draw', rect: 'Drag on the page', text: 'Click where the text goes', note: 'Click where the note goes',
+  edit: 'Click text to change it, or a picture or comment to move it', erase: 'Drag over anything to erase it',
+};
+function toolName(t) {
+  const ids = ['tool_' + t, t, 'cm_' + t.replace(/^cm/, ''), { cmtype: 'cm_typewriter', protredtext: 'protRedText', protredarea: 'protRedArea', crop: 'tool_crop' }[t]].filter((id) => id && C[id]);
+  const id = ids.find((x) => C[x].pressed && C[x].pressed()) || ids[0];
+  return id ? C[id].label.replace(/…$/, '') : '';
+}
+function modeChip() {
+  const chip = $('#modeChip'); if (!chip) return;
+  const t = app.dataset.tool, on = !!doc && t && t !== 'select';
+  chip.hidden = !on; app.classList.toggle('tool-on', on);
+  if (!on) return;
+  const name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
+}
+$('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
 
 /* ---------------- editing what is already in the PDF ----------------
    The Edit tool changes the PDF's own content; Erase area clears anything in a rectangle. Each change is a mark like
@@ -967,6 +1138,7 @@ function syncHiddenComments() {
   for (const [k, pd] of pdfDocs) {
     const ids = [];
     for (const [key, list] of Object.entries(doc.marks)) if (key.startsWith(k + ':')) for (const m of list) if (m.type === 'ae' && m.deleted) ids.push(m.ref);
+    if (FEATURE.hiddenAnnots) ids.push(...FEATURE.hiddenAnnots(k)); // all of them while comments are hidden
     const sig = ids.sort().join(',');
     if (hiddenNow.get(pd) === sig) continue;
     const first = !hiddenNow.has(pd); hiddenNow.set(pd, sig);
@@ -2680,7 +2852,7 @@ function renderRibbon() {
 // A ribbon button. A command with `menu` (a list of command ids) gets a small arrow beside it that opens them.
 function ribbonButton(id) {
   const c = C[id], label = c.rlabel || c.label.replace(/…$/, '').replace(/^Appearance: /, '');
-  const b = `<button type="button" class="rb" data-cmd="${id}" title="${esc(c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''))}">${ic(c.icon)}<span>${esc(label)}</span></button>`;
+  const b = `<button type="button" class="rb" data-cmd="${id}" title="${esc((c.tip || c.label) + (c.key ? ' (' + fmtKey(c.key) + ')' : ''))}">${ic(c.icon)}<span>${esc(label)}</span></button>`;
   if (!c.menu) return b;
   if (!c.run) return `<button type="button" class="rb" data-rmenu="${id}" aria-haspopup="menu" aria-expanded="false" title="${esc(c.label)}">${ic(c.icon)}<span>${esc(label)}${ic('chevron-down')}</span></button>`;
   const more = `More ${label.toLowerCase()} options`;

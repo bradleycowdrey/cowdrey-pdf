@@ -266,11 +266,10 @@ const CM_MARKUP = { underline: ['Underline', 'underline'], strike: ['Strikethrou
 function cmMarkupSelection(kind) {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return false;
-  const text = sel.toString().replace(/\s+/g, ' ').trim();
+  const text = selectionText(sel);
   const byView = new Map();
-  for (let r = 0; r < sel.rangeCount; r++) {
-    for (const rect of sel.getRangeAt(r).getClientRects()) {
-      if (rect.width < 1 || rect.height < 1) continue;
+  {
+    for (const rect of selectionRects(sel)) {
       const v = views.find((vv) => { const b = vv.el.getBoundingClientRect(); return rect.top >= b.top - 2 && rect.bottom <= b.bottom + 2 && rect.left >= b.left - 2 && rect.right <= b.right + 2; });
       if (!v) continue;
       const b = v.el.getBoundingClientRect(), P = (x, y) => toPdf(v, x - b.left, y - b.top);
@@ -518,6 +517,7 @@ function cmDescribe(m) {
   }
   return null;
 }
+FEATURE.markLabels.push((m) => m.type === 'cmReply' ? null : cmDescribe(m));
 const cmTop = (m) => {
   if (m.rects) return Math.max(...m.rects.flatMap((r) => [r[1], r[3]]));
   if (m.quads) return Math.max(...m.quads.flatMap((q) => [q[1], q[3], q[5], q[7]]));
@@ -658,7 +658,8 @@ async function cmRenderPanel() {
     <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
     <label><span>Sort</span><select data-cm-f="sort">${CM_SORTS.map(([v, t]) => opt(v, t, f.sort === v)).join('')}</select></label></div>` : '';
   const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
-  panel.innerHTML = you + (!all.length
+  const tools = `<div class="cm-tools" role="group" aria-label="All comments"><button type="button" class="btn" data-cmd="cm_hide" aria-pressed="${CM.hidden}">${ic(CM.hidden ? 'eye' : 'eye-off')}<span>${CM.hidden ? 'Show all' : 'Hide all'}</span></button><button type="button" class="btn" data-cmd="cm_export" title="Save the comments as an XFDF file">${ic('file-up')}<span>Export</span></button><button type="button" class="btn" data-cmd="cm_import" title="Add comments from an XFDF file">${ic('file-down')}<span>Import</span></button></div>`;
+  panel.innerHTML = you + tools + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
     : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span>${it.status ? `<span class="cm-status" data-status="${esc(it.status)}">${esc(it.status)}</span>` : ''}</span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button>${cmThreadHtml(it, k)}</li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
@@ -724,10 +725,223 @@ selectMark = function (s) {
   if (s && CM.open !== 'm:' + s.id && CM.items && CM.items.some((it) => it.key === 'm:' + s.id)) { CM.open = 'm:' + s.id; cmPanelSoon(); }
 };
 
+/* ---- hide all comments (on screen only), and export or import them as XFDF ----
+   Hiding is a view setting: it changes nothing in the document or in what is saved. XFDF (the XML form of a PDF's
+   comments) carries your comments and the PDF's own, so another reviewer can merge them into their copy; import
+   reads every comment type made here and the common ones from other apps. */
+CM.hidden = false;
+CM.hideIds = new Map(); // source index -> ids of the PDF's own comments, while hidden
+FEATURE.hiddenAnnots = (src) => (CM.hidden && CM.hideIds.get(src)) || [];
+async function cmSetHidden(on) {
+  CM.hidden = on; app.dataset.hideMarks = on ? '1' : '';
+  CM.hideIds = new Map();
+  if (on && doc) {
+    const A = pdfjs.AnnotationType;
+    for (const [src, pd] of pdfDocs) {
+      const ids = [];
+      for (let i = 0; i < pd.numPages; i++) {
+        try { for (const a of await (await pd.getPage(i + 1)).getAnnotations({ intent: 'display' })) if (a.id && ![A.WIDGET, A.LINK].includes(a.annotationType)) ids.push(a.id); } catch {}
+      }
+      CM.hideIds.set(src, ids);
+    }
+  }
+  syncHiddenComments(); refreshRibbon(); cmPanelSoon();
+  toast(on ? 'Comments hidden. They are still in the PDF.' : 'Comments shown');
+}
+FEATURE.onDocShown.push(() => { if (CM.hidden) cmSetHidden(false); });
+// Choosing a tool to add comments shows them again.
+new MutationObserver(() => { if (CM.hidden && app.dataset.tool !== 'select') cmSetHidden(false); }).observe(app, { attributes: true, attributeFilter: ['data-tool'] });
+cmd('cm_hide', { label: 'Hide comments', icon: 'eye-off', enabled: has, pressed: () => CM.hidden, run: () => cmSetHidden(!CM.hidden) });
+
+const CM_XFDF_NS = 'http://ns.adobe.com/xfdf/';
+const cmX = (n) => cmNum(n);
+const cmHex = (c) => { const s = String(c || ''); if (/^#[0-9a-f]{6}$/i.test(s)) return s.toUpperCase(); const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(s); return m ? '#' + m.slice(1).map((n) => (+n).toString(16).padStart(2, '0')).join('').toUpperCase() : '#E03131'; };
+const cmPdfDateOf = (t) => { const d = new Date(t || Date.now()), p = (n) => String(n).padStart(2, '0'); return `D:${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`; };
+const cmBBox = (pts) => { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+// The box of a frame turned by rot (as the marks keep it): its corner x, y and size, from a box in PDF space.
+function cmFrameFromBox([a, b, c, d], rot) {
+  const r = ((rot % 360) + 360) % 360;
+  if (r === 90) return { x: a, y: b, bw: d - b, bh: c - a };
+  if (r === 180) return { x: c, y: b, bw: c - a, bh: d - b };
+  if (r === 270) return { x: c, y: d, bw: d - b, bh: c - a };
+  return { x: a, y: d, bw: c - a, bh: d - b };
+}
+const cmFrameBox = (x, y, rot, bw, bh) => { const P = cmFrame(x, y, rot); return cmBBox([P(0, 0), P(bw, 0), P(bw, bh), P(0, bh)]); };
+// One comment as an XFDF element: [tag, attributes, inner XML].
+function cmXfdfOf(m) {
+  const box = (r) => r.map(cmX).join(','), pts = (l) => l.map((p) => cmX(p[0]) + ',' + cmX(p[1])).join(';');
+  const quadsOfRects = (rects) => rects.flatMap((r) => { const [a, b, c, d] = cmBBox([[r[0], r[1]], [r[2], r[3]]]); return [a, d, c, d, a, b, c, b]; });
+  const w = m.w || 1, out = (r, k) => [r[0] - k, r[1] - k, r[2] + k, r[3] + k];
+  switch (m.type) {
+    case 'hl': {
+      if (m.area) { const r = cmBBox([[m.rects[0][0], m.rects[0][1]], [m.rects[0][2], m.rects[0][3]]]); return ['highlight', { rect: box(r), coords: quadsOfRects(m.rects).map(cmX).join(','), opacity: '0.4' }, m.text]; }
+      const q = quadsOfRects(m.rects); return ['highlight', { rect: box(cmBBox(m.rects.flatMap((r) => [[r[0], r[1]], [r[2], r[3]]]))), coords: q.map(cmX).join(','), opacity: '0.4' }, m.text];
+    }
+    case 'cmMarkup': return [{ underline: 'underline', strike: 'strikeout', squiggly: 'squiggly' }[m.kind], { rect: box(cmBBox(m.quads.flatMap((q) => [[q[0], q[1]], [q[2], q[3]], [q[4], q[5]], [q[6], q[7]]]))), coords: m.quads.flat().map(cmX).join(',') }, m.text];
+    case 'rect': return ['square', { rect: box(out(cmBBox([[m.x1, m.y1], [m.x2, m.y2]]), w / 2)), width: cmX(w), ...(m.fill ? { 'interior-color': cmHex(m.color) } : {}) }];
+    case 'ink': return ['ink', { rect: box(out(cmBBox(m.pts), w / 2)), width: cmX(w) }, null, `<inklist><gesture>${pts(m.pts)}</gesture></inklist>`];
+    case 'note': return ['text', { rect: box([m.x, m.y - 22, m.x + 22, m.y]), icon: 'Comment' }, m.text];
+    case 'cmShape': {
+      const ic = m.fill ? { 'interior-color': cmHex(m.color) } : {};
+      if (m.kind === 'oval' || m.kind === 'cloud') return [m.kind === 'oval' ? 'circle' : 'square', { rect: box(out(cmBBox([[m.x1, m.y1], [m.x2, m.y2]]), w / 2)), width: cmX(w), ...ic, ...(m.kind === 'cloud' ? { style: 'cloudy', intensity: '1' } : {}) }];
+      if (m.kind === 'line' || m.kind === 'arrow') return ['line', { rect: box(out(cmBBox(m.pts), w / 2 + 4)), width: cmX(w), start: pts([m.pts[0]]), end: pts([m.pts[1]]), head: 'None', tail: m.kind === 'arrow' ? 'OpenArrow' : 'None' }];
+      return [m.kind, { rect: box(out(cmBBox(m.pts), w / 2)), width: cmX(w), ...ic }, null, `<vertices>${pts(m.pts)}</vertices>`];
+    }
+    case 'cmType': {
+      const lines = m.text.split('\n'), bw = Math.max(10, ...lines.map((l) => cmMeasure(l, m.size))), bh = m.size * (1.2 * (lines.length - 1) + 1.1);
+      return ['freetext', { rect: box(cmFrameBox(m.x, m.y, m.rot, bw, bh)), intent: 'FreeTextTypewriter', rotation: String(m.rot || 0), width: '0' }, m.text, `<defaultappearance>/Helv ${cmX(m.size)} Tf ${cmRgb(m.color).map(cmX).join(' ')} rg</defaultappearance>`];
+    }
+    case 'cmCallout': {
+      const inner = cmFrameBox(m.x, m.y, m.rot, m.bw, m.bh), P = cmFrame(m.x, m.y, m.rot), [tu, td] = P.local(m.tx, m.ty), knee = P(Math.max(0, Math.min(m.bw, tu)), Math.max(0, Math.min(m.bh, td)));
+      const r = cmBBox([[inner[0], inner[1]], [inner[2], inner[3]], [m.tx, m.ty]]);
+      return ['freetext', { rect: box(r), fringe: [inner[0] - r[0], inner[1] - r[1], r[2] - inner[2], r[3] - inner[3]].map(cmX).join(','), intent: 'FreeTextCallout', callout: [m.tx, m.ty, ...knee].map(cmX).join(','), head: 'OpenArrow', rotation: String(m.rot || 0), width: cmX(m.lw) }, m.text, `<defaultappearance>/Helv ${cmX(m.size)} Tf ${cmRgb(m.color).map(cmX).join(' ')} rg</defaultappearance>`];
+    }
+    case 'cmStamp': return ['stamp', { rect: box(cmFrameBox(m.x, m.y, m.rot, 0, 0).map((n, k) => n + (k < 2 ? -1 : 1) * Math.max(m.bw, m.bh) / 2)), icon: m.name || 'Draft', rotation: String(m.rot || 0) }, m.sub ? `${m.label} ${m.sub}` : m.label];
+  }
+  return null;
+}
+// The PDF's own comments, as pdf.js reads them.
+function cmXfdfOfAnnot(a) {
+  const box = (r) => [...r].map(cmX).join(','), color = a.color && a.color.length === 3 ? '#' + [...a.color].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase() : null;
+  const tag = { Text: 'text', FreeText: 'freetext', Line: 'line', Square: 'square', Circle: 'circle', Polygon: 'polygon', PolyLine: 'polyline', Highlight: 'highlight', Underline: 'underline', Squiggly: 'squiggly', StrikeOut: 'strikeout', Stamp: 'stamp', Ink: 'ink' }[a.subtype];
+  if (!tag || !a.rect) return null;
+  const at = { rect: box(a.rect) }, flat = (q) => q ? (Array.isArray(q) && Array.isArray(q[0]) ? q.flatMap((p) => p.x != null ? [p.x, p.y] : p) : [...q]) : null;
+  if (color) at.color = color;
+  if (a.borderStyle && a.borderStyle.width != null) at.width = cmX(a.borderStyle.width);
+  let inner = '';
+  const qp = flat(a.quadPoints); if (qp && qp.length) at.coords = qp.map(cmX).join(',');
+  if (a.lineCoordinates) { const l = [...a.lineCoordinates]; at.start = `${cmX(l[0])},${cmX(l[1])}`; at.end = `${cmX(l[2])},${cmX(l[3])}`; if (a.lineEndings) { at.head = a.lineEndings[0]; at.tail = a.lineEndings[1]; } }
+  if (a.vertices) { const v = flat(a.vertices); inner = `<vertices>${v.reduce((s, n, k) => s + (k % 2 ? ',' : k ? ';' : '') + cmX(n), '')}</vertices>`; }
+  if (a.inkLists) inner = `<inklist>${a.inkLists.map((g) => { const v = flat(g); return `<gesture>${v.reduce((s, n, k) => s + (k % 2 ? ',' : k ? ';' : '') + cmX(n), '')}</gesture>`; }).join('')}</inklist>`;
+  if (a.subtype === 'Text') at.icon = a.name || 'Comment';
+  if (a.subtype === 'Stamp' && a.name) at.icon = a.name;
+  return [tag, at, (a.contentsObj && a.contentsObj.str) || '', inner];
+}
+async function cmExportXfdf() {
+  const items = await cmItems(), rows = [];
+  const attr = (o) => Object.entries(o).filter(([, v]) => v != null && v !== '').map(([k, v]) => ` ${k}="${esc(v)}"`).join('');
+  const el = ([tag, at, text, inner], base) => {
+    const { color, ...rest } = at, c = color || base.color;
+    return `<${tag}${attr({ page: base.page, name: base.name, title: base.title, date: base.date, ...(c ? { color: c } : {}), ...rest })}>${text ? `<contents>${esc(text)}</contents>` : ''}${inner || ''}</${tag}>`;
+  };
+  for (const it of items) {
+    const x = it.m ? cmXfdfOf(it.m) : cmXfdfOfAnnot(it.a); if (!x) continue;
+    const name = it.m ? 'cpdf-' + it.m.id : it.a.id;
+    rows.push(el(x, { page: it.n, name, title: it.by, date: it.at ? cmPdfDateOf(it.at) : '', color: it.m ? cmHex(it.m.color || (it.m.type === 'note' ? '#FFD43B' : '')) : null }));
+    // replies and review states, in reply to it
+    const rect = (x[1].rect || '0,0,0,0');
+    for (const r of it.thread) rows.push(el(['text', { rect, icon: 'Comment', inreplyto: name, ...(r.state ? { state: r.state, statemodel: 'Review' } : {}) }, r.state ? `${r.state} set by ${r.by || 'No name'}` : r.text], { page: it.n, name: r.r ? 'cpdf-' + r.r.id : '', title: r.by, date: r.at ? cmPdfDateOf(r.at) : '' }));
+  }
+  if (!rows.length) { toast('There are no comments to export'); return; }
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<xfdf xmlns="${CM_XFDF_NS}" xml:space="preserve">\n<annots>\n${rows.join('\n')}\n</annots>\n<f href="${esc(doc.name)}.pdf"/>\n</xfdf>\n`;
+  CM.lastXfdf = xml;
+  const done = await saveFile(xml, `${doc.name} comments.xfdf`, 'application/vnd.adobe.xfdf');
+  if (done && !MAC_APP) toast(`${rows.length} comment${rows.length === 1 ? '' : 's'} exported`);
+}
+// XFDF to marks. Returns the number of comments added.
+async function cmImportXfdf(xml) {
+  const d = new DOMParser().parseFromString(xml, 'application/xml');
+  if (d.querySelector('parsererror') || !d.documentElement || d.documentElement.localName !== 'xfdf') return -1;
+  const nums = (s) => String(s || '').split(/[\s,;]+/).filter(Boolean).map(Number).filter((n) => isFinite(n));
+  const pairs = (s) => { const n = nums(s), o = []; for (let k = 0; k + 1 < n.length; k += 2) o.push([n[k], n[k + 1]]); return o; };
+  const kid = (e, name) => [...e.children].find((c) => c.localName === name);
+  const textOf = (e) => { const c = kid(e, 'contents'); return c ? c.textContent : (kid(e, 'contents-richtext') ? kid(e, 'contents-richtext').textContent.trim() : ''); };
+  const hex = (e, k = 'color') => /^#[0-9a-f]{6}$/i.test(e.getAttribute(k) || '') ? e.getAttribute(k).toUpperCase() : null;
+  const before = snapshot(), taken = new Set(Object.values(doc.marks).flat().filter((m) => m && m.id).map((m) => m.id)), byName = new Map();
+  let n = 0;
+  const els = [...(kid(d.documentElement, 'annots') || d.documentElement).children];
+  // A comment the PDF already has (an export of this same file, imported back) or one imported before is skipped.
+  const own = new Map(); for (const entry of doc.pages) own.set(entry, await cmPageAnnots(entry));
+  const near = (a, b) => a && b && a.length === 4 && [...b].every((x, k) => Math.abs(x - a[k]) < 1);
+  const seen = new Set(Object.values(doc.marks).flat().filter((m) => m && m.xfdf).map((m) => m.xfdf));
+  const replies = [];
+  for (const e of els) {
+    const tag = e.localName, page = +e.getAttribute('page'), entry = doc.pages[page]; if (!entry) continue;
+    const name = e.getAttribute('name') || '', rect = nums(e.getAttribute('rect')), w = +e.getAttribute('width') || 1, color = hex(e), fill = !!hex(e, 'interior-color');
+    if (e.getAttribute('inreplyto')) { replies.push({ e, entry }); continue; }
+    const id = /^cpdf-/.test(name) ? name.slice(5) : uid(); if (taken.has(id)) continue;
+    if (!/^cpdf-/.test(name) && name && (seen.has(name) || own.get(entry).some((a) => a.id === name && near(rect, a.rect)))) { byName.set(name, null); continue; }
+    const inset = (r, k) => [r[0] + k, r[1] + k, r[2] - k, r[3] - k], rot = +e.getAttribute('rotation') || 0;
+    let m = null;
+    if (['highlight', 'underline', 'strikeout', 'squiggly'].includes(tag)) {
+      const c = nums(e.getAttribute('coords')), quads = []; for (let k = 0; k + 7 < c.length; k += 8) quads.push(c.slice(k, k + 8));
+      if (!quads.length && rect.length === 4) quads.push([rect[0], rect[3], rect[2], rect[3], rect[0], rect[1], rect[2], rect[1]]);
+      if (!quads.length) continue;
+      if (tag === 'highlight') m = { type: 'hl', rects: quads.map((q) => { const b = cmBBox([[q[0], q[1]], [q[2], q[3]], [q[4], q[5]], [q[6], q[7]]]); return [b[0], b[3], b[2], b[1]]; }), color: color || '#FFD43B', text: textOf(e) };
+      else m = { type: 'cmMarkup', kind: { underline: 'underline', strikeout: 'strike', squiggly: 'squiggly' }[tag], quads, color: color || '#E03131', text: textOf(e) };
+    } else if ((tag === 'square' || tag === 'circle') && rect.length === 4) {
+      const [x1, y1, x2, y2] = inset(rect, w / 2), cloud = e.getAttribute('style') === 'cloudy';
+      m = tag === 'square' && !cloud ? { type: 'rect', x1, y1: y2, x2, y2: y1, color: color || '#E03131', w, ...(fill ? { fill: true } : {}) } : { type: 'cmShape', kind: cloud ? 'cloud' : 'oval', x1, y1: y2, x2, y2: y1, color: color || '#E03131', w, fill };
+    } else if (tag === 'line') {
+      const a = pairs(e.getAttribute('start')), b = pairs(e.getAttribute('end')); if (!a.length || !b.length) continue;
+      const arrow = /Arrow/.test(e.getAttribute('tail') || '') || /Arrow/.test(e.getAttribute('head') || '');
+      m = { type: 'cmShape', kind: arrow ? 'arrow' : 'line', pts: /Arrow/.test(e.getAttribute('head') || '') && !/Arrow/.test(e.getAttribute('tail') || '') ? [b[0], a[0]] : [a[0], b[0]], color: color || '#E03131', w };
+    } else if (tag === 'polygon' || tag === 'polyline') {
+      const v = kid(e, 'vertices'), pts = pairs(v && v.textContent); if (pts.length < 2) continue;
+      m = { type: 'cmShape', kind: tag, pts, color: color || '#E03131', w, ...(tag === 'polygon' ? { fill } : {}) };
+    } else if (tag === 'ink') {
+      const gs = [...((kid(e, 'inklist') || e).children)].filter((g) => g.localName === 'gesture').map((g) => pairs(g.textContent)).filter((p) => p.length);
+      gs.forEach((pts, k) => { const mm = { id: k ? uid() : id, type: 'ink', pts: pts.length > 1 ? pts : [pts[0], pts[0]], color: color || '#2448C9', w }; cmAddImported(mm, e, entry); n++; });
+      byName.set(name, id); continue;
+    } else if (tag === 'text' && rect.length === 4) {
+      m = { type: 'note', x: rect[0], y: rect[3], text: textOf(e) };
+    } else if (tag === 'freetext' && rect.length === 4) {
+      const da = kid(e, 'defaultappearance'), dam = /([\d.]+)\s+Tf/.exec(da ? da.textContent : ''), rg = /([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/.exec(da ? da.textContent : '');
+      const size = dam ? +dam[1] || 12 : 12, c = color || (rg ? '#' + rg.slice(1).map((x) => Math.round(+x * 255).toString(16).padStart(2, '0')).join('').toUpperCase() : '#111111'), text = textOf(e) || ' ';
+      if (/Callout/i.test(e.getAttribute('intent') || '') || e.getAttribute('callout')) {
+        const fr = nums(e.getAttribute('fringe')), inner = fr.length === 4 ? [rect[0] + fr[0], rect[1] + fr[1], rect[2] - fr[2], rect[3] - fr[3]] : rect, cl = nums(e.getAttribute('callout'));
+        const f = cmFrameFromBox(inner, rot);
+        m = { type: 'cmCallout', x: f.x, y: f.y, rot, tx: cl.length >= 2 ? cl[0] : inner[0] - 20, ty: cl.length >= 2 ? cl[1] : inner[1] - 20, text, size, color: c, lw: Math.max(1, Math.min(w, 3)), ...cmBoxSize(text, size) };
+      } else { const f = cmFrameFromBox(rect, rot); m = { type: 'cmType', x: f.x, y: f.y, rot, text, size, color: c }; }
+    } else if (tag === 'stamp' && rect.length === 4) {
+      const icon = e.getAttribute('icon') || 'Draft', known = CM_STAMPS.find((s) => s[3] === icon), t = textOf(e).trim();
+      const label = known ? known[1] : t || icon, sub = known && t.toLowerCase().startsWith(known[1].toLowerCase()) ? t.slice(known[1].length).trim() : '';
+      m = { type: 'cmStamp', x: (rect[0] + rect[2]) / 2, y: (rect[1] + rect[3]) / 2, rot, tilt: CM_TILT, stamp: known ? known[0] : 'custom', label, sub, name: known ? icon : 'Custom', color: color || (known ? known[2] : '#2448C9'), text: label, ...cmStampSize(label, sub) };
+    }
+    if (!m) continue;
+    m.id = id; if (!/^cpdf-/.test(name) && name) m.xfdf = name;
+    cmAddImported(m, e, entry); byName.set(name, id); n++;
+  }
+  for (const { e, entry } of replies) {
+    const to = byName.get(e.getAttribute('inreplyto')) || (/^cpdf-/.test(e.getAttribute('inreplyto')) ? e.getAttribute('inreplyto').slice(5) : null);
+    if (!to || !marksOf(entry).some((m) => m.id === to)) continue;
+    const name = e.getAttribute('name') || '', rid = /^cpdf-/.test(name) ? name.slice(5) : uid(); if (taken.has(rid)) continue;
+    const state = e.getAttribute('statemodel') === 'Review' ? e.getAttribute('state') : null;
+    marksOf(entry).push({ id: rid, type: 'cmReply', to, ...(state ? { state } : { text: textOf(e) }), by: e.getAttribute('title') || '', at: cmPdfDate(e.getAttribute('date')) || Date.now() });
+  }
+  if (!n) return 0;
+  views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
+  return n;
+}
+function cmAddImported(m, e, entry) {
+  m.author = e.getAttribute('title') || ''; m.at = cmPdfDate(e.getAttribute('date')) || Date.now();
+  marksOf(entry).push(m);
+}
+const cmXfdfInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.xfdf,.xml,application/vnd.adobe.xfdf', hidden: true, id: 'cmXfdfFile' });
+document.body.appendChild(cmXfdfInput);
+cmXfdfInput.addEventListener('change', async () => {
+  const f = cmXfdfInput.files[0]; cmXfdfInput.value = ''; if (!f || !doc) return;
+  const n = await cmImportXfdf(await f.text());
+  toast(n < 0 ? `${f.name} is not a comments file (XFDF)` : n ? `${n} comment${n === 1 ? '' : 's'} imported` : 'No new comments to import');
+});
+cmd('cm_export', { label: 'Export comments…', rlabel: 'Export', icon: 'file-up', enabled: has, run: cmExportXfdf });
+cmd('cm_import', { label: 'Import comments…', rlabel: 'Import', icon: 'file-down', enabled: has, run: () => cmXfdfInput.click() });
+ribbonAdd('markup', 'Comments', ['cm_hide', 'cm_export', 'cm_import']);
+menuAdd('Comment', ['cm_hide', 'cm_export', 'cm_import']);
+TEST_HOOKS.cmImportXfdf = (xml) => cmImportXfdf(xml);
+TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;
+TEST_HOOKS.cmExportXfdf = async () => { await cmExportXfdf(); return CM.lastXfdf; };
+
 addStyle(`
 .sidebar .side-tabs { grid-template-columns: repeat(2, 1fr); } /* four tabs: two rows of two */
 .app[data-tool="cmunderline"] .marks, .app[data-tool="cmstrike"] .marks, .app[data-tool="cmsquiggly"] .marks { pointer-events: none !important; }
 .app[data-tool="cmtype"] .marks { cursor: text; }
+.app[data-hide-marks="1"] .page .marks :is([data-type="hl"], [data-type="ink"], [data-type="rect"], [data-type="note"], [data-type^="cm"], .mk-selbox-g),
+.app[data-hide-marks="1"] .page .annotationLayer :is(section:not(.linkAnnotation):not([class*="WidgetAnnotation"]), .popup) { display: none !important; }
+.cm-tools { display: flex; gap: 4px; padding: 0 8px 8px; flex-wrap: wrap; }
+.cm-tools .btn { height: 28px; padding: 0 9px; font-size: 12px; gap: 5px; }
+.cm-tools .btn svg { width: 14px; height: 14px; }
+.cm-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .app[data-tool="cmstamp"] .marks { cursor: copy; }
 .marks .cm-draft { pointer-events: none; }
 .cm-head { font-size: 12px; color: var(--ink-3); padding: 4px 8px 6px; }
