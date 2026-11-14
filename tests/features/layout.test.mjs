@@ -26,7 +26,7 @@ export default async (h) => {
     eq(await p.textContent('#docTitle'), 'pdfelement-guide'); eq(await p.getAttribute('#docTitle', 'title'), 'pdfelement-guide');
     eq(await p.$eval('#docTitle', (e) => e.tagName), 'H1');
     const t = await p.$eval('#docTitle', (e) => [e.getBoundingClientRect().width, e.querySelector('.dt-b').textContent, e.querySelector('.dt-b').getBoundingClientRect().width > 20]);
-    ok(t[0] >= 110, 'the name has room: ' + t[0]); eq(t.slice(1), ['guide', true], 'the end of the name stays');
+    ok(t[0] >= 110, 'the name has room: ' + t[0]); eq(t.slice(1), ['-guide', true], 'the end of the name stays');
     await run(p, 'tool_edit'); await p.waitForTimeout(100);
     const chip = await p.$eval('#modeChip', (c) => { const n = c.querySelector('.mode-name'), m = c.querySelector('.mode-text'); return [n.textContent, n.scrollWidth <= m.clientWidth + 1, c.querySelector('.mode-hint').getBoundingClientRect().width <= 1]; });
     eq(chip, ['Edit PDF', true, true], 'the chip shows the name in full');
@@ -38,5 +38,42 @@ export default async (h) => {
     await run(d, 'tool_edit');
     ok(await d.$eval('#modeChip .mode-hint', (e) => e.getBoundingClientRect().width > 100), 'the hint shows on a wide window');
     await d.ctx.close();
+  });
+
+  const PAGE_MENU = ['Rotate left', 'Rotate right', '-', 'Insert blank page before', 'Insert blank page after', 'Insert from PDF…', 'Replace pages…', '-', 'Duplicate page', 'Extract pages…', 'Crop margins…', '-', 'Move page up', 'Move page down', 'Move to start', 'Move to end', '-', 'Delete page'];
+  const menuItems = (p) => p.$$eval('#popover > *', (e) => e.map((x) => x.classList.contains('msep') ? '-' : x.querySelector('span').textContent));
+  await test('layout: Organize hides the sidebar, its bar has Select all and a plain Done (the ribbon has the rest); Done goes back', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="pages"]'); await p.click('#ribbonBody [data-cmd="pg60_organize"]'); await p.waitForTimeout(500);
+    eq(await p.$eval('#sidebar', (e) => [getComputedStyle(e).visibility, e.getBoundingClientRect().width <= 1]), ['hidden', true], 'sidebar out of the way');
+    ok(await p.$eval('#pg60Org', (e) => e.getBoundingClientRect().left < 10), 'the grid starts at the left edge');
+    eq(await p.$$eval('.pg60-org-bar button', (b) => b.map((x) => [x.textContent.trim(), x.classList.contains('primary')])), [['Select all', false], ['Done', false]]);
+    await p.click('.pg60-org-bar [data-org-done]'); await p.waitForTimeout(300);
+    ok(await p.$eval('#pg60Org', (e) => e.hidden), 'Done goes back');
+    eq(await p.$eval('#sidebar', (e) => getComputedStyle(e).visibility), 'visible', 'the sidebar is back');
+    eq(await p.evaluate(() => window.__cowdreyPdf.S.sidebar), true, 'the setting is untouched');
+    await p.ctx.close();
+  });
+
+  await test('layout: a page\'s right-click menu (sidebar and Organize, mouse or Shift+F10) has the page commands, and they work on that page', async () => {
+    const p = await open(); await openPdf(p);
+    const texts = () => p.evaluate(async () => { const c = window.__cowdreyPdf.doc; return c.pages.map((e) => `${e.src}:${e.i}`); });
+    await p.click('#sidePanel .thumb[data-n="1"]', { button: 'right' }); await p.waitForSelector('#popover:not([hidden])');
+    eq(await menuItems(p), PAGE_MENU, 'sidebar');
+    await p.click('#popover .mi:has-text("Move to end")'); await p.waitForTimeout(500);
+    eq(await texts(p), ['0:0', '0:2', '0:1'], 'moved to the end');
+    await p.click('#sidePanel .thumb[data-n="2"]', { button: 'right' }); await p.click('#popover .mi:has-text("Move to start")'); await p.waitForTimeout(500);
+    eq(await texts(p), ['0:1', '0:0', '0:2'], 'moved to the start');
+    await p.click('[data-rt="pages"]'); await p.click('#ribbonBody [data-cmd="pg60_organize"]'); await p.waitForTimeout(500);
+    await p.focus('.pg60-cell[data-n="2"]'); await p.keyboard.press('Shift+F10'); await p.waitForSelector('#popover:not([hidden])');
+    eq(await menuItems(p), PAGE_MENU, 'Organize, from the keyboard');
+    await p.click('#popover .mi:has-text("Insert blank page before")');
+    await p.waitForFunction(() => window.__cowdreyPdf.doc.pages.length === 4, null, { timeout: 10000 }); await p.waitForTimeout(300);
+    const pages = await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.src));
+    eq(pages, [0, 0, 1, 0], 'a blank page before page 3'); await p.waitForTimeout(600); // the grid is drawn again
+    await p.click('.pg60-cell[data-n="0"]', { button: 'right' }); await p.click('#popover .mi:has-text("Insert blank page after")');
+    await p.waitForFunction(() => window.__cowdreyPdf.doc.pages.length === 5, null, { timeout: 10000 });
+    eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.src > 0)), [false, true, false, true, false], 'and one after page 1');
+    eq(p.errors, []); await p.ctx.close();
   });
 };

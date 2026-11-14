@@ -587,15 +587,29 @@ async function pg60Blank(count, size, at) {
   toast(count === 1 ? 'Inserted a blank page' : `Inserted ${count} blank pages`);
 }
 if (C.blank) { C.blank.label = 'Insert blank pages…'; C.blank.run = pg60BlankAsk; }
+// One blank page the size of this page, before or after it (the chosen pages: before the first or after the last).
+async function pg60BlankBy(after) {
+  if (!has()) return;
+  const t = pg60Targets(), n = after ? t[t.length - 1] : t[0], e = doc.pages[n], page = await pageOf(e);
+  const vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
+  await pg60Blank(1, [vp.width, vp.height], after ? n + 1 : n);
+}
+cmd('pg60_blankBefore', { label: 'Insert blank page before', icon: 'between-horizontal-start', enabled: has, run: () => pg60BlankBy(false) });
+cmd('pg60_blankAfter', { label: 'Insert blank page after', icon: 'between-horizontal-end', enabled: has, run: () => pg60BlankBy(true) });
+// Moves the page (or the chosen pages) to the start or the end.
+const pg60AtEdge = (end) => { const t = pg60Targets(); return end ? t.every((n, k) => n === doc.pages.length - t.length + k) : t.every((n, k) => n === k); };
+cmd('pg60_toStart', { label: 'Move to start', icon: 'arrow-up-to-line', enabled: () => has() && !pg60AtEdge(false), run: () => pg60MoveTo(pg60Targets(), 0) });
+cmd('pg60_toEnd', { label: 'Move to end', icon: 'arrow-down-to-line', enabled: () => has() && !pg60AtEdge(true), run: () => pg60MoveTo(pg60Targets(), doc.pages.length) });
 
-/* ---- Organize: every page in a grid that fills the window. Click, Shift- and Cmd/Ctrl-click choose pages, drag
-   moves them, and the bar's commands (rotate, insert, duplicate, extract, delete) work on the chosen pages. ---- */
+/* ---- Organize: every page in a grid that fills the window, with the sidebar out of the way. Click, Shift- and
+   Cmd/Ctrl-click choose pages, drag moves them, and the Pages ribbon and a page's right-click menu work on the chosen
+   pages (the grid's own bar only counts them, selects all and goes back). ---- */
 const pg60Org = document.createElement('section');
 pg60Org.className = 'pg60-org'; pg60Org.id = 'pg60Org'; pg60Org.hidden = true; pg60Org.setAttribute('aria-label', 'Organize pages');
 pg60Org.innerHTML = `<div class="pg60-org-bar">
   <span class="pg60-org-count" aria-live="polite"></span>
-  <span class="pg60-org-tools">${[['pg60_selAll', 'Select all'], ['rotL', 'Rotate left'], ['rotR', 'Rotate right'], ['blank', 'Insert'], ['dup', 'Duplicate'], ['extract', 'Extract'], ['delPage', 'Delete']].map(([id, l]) => `<button type="button" class="btn" data-org="${id}" title="${esc(C[id] ? C[id].label : l)}">${ic(C[id] ? C[id].icon : 'circle')}<span>${l}</span></button>`).join('')}</span>
-  <button type="button" class="btn primary" data-org-done>${ic('x')}<span>Close</span></button>
+  <span class="pg60-org-tools"><button type="button" class="btn" data-org="pg60_selAll" title="${esc(C.pg60_selAll.label)}">${ic(C.pg60_selAll.icon)}<span>Select all</span></button></span>
+  <button type="button" class="btn" data-org-done title="Back to the document (Esc)">${ic('check')}<span>Done</span></button>
 </div>
 <div class="pg60-org-grid" role="listbox" aria-label="Pages" aria-multiselectable="true"></div>`;
 $('.workspace').appendChild(pg60Org);
@@ -711,6 +725,8 @@ addStyle(`
 .pg60-org { grid-row: 1; grid-column: -2 / -1; z-index: 3; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--canvas); }
 .pg60-org[hidden] { display: none; }
 .app[data-organize="1"] .viewer { visibility: hidden; }
+.app[data-organize="1"] .workspace { grid-template-columns: 0 1fr; }
+.app[data-organize="1"]:not([data-sidebar="open"]) .sidebar { visibility: hidden; }
 .pg60-org-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--chrome); border-bottom: 1px solid var(--line); }
 .pg60-org-count { color: var(--ink-2); font-size: 13px; white-space: nowrap; margin-right: auto; }
 .pg60-org-tools { display: flex; gap: 4px; overflow-x: auto; min-width: 0; scrollbar-width: none; }

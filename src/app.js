@@ -177,7 +177,8 @@ async function showDoc(d, loaded) {
 // The name in the title bar: when it is too long, its middle gives way (the start and its last few letters stay),
 // and the whole name is its tooltip.
 function setTitle() {
-  const name = doc ? doc.name : 'Cowdrey.PDF', t = $('#docTitle'), k = name.length > 14 ? Math.min(8, Math.floor(name.length / 3)) : 0;
+  const name = doc ? doc.name : 'Cowdrey.PDF', t = $('#docTitle'), cut = name.slice(-11).search(/[ _-][^ _-]{2,}$/);
+  const k = name.length <= 14 ? 0 : cut >= 0 ? 11 - cut : Math.min(8, Math.floor(name.length / 3)); // from the last word, when it is short
   t.innerHTML = `<span class="dt-a">${esc(name.slice(0, name.length - k))}</span>${k ? `<span class="dt-b">${esc(name.slice(-k))}</span>` : ''}`;
   t.title = name; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF';
 }
@@ -3104,7 +3105,11 @@ function thumbMenu(t, at) {
   if (typeof pg60Valid === 'function' && !pg60Valid().includes(n)) pg60SetSel([]);
   const on = (id, o) => ctxCmd(id, { ...o, run: () => { current = n; markThumb(); run(id); } });
   const was = current; current = n; // what can be done to this page
-  const items = [on('rotL'), on('rotR'), '-', on('dup'), ctxCmd('blank', { label: 'Insert blank page after', run: () => { current = n; markThumb(); insertBlank(); } }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
+  const items = [on('rotL'), on('rotR'), '-',
+    C.pg60_blankBefore ? on('pg60_blankBefore') : null, C.pg60_blankAfter ? on('pg60_blankAfter') : ctxCmd('blank', { label: 'Insert blank page after', run: () => { current = n; markThumb(); insertBlank(); } }),
+    on('pg60_insert', { label: 'Insert from PDF…' }), on('pg60_replace'), '-',
+    on('dup'), on('extract'), on('pg60_crop'), '-',
+    on('up'), on('down'), on('pg60_toStart'), on('pg60_toEnd'), '-', on('delPage')];
   current = was;
   openCtx(items, at, t, `Page ${n + 1}`); t.classList.add('ctx-for'); // shows which page the menu is for
   return true;
@@ -3157,7 +3162,7 @@ document.addEventListener('keydown', (e) => {
   const a = document.activeElement;
   if (pop.contains(a) || typingIn(a)) return;
   e.preventDefault(); e.stopPropagation(); ctxOpened = Date.now();
-  const t = a && a.closest && a.closest('#sidePanel .thumb');
+  const t = a && a.closest && a.closest('#sidePanel .thumb, .pg60-cell');
   if (t) { const r = t.getBoundingClientRect(); thumbMenu(t, { x: r.left + r.width / 2, y: r.top + r.height / 2 }); return; }
   const m = selectedMark(), mv = m && views.find((x) => x.entry === selMark.entry), me = mv && mv.el.querySelector(`.mk[data-id="${CSS.escape(m.id)}"]`);
   if (me) { const r = me.getBoundingClientRect(); markMenu(mv, m, { x: r.left, y: r.bottom + 4 }); return; }
