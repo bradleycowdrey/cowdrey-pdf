@@ -162,8 +162,19 @@ button { font: inherit; color: inherit; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
 .app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page .textLayer,
 .app[data-tool="select"] .marks .mk { touch-action: none; }
+/* The text tools select the words under a comment or shape, as if it were not there. */
+.app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page :is(.marks, .marks *, .annotationLayer, .annotationLayer *) { pointer-events: none !important; }
 .app[data-tool="select"] .marks .mk:hover { filter: drop-shadow(0 0 2px var(--accent)); }
-.marks .mk.sel { filter: drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
+/* The selected mark: a dashed box and handles (bigger for a finger), in the brand colour with a light halo, which
+   shows on the white page in both themes (the light accent of the dark theme would not). */
+.marks .mk-selbox-g { pointer-events: none; }
+.marks .mk-selbox { fill: none; stroke: var(--brand); stroke-width: 1.5; stroke-dasharray: 5 3; filter: drop-shadow(0 0 1px rgba(255,255,255,.9)); }
+.marks .mk-handle { pointer-events: auto; fill: #fff; stroke: var(--brand); stroke-width: 1.5; touch-action: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+.marks .mk-handle.mk-handle-hit { fill: transparent; stroke: none; filter: none; }
+.marks .mk-handle:is([data-h="nw"], [data-h="se"]) { cursor: nwse-resize; }
+.marks .mk-handle:is([data-h="ne"], [data-h="sw"]) { cursor: nesw-resize; }
+.marks .mk-handle:is([data-h="n"], [data-h="s"]) { cursor: ns-resize; }
+.marks .mk-handle:is([data-h="e"], [data-h="w"]) { cursor: ew-resize; }
 .marks text { user-select: none; }
 .app[data-tool="edit"] .marks { cursor: default; }
 .app[data-tool="erase"] .marks { cursor: crosshair; }
@@ -185,6 +196,20 @@ button { font: inherit; color: inherit; }
 
 /* status bar */
 .statusbar { display: flex; align-items: center; gap: 16px; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mode-chip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0 2px 0 10px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: 12px; line-height: 24px; }
+.mode-chip[hidden] { display: none; }
+.mode-chip .mode-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode-chip .mode-stop { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
+.mode-chip .mode-stop:hover { background: var(--hover); color: var(--ink); }
+.mode-chip .mode-stop svg { width: 14px; height: 14px; }
+.app.tool-on .sb-brand { display: none; }
+/* phones: the chip takes the room of the zoom buttons (a pinch zooms) */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .statusbar > span:first-child { white-space: nowrap; }
+  .app.tool-on .mode-chip { flex: 1 1 0; }
+  .app.tool-on .sb-zoom .icon-btn, .app.tool-on .sb-spacer { display: none; }
+}
 .sb-spacer { flex: 1; }
 .sb-pages { display: none; }
 .sb-brand { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -369,6 +394,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   <footer class="statusbar">
     <button class="icon-btn sb-pages" type="button" data-cmd="sidebar" title="Pages and outline" aria-label="Pages and outline"><i data-lucide="panel-left"></i></button>
     <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> of <span id="pageCount">0</span></span>
+    <span class="mode-chip" id="modeChip" role="status" hidden><span class="mode-text"></span><button class="mode-stop" type="button" title="Stop (Esc)" aria-label="Stop and go back to Select"><i data-lucide="x"></i></button></span>
     <span class="sb-spacer"></span>
     <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>
     <span class="sb-zoom">
@@ -382,6 +408,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 <div class="popover" id="popover" hidden role="menu"></div>
 <dialog id="dialog" aria-modal="true" aria-labelledby="dlgTitle"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="sr-only" id="announce" role="status" aria-live="polite"></div>
 <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="mergeInput" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="imageInput" accept="image/png,image/jpeg" multiple hidden>

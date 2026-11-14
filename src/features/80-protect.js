@@ -890,7 +890,7 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
 /* ----- dialogs for the document-wide settings ----- */
 async function protFlatten() {
   const cur = protDM('protflatten');
-  const r = await protAsk('Flatten', `<p>Comments and form fields become part of the page when you save, so they look the same everywhere and can no longer be changed.</p>
+  const r = await protAsk('Flatten pages', `<p>Comments and form fields become part of the page when you save, so they look the same everywhere and can no longer be changed.</p>
     <div class="prot-checks">
       <label class="prot-check"><input type="checkbox" name="comments"${!cur || cur.comments ? ' checked' : ''}> Comments and notes</label>
       <label class="prot-check"><input type="checkbox" name="forms"${!cur || cur.forms ? ' checked' : ''}> Form fields</label>
@@ -981,7 +981,7 @@ cmd('protRedSearch', { label: 'Search and redact…', icon: 'search-check', enab
 cmd('protRedApply', { label: 'Apply redactions…', icon: 'file-check-2', enabled: () => has() && protHasPending(), run: protApply });
 cmd('protPassword', { label: 'Set password…', icon: 'lock', enabled: has, pressed: () => !!(protSec() && protSec().mode === 'set'), run: protPassword });
 cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: has, run: protRemoveSecurity });
-cmd('protFlatten', { label: 'Flatten…', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
+cmd('protFlatten', { label: 'Flatten pages…', tip: 'Flatten pages: make comments and form fields part of the page content when you save, so they can no longer be changed', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
 cmd('protCompress', { label: 'Compress…', icon: 'shrink', enabled: has, pressed: () => !!protDM('protcompress'), run: protCompressDlg });
 cmd('protClean', { label: 'Remove hidden info…', icon: 'eye-off', enabled: has, pressed: () => !!protDM('protclean'), run: protClean_ });
 ribbonAdd('protect', 'Redact', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);

@@ -66,21 +66,24 @@ async function ffLoadKnown() {
 FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLastRadio = null; ffLoadKnown(); });
 
 /* ---- form design and filling in ----
-   On the Forms tab new fields are designed: moved, resized, given properties. Anywhere else (or with Preview on)
-   they can be filled in at once, like the fields already in the PDF; what is typed is the field's value. */
-let ffPreviewOn = false;
-const ffDesign = () => S.ribbon === 'forms' && !ffPreviewOn;
+   New fields are designed (moved, resized, given properties) while a form tool or Edit fields is chosen on the Forms
+   tab. Otherwise (Select, Esc, another tab, or Fill in) they can be filled in at once, like the fields already in
+   the PDF; what is typed is the field's value. */
+const ffDesign = () => S.ribbon === 'forms' && ffIsTool();
 const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list']);
 function ffRedrawAll() { selectMark(null); views.forEach((v) => { if (v.rendered) { drawMarks(v); ffLayer(v); } }); }
-(FEATURE.onTab ||= []).push((k) => { if (k !== 'forms') ffPreviewOn = false; ffRedrawAll(); });
-// Choosing a form tool goes back to designing.
-function ffEndPreview() { if (ffPreviewOn) { ffPreviewOn = false; ffRedrawAll(); } }
+(FEATURE.onTab ||= []).push(() => { ffRedrawAll(); });
+// Choosing a form tool designs the form; Select (or Esc) fills it in.
+let ffWasDesign = false;
+new MutationObserver(() => { const d = ffDesign(); if (d !== ffWasDesign) { ffWasDesign = d; if (!d) ffSelectX(null); ffRedrawAll(); } }).observe(app, { attributes: true, attributeFilter: ['data-tool'] });
+function ffEndPreview() {}
+// Fill in: leave form design to try the fields; pressed again, back to Edit fields.
 function ffPreview() {
-  ffPreviewOn = !ffPreviewOn;
-  if (ffPreviewOn && ffIsTool()) setTool('select');
-  ffSelectX(null); ffRedrawAll(); refreshRibbon();
-  toast(ffPreviewOn ? 'Fill in the new fields to try them' : 'Back to designing the form');
+  if (ffIsTool()) { setTool('select'); toast('Fill in the fields to try them'); }
+  else { setTool('ff_edit'); ffLoadKnown(); }
 }
+Object.assign(TOOL_HINTS, { ff_edit: 'Click a field to select it; double-click for its properties' });
+for (const k of Object.keys(FF_KINDS)) TOOL_HINTS['ff_' + k] = 'Drag on the page';
 // An HTML control over a new field, to fill it in. A change is kept like any other (undo takes it back).
 function ffFillControl(m, fs) {
   let el;
@@ -296,7 +299,7 @@ function ffToolDown(kind) {
 for (const [kind, K] of Object.entries(FF_KINDS)) {
   const t = 'ff_' + kind;
   FEATURE.tools[t] = { down: ffToolDown(kind) };
-  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { const was = app.dataset.tool; ffEndPreview(); setTool(t); ffLoadKnown(); if (was !== t) toast(`Drag on the page to add a ${K.label.toLowerCase()}`); } });
+  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { setTool(t); ffLoadKnown(); } });
 }
 FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (the fields already in the PDF have their own layer)
   const hit = e.target.closest && e.target.closest('.ff-mk');
@@ -306,7 +309,7 @@ FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (th
   selectMark({ key: pageKey(v.entry), id: hit.dataset.id, entry: v.entry });
   if (m) startMove(e, v, m);
 } };
-cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { const was = app.dataset.tool; ffEndPreview(); setTool('ff_edit'); ffLoadKnown(); if (was !== 'ff_edit') toast('Click a field to select it; double-click it for its properties'); } });
+cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { setTool('ff_edit'); ffLoadKnown(); } });
 
 /* ---- fields already in the PDF: outlined while a form tool is chosen ---- */
 async function ffWidgets(v) {
@@ -764,8 +767,8 @@ FEATURE.markTypes.ff.menu = ['ffProps']; // in the mark's right-click menu
 cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffDeleteSelected });
 cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-search', enabled: has, run: ffRecognize });
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });
-cmd('ffFlatten', { label: 'Flatten form', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
-cmd('ffPreview', { label: 'Preview', icon: 'eye', enabled: () => has() && !ffFlat(), pressed: () => ffPreviewOn, run: ffPreview });
+cmd('ffFlatten', { label: 'Flatten form', tip: 'Flatten form: make the form fields part of the page when you save. Comments stay comments.', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
+cmd('ffPreview', { label: 'Fill in', icon: 'text-cursor-input', enabled: () => has() && !ffFlat(), pressed: () => S.ribbon === 'forms' && !ffIsTool(), run: ffPreview });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
 ribbonAdd('forms', 'Form', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);

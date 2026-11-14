@@ -33,7 +33,7 @@ export default async (h) => {
     eq((await ffMarks(p)).map((m) => [m.kind, m.name]), [['text', 'Text1'], ['check', 'CheckBox1'], ['radio', 'Group1'], ['radio', 'Group1'], ['combo', 'Dropdown1'], ['list', 'ListBox1'], ['button', 'Button1'], ['date', 'Date1'], ['sig', 'Signature1']]);
     // Properties, with the form tool and with Select
     await props(p, [200, 410], { '#ffName': 'fullName', '#ffTip': 'Your full name', '#ffVal': 'Jane', '#ffMax': 20, '#ffReq': true, '#ffSize': 12 });
-    await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
+    await p.evaluate(() => window.__cowdreyPdf.run('ff_edit')); // Edit fields designs (Select fills in)
     await props(p, [107, 373], { '#ffExp': 'Agreed', '#ffOn': true });
     await props(p, [147, 343], { '#ffExp': 'Pears', '#ffOn': true });
     await props(p, [175, 310], { '#ffOpts': 'Red\nGreen\nBlue', '#ffVal': 'Green', '#ffRo': true });
@@ -73,7 +73,7 @@ export default async (h) => {
     const p = await open({ width: 1000, height: 1300 }); await openPdf(p);
     await p.click('[data-rt="forms"]'); await p.click('[data-cmd="ff_text"]');
     await drag(p, [100, 420], [250, 400]);
-    await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
+    await p.evaluate(() => window.__cowdreyPdf.run('ff_edit')); // Edit fields designs (Select fills in)
     const [cx, cy] = await at(p, 175, 410); await p.mouse.click(cx, cy);
     await drag(p, [175, 410], [215, 380]);
     let m = (await ffMarks(p))[0];
@@ -162,7 +162,7 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
-  await test('forms: a new field can be filled in as soon as you leave form design (another tab, or Preview); back on Forms it is designed again', async () => {
+  await test('forms: a new field can be filled in as soon as you leave form design (another tab, Select, Esc or Fill in); a form tool or Edit fields designs it again', async () => {
     const p = await open({ width: 1000, height: 1300 }); await openPdf(p);
     await p.click('[data-rt="forms"]');
     await p.click('[data-cmd="ff_text"]'); await drag(p, [100, 420], [300, 400]);
@@ -185,23 +185,33 @@ export default async (h) => {
     eq((await ffMarks(p)).map((m) => m.val)[4], '', 'undo'); await p.keyboard.press('Control+Shift+z'); await p.waitForTimeout(150);
     const f = (await PDFDocument.load(await savedOf(p))).getForm();
     eq([f.getTextField('Text1').getText(), f.getCheckBox('CheckBox1').isChecked(), f.getRadioGroup('Group1').getSelected(), f.getDropdown('Dropdown1').getSelected()], ['Jane Q', true, 'Choice2', ['Option 2']]);
-    // Back on Forms: designed again (selectable, properties on double-click), showing what was filled in
+    // Back on Forms with Select: still filled in. Edit fields designs them (selectable, properties on double-click),
+    // showing what was filled in
     await p.click('[data-rt="forms"]'); await p.waitForTimeout(200);
+    eq(await p.$$eval('.ff-fill-layer .ff-ctl', (c) => c.length), 5, 'Select on the Forms tab fills in');
+    eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'true');
+    await p.click('[data-cmd="ff_edit"]'); await p.waitForTimeout(200);
     ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing again');
     eq(await p.$$eval('.marks .ff-mk.mk', (m) => m.length), 5);
     ok(/Jane Q/.test(await p.$eval('.marks .ff-mk', (g) => g.textContent)), 'shows the value');
     const [x, y] = await at(p, 200, 410); await p.mouse.dblclick(x, y); await p.waitForSelector('#dialog[open] #ffName'); await p.click('#dialog [data-x]');
-    // Preview on the Forms tab
+    // Fill in on the Forms tab
+    eq(await p.textContent('[data-cmd="ffPreview"]'), 'Fill in');
     await p.click('[data-cmd="ffPreview"]'); await p.waitForTimeout(150);
     eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'true');
     eq(await p.$$eval('.ff-fill-layer .ff-ctl', (c) => c.length), 5);
     await p.fill('.ff-fill-layer .ff-ctl-text', 'Pelican'); await p.keyboard.press('Tab');
     eq((await ffMarks(p))[0].val, 'Pelican');
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/forms-preview-dark.png' });
+    // pressed again: back to Edit fields
     await p.click('[data-cmd="ffPreview"]'); await p.waitForTimeout(150);
     eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'false');
-    ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing after Preview is turned off');
-    await p.click('[data-cmd="ffPreview"]'); await p.click('[data-cmd="ff_check"]'); await p.waitForTimeout(150); // a form tool ends the preview
+    eq(await p.evaluate(() => document.querySelector('#app').dataset.tool), 'ff_edit');
+    ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing after Fill in is turned off');
+    // Esc leaves design: the fields can be filled in
+    await p.click('#viewer', { position: { x: 5, y: 5 } }); await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    eq(await p.$$eval('.ff-fill-layer .ff-ctl', (c) => c.length), 5, 'Esc fills in');
+    await p.click('[data-cmd="ff_check"]'); await p.waitForTimeout(150); // a form tool designs again
     eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'false');
     ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing with a form tool');
     eq(p.errors, []); await p.ctx.close();
