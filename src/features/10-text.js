@@ -81,8 +81,11 @@ const txtJoin = (strs) => strs.reduce((a, s, k) => (k === 0 ? s : /-$/.test(a) ?
 // The block's frame: the first original line's origin (moved by dx, dy), its directions, and the size and leading now.
 function txtFrame(m) {
   const f = lineFrame(m.src[0]), k = m.size / f.size;
-  return { ...f, k, lead: m.lead0 * k, o: [f.o[0] + (m.dx || 0), f.o[1] + (m.dy || 0)] };
+  return { ...f, k, lead: txtLead(m, m.size, f.size), o: [f.o[0] + (m.dx || 0), f.o[1] + (m.dy || 0)] };
 }
+// The distance between a paragraph's lines at a size: as the original's, and more for a larger size (never less:
+// smaller text keeps the paragraph's line spacing, so it still matches the text around it).
+const txtLead = (m, size, size0 = m.size0) => m.lead0 * Math.max(1, size / size0);
 const txtOrigin = (F, i, x) => [F.o[0] + F.u[0] * x - F.v[0] * i * F.lead, F.o[1] + F.u[1] * x - F.v[1] * i * F.lead];
 const txtAlignK = (a) => ({ center: .5, right: 1 }[a] || 0);
 function txtRelayout(page, m) {
@@ -360,6 +363,7 @@ function txtOpenEditor(v, o) {
   if (o.placeholder) ta.placeholder = o.placeholder;
   v.el.appendChild(ta);
   const E = txtEd = { v, ta, ...o };
+  txtOverNoteGone();
   txtEditing.add(o.m.id); drawMarks(v);
   const fit = () => { o.place(ta, E.fmt); ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; if (o.single || !o.width) { ta.style.width = '0'; ta.style.width = Math.max(o.minWidth || 20, ta.scrollWidth + 2) + 'px'; } if (o.after) o.after(ta, E.fmt, fit); };
   fit();
@@ -367,7 +371,7 @@ function txtOpenEditor(v, o) {
   ta.addEventListener('keydown', (e) => {
     // Escape keeps, like clicking away (Undo takes it back), and the tool stays on: the page's own Escape doesn't run.
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const was = ta.value; txtCloseEditor(true); keptHint(was !== o.text); return; }
-    if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); txtCloseEditor(true); return; }
+    if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); txtCloseEditor(true, true); return; }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
   ta.addEventListener('blur', () => setTimeout(() => { if (txtEd === E && !txtBarBusy() && document.activeElement !== ta) txtCloseEditor(true); }, 0));
@@ -376,14 +380,15 @@ function txtOpenEditor(v, o) {
   // Opened by a click with Edit PDF: the caret goes where the click was (a double click selects the word). Else all.
   if (editAt) placeCaret(ta, editAt); else ta.select();
 }
-function txtCloseEditor(commit) {
+// done: closed with Done (Ctrl+Enter), which may ask; Escape and clicking away never do.
+function txtCloseEditor(commit, done = false) {
   const E = txtEd; if (!E) return;
   txtEd = null; txtHideBar(); txtEditing.delete(E.m.id);
   if (E.cleanup) E.cleanup();
   const text = E.ta.value.replace(/\r/g, ''), had = document.activeElement === E.ta;
   E.ta.remove();
   if (had) viewer.focus({ preventScroll: true }); // the keys go on working on the page
-  if (commit) Promise.resolve(E.done(text, E.fmt)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
+  if (commit) Promise.resolve(E.done(text, E.fmt, done)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
   else drawMarks(E.v);
 }
 const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans' });
@@ -401,7 +406,7 @@ function txtParaFont(v, m, f, px) {
 function txtParaFit(page, m, text, f) {
   if (!m.wrap) return { n: 1, over: false };
   const t = { ...m, size: f.size, bold: f.bold, italic: f.italic, std: !!(f.bold !== m.base.bold || f.italic !== m.base.italic) };
-  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = m.lead0 * f.size / m.size0;
+  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = txtLead(m, f.size);
   return { n, over: (n - 1) * lead > (m.src.length - 1) * m.lead0 + .5 };
 }
 // The largest size, in half points down to 70% of the original size, at which it fits. null when none does.
@@ -449,13 +454,16 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       Object.assign(ta.style, { left: ox + 'px', top: (oy - base) + 'px', font: txtParaFont(v, m, f, px), lineHeight: (m.wrap ? lh : px * 1.25) + 'px', color: f.color, background: m.src[0].bg, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${base}px`, transform: `rotate(${ang}deg)` });
       if (m.wrap) ta.style.width = (m.wrap * scale + 3) + 'px';
     },
-    async done(text, f) {
+    async done(text, f, asked) {
       const list = marksOf(v.entry);
       const back = text === m.base.text && txtSameFmt(f, m.base) && !m.dx && !m.dy;
       if (isNew ? back && !absorb.length : text === m.text && txtSameFmt(f, m)) return;
       const fit = back ? { over: false } : txtParaFit(v.page, m, text, f);
       // Asked once per paragraph: after "Let it run", it isn't asked again (the editor still warns).
-      if (fit.over && !m.runOver) {
+      // Done asks; Escape or a click away keeps it as typed and says so, with Shrink to fit and Undo at hand.
+      let quiet = null;
+      if (fit.over && !m.runOver && !asked) quiet = { s: txtParaFitSize(v.page, m, text, f), more: fit.n - m.src.length };
+      else if (fit.over && !m.runOver) {
         const s = txtParaFitSize(v.page, m, text, f);
         const a = await dialog(TXT_LONGER, `<p>It now takes ${fit.n} lines; it had ${m.src.length}. Kept like this, it runs over what is below it on the page.</p>${s == null ? '<p>It does not fit even at 70% of its size. Shorten the text, or let it run.</p>' : `<p>Shrink to fit makes the text ${s} pt (it is ${txtRound(f.size)} pt).</p>`}`,
           [{ label: 'Keep editing', value: 'edit' }, { label: 'Let it run', value: 'run' }, ...(s == null ? [] : [{ label: 'Shrink to fit', value: 'shrink', primary: true }])]);
@@ -471,9 +479,26 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
         if (isNew) list.push(m);
       }
       changed(before);
+      if (quiet) txtOverNote(v, m, quiet);
     },
   });
 }
+// After a paragraph was kept longer than its space (Escape): a note under it, with Shrink to fit and Undo. It goes
+// after a while, or when something else is edited.
+function txtOverNote(v, m, { s, more }) {
+  txtOverNoteGone();
+  const note = document.createElement('div'); note.className = 'txt-over txt-over-kept'; note.setAttribute('role', 'status');
+  note.innerHTML = `<span>Paragraph is ${more === 1 ? '1 line' : more + ' lines'} longer than before.</span>${s == null ? '' : '<button type="button" class="btn" data-shrink>Shrink to fit</button>'}<button type="button" class="btn" data-undo>Undo</button>`;
+  note.addEventListener('pointerdown', (e) => e.stopPropagation());
+  note.timer = setTimeout(txtOverNoteGone, 12000);
+  const sh = $('[data-shrink]', note);
+  if (sh) sh.onclick = () => { txtOverNoteGone(); const before = snapshot(); Object.assign(m, { size: s, runOver: false }); txtRelayout(v.page, m); changed(before); drawMarks(v); };
+  $('[data-undo]', note).onclick = () => { txtOverNoteGone(); run('undo'); };
+  const F = txtFrame(m), [x, y] = toView(v, ...txtOrigin(F, Math.max(0, m.lines.length - 1), 0));
+  note.style.left = Math.max(4, Math.min(x, v.el.clientWidth - 320)) + 'px'; note.style.top = (y + m.size * scale * .5 + 8) + 'px';
+  v.el.appendChild(note);
+}
+function txtOverNoteGone() { for (const n of $$('.txt-over-kept')) { clearTimeout(n.timer); n.parentNode && n.parentNode.removeChild(n); } }
 // Starts editing the paragraph around line L (para mode). Returns false when L is a line on its own.
 async function txtStartPara(v, L) {
   const cm = await contentMap(v.page); v.page._cmapValue = cm;
@@ -816,6 +841,7 @@ addStyle(`
 .txt-editor.txt-over-ed { outline-color: var(--danger, #E03131); }
 .txt-over { position: absolute; z-index: 7; display: flex; align-items: center; gap: 8px; max-width: min(360px, calc(100% - 8px)); box-sizing: border-box; padding: 6px 6px 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--danger, #E03131); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); font: 12px/1.3 var(--font-ui); }
 .txt-over .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
+.txt-over-kept { max-width: min(440px, calc(100% - 8px)); }
 .field textarea.txt-paper { background: #fff; color-scheme: light; }
 .field.txt-wfield { flex-direction: row; align-items: center; gap: 10px; }
 .field.txt-wfield input { width: 130px; }

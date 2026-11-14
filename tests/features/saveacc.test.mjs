@@ -234,4 +234,40 @@ export default async (h) => {
     eq([f2.getTextField('name').getText(), f2.getTextField('name_2').getText()], ['Jane Filled', 'Second']);
     eq(p.errors, []); await p.ctx.close();
   });
+  await test('paragraph: Escape on a paragraph that grew keeps it without asking, with Shrink to fit and Undo at hand; Shrink to fit keeps the line spacing', async () => {
+    const L = pdfLib(), pdf = await L.PDFDocument.create(), pg = pdf.addPage([612, 792]), font = await pdf.embedFont(L.StandardFonts.Helvetica);
+    const PARA = ['The pelican project moved into its second big phase this spring,', 'with new stores joining the pilot and early results showing', 'steady growth in every region we measured over the quarter.', 'The team will report again in June.'];
+    PARA.forEach((t, k) => pg.drawText(t, { x: 72, y: 680 - k * 31, size: 12, font }));
+    pg.drawText('Below the paragraph', { x: 72, y: 500, size: 12, font });
+    const file = tmp('double.pdf'); H.fs.writeFileSync(file, await pdf.save());
+    const p = await open(); await openPdf(p, file, 'Double.pdf');
+    await p.evaluate(() => { window.__cowdreyPdf.run('tool_edit'); window.__cowdreyPdf.run('txtParaMode'); });
+    const P = await lineOf(p, 'stores'), [px, py] = await atN(p, 0, P.tm[4] + 5, P.tm[5] + 4);
+    await p.mouse.click(px, py); await p.waitForSelector('.txt-editor');
+    await p.keyboard.press('Control+End'); await p.keyboard.type(' Then one more sentence was added to the end of it.');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(500);
+    ok(!(await p.$('#dialog[open]')), 'no question on Escape');
+    ok(!(await p.$('.txt-editor')), 'the editor closed');
+    let m = (await all(p)).find((x) => x.type === 'tpara');
+    ok(m && /one more sentence/.test(m.text) && m.runOver, 'kept as typed');
+    await p.waitForSelector('.txt-over-kept');
+    eq(await p.textContent('.txt-over-kept span'), 'Paragraph is 1 line longer than before.');
+    eq(await p.$$eval('.txt-over-kept button', (b) => b.map((x) => x.textContent)), ['Shrink to fit', 'Undo']);
+    await shot(p, 'para-kept-note-dark.png');
+    // Undo from the note takes it back
+    await p.click('.txt-over-kept [data-undo]'); await p.waitForTimeout(400);
+    eq((await all(p)).filter((x) => x.type === 'tpara').length, 0, 'undone');
+    ok(!(await p.$('.txt-over-kept')), 'note gone');
+    // Again, and Shrink to fit: smaller text, the same line spacing
+    await p.mouse.click(px, py); await p.waitForSelector('.txt-editor');
+    await p.keyboard.press('Control+End'); await p.keyboard.type(' Then one more sentence was added to the end of it.'); await p.keyboard.press('Escape'); await p.waitForTimeout(500);
+    await p.click('.txt-over-kept [data-shrink]'); await p.waitForTimeout(400);
+    m = (await all(p)).find((x) => x.type === 'tpara');
+    ok(m.size < 12 && !m.runOver, 'smaller: ' + m.size);
+    const its = (await itemsOf(await savedOf(p))).filter((i) => i.y > 550 && i.y < 700);
+    const ys = [...new Set(its.map((i) => Math.round(i.y * 10) / 10))].sort((a, b) => b - a);
+    ok(ys.length >= 2 && ys.length <= 4, 'four lines at most: ' + ys);
+    for (let k = 1; k < ys.length; k++) ok(Math.abs(ys[k - 1] - ys[k] - 31) < .6, 'lines 31 pt apart, as before: ' + ys);
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
