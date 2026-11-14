@@ -176,7 +176,7 @@ addStyle(`
 .pic-crop .pic-frame { fill: transparent; stroke: #fff; stroke-width: 1.5; cursor: move; }
 .pic-crop .pic-frame-2 { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
 .pic-crop .pic-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
-@media (max-width: 760px) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint { display: none; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint { display: none; } }
 `);
 const PIC_TOOLS = [['picRotL', 'rotate-ccw'], ['picRotR', 'rotate-cw'], ['picFlipH', 'flip-horizontal-2'], ['picFlipV', 'flip-vertical-2'], ['picCrop', 'crop'], '-', ['picReplace', 'replace'], ['picExtract', 'image-down'], '-', ['picDelete', 'trash-2']];
 function picBar(v, sel) {

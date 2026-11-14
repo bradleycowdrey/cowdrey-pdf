@@ -45,7 +45,7 @@ addStyle(`
 .crd-bar.crd-readbar { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); transform: none; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); opacity: .75; transition: opacity .2s; }
 .crd-bar.crd-readbar:hover, .crd-bar.crd-readbar:focus-within { opacity: 1; }
 .app.crd-reading ~ .crd-saybar { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .crd-bar { bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
   .crd-bar .crd-voice { max-width: 104px; }
   .crd-bar .crd-where { display: none; }
@@ -374,7 +374,7 @@ function crdReadMode(on = !crdReading()) {
   closePopover();
   app.classList.toggle('crd-reading', on);
   crdReadBar().hidden = !on; crdReadWhere();
-  if (on) toast('Read mode: arrow keys turn the pages, Esc leaves');
+  if (on) toast(coarse() ? 'Read mode: the arrows at the bottom turn the pages' : 'Read mode: arrow keys turn the pages, Esc leaves');
   const at = current;
   setTimeout(async () => {
     if (on) { crdZoomBefore = S.zoom; await crdReadFit(at); }

@@ -406,7 +406,7 @@ addStyle(`
 .ocr-hint { position: sticky; top: 10px; z-index: 15; margin: 10px auto -4px; width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; display: flex; align-items: center; gap: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.15); font-size: 13px; }
 .ocr-hint[hidden] { display: none; }
 .ocr-hint > svg { color: var(--accent); flex: none; }
-@media (max-width: 760px) { .ocr-hint { flex-wrap: wrap; width: auto; } .ocr-hint span { flex: 1 1 60%; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .ocr-hint { flex-wrap: wrap; width: auto; } .ocr-hint span { flex: 1 1 60%; } }
 `);
 
 TEST_HOOKS.ocrUseEngine = (e) => { ocrEngine = e; };

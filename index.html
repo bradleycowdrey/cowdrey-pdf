@@ -645,6 +645,9 @@
 html, body { margin: 0; height: 100%; }
 body { background: var(--chrome); color: var(--ink); font: 14px/1.4 var(--font-ui); -webkit-font-smoothing: antialiased; overflow: hidden; }
 button { font: inherit; color: inherit; }
+/* Keyboard focus: one ring in the accent everywhere (rules below may move it inside a control). */
+:root { accent-color: var(--accent); }
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ic, [data-lucide] { width: 18px; height: 18px; flex: none; stroke-width: 1.75; }
 .app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; height: 100dvh; }
 .app > *, .workspace > * { min-width: 0; } /* a wide ribbon scrolls; it never widens the window */
@@ -659,7 +662,8 @@ button { font: inherit; color: inherit; }
 .menubar { display: flex; gap: 2px; margin-left: -6px; }
 .menubar > button { border: 0; background: none; padding: 2px 6px; border-radius: 5px; color: var(--ink); cursor: default; font-size: 14px; }
 .menubar > button:hover, .menubar > button[aria-expanded="true"] { background: var(--hover); }
-.menubar > button:focus-visible { outline-offset: -2px; }
+.menubar > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mac-app .menubar { display: none; } /* the Mac app shows these menus in the macOS menu bar */
 .tb-actions { display: flex; gap: 8px; align-items: center; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--hover); }
@@ -668,6 +672,8 @@ button { font: inherit; color: inherit; }
 .btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
 .icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn:disabled, .icon-btn:disabled:hover { opacity: .4; cursor: default; background: none; color: var(--ink-2); }
+.tb-undo { display: none; }
 .btn:disabled, .btn:disabled:hover { opacity: .45; cursor: default; background: var(--surface); }
 .btn.primary:disabled, .btn.primary:disabled:hover { background: var(--brand); }
 .more-btn { display: none; }
@@ -698,8 +704,28 @@ button { font: inherit; color: inherit; }
 .rb:hover { background: var(--hover); }
 .rb[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .rb:disabled { opacity: .4; cursor: default; background: none; }
+.rb-split { display: inline-flex; align-self: stretch; flex: none; }
+.rb-split > .rb { border-radius: 6px 0 0 6px; padding-right: 2px; }
+.rb-more { border: 0; background: none; border-radius: 0 6px 6px 0; width: 16px; padding: 0; align-self: stretch; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2); cursor: pointer; }
+.rb-more svg { width: 14px; height: 14px; }
+.rb-more:hover, .rb-more[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.rb-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rb-more:disabled { opacity: .4; cursor: default; background: none; }
+@media (pointer: coarse) { .rb-more { width: 28px; } }
+.rb[data-rmenu] > span svg { width: 12px; height: 12px; vertical-align: -2px; margin-left: 1px; }
+.rb[data-rmenu][aria-expanded="true"] { background: var(--hover); }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+/* compact ribbon groups (wide screens): small buttons in two rows, with names (r-rows) or as icons (r-icons) */
+@media (min-width: 761px) {
+  .r-rows .r-items, .r-icons .r-items { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 26px); gap: 2px 2px; align-content: center; }
+  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 8px 0 6px; gap: 6px; align-items: center; }
+  .r-rows .rb > span { -webkit-line-clamp: 1; white-space: nowrap; }
+  .r-icons .rb { width: 30px; padding: 0; justify-content: center; }
+  .r-swatches .r-items { display: grid; grid-template-columns: repeat(4, 18px); grid-template-rows: repeat(2, 18px); gap: 8px 6px; align-content: center; padding: 0 2px; }
+  .r-icons .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+.swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* workspace */
 .workspace { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
@@ -720,6 +746,7 @@ button { font: inherit; color: inherit; }
 .thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; }
 .thumb[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
 .thumb.drag-over { outline: 2px dashed var(--accent); }
+.thumb.ctx-for { outline: 2px solid var(--accent); outline-offset: -2px; }
 .outline-list, .doc-list { list-style: none; margin: 0; padding: 0; }
 .outline-list button, .doc-list button.doc-open { border: 0; background: none; width: 100%; text-align: left; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .outline-list button:hover, .doc-list button.doc-open:hover { background: var(--hover); }
@@ -729,7 +756,8 @@ button { font: inherit; color: inherit; }
 .empty-note { color: var(--ink-3); font-size: 13px; padding: 8px; }
 
 /* pages */
-.viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; }
+.viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; touch-action: pan-x pan-y; } /* a pinch zooms the pages, not the window */
+.viewer:focus-visible { outline-offset: -3px; }
 .pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 64px; }
 .page { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; --scale-round-x: 1px; --scale-round-y: 1px; color-scheme: light; }
 .page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -744,6 +772,11 @@ button { font: inherit; color: inherit; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
 .marks .mk { pointer-events: auto; cursor: pointer; }
+/* Touch: with a drawing or placing tool a finger draws on the page instead of scrolling it; with the text tools
+   (Highlight, Underline…) a finger selects text; with Select a finger drags a mark. */
+.app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
+.app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page .textLayer,
+.app[data-tool="select"] .marks .mk { touch-action: none; }
 .app[data-tool="select"] .marks .mk:hover { filter: drop-shadow(0 0 2px var(--accent)); }
 .marks .mk.sel { filter: drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
 .marks text { user-select: none; }
@@ -797,26 +830,51 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .dlg-body a { color: var(--accent); }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.field :is(input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 .field input, .field textarea { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .sig-pad { width: 100%; height: 160px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; touch-action: none; display: block; }
+.sig-pad.typed { cursor: default; }
+.sig-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 0 0 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
+.sig-modes button { border: 0; background: none; border-radius: 7px; padding: 6px 4px; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; min-height: 32px; }
+.sig-modes button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.sig-modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sig-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0; }
+.sig-row[hidden], .sig-row [hidden] { display: none; }
+.sig-row .field { flex: 1; margin: 0; }
+.sig-note { font-size: 12px; color: var(--ink-3); }
+.sig-opts { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sig-fonts, .sig-inks { display: inline-flex; gap: 6px; align-items: center; }
+.sig-font { border: 1px solid var(--line); background: #fff; color: #13235E; border-radius: 8px; padding: 2px 10px; font-size: 20px; line-height: 1.3; cursor: pointer; }
+.sig-font[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sig-saved { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.sig-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.sig-item { position: relative; display: inline-flex; }
+.sig-use { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; height: 54px; width: 130px; display: grid; place-items: center; }
+.sig-use img { max-width: 100%; max-height: 40px; }
+.sig-use:hover, .sig-use:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sig-del { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .about { display: flex; gap: 14px; align-items: center; }
 .about .logo { width: 64px; height: 64px; border-radius: 15px; font-size: 22px; }
-.toast { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.toast { position: fixed; left: 50%; bottom: var(--toast-bottom, 48px); max-width: calc(100vw - 32px); box-sizing: border-box; text-align: center; transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
 .toast.show { opacity: 1; }
+/* The find bar sits in a zero-height strip that sticks to the top of the viewer, so it stays put while the pages scroll. */
+.find-dock { position: sticky; top: 0; left: 0; height: 0; z-index: 20; }
 .findbar { position: absolute; top: 10px; right: 16px; z-index: 20; display: flex; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .findbar[hidden] { display: none; }
 .findbar input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 200px; }
 .findbar .count { color: var(--ink-3); font-size: 12px; min-width: 56px; text-align: center; }
 
-/* phones: the ribbon becomes a scrolling tool row; the sidebar becomes an overlay */
-@media (max-width: 760px) {
-  .menubar, .sb-brand, .tb-actions .btn span, .save-state { display: none; }
-  .more-btn { display: grid; }
+/* phones (and phones on their side): the ribbon becomes a scrolling tool row; the sidebar becomes an overlay;
+   Undo and Redo sit in the title bar, Appearance moves into More. Keep in step with PHONE_MQ in app.js. */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .menubar, .sb-brand, .tb-actions .btn span, .save-state, #themeBtn { display: none; }
+  .more-btn, .tb-undo { display: grid; }
+  .tb-actions { gap: 2px; }
   .tb-actions .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
   .tb-actions .icon-btn { width: 40px; height: 40px; }
   .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
   .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
-  .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+  .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); transition: transform .2s, visibility 0s; } /* visible at once, so it can take focus */
   .app[data-sidebar="open"]::after { content: ""; position: fixed; inset: 0; z-index: 29; background: rgba(18, 12, 15, .35); }
   .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 6px; }
   .side-tabs button { min-height: 40px; }
@@ -829,7 +887,20 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .sb-zoom { gap: 2px; }
   .sb-zoom .icon-btn, #zoomLabel { width: auto; min-width: 40px; height: 40px; }
   .page-jump { height: 40px; width: 48px; }
+  .findbar { left: 8px; right: 8px; top: 8px; }
+  .findbar input { flex: 1; width: auto; min-width: 0; }
+  .findbar .count { min-width: 44px; }
   .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+}
+/* a phone on its side: the bars get thinner and the ribbon shows icons only (the names stay for screen readers and
+   tooltips), so the document keeps more than half of the height */
+@media (max-height: 500px) and (pointer: coarse) {
+  .titlebar { padding-top: calc(3px + env(safe-area-inset-top, 0px)); padding-bottom: 3px; }
+  .ribbon-tabs button { min-height: 36px; padding-top: 3px; padding-bottom: 4px; }
+  .ribbon-body { height: 52px; padding-top: 2px; padding-bottom: 2px; }
+  .rb { justify-content: center; align-self: center; position: relative; }
+  .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .statusbar { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media print {
@@ -849,6 +920,8 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <nav class="menubar" id="menubar" aria-label="Menus"></nav>
     </div>
     <div class="tb-actions">
+      <button class="icon-btn tb-undo" type="button" data-cmd="undo" title="Undo" aria-label="Undo" disabled><i data-lucide="undo-2"></i></button>
+      <button class="icon-btn tb-undo" type="button" data-cmd="redo" title="Redo" aria-label="Redo" disabled><i data-lucide="redo-2"></i></button>
       <button class="icon-btn" id="themeBtn" type="button" title="Theme" aria-label="Theme"><i data-lucide="sun-moon"></i></button>
       <button class="btn" type="button" data-cmd="open" aria-label="Open"><i data-lucide="folder-open"></i><span>Open</span></button>
       <button class="btn primary" type="button" data-cmd="save" id="saveBtn" aria-label="Save PDF"><i data-lucide="download"></i><span>Save PDF</span></button>
@@ -871,14 +944,14 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       </div>
       <div class="side-panel" id="sidePanel" role="tabpanel"></div>
     </aside>
-    <main class="viewer" id="viewer" tabindex="-1">
-      <div class="findbar" id="findbar" hidden>
+    <main class="viewer" id="viewer" tabindex="0" aria-label="Document">
+      <div class="find-dock"><div class="findbar" id="findbar" hidden>
         <i data-lucide="search"></i><input id="findInput" type="search" placeholder="Find in document" aria-label="Find">
         <span class="count" id="findCount"></span>
         <button class="icon-btn" type="button" id="findPrev" title="Previous"><i data-lucide="chevron-up"></i></button>
         <button class="icon-btn" type="button" id="findNext" title="Next"><i data-lucide="chevron-down"></i></button>
         <button class="icon-btn" type="button" id="findClose" title="Close"><i data-lucide="x"></i></button>
-      </div>
+      </div></div>
       <div class="pages" id="pages"></div>
       <div class="drop" id="drop">
         <div class="card">
@@ -946,8 +1019,26 @@ const S = Object.assign({ theme: 'system', sidebar: true, side: 'thumbs', zoom: 
 const URL_THEME = (location.search.match(/[?&]theme=(dark|light)\b/) || [])[1];
 if (URL_THEME) S.theme = URL_THEME;
 const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: store.get('settings', {}).theme || 'system' } : S);
+// Phones, and phones turned on their side (keep in step with the phone @media rule in template.html).
+const PHONE_MQ = '(max-width: 760px), (max-height: 500px) and (pointer: coarse)';
+const isPhone = () => matchMedia(PHONE_MQ).matches;
+const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a mouse: no Esc or Ctrl keys to mention
 let toastTimer;
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
+// Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
+const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
+function toast(msg) {
+  if (coarse()) msg = String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap');
+  const t = $('#toast'); t.textContent = msg;
+  const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
+  let top = innerHeight;
+  for (const b of document.querySelectorAll(TOAST_AVOID)) {
+    const r = b.getBoundingClientRect();
+    if (!r.width || !r.height || r.bottom < innerHeight - 200 || r.right < left || r.left > right || getComputedStyle(b).visibility === 'hidden') continue;
+    top = Math.min(top, r.top);
+  }
+  t.style.setProperty('--toast-bottom', Math.max(48, innerHeight - top + 12) + 'px');
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
 
 /* ---------------- features ----------------
    Feature modules in src/features/*.js are joined into this file by build.py (where /*FEATURES*\/ stands, before
@@ -956,6 +1047,7 @@ const FEATURE = {
   markTypes: {},   // type -> { draw(v, m, svg) -> SVG element, save: async ({ L, out, p, m, entry, ctx }), under?: true (drawn and saved before other marks), move?(m, orig, dx, dy) }
   tools: {},       // tool id -> { down(e, v), move?(e, v) } — pointer handling on the page while the tool is chosen
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
+  savePageLate: [], // the same, after every savePage hook (redaction among them): drawing that must not be cut
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
@@ -1043,6 +1135,12 @@ async function showDoc(d, loaded) {
   if (doc && persistTimer) { clearTimeout(persistTimer); persistTimer = null; await persistNow(); }
   for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
   pdfDocs.clear();
+  // A new document starts with the Select tool: no tool or mode (Edit PDF, Edit fields…) is kept from the last one.
+  if (app.dataset.tool !== 'select') setTool('select');
+  pendingImage = null; selContent = null; closePopover();
+  if (!$('#findbar').hidden) closeFind();
+  findState.texts.clear();
+  if (isPhone() && S.zoom !== 'fit') S.zoom = 'fit'; // phones open every document at its width
   doc = d; selMark = null; undoStack.length = redoStack.length = 0;
   pds.forEach((pd, k) => pdfDocs.set(k, pd));
   syncHiddenComments(); // before any page is drawn
@@ -1070,29 +1168,32 @@ async function pageOf(entry) { return pdfDocs.get(entry.src).getPage(entry.i + 1
 function fitScale(page, entry) {
   const v = page.getViewport({ scale: 1, rotation: (page.rotate + entry.rot) % 360 });
   // Fit the width, but no larger than 150%: a page wider than that reads worse, not better.
-  return Math.max(0.25, Math.min(1.5, (viewer.clientWidth - 48) / v.width));
+  return Math.max(0.25, Math.min(1.5, (viewer.clientWidth - (isPhone() ? 32 : 48)) / v.width));
 }
-let io;
+let io, layoutGen = 0;
 async function layoutPages(keep) {
   if (!doc) return;
+  const gen = ++layoutGen; // a later layout (zooming quickly) replaces this one
   closeLineEditor(true); selContent = null;
   const anchor = keep ? current : 0;
   pagesEl.innerHTML = '';
   views = [];
   if (!doc.pages.length) { pagesEl.innerHTML = '<p class="empty-note">This PDF has no pages left. Insert a page or undo.</p>'; updateStatus(); return; }
   const first = await pageOf(doc.pages[0]);
+  if (gen !== layoutGen) return false;
   scale = S.zoom === 'fit' ? fitScale(first, doc.pages[0]) : S.zoom / 100;
   io && io.disconnect();
   io = new IntersectionObserver((ents) => { for (const e of ents) if (e.isIntersecting) renderView(views[+e.target.dataset.n]); }, { root: viewer, rootMargin: '600px 0px' });
   for (let n = 0; n < doc.pages.length; n++) {
     const entry = doc.pages[n];
     const page = await pageOf(entry);
+    if (gen !== layoutGen) return false;
     const viewport = page.getViewport({ scale, rotation: (page.rotate + entry.rot) % 360 });
     const el = document.createElement('div');
     el.className = 'page'; el.dataset.n = n;
     el.style.width = viewport.width + 'px'; el.style.height = viewport.height + 'px';
     el.style.setProperty('--scale-factor', scale); el.style.setProperty('--total-scale-factor', scale); el.style.setProperty('--user-unit', 1);
-    el.setAttribute('aria-label', `Page ${n + 1}`);
+    el.setAttribute('role', 'region'); el.setAttribute('aria-label', `Page ${n + 1} of ${doc.pages.length}`);
     pagesEl.appendChild(el);
     views.push({ el, entry, viewport, page, rendered: false });
     io.observe(el);
@@ -1100,6 +1201,8 @@ async function layoutPages(keep) {
   updateZoomLabel();
   if (keep) goPage(anchor, true);
   updateStatus();
+  releaseFar();
+  return true;
 }
 const linkService = {
   externalLinkEnabled: true, externalLinkTarget: 2, externalLinkRel: 'noopener noreferrer',
@@ -1123,8 +1226,10 @@ async function renderView(v) {
   const pd = pdfDocs.get(v.entry.src);
   const canvasMap = new Map(); // pdf.js draws form widgets' looks (a checkbox ticked or not) here, for the form layer
   try {
-    await page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage }).promise;
+    v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage });
+    await v.task.promise;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); }
+  v.task = null;
   if (stale()) return;
   // Text you can select and search
   try {
@@ -1135,6 +1240,7 @@ async function renderView(v) {
   // Form fields and links
   try {
     let annots = await page.getAnnotations({ intent: 'display' });
+    if (stale()) return;
     // Comments deleted or changed with the Edit tool
     const ae = marksOf(v.entry).filter((m) => m.type === 'ae');
     if (ae.length) {
@@ -1157,6 +1263,37 @@ async function renderView(v) {
   for (const f of FEATURE.afterRender) { try { f(v); } catch (e) { console.warn(e); } }
   if (findState.q) paintFind(v);
 }
+// Pages far from view give their drawing back, so a long PDF does not use more memory the further you scroll:
+// pages within KEEP_NEAR pages of those in view (and within a screen or two of it) stay drawn; the rest keep only
+// their size, mark-up and overlays, and are drawn again when they come back into view (typed form values are kept
+// in the document's annotation storage).
+const KEEP_NEAR = 3;
+let keepPages = false;
+function releaseView(v) {
+  v.token = (v.token || 0) + 1; v.rendered = false;
+  if (v.task) { try { v.task.cancel(); } catch {} v.task = null; }
+  for (const n of [...v.el.querySelectorAll(':scope > canvas.pdf, :scope > .textLayer, :scope > .annotationLayer, :scope > .find-hit')]) {
+    if (n.tagName === 'CANVAS') { n.width = 0; n.height = 0; }
+    n.remove();
+  }
+  try { v.page.cleanup(); } catch {}
+}
+function releaseFar() {
+  if (!views.length || keepPages) return;
+  const vr = viewer.getBoundingClientRect(), margin = Math.max(1200, vr.height * 2);
+  let lo = -1, hi = -1;
+  views.forEach((v, n) => { const b = v.el.getBoundingClientRect(); if (b.bottom > vr.top && b.top < vr.bottom) { if (lo < 0) lo = n; hi = n; } });
+  if (lo < 0) lo = hi = current;
+  views.forEach((v, n) => {
+    if (!v.rendered || (n >= lo - KEEP_NEAR && n <= hi + KEEP_NEAR)) return;
+    if (v.el.contains(document.activeElement) || v.el.querySelector('.line-editor')) return;
+    const b = v.el.getBoundingClientRect();
+    if (b.bottom > vr.top - margin && b.top < vr.bottom + margin) return; // near enough to come back at once
+    releaseView(v);
+  });
+}
+let releaseTimer;
+viewer.addEventListener('scroll', () => { clearTimeout(releaseTimer); releaseTimer = setTimeout(releaseFar, 250); }, { passive: true });
 async function goToDest(dest) {
   try {
     const pd = pdfDocs.get(0);
@@ -1187,8 +1324,85 @@ function updateStatus() {
   if (document.activeElement !== $('#pageJump')) $('#pageJump').value = doc && doc.pages.length ? current + 1 : '';
   refreshRibbon();
 }
-$('#pageJump').addEventListener('change', (e) => { const n = parseInt(e.target.value, 10); if (n) goPage(n - 1); });
-function setZoom(z) { S.zoom = z; saveSettings(); layoutPages(true); }
+// The page box: Enter goes to the page and gives the keys back to the pages, so the box follows scrolling again.
+const pageJump = $('#pageJump');
+pageJump.addEventListener('change', (e) => { const n = parseInt(e.target.value, 10); if (n) goPage(n - 1); });
+pageJump.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== 'Escape') return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.key === 'Escape') pageJump.value = current + 1; // no change
+  viewer.focus({ preventScroll: true });
+});
+pageJump.addEventListener('blur', () => setTimeout(updateStatus, 0));
+// `at`: { x, y } on screen; that spot of the page stays where it is (zooming with the wheel or a pinch).
+async function setZoom(z, at) {
+  const a = at && pageAnchor(at.x, at.y);
+  S.zoom = z; saveSettings();
+  if (!(await layoutPages(!a)) || !a || !views[a.n]) return;
+  const el = views[a.n].el;
+  viewer.scrollTop = el.offsetTop + a.fy * el.offsetHeight - a.vy;
+  viewer.scrollLeft = el.offsetLeft + a.fx * el.offsetWidth - a.vx;
+}
+// The page under a spot on screen, and where on it (fractions of its size).
+function pageAnchor(cx, cy) {
+  const vr = viewer.getBoundingClientRect();
+  let best = null, bd = Infinity;
+  for (const v of views) {
+    const b = v.el.getBoundingClientRect(), d = cy < b.top ? b.top - cy : cy > b.bottom ? cy - b.bottom : 0;
+    if (d < bd) { bd = d; best = { n: +v.el.dataset.n, fx: (cx - b.left) / b.width, fy: (cy - b.top) / b.height, vx: cx - vr.left, vy: cy - vr.top }; }
+    if (!d) break;
+  }
+  return best;
+}
+// Zooming around the pointer: Ctrl or Cmd with the wheel, a trackpad pinch (sent as Ctrl with the wheel, or as
+// gesture events in Safari and the Mac app) and two fingers on a touch screen. The pages are scaled while the gesture
+// lasts, then drawn again at the new size with the same spot under the pointer.
+let pinch = null; // { base, k, at, timer, kind }
+function pinchStart(x, y, kind) {
+  if (!has() || !views.length) return null;
+  if (pinch) return pinch;
+  const pr = pagesEl.getBoundingClientRect();
+  pagesEl.style.transformOrigin = `${x - pr.left}px ${y - pr.top}px`;
+  return (pinch = { base: scale * 100, k: 1, at: { x, y }, kind });
+}
+function pinchTo(k) {
+  if (!pinch) return;
+  pinch.k = Math.max(25 / pinch.base, Math.min(400 / pinch.base, k));
+  pagesEl.style.transform = `scale(${pinch.k})`;
+}
+function pinchEnd() {
+  const p = pinch; if (!p) return;
+  pinch = null; clearTimeout(p.timer);
+  const z = Math.round(p.base * p.k);
+  pagesEl.style.transform = pagesEl.style.transformOrigin = '';
+  if (Math.abs(z - p.base) >= 1) setZoom(z, p.at);
+}
+viewer.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || !has()) return;
+  e.preventDefault(); // not the browser's own zoom of the whole window
+  if (pinch && pinch.kind !== 'wheel') return;
+  const p = pinchStart(e.clientX, e.clientY, 'wheel'); if (!p) return;
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  pinchTo(p.k * Math.exp(-Math.max(-60, Math.min(60, dy)) / 200));
+  clearTimeout(p.timer); p.timer = setTimeout(pinchEnd, 200);
+}, { passive: false });
+viewer.addEventListener('gesturestart', (e) => { e.preventDefault(); if (!pinch) pinchStart(e.clientX, e.clientY, 'gesture'); });
+viewer.addEventListener('gesturechange', (e) => { e.preventDefault(); if (pinch && pinch.kind === 'gesture') pinchTo(e.scale); });
+viewer.addEventListener('gestureend', (e) => { e.preventDefault(); if (pinch && pinch.kind === 'gesture') pinchEnd(); });
+const touchGap = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+viewer.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 2) return;
+  if (pinch && pinch.kind !== 'touch') return;
+  const t = e.touches, p = pinchStart((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2, 'touch');
+  if (p) p.gap = touchGap(t) / p.k;
+}, { passive: true });
+viewer.addEventListener('touchmove', (e) => {
+  if (!pinch || pinch.kind !== 'touch' || e.touches.length < 2) return;
+  if (e.cancelable) e.preventDefault();
+  pinchTo(touchGap(e.touches) / pinch.gap);
+}, { passive: false });
+const touchDone = (e) => { if (pinch && pinch.kind === 'touch' && e.touches.length < 2) pinchEnd(); };
+viewer.addEventListener('touchend', touchDone); viewer.addEventListener('touchcancel', touchDone);
 function updateZoomLabel() {
   $('#zoomLabel').textContent = S.zoom === 'fit' ? `Fit · ${Math.round(scale * 100)}%` : `${S.zoom}%`;
   $('#zoomRange').value = Math.round(scale * 100);
@@ -1263,6 +1477,7 @@ function drawMarks(v) {
 function redrawPage(entry) { for (const v of views) if (v.entry === entry && v.rendered) drawMarks(v); }
 function snapshot() { return JSON.stringify({ pages: doc.pages, marks: doc.marks }); }
 function changed(before) {
+  if (kbPlace) kbPlaced();
   undoStack.push(before); if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
   setSaved(false); persist(); refreshRibbon();
@@ -1279,6 +1494,7 @@ function redo() { if (!redoStack.length) return; const now = snapshot(); const n
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
+  if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
   if (tool === 'edit') return onEditDown(e, v);
   if (tool === 'erase') return startErase(e, v);
   if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
@@ -1314,6 +1530,8 @@ async function onMarksDblClick(e, v) {
   }
 }
 function selectMark(s) { selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon(); }
+// A mark just drawn is selected, so it can be restyled at once (the tool stays on for the next one).
+const selectNew = (v, m) => { if (marksOf(v.entry).includes(m)) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry }); };
 function deleteSelected() {
   if (selContent) return deleteContent();
   if (!selMark) return;
@@ -1347,16 +1565,23 @@ function nudgeMark(key, big) {
 // original (or of the last paste), and is selected.
 let markClip = null;
 function copyMark() { const m = selectedMark(); if (!m) return false; markClip = { m: JSON.stringify(m), n: 0 }; toast('Copied'); return true; }
-function pasteMark(src) {
+// From a right-click menu: on page `v`, its top left corner at x, y (PDF points).
+function pasteMark(src, v, x, y) {
   const clip = src || markClip; if (!clip || !has()) return false;
-  const entry = src ? selMark.entry : doc.pages[current];
+  const entry = v ? v.entry : src ? selMark.entry : doc.pages[current];
   const m = JSON.parse(clip.m), k = ++clip.n * 10;
   m.id = uid(); delete m.pending;
   const before = snapshot();
-  offsetMark(m, JSON.parse(clip.m), k, -k);
+  const c = v && markCorner(m);
+  if (c) { clip.n--; offsetMark(m, JSON.parse(clip.m), x - c[0], y - c[1]); } else offsetMark(m, JSON.parse(clip.m), k, -k);
   marksOf(entry).push(m); changed(before);
   selectMark({ key: pageKey(entry), id: m.id, entry });
   return true;
+}
+// A mark's top left corner (PDF points, y up), for the kinds of mark that have one.
+function markCorner(m) {
+  const pts = m.rects ? m.rects.flatMap((r) => [[r[0], r[1]], [r[2], r[3]]]) : m.pts ? m.pts : 'x1' in m ? [[m.x1, m.y1], [m.x2, m.y2]] : 'x' in m ? [[m.x, m.y]] : null;
+  return pts && pts.length ? [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))] : null;
 }
 const duplicateMark = () => { const m = selectedMark(); return !!m && pasteMark({ m: JSON.stringify(m), n: 0 }); };
 function startMove(e, v, m) {
@@ -1377,23 +1602,23 @@ function startMove(e, v, m) {
 function startInk(e, v) {
   e.preventDefault();
   const before = snapshot();
-  const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: S.color === '#FFD43B' ? '#2448C9' : S.color, w: S.width };
+  const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: toolColor('pen'), w: S.width };
   marksOf(v.entry).push(m);
   const move = (ev) => { m.pts.push(toPdf(v, ...localPoint(ev, v))); drawMarks(v); };
-  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); selectNew(v, m); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
 function startRect(e, v) {
   e.preventDefault();
   const before = snapshot();
   const [x, y] = toPdf(v, ...localPoint(e, v));
-  const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: S.color === '#FFD43B' ? '#E03131' : S.color, w: S.width };
+  const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: toolColor('rect'), w: S.width };
   marksOf(v.entry).push(m);
   const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...localPoint(ev, v)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.abs(m.x2 - m.x1) < 3 && Math.abs(m.y2 - m.y1) < 3) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
-    changed(before);
+    changed(before); selectNew(v, m);
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
@@ -1401,8 +1626,9 @@ async function addText(v, x, y) {
   const text = await askText('Add text', 'Type the text to place on the page.', '', 'Add', false, true);
   if (!text) return;
   const before = snapshot();
-  marksOf(v.entry).push({ id: uid(), type: 'text', x, y, text, size: 14, color: S.color === '#FFD43B' ? '#111111' : S.color, rot: totalRot(v) });
-  drawMarks(v); changed(before); setTool('select');
+  const m = { id: uid(), type: 'text', x, y, text, size: 14, color: toolColor('text'), rot: totalRot(v) };
+  marksOf(v.entry).push(m);
+  drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
 async function editText(v, m) {
   const text = await askText('Edit text', '', m.text, 'Save', false, true);
@@ -1422,12 +1648,14 @@ async function editNote(v, m) {
   const before = snapshot(); m.text = text; drawMarks(v); changed(before);
 }
 let pendingImage = null; // { data, w, h } waiting to be placed
+const placeHint = (what) => coarse() ? `Tap where ${what} goes` : `Click where ${what} goes, or press Enter to put it in the middle`;
 function placeImage(v, px, py) {
   if (!pendingImage) return;
   const before = snapshot();
   const [x, y] = toPdf(v, px, py);
   marksOf(v.entry).push({ id: uid(), type: 'img', x, y, w: pendingImage.w, h: pendingImage.h, data: pendingImage.data, rot: totalRot(v) });
-  pendingImage = null; drawMarks(v); changed(before); setTool('select');
+  const m = marksOf(v.entry)[marksOf(v.entry).length - 1];
+  pendingImage = null; drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
 // Highlight: select text with the Highlight tool (or select it, then press Highlight).
 function highlightSelection() {
@@ -1443,7 +1671,7 @@ function highlightSelection() {
       const b = v.el.getBoundingClientRect();
       const [x1, y1] = toPdf(v, rect.left - b.left, rect.top - b.top), [x2, y2] = toPdf(v, rect.right - b.left, rect.bottom - b.top);
       let list = marksOf(v.entry), m = list.find((mm) => mm.pending);
-      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: S.color, pending: true }; list.push(m); }
+      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: toolColor('highlight'), pending: true }; list.push(m); }
       m.rects.push([x1, y1, x2, y2]); any = true;
     }
   }
@@ -1453,13 +1681,62 @@ function highlightSelection() {
   return any;
 }
 document.addEventListener('pointerup', () => { if (app.dataset.tool === 'highlight') setTimeout(highlightSelection, 0); });
+// Touch: a finger dragged over text with a text tool (Highlight, Underline…) selects that text, as a mouse would (the
+// page does not scroll then: see touch-action in template.html). Letting go marks it up.
+const TEXT_TOOLS = new Set(['highlight', 'cmunderline', 'cmstrike', 'cmsquiggly', 'protredtext']);
+function caretAt(x, y) {
+  let n = null, o = 0;
+  if (document.caretPositionFromPoint) { const c = document.caretPositionFromPoint(x, y); if (c) [n, o] = [c.offsetNode, c.offset]; }
+  else if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); if (r) [n, o] = [r.startContainer, r.startOffset]; }
+  const el = n && (n.nodeType === 1 ? n : n.parentElement);
+  return el && el.closest('.textLayer') ? [n, o] : null;
+}
+document.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch' || !TEXT_TOOLS.has(app.dataset.tool) || !e.target.closest || !e.target.closest('.page .textLayer')) return;
+  const a = caretAt(e.clientX, e.clientY); if (!a) return;
+  e.preventDefault();
+  const move = (ev) => { if (ev.pointerId !== e.pointerId) return; const b = caretAt(ev.clientX, ev.clientY); if (b) getSelection().setBaseAndExtent(a[0], a[1], b[0], b[1]); };
+  const up = (ev) => { if (ev.pointerId !== e.pointerId) return; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+}, true);
+// Keyboard: with a placing tool chosen (Note, Add text, Stamp, Typewriter, Callout, Signature, Picture), Enter puts
+// the item in the middle of the part of the page in view, as a click there would; it is then selected, so the arrow
+// keys move it and Delete removes it.
+const PLACE_TOOLS = new Set(['text', 'note', 'sign', 'image', 'cmstamp', 'cmtype', 'cmcallout']);
+let kbPlace = null; // { v, ids, x, y } while a placement made with Enter is under way
+function placeByKey() {
+  const v = views[current], svg = v && v.rendered && v.el.querySelector('svg.marks'); if (!svg) return false;
+  const r = v.el.getBoundingClientRect(), w = $('#viewer').getBoundingClientRect();
+  const left = Math.max(r.left, w.left), right = Math.min(r.right, w.right), top = Math.max(r.top, w.top), bottom = Math.min(r.bottom, w.bottom);
+  if (right <= left || bottom <= top) return false;
+  const x = (left + right) / 2, y = (top + bottom) / 2;
+  const k = kbPlace = { v, ids: new Set(marksOf(v.entry).map((m) => m.id)), x, y };
+  const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
+  svg.dispatchEvent(new PointerEvent('pointerdown', o));
+  window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+  setTimeout(() => { if (kbPlace === k && !$('#dialog').open) kbPlace = null; }, 0); // nothing asked, nothing placed
+  return true;
+}
+$('#dialog').addEventListener('close', () => { const k = kbPlace; if (k) setTimeout(() => { if (kbPlace === k) kbPlace = null; }, 1500); });
+// Called by changed(): the new mark is centred on the point and selected.
+function kbPlaced() {
+  const { v, ids, x, y } = kbPlace; kbPlace = null;
+  const m = marksOf(v.entry).find((mm) => !ids.has(mm.id)); if (!m) return;
+  const g = v.el.querySelector(`svg.marks [data-id="${m.id}"]`);
+  if (g) {
+    const b = g.getBoundingClientRect(), [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, x - (b.left + b.width / 2), y - (b.top + b.height / 2));
+    offsetMark(m, JSON.parse(JSON.stringify(m)), x1 - x0, y1 - y0); drawMarks(v);
+  }
+  setTimeout(() => { setTool('select'); selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry }); $('#viewer').focus({ preventScroll: true }); }, 0);
+}
 function setTool(t) {
   closeLineEditor(true);
   const was = app.dataset.tool;
   app.dataset.tool = t;
+  if (t in COLOR_TOOLS) S.colorTool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
-  if (t === 'edit' && was !== 'edit') toast(`${matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click'} text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
+  if (t === 'edit' && was !== 'edit') toast(coarse() ? 'Tap text to change it, or a picture or comment to move it. Undo takes a change back.' : `Click text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
   if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
   refreshRibbon();
 }
@@ -1850,7 +2127,7 @@ function openLineEditor(v, m, isNew) {
 }
 // Escape, like clicking away, keeps what was typed; Undo takes it back. Says so once a session.
 let keptHinted = false;
-function keptHint(changedSomething) { if (changedSomething && !keptHinted) { keptHinted = true; toast(`Change kept. ${fmtKey('Mod-z')} undoes it.`); } }
+function keptHint(changedSomething) { if (changedSomething && !keptHinted) { keptHinted = true; toast(coarse() ? 'Change kept. Undo takes it back.' : `Change kept. ${fmtKey('Mod-z')} undoes it.`); } }
 // Returns true if the edit changed the page.
 function closeLineEditor(commit) {
   if (!lineEditor) return false;
@@ -2122,10 +2399,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       f = rev.size ? { ...f, rev } : null;
     }
     const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
-    const runs = [];
-    for (const ch of m.text) { const code = f ? f.rev.get(ch) : undefined; const own = code != null; const last = runs[runs.length - 1]; if (last && last.own === own) last.chars.push(own ? code : ch); else runs.push({ own, chars: [own ? code : ch] }); }
+    const runs = glyphRuns(m.text, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
     // A clean text state: what the page set before (invisible text, spacing, rise) must not apply to the new line.
-    const ops = [O('q'), O('rg', rgbOf(m.color)), O('BT'), O('Tr', [PDFNumber.of(0)]), O('Tc', [PDFNumber.of(0)]), O('Tw', [PDFNumber.of(0)]), O('Tz', [PDFNumber.of(100)]), O('Ts', [PDFNumber.of(0)]), O('Tm', m.tm.map((n) => PDFNumber.of(+(+n).toFixed(4))))];
+    const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), O('rg', rgbOf(m.color)), O('BT'), O('Tr', [PDFNumber.of(0)]), O('Tc', [PDFNumber.of(0)]), O('Tw', [PDFNumber.of(0)]), O('Tz', [PDFNumber.of(100)]), O('Ts', [PDFNumber.of(0)]), O('Tm', m.tm.map((n) => PDFNumber.of(+(+n).toFixed(4))))];
     for (const r of runs) {
       if (r.own) {
         ops.push(O('Tf', [f.key, PDFNumber.of(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
@@ -2136,11 +2412,25 @@ async function saveContentEdits(L, out, p, marks, ctx) {
         ops.push(O('Tf', [key, PDFNumber.of(1)]), O('Tj', [hex]));
       }
     }
-    ops.push(O('ET'), O('Q'));
+    ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
     p.pushOperators(...ops);
   }
   void PDFRef; void PDFRawStream;
 }
+// A line split into runs set in the page's own font (`own`, its codes) or in a standard font (the letters). A word
+// with any letter the font lacks is set in the standard font as a whole: switching fonts inside a word splits it
+// into pieces that readers' search and copy don't put back together.
+function glyphRuns(text, rev) {
+  const runs = [];
+  for (const tok of String(text).match(/\s+|\S+/g) || []) {
+    const chars = [...tok], own = !!rev && chars.every((ch) => rev.has(ch)), vals = own ? chars.map((ch) => rev.get(ch)) : chars;
+    const last = runs[runs.length - 1];
+    if (last && last.own === own) last.chars.push(...vals); else runs.push({ own, chars: vals });
+  }
+  return runs;
+}
+// The line's text for readers (copy, search, screen readers), around a line drawn in more than one font.
+function actualText(L, out, text) { return L.PDFOperator.of('BDC', [L.PDFName.of('Span'), out.context.obj({ ActualText: L.PDFHexString.fromText(text) })]); }
 // Comments from other apps that were deleted or changed.
 function saveCommentEdits(L, out, p, marks, same) {
   const edits = marks.filter((m) => m.type === 'ae'); if (!edits.length) return;
@@ -2176,22 +2466,89 @@ function saveCommentEdits(L, out, p, marks, same) {
 }
 
 /* ---------------- signature and pictures ---------------- */
+// A signature is drawn, typed (in a handwriting font the system has) or taken from a picture of one. The last three
+// used are kept on this device.
+const SIG_INKS = [['#13235E', 'Blue'], ['#111111', 'Black']];
+const SIG_FONTS = [
+  ['Script', '"Snell Roundhand", "Segoe Script", "URW Chancery L", "Z003", "Apple Chancery", "Brush Script MT", cursive'],
+  ['Brush', '"Brush Script MT", "Brush Script Std", "Segoe Script", "Z003", cursive'],
+  ['Pen', '"Bradley Hand", "Segoe Print", "Comic Neue", "Chalkboard SE", cursive'],
+];
+const sigSaved = () => { const l = store.get('signatures', null); if (Array.isArray(l)) return l; const one = store.get('signature', null); return one ? [one] : []; };
+const sigKeep = (sig) => store.set('signatures', [sig, ...sigSaved().filter((x) => x.data !== sig.data)].slice(0, 3));
+function sigUse(sig) { sigKeep(sig); pendingImage = sig; setTool('sign'); toast(placeHint('the signature')); }
 async function signature() {
-  const saved = store.get('signature', null);
-  const body = `<p>Draw your signature. It is kept on this device for next time.</p><canvas class="sig-pad" id="sigPad" width="900" height="320"></canvas>`;
-  const res = await dialog('Signature', body, [{ label: 'Clear', value: 'clear', keep: true }, ...(saved ? [{ label: 'Use saved', value: 'saved' }] : []), { label: 'Cancel' }, { label: 'Place', value: 'place', primary: true }], (dlg) => {
-    const c = $('#sigPad', dlg), g = c.getContext('2d');
-    g.lineWidth = 6; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#13235E';
+  let mode = 'draw', ink = SIG_INKS[0][0], font = 0, pick = null;
+  const saved = sigSaved();
+  const tab = (k, t) => `<button type="button" role="tab" data-sig-mode="${k}" aria-selected="${k === 'draw'}" tabindex="${k === 'draw' ? 0 : -1}">${t}</button>`;
+  const body = `<div class="sig-modes" role="tablist" aria-label="How to sign">${tab('draw', 'Draw')}${tab('type', 'Type')}${tab('upload', 'Picture')}</div>
+    <div class="sig-row" data-sig-for="type" hidden><label class="field"><span>Your name</span><input id="sigName" type="text" autocomplete="name" maxlength="60"></label></div>
+    <div class="sig-row" data-sig-for="upload" hidden><button type="button" class="btn" id="sigFileBtn">${ic('image-plus')}<span>Choose a picture…</span></button><input type="file" id="sigFile" accept="image/*" hidden><span class="sig-note">A white background becomes see-through.</span></div>
+    <canvas class="sig-pad" id="sigPad" width="900" height="320" aria-label="Signature"></canvas>
+    <div class="sig-row"><span class="sig-note" id="sigHint">Draw with the mouse, a finger or a pen.</span><span class="sig-opts">
+      <span class="sig-fonts" data-sig-for="type" hidden role="group" aria-label="Style">${SIG_FONTS.map(([n, f], k) => `<button type="button" class="sig-font" data-sig-font="${k}" aria-pressed="${k === 0}" style="font-family:${esc(f)}">${n}</button>`).join('')}</span>
+      <span class="sig-inks" data-sig-for="draw type" role="group" aria-label="Ink">${SIG_INKS.map(([c, n]) => `<button type="button" class="swatch" data-sig-ink="${c}" style="background:${c}" title="${n}" aria-label="${n}" aria-pressed="${c === ink}"></button>`).join('')}</span></span></div>
+    ${saved.length ? `<div class="sig-saved"><span class="sig-note">Saved on this device</span><div class="sig-list">${saved.map((s, k) => `<span class="sig-item"><button type="button" class="sig-use" data-sig-use="${k}" aria-label="Use saved signature ${k + 1}"><img src="${s.data}" alt=""></button><button type="button" class="icon-btn sig-del" data-sig-del="${k}" aria-label="Remove saved signature ${k + 1}" title="Remove">${ic('x')}</button></span>`).join('')}</div></div>` : ''}`;
+  const res = await dialog('Signature', body, [{ label: 'Clear', value: 'clear', keep: true }, { label: 'Cancel' }, { label: 'Place', value: 'place', primary: true }], (dlg) => {
+    const c = $('#sigPad', dlg), g = c.getContext('2d'), name = $('#sigName', dlg);
     let drawing = false, any = false;
+    const clear = () => { g.clearRect(0, 0, c.width, c.height); any = false; };
+    const typed = () => {
+      clear(); const t = name.value.trim(); if (!t) return;
+      let size = 150; g.font = `${size}px ${SIG_FONTS[font][1]}`;
+      while (size > 30 && g.measureText(t).width > c.width - 60) { size -= 6; g.font = `${size}px ${SIG_FONTS[font][1]}`; }
+      g.fillStyle = ink; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(t, c.width / 2, c.height / 2); any = true;
+    };
+    const setMode = (k) => {
+      mode = k; clear();
+      $$('[data-sig-mode]', dlg).forEach((b) => { b.setAttribute('aria-selected', b.dataset.sigMode === k); b.tabIndex = b.dataset.sigMode === k ? 0 : -1; });
+      $$('[data-sig-for]', dlg).forEach((el) => { el.hidden = !el.dataset.sigFor.split(' ').includes(k); });
+      $('#sigHint', dlg).textContent = { draw: 'Draw with the mouse, a finger or a pen.', type: 'Type your name, then pick a style.', upload: 'A photo or scan of your signature on white paper.' }[k];
+      c.classList.toggle('typed', k !== 'draw');
+      if (k === 'type') { typed(); name.focus(); }
+    };
+    $$('[data-sig-mode]', dlg).forEach((b) => b.onclick = () => setMode(b.dataset.sigMode));
+    $('.sig-modes', dlg).addEventListener('keydown', (e) => tabKeys(e, $$('[data-sig-mode]', dlg), (b) => { setMode(b.dataset.sigMode); b.focus(); }));
     const pt = (e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
-    c.onpointerdown = (e) => { drawing = true; any = true; c.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...pt(e)); };
+    c.onpointerdown = (e) => { if (mode !== 'draw') return; drawing = true; any = true; c.setPointerCapture(e.pointerId); g.lineWidth = 6; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = ink; g.beginPath(); g.moveTo(...pt(e)); };
     c.onpointermove = (e) => { if (drawing) { g.lineTo(...pt(e)); g.stroke(); } };
     c.onpointerup = () => { drawing = false; };
-    dlg.__clear = () => { g.clearRect(0, 0, c.width, c.height); any = false; };
-    dlg.__get = () => (any ? trimCanvas(c) : null);
+    name.oninput = typed;
+    name.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('.dlg-foot .btn.primary', dlg).click(); } };
+    $$('[data-sig-font]', dlg).forEach((b) => b.onclick = () => { font = +b.dataset.sigFont; $$('[data-sig-font]', dlg).forEach((x) => x.setAttribute('aria-pressed', x === b)); typed(); });
+    $$('[data-sig-ink]', dlg).forEach((b) => b.onclick = () => { ink = b.dataset.sigInk; $$('[data-sig-ink]', dlg).forEach((x) => x.setAttribute('aria-pressed', x === b)); if (mode === 'type') typed(); });
+    $('#sigFileBtn', dlg).onclick = () => $('#sigFile', dlg).click();
+    $('#sigFile', dlg).onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      try { clear(); sigFromPicture(c, await sigLoadImage(f)); any = true; } catch { toast('That picture could not be read'); }
+    };
+    $$('[data-sig-use]', dlg).forEach((b) => b.onclick = () => { pick = saved[+b.dataset.sigUse]; $('.dlg-foot .btn.primary', dlg).click(); });
+    $$('[data-sig-del]', dlg).forEach((b) => b.onclick = () => {
+      const k = +b.dataset.sigDel, gone = saved[k];
+      store.set('signatures', sigSaved().filter((x) => x.data !== gone.data));
+      b.closest('.sig-item').remove(); if (!$('.sig-item', dlg)) $('.sig-saved', dlg).remove();
+      toast('Signature removed from this device');
+    });
+    dlg.__clear = () => { clear(); if (mode === 'type') { name.value = ''; name.focus(); } };
+    dlg.__get = () => pick || (any ? trimCanvas(c) : null);
+    dlg.__empty = () => ({ draw: 'Draw your signature first', type: 'Type your name first', upload: 'Choose a picture first' }[mode]);
   });
-  if (res === 'saved' && saved) { pendingImage = saved; setTool('sign'); toast('Click where the signature goes'); return; }
-  if (res && res.value === 'place' && res.data) { store.set('signature', res.data); pendingImage = res.data; setTool('sign'); toast('Click where the signature goes'); }
+  if (res && res.value === 'place' && res.data) sigUse(res.data);
+}
+function sigLoadImage(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = r.result; }; r.onerror = rej; r.readAsDataURL(file); });
+}
+// The picture, fitted to the pad, with its white (and near-white) background made transparent.
+function sigFromPicture(c, im) {
+  const g = c.getContext('2d'), k = Math.min((c.width - 20) / im.naturalWidth, (c.height - 20) / im.naturalHeight);
+  const w = Math.max(1, Math.round(im.naturalWidth * k)), h = Math.max(1, Math.round(im.naturalHeight * k)), x = Math.round((c.width - w) / 2), y = Math.round((c.height - h) / 2);
+  g.drawImage(im, x, y, w, h);
+  const d = g.getImageData(x, y, w, h), px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const light = Math.min(px[i], px[i + 1], px[i + 2]); // the darkest channel: paper is light in all three
+    if (light >= 225) px[i + 3] = 0; else if (light > 160) px[i + 3] = Math.round(px[i + 3] * (225 - light) / 65);
+  }
+  g.putImageData(d, x, y);
 }
 function trimCanvas(c) {
   const g = c.getContext('2d'), { width, height } = c, px = g.getImageData(0, 0, width, height).data;
@@ -2212,7 +2569,7 @@ $('#imageInput').addEventListener('change', async (e) => {
   const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0);
   const w = Math.min(240, img.naturalWidth * .75), h = w * img.naturalHeight / img.naturalWidth;
   pendingImage = { data: c.toDataURL('image/png'), w, h };
-  setTool('image'); toast('Click where the picture goes');
+  setTool('image'); toast(placeHint('the picture'));
 });
 
 /* ---------------- pages ---------------- */
@@ -2501,6 +2858,7 @@ async function buildPdf(only) {
       }
       if (m.type === 'note') {
         const annot = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], ...((m.author || S.author) ? { T: PDFHexString.fromText(m.author || S.author) } : {}), F: 4, Open: false });
+        annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id)); // replies find their note by it
         const ref = out.context.register(annot);
         let annots = p.node.lookup(PDFName.of('Annots'));
         if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
@@ -2508,6 +2866,7 @@ async function buildPdf(only) {
       }
     }
     for (const h of FEATURE.savePage) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
+    for (const h of FEATURE.savePageLate) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
   if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written
@@ -2633,6 +2992,7 @@ async function exportText() {
   catch (e) { console.error(e); toast(`Could not export the text: ${e.message || e}`); }
 }
 async function printDoc() {
+  keepPages = true; // every page stays drawn until printing is done
   for (const v of views) await renderView(v);
   try {
     // The apps' web views ignore window.print(): the Mac app and the phone apps open the system print dialog themselves.
@@ -2640,6 +3000,7 @@ async function printDoc() {
     else if (MOBILE_APP) await NATIVE.core.invoke('plugin:sharekit|native', { method: 'printPage', args: { title: doc.name } });
     else window.print();
   } catch (e) { toast(`Could not print: ${e.message || e}`); }
+  finally { keepPages = false; }
 }
 
 /* ---------------- find ---------------- */
@@ -2725,7 +3086,7 @@ async function renderSide() {
   thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
     thumbIO.observe(t);
-    t.onclick = () => { goPage(+t.dataset.n); if (matchMedia('(max-width: 760px)').matches) toggleSidebar(false); };
+    t.onclick = () => { goPage(+t.dataset.n); if (isPhone()) toggleSidebar(false); };
     t.ondragstart = (e) => { e.dataTransfer.setData('text/plain', t.dataset.n); };
     t.ondragover = (e) => { e.preventDefault(); t.classList.add('drag-over'); };
     t.ondragleave = () => t.classList.remove('drag-over');
@@ -2748,21 +3109,34 @@ async function drawThumb(t) {
   try { await page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: v2 }).promise; } catch {}
 }
 function markThumb() { $$('.thumb').forEach((t) => t.setAttribute('aria-current', +t.dataset.n === current)); }
-const isPhone = () => matchMedia('(max-width: 760px)').matches;
 let sideOpener = null; // what had focus when the phone sidebar opened; it gets it back on closing
 function toggleSidebar(on) {
   const phone = isPhone();
   if (phone) {
     const was = app.dataset.sidebar === 'open', open = on ?? !was;
     app.dataset.sidebar = open ? 'open' : 'on';
-    if (open && !was) { sideOpener = document.activeElement; const t = $('.side-tabs [aria-selected="true"]'); setTimeout(() => t && t.focus({ preventScroll: true }), 0); }
+    sideInert(open);
+    if (open && !was) { sideOpener = document.activeElement; const t = $('.side-tabs [aria-selected="true"]'); requestAnimationFrame(() => t && t.focus({ preventScroll: true })); }
     if (!open && was) { const f = sideOpener; sideOpener = null; if (f && f.isConnected && f !== document.body) f.focus({ preventScroll: true }); }
     refreshRibbon(); return;
   }
+  sideInert(false);
   S.sidebar = on ?? !S.sidebar; saveSettings(); app.dataset.sidebar = S.sidebar ? 'on' : 'off';
   if (doc && S.zoom === 'fit') setTimeout(() => layoutPages(true), 50);
 }
 
+// While the phone sidebar is open, everything behind its scrim is out of reach (inert), and Tab goes round inside it.
+function sideInert(on) { $$('.titlebar, .ribbon, #viewer, .statusbar').forEach((el) => { el.inert = on; }); }
+$('#sidebar').addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || app.dataset.sidebar !== 'open') return;
+  const fs = $$('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])', $('#sidebar')).filter((el) => !el.disabled && el.getClientRects().length);
+  if (!fs.length) return;
+  const first = fs[0], last = fs[fs.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+// Leaving the phone layout (a rotated tablet, a wider window) with the sidebar open: back to the docked sidebar.
+matchMedia(PHONE_MQ).addEventListener('change', (e) => { if (!e.matches && app.dataset.sidebar === 'open') { sideInert(false); app.dataset.sidebar = S.sidebar ? 'on' : 'off'; refreshRibbon(); } });
 // Phone: the sidebar is an overlay over a scrim; a tap outside it closes it (and does nothing else).
 document.addEventListener('pointerdown', (e) => {
   if (app.dataset.sidebar !== 'open' || !isPhone() || e.target.closest('#sidebar')) return;
@@ -2919,7 +3293,7 @@ function showDialog(title, body, actions, setup) {
     $$('[data-a]', dlg).forEach((b) => b.onclick = () => {
       const a = actions[+b.dataset.a];
       if (a.value === 'clear' && dlg.__clear) { dlg.__clear(); return; }
-      if (a.value === 'place' && dlg.__get) { const data = dlg.__get(); if (!data) { toast('Draw your signature first'); return; } done({ value: 'place', data }); return; }
+      if (a.value === 'place' && dlg.__get) { const data = dlg.__get(); if (!data) { toast(dlg.__empty ? dlg.__empty() : 'Draw your signature first'); return; } done({ value: 'place', data }); return; }
       if (a.input) { done($('#dlgInput', dlg).value); return; }
       done(a.value ?? null);
     });
@@ -2961,7 +3335,7 @@ cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFile
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
-cmd('merge', { rlabel: 'Add PDFs', label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
+cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
 cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
@@ -2972,18 +3346,18 @@ cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
 cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
 cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
-const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
+const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Rectangle', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
 for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
 cmd('rotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: has, run: () => rotatePage(-90) });
-cmd('rotR', { label: 'Rotate right', icon: 'rotate-cw', key: 'Mod-r', enabled: has, run: () => rotatePage(90) });
+cmd('rotR', { rlabel: 'Rotate', label: 'Rotate right', icon: 'rotate-cw', key: 'Mod-r', enabled: has, run: () => rotatePage(90), menu: ['rotL', 'rotR', 'rotAll', 'pg60_rotate'] });
 cmd('rotAll', { rlabel: 'Rotate all', label: 'Rotate all pages', icon: 'refresh-cw', enabled: has, run: () => rotateAll(90) });
 cmd('up', { rlabel: 'Move up', label: 'Move page up', icon: 'arrow-up', enabled: () => has() && current > 0, run: () => movePage(-1) });
 cmd('down', { rlabel: 'Move down', label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
 cmd('dup', { label: 'Duplicate page', icon: 'copy-plus', enabled: has, run: duplicatePage });
 cmd('blank', { rlabel: 'Blank page', label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
-cmd('delPage', { label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage });
+cmd('delPage', { rlabel: 'Delete', label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage, menu: ['delPage', 'pg60_delete'] });
 cmd('extract', { label: 'Extract pages…', icon: 'file-output', enabled: has, run: extractPages });
 cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => isPhone() ? app.dataset.sidebar === 'open' : S.sidebar, run: () => toggleSidebar() });
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
@@ -2993,7 +3367,15 @@ cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-0', enab
 cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => setZoom(100) });
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
-cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', run: () => dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${Object.values(C).filter((c) => c.key).map((c) => `<span>${esc(c.label)}</span><span style="color:var(--ink-3)">${fmtKey(c.key)}</span>`).join('')}</div>`, [{ label: 'Close', primary: true }]) });
+cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', run: shortcutsDialog });
+function shortcutsDialog() {
+  const byKey = new Map();
+  for (const c of Object.values(C)) if (c.key) { const l = c.label.replace(/…$/, ''); (byKey.get(c.key) || byKey.set(c.key, []).get(c.key)).push(c.key === 'Mod-d' && l === 'Duplicate' ? 'Duplicate selection' : l); }
+  const rows = [...byKey].map(([k, ls]) => [ls.length > 1 ? `${ls[0]}, or ${ls.slice(1).join(', or ').replace(/^./, (x) => x.toLowerCase())} when nothing is selected` : ls[0], fmtKey(k) + (k === 'Mod-Shift-z' ? ' or ' + fmtKey('Mod-y') : '')]);
+  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Finish or cancel a tool', 'Esc']);
+  const row = ([l, k]) => `<span>${esc(l)}</span><span style="color:var(--ink-3);text-align:right">${esc(k)}</span>`;
+  return dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${rows.map(row).join('')}</div>`, [{ label: 'Close', primary: true }]);
+}
 cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
 cmd('share', { label: 'Share…', icon: 'share', enabled: has, hidden: !NATIVE, run: sharePdf });
 cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP, run: () => checkForUpdates(true) });
@@ -3008,21 +3390,42 @@ const MENUS = [
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
 const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
+// A toggle (Sidebar, Dark pages…) is a checkbox item and a choice of one (Appearance) a radio item, each with its
+// checked state; the three Appearance items are one group. The shortcut is announced as a key, not as part of the name.
+const ariaKey = (k) => k.split(/-(?=.)/).map((p) => ({ Mod: isMac ? 'Meta' : 'Control', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join('+');
 function menuHtml(ids) {
-  return ids.filter(shown).map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
+  let html = '', group = false;
+  for (const id of ids.filter(shown)) {
+    const radio = /^theme_/.test(id);
+    if (radio !== group) { html += radio ? '<div role="group" aria-label="Appearance">' : '</div>'; group = radio; }
+    if (id === '-') { html += '<div class="msep"></div>'; continue; }
+    const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
+    const role = on === null ? 'role="menuitem"' : `role="${radio ? 'menuitemradio' : 'menuitemcheckbox'}" aria-checked="${on}"`;
+    html += `<button type="button" class="mi" ${role} data-cmd="${id}"${c.key ? ` aria-keyshortcuts="${ariaKey(c.key)}"` : ''}${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k" aria-hidden="true">${fmtKey(c.key)}</span></button>`;
+  }
+  return html + (group ? '</div>' : '');
 }
 const pop = $('#popover');
 let popAnchor = null; // the button that opened the popover; Escape gives it focus back
-function openPopover(anchor, html) {
+// `at`: { x, y, label } opens it at a spot (a right-click menu), above the spot if there is no room below.
+function openPopover(anchor, html, at) {
   popAnchor = anchor;
   pop.innerHTML = html; pop.hidden = false; icons();
-  if (anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
-  const r = anchor.getBoundingClientRect();
-  pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
-  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
+  if (!at && anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
+  if (at && at.label) pop.setAttribute('aria-label', at.label); else pop.removeAttribute('aria-label');
+  if (at) {
+    pop.style.maxHeight = innerHeight - 16 + 'px';
+    const h = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(at.x, innerWidth - pop.offsetWidth - 8)) + 'px';
+    pop.style.top = (at.y + h > innerHeight - 8 ? Math.max(8, at.y - h) : at.y) + 'px';
+  } else {
+    const r = anchor.getBoundingClientRect();
+    pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
+  }
   const f = $('.mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.menubar > button, #moreBtn').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -3041,8 +3444,12 @@ pop.addEventListener('keydown', (e) => {
   } else return;
   e.stopPropagation();
 });
-pop.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd); });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn')) closePopover(); });
+pop.addEventListener('click', (e) => {
+  const x = e.target.closest('[data-ctx]');
+  if (x) { const it = ctxItems[+x.dataset.ctx], back = popAnchor; closePopover(); if (back && back.isConnected) back.focus({ preventScroll: true }); if (it && !it.disabled) it.run(); return; }
+  const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
+});
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
   $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
@@ -3064,7 +3471,7 @@ $('#menubar').addEventListener('keydown', (e) => {
 });
 // Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
 function moreMenuHtml() {
-  const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids : [])));
+  const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids.flatMap((id) => [id, ...((C[id] && C[id].menu) || [])]) : [])));
   return MENUS.map(([t, ids], k) => {
     const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
@@ -3075,21 +3482,125 @@ $('#moreBtn').addEventListener('click', () => {
   closePopover(); if (open) return;
   b.setAttribute('aria-expanded', 'true'); openPopover(b, moreMenuHtml());
 });
+
+/* ---------------- right-click menus ----------------
+   On a page in the sidebar, on a page and on a mark. They open with a right-click, Shift+F10 or the menu key
+   (for what has focus, or the selected mark) and a long press on a touch screen, and work like the other menus. */
+let ctxItems = [], ctxOpened = 0; // ctxOpened: when a long press or a key last opened one, so the browser's own event that follows opens no other
+function ctxCmd(id, o = {}) { const c = C[id]; return c && !c.hidden ? { label: c.label, icon: c.icon, key: c.key, disabled: !!(c.enabled && !c.enabled()), run: () => run(id), ...o } : null; }
+function openCtx(list, at, anchor, label) {
+  const items = [];
+  for (const it of list) if (it && !(it === '-' && (!items.length || items[items.length - 1] === '-'))) items.push(it);
+  while (items[items.length - 1] === '-') items.pop();
+  ctxItems = items;
+  const html = items.map((it, k) => it === '-' ? '<div class="msep"></div>' : `<button type="button" class="mi" role="menuitem" data-ctx="${k}"${it.disabled ? ' disabled' : ''}>${it.on ? ic('check') : it.on === false ? '<span></span>' : ic(it.icon)}<span>${esc(it.label)}</span><span class="k">${fmtKey(it.key)}</span></button>`).join('');
+  closePopover(); openPopover(anchor, html, { x: at.x, y: at.y, label });
+  return true;
+}
+// A page in the sidebar: the commands work on that page (or on all the pages chosen there, when it is one of them).
+function thumbMenu(t, at) {
+  const n = +t.dataset.n;
+  if (typeof pg60Valid === 'function' && !pg60Valid().includes(n)) pg60SetSel([]);
+  const on = (id, o) => ctxCmd(id, { ...o, run: () => { current = n; markThumb(); run(id); } });
+  const was = current; current = n; // what can be done to this page
+  const items = [on('rotL'), on('rotR'), '-', on('dup'), on('blank', { label: 'Insert blank page after' }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
+  current = was;
+  openCtx(items, at, t, `Page ${n + 1}`); t.classList.add('ctx-for'); // shows which page the menu is for
+  return true;
+}
+// A spot on a page: `cx`, `cy` on screen.
+function pageMenu(v, cx, cy, anchor) {
+  const b = v.el.getBoundingClientRect(), [x, y] = toPdf(v, cx - b.left, cy - b.top), n = views.indexOf(v);
+  const text = String(getSelection() || '').trim();
+  return openCtx([
+    text && { label: 'Copy', icon: 'copy', key: 'Mod-c', run: () => document.execCommand('copy') }, text && '-',
+    { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', disabled: !markClip, run: () => pasteMark(null, v, x, y) },
+    { label: 'Add comment here', icon: 'message-square-plus', run: () => addNote(v, x, y) },
+    '-',
+    { label: 'Select tool', icon: 'mouse-pointer-2', on: app.dataset.tool === 'select', run: () => { setTool('select'); pendingImage = null; } },
+    { label: 'Rotate page', icon: 'rotate-cw', run: () => { current = n; rotatePage(90); } },
+  ], { x: cx, y: cy }, anchor || viewer, `Page ${n + 1}`);
+}
+// A mark (selected first). A mark type can add commands with `menu: [command ids]`.
+function markMenu(v, m, at, anchor) {
+  selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry });
+  const own = (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].menu) || [];
+  return openCtx([
+    { label: 'Copy', icon: 'copy', key: 'Mod-c', run: copyMark },
+    { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', run: duplicateMark },
+    { label: 'Delete', icon: 'trash-2', run: deleteSelected },
+    '-',
+    m.type === 'note' && { label: 'Edit note…', icon: 'pencil', run: () => editNote(v, m) },
+    m.type === 'text' && { label: 'Edit text…', icon: 'pencil', run: () => editText(v, m) },
+    ...own.map((id) => ctxCmd(id)),
+  ], at, anchor || viewer, 'Mark');
+}
+const typingIn = (el) => !!el && (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable);
+// The menu for whatever is at (x, y) on screen; false when there is none (the browser's own menu shows).
+function ctxFor(el, x, y) {
+  if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
+  const t = el.closest('#sidePanel .thumb'); if (t) return thumbMenu(t, { x, y });
+  const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
+  const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
+  return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
+}
+document.addEventListener('contextmenu', (e) => {
+  if (Date.now() - ctxOpened < 700) { e.preventDefault(); return; } // already opened by a long press or a key
+  ctxOpened = 0;
+  let el = e.target; if (!el || !el.isConnected) el = document.elementFromPoint(e.clientX, e.clientY);
+  if (ctxFor(el, e.clientX, e.clientY)) { e.preventDefault(); ctxPressEnd(); }
+});
+// Shift+F10 and the menu key: for the page in the sidebar that has focus, else the selected mark, else the page in view.
+document.addEventListener('keydown', (e) => {
+  if (!(e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) || !doc || $('#dialog').open) return;
+  const a = document.activeElement;
+  if (pop.contains(a) || typingIn(a)) return;
+  e.preventDefault(); e.stopPropagation(); ctxOpened = Date.now();
+  const t = a && a.closest && a.closest('#sidePanel .thumb');
+  if (t) { const r = t.getBoundingClientRect(); thumbMenu(t, { x: r.left + r.width / 2, y: r.top + r.height / 2 }); return; }
+  const m = selectedMark(), mv = m && views.find((x) => x.entry === selMark.entry), me = mv && mv.el.querySelector(`.mk[data-id="${CSS.escape(m.id)}"]`);
+  if (me) { const r = me.getBoundingClientRect(); markMenu(mv, m, { x: r.left, y: r.bottom + 4 }); return; }
+  const v = views[current]; if (!v) return;
+  const b = v.el.getBoundingClientRect(), vr = viewer.getBoundingClientRect();
+  pageMenu(v, Math.max(b.left, vr.left) + 40, Math.max(b.top, vr.top) + 40);
+}, true);
+// A long press (touch): the same menus, for pages in the sidebar, and on the page with the Select tool.
+let ctxPress = null;
+const ctxPressEnd = () => { if (ctxPress) { clearTimeout(ctxPress.timer); ctxPress = null; } };
+document.addEventListener('pointerdown', (e) => {
+  ctxPressEnd();
+  if (e.pointerType !== 'touch' || !doc || !e.isPrimary || typingIn(e.target)) return;
+  const onPage = e.target.closest('#pages .page');
+  if (!e.target.closest('#sidePanel .thumb') && !(onPage && app.dataset.tool === 'select')) return;
+  const p = ctxPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  p.timer = setTimeout(() => {
+    if (ctxPress !== p) return; ctxPress = null;
+    if (Date.now() - ctxOpened < 700 || !ctxFor(document.elementFromPoint(p.x, p.y), p.x, p.y)) return;
+    ctxOpened = Date.now();
+    // the click that ends the press does nothing else
+    const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    window.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => window.removeEventListener('click', eat, true), 800);
+  }, 550);
+}, true);
+document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId === ctxPress.id && Math.hypot(e.clientX - ctxPress.x, e.clientY - ctxPress.y) > 10) ctxPressEnd(); }, true);
+document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], ['Colour', 'COLORS'], ['Add', ['sign']]]],
-  pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
+  pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
   export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
-// Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of).
-function ribbonAdd(tab, group, ids, before) {
+// Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of). `look` makes a
+// compact group on wide screens: 'rows' (small buttons with their names, two rows) or 'icons' (a grid of icons).
+function ribbonAdd(tab, group, ids, before, look) {
   const t = RIBBON[tab]; if (!t) throw new Error('No ribbon tab ' + tab);
   let g = t[1].find(([label]) => label === group);
   if (!g) { g = [group, []]; const k = before ? t[1].findIndex(([label]) => label === before) : -1; k >= 0 ? t[1].splice(k, 0, g) : t[1].push(g); }
+  if (look) g[2] = look;
   for (const id of ids) if (!g[1].includes(id)) g[1].push(id);
 }
 // Adds commands to a menu (made before Help if missing), after a separator.
@@ -3100,6 +3611,24 @@ function menuAdd(title, ids) {
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
+const COLOR_NAMES = { '#FFD43B': 'Yellow', '#69DB7C': 'Green', '#74C0FC': 'Light blue', '#F783AC': 'Pink', '#E03131': 'Red', '#2448C9': 'Blue', '#111111': 'Black' };
+// Each drawing tool keeps its own colour (the last one picked for it, else its default here): the pressed swatch is
+// always the colour the tool in use draws with. With Select, the swatches are for the selected mark, or else for the
+// drawing tool used last. Features add their tools and the marks a swatch can recolour.
+const COLOR_TOOLS = { highlight: '#FFD43B', pen: '#2448C9', rect: '#E03131', text: '#111111' };
+const COLOR_MARKS = new Set(['hl', 'ink', 'rect', 'text']);
+const colorToolNow = () => (app.dataset.tool in COLOR_TOOLS ? app.dataset.tool : S.colorTool in COLOR_TOOLS ? S.colorTool : 'highlight');
+const toolColor = (t = colorToolNow()) => (S.toolColor && S.toolColor[t]) || COLOR_TOOLS[t] || '#E03131';
+const colorMark = () => { const m = selMark && doc && selectedMark(); return m && COLOR_MARKS.has(m.type) && typeof m.color === 'string' ? m : null; };
+const swatchNow = () => { const m = colorMark(); return (m ? m.color : toolColor()).toUpperCase(); };
+function pickColor(c) {
+  const m = colorMark(), t = colorToolNow();
+  // A selected mark takes the colour (one undo step); a drawing tool in use keeps it for its next marks too.
+  if (m && m.color.toUpperCase() !== c) { const before = snapshot(); m.color = c; redrawPage(selMark.entry); changed(before); }
+  if (!m || app.dataset.tool !== 'select') { S.toolColor = { ...S.toolColor, [t]: c }; saveSettings(); }
+  if (!m && app.dataset.tool === 'select') { const tc = C['tool_' + t] || C['cm_' + t.slice(2)] || C[{ cmtype: 'cm_typewriter' }[t]]; toast(`${tc ? tc.label.replace(/…$/, '') : 'Next mark'}: ${COLOR_NAMES[c] || c}`); }
+  refreshRibbon();
+}
 // The commands on a tab that are pressed for the tool in use now (the tool's own buttons, not other toggles).
 function toolOnTab(tab) {
   const t = app.dataset.tool, ids = (RIBBON[tab] ? RIBBON[tab][1] : []).flatMap(([, x]) => Array.isArray(x) ? x : []);
@@ -3110,6 +3639,7 @@ function toolOnTab(tab) {
 }
 function chooseTab(k) {
   S.ribbon = k; saveSettings();
+  for (const h of FEATURE.onTab || []) h(k);
   // A tool from another tab would stay on unseen (and, say, keep a form from being filled): go back to Select.
   if (!toolOnTab(k)) { setTool('select'); pendingImage = null; }
   renderRibbon();
@@ -3123,16 +3653,34 @@ function renderRibbon() {
   if (focused) { const t = $(`#ribbonTabs [data-rt="${S.ribbon}"]`); t && t.focus({ preventScroll: true }); }
   $('#ribbonBody').setAttribute('aria-labelledby', 'rt-' + (RIBBON[S.ribbon] ? S.ribbon : 'home'));
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
-  $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
-    ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
-    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].rlabel || C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
-  $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
+  $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
+    ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${swatchNow() === c}"></button>`).join('')
+    : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
+  $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => pickColor(b.dataset.color));
   icons(); refreshRibbon();
   const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
   if (tab) scrollIntoRow(tabs, tab);
   const on = $('#ribbonBody [aria-pressed="true"]'); if (on) scrollIntoRow($('#ribbonBody'), on); else $('#ribbonBody').scrollLeft = 0;
   ribbonEdges();
 }
+// A ribbon button. A command with `menu` (a list of command ids) gets a small arrow beside it that opens them.
+function ribbonButton(id) {
+  const c = C[id], label = c.rlabel || c.label.replace(/…$/, '').replace(/^Appearance: /, '');
+  const b = `<button type="button" class="rb" data-cmd="${id}" title="${esc(c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''))}">${ic(c.icon)}<span>${esc(label)}</span></button>`;
+  if (!c.menu) return b;
+  if (!c.run) return `<button type="button" class="rb" data-rmenu="${id}" aria-haspopup="menu" aria-expanded="false" title="${esc(c.label)}">${ic(c.icon)}<span>${esc(label)}${ic('chevron-down')}</span></button>`;
+  const more = `More ${label.toLowerCase()} options`;
+  return `<span class="rb-split">${b}<button type="button" class="rb-more" data-rmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(more)}" title="${esc(more)}">${ic('chevron-down')}</button></span>`;
+}
+function openRibbonMenu(id) {
+  const b = $(`#ribbonBody [data-rmenu="${id}"]`); if (!b || !C[id] || !C[id].menu) return;
+  b.setAttribute('aria-expanded', 'true'); openPopover(b.closest('.rb-split') || b, menuHtml(C[id].menu)); popAnchor = b;
+}
+$('#ribbonBody').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-rmenu]'); if (!b) return;
+  const open = b.getAttribute('aria-expanded') === 'true'; closePopover();
+  if (!open) openRibbonMenu(b.dataset.rmenu);
+});
 // Scrolls a row sideways just enough to show el (never the page up or down).
 function scrollIntoRow(row, el) {
   const r = row.getBoundingClientRect(), b = el.getBoundingClientRect(), pad = 48;
@@ -3153,6 +3701,8 @@ window.addEventListener('resize', ribbonEdges);
 $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
+  $$('#ribbonBody [data-rmenu]').forEach((b) => { b.disabled = !C[b.dataset.rmenu].menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled())); });
+  const sw = $('#ribbonBody [data-color]') && swatchNow(); $$('#ribbonBody [data-color]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.color === sw));
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
   let shift = false;
   $$('#ribbonBody .r-group').forEach((g) => {
@@ -3161,6 +3711,7 @@ function refreshRibbon() {
   });
   if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
+  $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });
   scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
@@ -3186,6 +3737,11 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
+  if (e.key === 'Enter' && doc && PLACE_TOOLS.has(app.dataset.tool)) {
+    // on the page, or still on the button that chose the tool (Enter there would only choose it again)
+    const a = document.activeElement, c = a && a.dataset && C[a.dataset.cmd];
+    if (!a || a === document.body || a.closest('#viewer') || (c && (a.dataset.cmd === app.dataset.tool || (c.pressed && c.pressed())))) { e.preventDefault(); placeByKey(); return; }
+  }
   if ((e.key === 'Delete' || e.key === 'Backspace') && (selMark || selContent)) { e.preventDefault(); deleteSelected(); }
   if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
   // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
@@ -3386,8 +3942,7 @@ async function txtDrawPara(L, out, p, m, ctx) {
   const col = txtHexRgb(m.color);
   for (let i = 0; i < m.lines.length; i++) {
     const line = m.lines[i]; if (!line.trim()) continue;
-    const runs = [];
-    for (const ch of line) { const code = f ? f.rev.get(ch) : undefined, own = code != null, last = runs[runs.length - 1]; if (last && last.own === own) last.chars.push(own ? code : ch); else runs.push({ own, chars: [own ? code : ch] }); }
+    const runs = glyphRuns(line, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
     let w = 0;
     for (const r of runs) {
       if (r.own) { r.w = r.chars.reduce((s, c) => s + (f.widths.get(c) ?? f.dw), 0) / 1000; continue; }
@@ -3396,12 +3951,12 @@ async function txtDrawPara(L, out, p, m, ctx) {
     }
     for (const r of runs) w += r.w * hs;
     const x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0, org = txtOrigin(F, i, x);
-    const ops = [O('q'), O('rg', col.map(N)), O('BT'), O('Tr', [N(0)]), O('Tc', [N(0)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
+    const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), O('rg', col.map(N)), O('BT'), O('Tr', [N(0)]), O('Tc', [N(0)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
       else ops.push(O('Tf', [node.newFontDictionary('CPDF', r.sf.ref), N(1)]), O('Tj', [r.hex]));
     }
-    ops.push(O('ET'), O('Q'));
+    ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
     p.pushOperators(...ops);
     if (m.underline) {
       const d = m.size * .12, s0 = [org[0] - F.v[0] * d, org[1] - F.v[1] * d];
@@ -3784,7 +4339,7 @@ addText = function (v, x, y) {
 async function txtAddDialog(v, x, y, boxW) {
   const fmt = txtLast();
   let w = boxW || 0;
-  const body = `<div class="txt-slot"></div><label class="field"><textarea id="dlgInput" rows="4" class="txt-paper" placeholder="Type here"></textarea></label><label class="field txt-wfield"><span>Box width (pt)</span><input id="txtBoxW" type="number" min="0" step="1" inputmode="numeric" placeholder="Fits the text" value="${w || ''}"></label><p class="txt-hint">Ctrl+Enter adds the text. Drag with the Text tool to make a box the text wraps in.</p>`.replace('Ctrl+Enter', isMac ? '⌘Return' : 'Ctrl+Enter');
+  const body = `<div class="txt-slot"></div><label class="field"><textarea id="dlgInput" rows="4" class="txt-paper" placeholder="Type here"></textarea></label><label class="field txt-wfield"><span>Box width (pt)</span><input id="txtBoxW" type="number" min="0" step="1" inputmode="numeric" placeholder="Fits the text" value="${w || ''}"></label><p class="txt-hint">Ctrl+Enter adds the text. Drag with the Text tool to make a box the text wraps in.</p>`.replace('Ctrl+Enter adds the text. ', coarse() ? '' : isMac ? '⌘Return adds the text. ' : 'Ctrl+Enter adds the text. ');
   const text = await dialog('Add text', body, [{ label: 'Cancel' }, { label: 'Add', primary: true, input: true }], (dlg) => {
     const ta = $('#dlgInput', dlg);
     const style = () => { Object.assign(ta.style, { font: txtCss(fmt.famPick === 'page' ? 'sans' : fmt.famPick, fmt, Math.min(28, Math.max(11, fmt.size))), color: fmt.color, textDecoration: fmt.underline ? 'underline' : 'none', textAlign: fmt.align }); };
@@ -4126,7 +4681,7 @@ FEATURE.saveDoc.push(async ({ L, out }) => {
   if (m) out.catalog.delete(L.PDFName.of('Metadata'));
 });
 
-cmd('docProps', { label: 'Document properties…', icon: 'file-text', key: 'Mod-d', enabled: has, run: diShow });
+cmd('docProps', { label: 'Document properties…', icon: 'file-cog', key: 'Mod-d', enabled: has, run: diShow });
 { const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('print') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'docProps'); else menuAdd('File', ['docProps']); }
 ribbonAdd('home', 'File', ['docProps']);
 setTimeout(() => { try { ACCEL['Mod-d'] = 'CmdOrCtrl+D'; scheduleMacMenu(); } catch {} }, 0);
@@ -4166,12 +4721,12 @@ addStyle(`
    to put it inside), point it at the page in view, and expand or collapse them all.
    docMarks(): { id, type: 'bookmarks', items: [{ id, title, key: 'src:i' | null, top?, url?, open, items: [...] }] }.
    A bookmark points at a page by its key, so it follows the page when pages move; a bookmark whose page was deleted
-   is kept, without a destination. The PDF's own bookmarks are read into this tree the first time one is changed, and
+   is shown crossed out, and saved without a destination only when it has bookmarks under it (else it is left out). The PDF's own bookmarks are read into this tree the first time one is changed, and
    on saving the tree replaces the PDF's outline. Until then the outline is shown as it is and saved untouched. */
 
 const BM = { sel: null, cache: null, renaming: null, drag: null };
 const bmMark = () => (doc ? docMarks().find((m) => m.type === 'bookmarks') : null);
-const bmPhone = () => matchMedia('(max-width: 760px)').matches;
+const bmPhone = () => isPhone();
 const bmPageOf = (key) => (key == null || !doc ? -1 : doc.pages.findIndex((e) => pageKey(e) === key));
 
 // The PDF's own outline as a tree of bookmarks (read once per opened file).
@@ -4447,9 +5002,15 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
     if (oldRef instanceof PDFRef) ctx.delete(oldRef);
   }
   cat.delete(N('Outlines'));
-  if (!m.items.length) return;
   const pageFor = new Map();
   entries.forEach((e, n) => { const k = pageKey(e); if (!pageFor.has(k)) pageFor.set(k, pages[n]); });
+  // A bookmark whose page is gone, with nothing under it, would go nowhere in any reader: it is left out.
+  const live = (list) => list.flatMap((b) => {
+    const items = live(b.items || []);
+    return b.key != null && !pageFor.get(b.key) && !b.url && !items.length ? [] : [{ ...b, items }];
+  });
+  const items = live(m.items);
+  if (!items.length) return;
   const build = (list, parentRef) => {
     const refs = list.map(() => ctx.nextRef());
     let visible = 0;
@@ -4473,7 +5034,7 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
     return { first: refs[0], last: refs[refs.length - 1], visible };
   };
   const rootRef = ctx.nextRef();
-  const r = build(m.items, rootRef);
+  const r = build(items, rootRef);
   ctx.assign(rootRef, ctx.obj({ Type: 'Outlines', First: r.first, Last: r.last, Count: r.visible }));
   cat.set(N('Outlines'), rootRef);
 });
@@ -4493,7 +5054,7 @@ TEST_HOOKS.bmMove = bmMove;
 
 addStyle(`
 .bm-bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 2px; padding: 0 0 6px; background: var(--chrome); }
-@media (max-width: 760px) { .bm-bar { background: var(--surface); } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .bm-bar { background: var(--surface); } }
 .bm-bar .icon-btn { width: 32px; height: 32px; }
 .bm-bar .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 .bm-bar .icon-btn:disabled { opacity: .35; cursor: default; }
@@ -4696,7 +5257,7 @@ addStyle(`
 .pic-crop .pic-frame { fill: transparent; stroke: #fff; stroke-width: 1.5; cursor: move; }
 .pic-crop .pic-frame-2 { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
 .pic-crop .pic-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
-@media (max-width: 760px) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint { display: none; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint { display: none; } }
 `);
 const PIC_TOOLS = [['picRotL', 'rotate-ccw'], ['picRotR', 'rotate-cw'], ['picFlipH', 'flip-horizontal-2'], ['picFlipV', 'flip-vertical-2'], ['picCrop', 'crop'], '-', ['picReplace', 'replace'], ['picExtract', 'image-down'], '-', ['picDelete', 'trash-2']];
 function picBar(v, sel) {
@@ -5278,7 +5839,7 @@ FEATURE.saveDoc.push(async ({ L, out, entries }) => {
    into the page's own coordinates and draws it with pdf-lib, behind the content (a stream put first) or in front.
    Page numbers follow page n of the saved file, so they follow reordering and extraction. */
 const PD_TYPES = { pd_background: 'Background', pd_watermark: 'Watermark', pd_headfoot: 'Header & footer', pd_bates: 'Bates numbering' };
-const PD_ICONS = { pd_background: 'paint-bucket', pd_watermark: 'stamp', pd_headfoot: 'panel-top', pd_bates: 'hash' };
+const PD_ICONS = { pd_background: 'paint-roller', pd_watermark: 'droplets', pd_headfoot: 'panel-top', pd_bates: 'hash' };
 const PD_ORDER = ['pd_background', 'pd_watermark', 'pd_headfoot', 'pd_bates'];
 const PD_SLOTS = [['tl', 'Top left'], ['tc', 'Top centre'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['bc', 'Bottom centre'], ['br', 'Bottom right']];
 const PD_FONTS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']];
@@ -5317,9 +5878,10 @@ function pdTiles(W, H, a, stepX, stepY, reach) {
 }
 // What to draw on page n of N, a W×H page as seen: { under: [...], over: [...] } of
 // { kind: 'rect' | 'text' | 'image', x, y (bottom left / baseline start), angle (degrees, anticlockwise), … }.
-function pdLayout(n, N, W, H, measure, date = new Date()) {
+// `list` is the settings to draw (the document's, or a dialog's preview of them).
+function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
   const under = [], over = [];
-  for (const m of pdItems()) {
+  for (const m of list) {
     const pages = pdPages(m, N), k = pages.indexOf(n);
     if (k < 0) continue;
     const op = Math.max(0, Math.min(100, m.opacity ?? 100)) / 100;
@@ -5427,7 +5989,7 @@ addStyle(`
 .pd-form .field input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 36px; }
 .pd-form .pd-check { flex-direction: row; align-items: center; gap: 8px; align-self: end; height: 36px; margin: 6px 0; color: var(--ink); }
 .pd-form .pd-check input { width: auto; accent-color: var(--accent); }
-.pd-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 17px; padding: 2px; gap: 2px; margin: 4px 0 6px; }
+.pd-seg { justify-self: start; display: inline-flex; border: 1px solid var(--line); border-radius: 17px; padding: 2px; gap: 2px; margin: 4px 0 6px; }
 .pd-seg label { position: relative; }
 .pd-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .pd-seg span { display: block; padding: 5px 14px; border-radius: 15px; color: var(--ink-2); font-weight: 500; }
@@ -5449,6 +6011,28 @@ addStyle(`
 .pd-row .pd-what strong { color: var(--ink); font-weight: 600; }
 .pd-row .pd-what span { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-row .btn { height: 30px; padding: 0 12px; }
+dialog.pd-dialog { width: min(760px, calc(100vw - 32px)); }
+/* The page stays in view behind these dialogs: a light dim, no blur. */
+dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(18, 12, 15, .18); }
+.pd-dialog .dlg-foot { flex-wrap: wrap; }
+.pd-dialog .dlg-foot .pd-rm { margin-right: auto; }
+.pd-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0 20px; align-items: start; }
+.pd-main { min-width: 0; }
+.pd-prev { margin: 8px 0; position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pd-prev-page { position: relative; width: 100%; aspect-ratio: 612 / 792; background: #fff; border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 2px 10px rgba(0, 0, 0, .18); overflow: hidden; }
+.pd-prev-page canvas { display: block; width: 100%; height: 100%; }
+.pd-prev-page svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
+.pd-prev-page svg text { white-space: pre; }
+.pd-prev .pd-pv-under { mix-blend-mode: multiply; }
+.pd-prev figcaption { font-size: 12px; color: var(--ink-3); }
+@media (max-width: 640px) {
+  .pd-wrap { grid-template-columns: minmax(0, 1fr); }
+  .pd-prev { order: -1; z-index: 2; top: -6px; margin: 0 0 4px; padding: 10px 0 8px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .pd-prev-page { width: auto; height: 160px; max-width: 100%; }
+}
+@media (max-width: 560px) {
+  .pd-form { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 520px) {
   .pd-slots { grid-template-columns: minmax(0, 1fr); }
   .pd-row { flex-wrap: wrap; }
@@ -5470,7 +6054,9 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
     } else p.drawText(it.text, { x, y, size: it.size, font: ctx.pdFonts.get((it.font || 'sans') + (it.bold ? 'b' : '')), color: pdRgb(L, it.color), opacity: it.opacity, rotate });
   }
 }
-FEATURE.savePage.push(async ({ L, out, p, n, entries, ctx }) => {
+// Drawn after every other savePage hook, so applying redactions (which rewrites what is already in the page) never
+// cuts letters out of it; page design from an earlier save is taken out when the file is opened (see pdReadBack).
+FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   const items = pdItems(); if (!items.length) return;
   ctx.pdFonts ||= new Map();
   for (const m of items) {
@@ -5534,18 +6120,27 @@ function pdStripPage(L, out, p) {
 let pdOpening = Promise.resolve();
 async function pdReadBack(d) {
   const pd = pdfDocs.get(0), src = d.sources[0];
-  if (!pd || !src || src.password) return;
+  if (!pd || !src) return;
   let raw;
   try { const md = await pd.getMetadata(), c = md && md.info && md.info.Custom; raw = c && (c instanceof Map ? c.get(PD_KEY) : c[PD_KEY]); } catch { return; }
   if (typeof raw !== 'string') return;
   let list; try { list = JSON.parse(raw); } catch { return; }
   if (!Array.isArray(list)) return;
   const L = await loadPdfLib();
-  const out = await L.PDFDocument.load(src, { ignoreEncryption: true, updateMetadata: false });
-  if (out.isEncrypted) return;
+  // A PDF opened with its password is read with it, and the copy without the drawing is protected again the same way
+  // (same password, same restrictions, as saving does), so it stays a protected source like the one opened.
+  const pw = src.password;
+  const out = await L.PDFDocument.load(src, pw ? { password: pw, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false });
+  if (out.isEncrypted && !pw) return;
   for (const p of out.getPages()) pdStripPage(L, out, p);
   out.getInfoDict().delete(L.PDFName.of(PD_KEY));
+  if (pw) {
+    let flags = null; try { const f = await pd.getPermissions(); flags = f ? [...f] : null; } catch {}
+    const F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
+    out.encrypt({ userPassword: pw, ownerPassword: flags ? uid() + uid() : pw, permissions: { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) } });
+  }
   const bytes = await out.save();
+  if (pw) bytes.password = pw;
   const npd = await loadProtected(bytes, d.name);
   if (!npd) return;
   if (doc !== d || pdfDocs.get(0) !== pd) { try { npd.destroy(); } catch {} return; }
@@ -5624,20 +6219,64 @@ function pdCheck(type, m) {
   if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim())) return 'Type a header or footer in at least one place';
   return null;
 }
+// A small picture of one page in the dialog, with the settings being changed drawn on it (by pdLayout, as on the page
+// and in the saved PDF) and drawn again on every change. It shows the page in view, or the first page they go on.
+function pdPreview(dlg, type, m, existing) {
+  const box = $('[data-preview]', dlg), page = box && $('.pd-prev-page', box);
+  if (!page) return () => {};
+  const cv = $('canvas', page), under = $('.pd-pv-under', page), over = $('.pd-pv-over', page), cap = $('figcaption', box);
+  const shots = new Map(); let shown = -1;
+  const shot = async (n) => {
+    const e = doc.pages[n], pg = await pageOf(e), rotation = (pg.rotate + e.rot) % 360;
+    const v1 = pg.getViewport({ scale: 1, rotation }), v = pg.getViewport({ scale: 440 / Math.max(v1.width, v1.height), rotation });
+    const c = document.createElement('canvas'); c.width = Math.round(v.width); c.height = Math.round(v.height);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    await pg.render({ canvas: c, canvasContext: g, viewport: v }).promise;
+    return { c, W: v1.width, H: v1.height };
+  };
+  const paint = () => {
+    const sh = shots.get(shown); if (!sh) return;
+    const list = [...pdItems().filter((x) => !existing || x.id !== existing.id), { ...m, type }].sort((a, b) => PD_ORDER.indexOf(a.type) - PD_ORDER.indexOf(b.type));
+    const { under: u, over: o } = pdLayout(shown, doc.pages.length, sh.W, sh.H, pdMeasure, new Date(), list);
+    pdPaint(under, u, 1, sh.H); pdPaint(over, o, 1, sh.H);
+  };
+  return async () => {
+    const N = doc.pages.length, pages = pdPages(m, N), n = !pages.length || pages.includes(current) ? Math.min(current, N - 1) : pages[0];
+    if (n < 0) return;
+    if (n !== shown) {
+      shown = n; cap.textContent = `Page ${n + 1} of ${N}`;
+      if (!shots.has(n)) { try { shots.set(n, await shot(n)); } catch { return; } }
+      if (shown !== n) return;
+      const sh = shots.get(n);
+      cv.width = sh.c.width; cv.height = sh.c.height; cv.getContext('2d').drawImage(sh.c, 0, 0);
+      page.style.aspectRatio = `${sh.W} / ${sh.H}`;
+      for (const s of [under, over]) s.setAttribute('viewBox', `0 0 ${sh.W} ${sh.H}`);
+    }
+    paint();
+  };
+}
+const pdPreviewHtml = '<figure class="pd-prev" data-preview><div class="pd-prev-page"><canvas width="1" height="1" aria-hidden="true"></canvas><svg class="pd-pv-under" aria-hidden="true"></svg><svg class="pd-pv-over" aria-hidden="true"></svg></div><figcaption></figcaption></figure>';
 const PD_VERB = { pd_watermark: ['Add watermark', 'Watermark added', 'Watermark updated', 'Edit watermark'], pd_background: ['Add background', 'Background added', 'Background updated', 'Edit background'], pd_headfoot: ['Add header & footer', 'Header & footer added', 'Header & footer updated', 'Edit header & footer'], pd_bates: ['Add Bates numbers', 'Bates numbers added', 'Bates numbers updated', 'Edit Bates numbering'] };
 async function pdEdit(type, existing) {
   if (!has()) return;
   const m = existing ? JSON.parse(JSON.stringify(existing)) : { ...pdDefaults[type](), ...(pdLastUsed[type] || {}), type };
   let err = null;
+  // Changing one that is there already: it can also be removed, or another one added next to it.
+  const actions = existing ? [{ label: 'Remove', value: 'rm' }, { label: 'Add another', value: 'add' }, { label: 'Cancel' }, { label: 'Save changes', value: 'ok', primary: true }]
+    : [{ label: 'Cancel' }, { label: PD_VERB[type][0], value: 'ok', primary: true }];
   do {
     const title = existing ? PD_VERB[type][3] : PD_TYPES[type];
-    const res = await dialog(title, pdBody(type, m), [{ label: 'Cancel' }, { label: existing ? 'Save changes' : PD_VERB[type][0], value: 'ok', primary: true }], (dlg) => {
+    const res = await dialog(title, `<div class="pd-wrap"><div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
       // The dialog element is reused: listen on its body, which is new for each dialog.
       const body = $('.dlg-body', dlg);
+      dlg.classList.add('pd-dialog');
+      if (existing) $('.dlg-foot [data-a="0"]', dlg).classList.add('pd-rm');
       let focusSlot = null;
+      const preview = pdPreview(dlg, type, m, existing);
       const sync = () => {
         pdRead(dlg, m);
         const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
+        preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
       body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
@@ -5648,10 +6287,13 @@ async function pdEdit(type, existing) {
       const file = $('[data-file]', dlg);
       if (file) file.onchange = async () => {
         const f = file.files[0]; if (!f) return;
-        try { Object.assign(m, await pdPicture(f)); const im = $('[data-pic]', dlg); im.src = m.data; im.hidden = false; } catch { toast('That picture could not be read'); }
+        try { Object.assign(m, await pdPicture(f)); const im = $('[data-pic]', dlg); im.src = m.data; im.hidden = false; sync(); } catch { toast('That picture could not be read'); }
       };
       sync();
     });
+    $('#dialog').classList.remove('pd-dialog');
+    if (res === 'rm') return pdRemove(existing.id);
+    if (res === 'add') return pdEdit(type);
     if (res !== 'ok') return;
     err = pdCheck(type, m);
     if (err) toast(err);
@@ -5679,13 +6321,14 @@ function pdSummary(m) {
   if (m.type === 'pd_headfoot') return [PD_SLOTS.filter(([k]) => m[k]).map(([k]) => m[k]).join(' / '), pages].join(' · ');
   return [pdBates(m, m.start), PD_SLOTS.find(([k]) => k === m.slot)[1].toLowerCase(), pages].join(' · ');
 }
-async function pdManage() {
+// Everything added (or, given a type, each one of that type, with a button to add another).
+async function pdManage(type) {
   if (!has()) return;
   let edit = null;
-  await dialog('Page design', '<div class="pd-list" data-list></div>', [{ label: 'Close', primary: true }], (dlg) => {
+  const res = await dialog(type ? PD_TYPES[type] : 'Page design', '<div class="pd-list" data-list></div>', type ? [{ label: 'Add another', value: 'add' }, { label: 'Close', primary: true }] : [{ label: 'Close', primary: true }], (dlg) => {
     const box = $('[data-list]', dlg);
     const draw = () => {
-      const items = pdItems();
+      const items = pdItems().filter((m) => !type || m.type === type);
       box.innerHTML = items.length ? items.map((m) => `<div class="pd-row" data-id="${m.id}"><span class="pd-ic">${ic(PD_ICONS[m.type])}</span><div class="pd-what"><strong>${PD_TYPES[m.type]}</strong><span title="${esc(pdSummary(m))}">${esc(pdSummary(m))}</span></div><button type="button" class="btn" data-edit="${m.id}">Edit</button><button type="button" class="btn" data-remove="${m.id}">Remove</button></div>`).join('')
         : '<p>Nothing added yet. Add a watermark, background, header & footer or Bates numbers from the Edit tab.</p>';
       icons();
@@ -5698,16 +6341,23 @@ async function pdManage() {
     draw();
   });
   if (edit) await pdEdit(edit.type, edit);
+  else if (res === 'add') await pdEdit(type);
+}
+// The ribbon buttons open what is there already: the one of that kind to change, a list when there are several.
+function pdOpen(type) {
+  const ex = pdItems().filter((m) => m.type === type);
+  return ex.length === 1 ? pdEdit(type, ex[0]) : ex.length ? pdManage(type) : pdEdit(type);
 }
 
-cmd('pd_watermark', { label: 'Watermark…', icon: 'stamp', enabled: has, run: () => pdEdit('pd_watermark') });
-cmd('pd_background', { label: 'Background…', icon: 'paint-bucket', enabled: has, run: () => pdEdit('pd_background') });
-cmd('pd_headfoot', { label: 'Header & footer…', icon: 'panel-top', enabled: has, run: () => pdEdit('pd_headfoot') });
-cmd('pd_bates', { label: 'Bates numbering…', icon: 'hash', enabled: has, run: () => pdEdit('pd_bates') });
-cmd('pd_manage', { label: 'Manage page design…', icon: 'layers', enabled: has, run: pdManage });
+cmd('pd_watermark', { label: 'Watermark…', icon: PD_ICONS.pd_watermark, enabled: has, run: () => pdOpen('pd_watermark') });
+cmd('pd_background', { label: 'Background…', icon: PD_ICONS.pd_background, enabled: has, run: () => pdOpen('pd_background') });
+cmd('pd_headfoot', { label: 'Header & footer…', icon: PD_ICONS.pd_headfoot, enabled: has, run: () => pdOpen('pd_headfoot') });
+cmd('pd_bates', { label: 'Bates numbering…', icon: PD_ICONS.pd_bates, enabled: has, run: () => pdOpen('pd_bates') });
+cmd('pd_manage', { label: 'Manage page design…', icon: 'layout-template', enabled: has, run: () => pdManage() });
 ribbonAdd('edit', 'Page design', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 menuAdd('Edit', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 TEST_HOOKS.pdItems = () => pdItems();
+TEST_HOOKS.cmdIcon = (id) => C[id] && C[id].icon;
 
 // ---- src/features/50-comments.js
 /* ---------------- comments: the Comment tab (text mark-up, shapes, callouts, typewriter, stamps) and the Comments panel ----------------
@@ -5728,7 +6378,10 @@ const CM_STAMPS = [
   ['forComment', 'For comment', '#1C7ED6', 'ForComment'], ['received', 'Received', '#7048E8', 'Received'], ['void', 'Void', '#C92A2A', 'Void'],
 ];
 const CM = { draft: null, stamp: null, panelToken: 0, panelTimer: null };
-const cmStroke = () => (S.color === '#FFD43B' ? '#E03131' : S.color);
+// Each tool draws in its own colour (see COLOR_TOOLS): the pressed swatch on the Comment tab.
+Object.assign(COLOR_TOOLS, { cmunderline: '#E03131', cmstrike: '#E03131', cmsquiggly: '#E03131', cmarea: '#FFD43B', cmoval: '#E03131', cmline: '#E03131', cmarrow: '#E03131', cmpolygon: '#E03131', cmpolyline: '#E03131', cmcloud: '#E03131', cmcallout: '#E03131', cmtype: '#111111', cmstamp: '#2448C9' });
+for (const t of ['cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']) COLOR_MARKS.add(t);
+const cmStroke = (t) => toolColor(t);
 const cmRgb = (hex) => { const n = parseInt(String(hex || '#000000').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const cmNum = (n) => { const r = Math.round(n * 1000) / 1000; return Object.is(r, -0) ? '0' : String(r); };
 const cmToday = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -5989,7 +6642,7 @@ function cmMarkupSelection(kind) {
   }
   sel.removeAllRanges();
   if (!byView.size) return false;
-  const before = snapshot(), color = cmStroke();
+  const before = snapshot(), color = cmStroke('cm' + kind);
   for (const [v, quads] of byView) { marksOf(v.entry).push({ id: uid(), type: 'cmMarkup', kind, quads, color, text }); drawMarks(v); }
   changed(before);
   return true;
@@ -6015,14 +6668,14 @@ function cmDrag(e, v, make, update) {
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 4) { const list = marksOf(v.entry); list.splice(list.indexOf(m), 1); drawMarks(v); return; }
-    changed(before);
+    changed(before); selectNew(v, m);
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
 const cmBoxMark = (type, extra) => (x, y) => ({ id: uid(), type, x1: x, y1: y, x2: x, y2: y, color: cmStroke(), w: S.width, ...extra() });
 const cmBoxUpdate = (m, x, y) => { m.x2 = x; m.y2 = y; };
 const cmLineUpdate = (m, x, y) => { m.pts[1] = [x, y]; };
-FEATURE.tools.cmarea = { down: (e, v) => cmDrag(e, v, (x, y) => ({ id: uid(), type: 'hl', area: true, rects: [[x, y, x, y]], color: S.color }), (m, x, y) => { m.rects[0][2] = x; m.rects[0][3] = y; }) };
+FEATURE.tools.cmarea = { down: (e, v) => cmDrag(e, v, (x, y) => ({ id: uid(), type: 'hl', area: true, rects: [[x, y, x, y]], color: cmStroke('cmarea') }), (m, x, y) => { m.rects[0][2] = x; m.rects[0][3] = y; }) };
 FEATURE.tools.rect = { down: (e, v) => cmDrag(e, v, cmBoxMark('rect', () => (S.cmFill ? { fill: true } : {})), cmBoxUpdate) };
 FEATURE.tools.cmoval = { down: (e, v) => cmDrag(e, v, cmBoxMark('cmShape', () => ({ kind: 'oval', fill: !!S.cmFill })), cmBoxUpdate) };
 FEATURE.tools.cmcloud = { down: (e, v) => cmDrag(e, v, cmBoxMark('cmShape', () => ({ kind: 'cloud', fill: !!S.cmFill })), cmBoxUpdate) };
@@ -6043,12 +6696,15 @@ function cmDraftEnd(keep) {
   const d = CM.draft; if (!d) return;
   CM.draft = null;
   const enough = d.pts.length >= (d.kind === 'polygon' ? 3 : 2);
+  let m = null;
   if (keep && enough) {
     const before = snapshot();
-    marksOf(d.v.entry).push({ id: uid(), type: 'cmShape', kind: d.kind, pts: d.pts, color: d.color, w: S.width, ...(d.kind === 'polygon' ? { fill: !!S.cmFill } : {}) });
+    m = { id: uid(), type: 'cmShape', kind: d.kind, pts: d.pts, color: d.color, w: S.width, ...(d.kind === 'polygon' ? { fill: !!S.cmFill } : {}) };
+    marksOf(d.v.entry).push(m);
     changed(before);
   }
   if (d.v.rendered) drawMarks(d.v);
+  if (m && app.dataset.tool === 'cm' + d.kind) selectNew(d.v, m);
 }
 for (const kind of ['polygon', 'polyline']) {
   FEATURE.tools['cm' + kind] = {
@@ -6082,7 +6738,7 @@ FEATURE.tools.cmcallout = {
   down(e, v) {
     e.preventDefault();
     const start = localPoint(e, v); let end = start;
-    const color = S.color === '#FFD43B' ? '#E03131' : S.color;
+    const color = cmStroke('cmcallout');
     const svg = v.el.querySelector('svg.marks');
     const line = svgEl('line', { class: 'cm-draft', x1: start[0], y1: start[1], x2: start[0], y2: start[1], stroke: color, 'stroke-width': 1.5, 'stroke-dasharray': '5 3' });
     svg.appendChild(line);
@@ -6097,8 +6753,9 @@ FEATURE.tools.cmcallout = {
       // the box sits on the far side of where the drag ended, so the leader line meets its nearest edge
       const ox = end[0] < start[0] ? end[0] - box.bw * scale : end[0], oy = end[1] < start[1] ? end[1] - box.bh * scale : end[1];
       const [x, y] = toPdf(v, ox, oy);
-      marksOf(v.entry).push({ id: uid(), type: 'cmCallout', x, y, rot, tx, ty, text, size, color, lw: Math.max(1, Math.min(S.width, 3)), ...box });
-      drawMarks(v); changed(before); setTool('select');
+      const m = { id: uid(), type: 'cmCallout', x, y, rot, tx, ty, text, size, color, lw: Math.max(1, Math.min(S.width, 3)), ...box };
+      marksOf(v.entry).push(m);
+      drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   },
@@ -6110,8 +6767,9 @@ FEATURE.tools.cmtype = {
     const text = await askText('Typewriter', 'Type the text to place here.', '', 'Add', false, true);
     if (!text || !text.trim()) return;
     const before = snapshot();
-    marksOf(v.entry).push({ id: uid(), type: 'cmType', x, y, rot: totalRot(v), text, size: 12, color: S.color === '#FFD43B' ? '#111111' : S.color });
-    drawMarks(v); changed(before);
+    const m = { id: uid(), type: 'cmType', x, y, rot: totalRot(v), text, size: 12, color: cmStroke('cmtype') };
+    marksOf(v.entry).push(m);
+    drawMarks(v); changed(before); selectNew(v, m);
   },
 };
 
@@ -6139,7 +6797,7 @@ async function cmPickStamp() {
     CM.stamp = { stamp: k, label, color, name, sub: k === 'received' ? cmToday() : '' };
   } else {
     if (!custom.trim()) { toast('Type the stamp text first'); return; }
-    CM.stamp = { stamp: 'custom', label: custom.trim(), color: S.color === '#FFD43B' ? '#1C7ED6' : S.color, name: 'Custom', sub: '' };
+    CM.stamp = { stamp: 'custom', label: custom.trim(), name: 'Custom', sub: '' };
   }
   setTool('cmstamp'); toast('Click the page to place the stamp');
 }
@@ -6148,14 +6806,15 @@ FEATURE.tools.cmstamp = {
     e.preventDefault();
     if (!CM.stamp) { cmPickStamp(); return; }
     const [x, y] = toPdf(v, ...localPoint(e, v)), s = CM.stamp, before = snapshot();
-    marksOf(v.entry).push({ id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub: s.sub, name: s.name, color: s.color, text: s.label, ...cmStampSize(s.label, s.sub) });
-    drawMarks(v); changed(before); setTool('select');
+    const m = { id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub: s.sub, name: s.name, color: s.color || cmStroke('cmstamp'), text: s.label, ...cmStampSize(s.label, s.sub) };
+    marksOf(v.entry).push(m);
+    drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
   },
 };
 
 /* ---- commands and the Comment tab ---- */
 const cmTool = (id, label, icon, tool, hint) => cmd(id, { label, icon, enabled: has, pressed: () => app.dataset.tool === tool, run: () => { setTool(tool); if (hint) toast(hint); } });
-cmTool('cm_area', 'Area highlight', 'scan', 'cmarea', 'Drag over the part of the page to highlight');
+cmTool('cm_area', 'Area highlight', 'square-dashed-mouse-pointer', 'cmarea', 'Drag over the part of the page to highlight');
 cmTool('cm_oval', 'Oval', 'circle', 'cmoval');
 cmTool('cm_line', 'Line', 'slash', 'cmline');
 cmTool('cm_arrow', 'Arrow', 'move-up-right', 'cmarrow');
@@ -6191,20 +6850,16 @@ cmd('cm_fill', {
     refreshRibbon(); toast(S.cmFill ? 'Shapes are filled' : 'Shapes are outlines');
   },
 });
-cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (matchMedia('(max-width: 760px)').matches) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
-ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Add');
-ribbonAdd('markup', 'Shapes', ['cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud'], 'Add');
-ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add');
-ribbonAdd('markup', 'Add', ['cm_stamp']);
-ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up'); // right after Colour
+cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (isPhone()) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
+// Compact groups, so the whole tab fits a laptop screen: Shapes is a grid of icons (closed shapes above, lines below).
+ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Shapes', 'rows');
+ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon'], null, 'icons');
+ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add', 'rows');
+ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
+ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
+ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
 menuAdd('Comment', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
-// A colour picked while a comment is selected changes that comment's colour.
-document.addEventListener('click', (e) => {
-  const b = e.target.closest && e.target.closest('#ribbonBody [data-color]'); if (!b) return;
-  const s = cmSelected(); if (!s || !('color' in s.m)) return;
-  const before = snapshot(); s.m.color = b.dataset.color; redrawPage(s.entry); changed(before);
-});
 
 /* ---- the Comments panel: every comment on every page, yours and the PDF's own ---- */
 const CM_SUBTYPES = { Text: 'Note', FreeText: 'Text box', Line: 'Line', Square: 'Rectangle', Circle: 'Oval', Polygon: 'Polygon', PolyLine: 'Polyline', Highlight: 'Highlight', Underline: 'Underline', Squiggly: 'Squiggly', StrikeOut: 'Strikethrough', Stamp: 'Stamp', Caret: 'Caret', Ink: 'Drawing', FileAttachment: 'Attachment', Sound: 'Sound', Redact: 'Redaction' };
@@ -6238,22 +6893,78 @@ async function cmPageAnnots(entry) {
 async function cmItems() {
   const A = pdfjs.AnnotationType, items = [];
   for (let n = 0; n < doc.pages.length; n++) {
-    const entry = doc.pages[n], own = doc.marks[pageKey(entry)] || [];
-    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m), by: cmAuthorOf(m), at: m.at || 0 }); }
-    const gone = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
+    const entry = doc.pages[n], own = doc.marks[pageKey(entry)] || [], start = items.length;
+    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, key: 'm:' + m.id, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m), by: cmAuthorOf(m), at: m.at || 0, thread: [] }); }
+    const gone = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref)), fileThread = [];
     for (const a of await cmPageAnnots(entry)) {
       if (!a.rect || !a.id || [A.WIDGET, A.LINK, A.POPUP].includes(a.annotationType) || gone.has(a.id) || (a.parentId && gone.has(a.parentId))) continue;
+      // Replies and review states (Accepted, Rejected…) belong to the comment they answer.
+      if (a.inReplyTo) { fileThread.push({ to: 'a:' + a.inReplyTo, by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate), text: (a.contentsObj && a.contentsObj.str) || '', state: a.stateModel === 'Review' && a.state ? a.state : null }); continue; }
       const ed = own.find((m) => m.type === 'ae' && m.ref === a.id && m.contents != null);
       const text = ed ? ed.contents : (a.contentsObj && a.contentsObj.str) || (Array.isArray(a.textContent) ? a.textContent.join(' ') : '') || '';
       const c = a.color && a.color.length === 3 ? `rgb(${a.color[0]},${a.color[1]},${a.color[2]})` : '#888888';
-      items.push({ n, entry, a, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate) });
+      items.push({ n, entry, a, key: 'a:' + a.id, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate), thread: [] });
+    }
+    const mine = own.filter((m) => m.type === 'cmReply').map((r) => ({ to: r.to ? 'm:' + r.to : 'a:' + r.ref, by: r.by || '', at: r.at || 0, text: r.text || '', state: r.state || null, r }));
+    for (const it of items.slice(start)) {
+      it.thread = fileThread.concat(mine).filter((t) => t.to === it.key).sort((p, q) => p.at - q.at);
+      const st = it.thread.filter((t) => t.state).pop();
+      it.status = st && st.state !== 'None' ? (CM_STATES.find(([, pdf]) => pdf === st.state) || [st.state])[0] : '';
+      it.replies = it.thread.filter((t) => !t.state);
     }
   }
   items.sort((p, q) => p.n - q.n || q.y - p.y);
   return items;
 }
+/* ---- replies and review status: saved as Text annotations in reply to the comment (/IRT), as other apps do ---- */
+const CM_STATES = [['Accepted', 'Accepted'], ['Rejected', 'Rejected'], ['Done', 'Completed'], ['Cancelled', 'Cancelled']]; // shown, written
+const CM_ANNOT_TYPES = new Set(['hl', 'ink', 'rect', 'note', 'cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']); // saved as comments, so they can be answered
+const cmCanReply = (it) => !!it.a || CM_ANNOT_TYPES.has(it.m.type);
+FEATURE.markTypes.cmReply = { draw: () => null };
+function cmAddReply(it, text, state) {
+  const before = snapshot(), list = marksOf(it.entry), to = it.m ? { to: it.m.id } : { ref: it.a.id, rect: it.a.rect, subtype: it.a.subtype || '' };
+  // A status changed again before saving replaces the one set earlier.
+  if (state) for (let k = list.length - 1; k >= 0; k--) { const r = list[k]; if (r.type === 'cmReply' && r.state && (it.m ? r.to === it.m.id : r.ref === it.a.id)) list.splice(k, 1); }
+  if (!(state === 'None' && !it.thread.some((t) => t.state && !t.r))) list.push({ id: uid(), type: 'cmReply', ...to, ...(state ? { state } : { text }), by: S.author || '', at: Date.now() });
+  changed(before);
+}
+FEATURE.savePage.push(({ L, out, p, marks }) => {
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFString, PDFHexString } = L, N = (k) => PDFName.of(k);
+  const annots = p.node.lookup(N('Annots')); if (!(annots instanceof PDFArray)) return;
+  // Replies left answering a comment that is gone (deleted here) go too.
+  for (let k = annots.size() - 1; k >= 0; k--) { const d = out.context.lookup(annots.get(k)); const irt = d instanceof PDFDict && d.get(N('IRT')); if (irt instanceof PDFRef && !out.context.lookup(irt)) { const r = annots.get(k); annots.remove(k); if (r instanceof PDFRef) out.context.delete(r); } }
+  const rs = marks.filter((m) => m.type === 'cmReply'); if (!rs.length) return;
+  const list = annots.asArray().map((r) => [r, out.context.lookup(r)]).filter(([r, d]) => r instanceof PDFRef && d instanceof PDFDict);
+  const nums = (d, k) => { const a = d.lookup(N(k)); return a instanceof PDFArray ? a.asArray().map((x) => out.context.lookup(x).asNumber()) : null; };
+  const parentOf = (r) => {
+    if (r.to) return list.find(([, d]) => { const nm = d.lookup(N('NM')); return nm && (nm.decodeText ? nm.decodeText() : String(nm)) === 'cpdf-' + r.to; });
+    // The PDF's own comment: by its reference where the file keeps its numbers, else by its rectangle and type.
+    // (pdf.js gives a note without its own look an icon-sized rectangle: only its top left corner is the file's)
+    const same = (d) => { const rc = nums(d, 'Rect'), sub = String(d.lookup(N('Subtype'))).slice(1); return rc && r.rect && rc.every((n, j) => (sub === 'Text' && (j === 1 || j === 2)) || Math.abs(n - r.rect[j]) < .6) && (!r.subtype || sub === r.subtype); };
+    const id = /^(\d+)R(\d*)$/.exec(r.ref || '');
+    return list.find(([ref, d]) => id && ref.objectNumber === +id[1] && same(d)) || list.find(([, d]) => same(d));
+  };
+  for (const r of rs) {
+    const par = parentOf(r); if (!par) continue;
+    const [pref, pd] = par, label = r.state ? (CM_STATES.find(([, pdf]) => pdf === r.state) || ['None'])[0] : '';
+    const d = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: nums(pd, 'Rect') || [0, 0, 0, 0], F: 28, Name: 'Comment', Open: false, C: [1, 0.83, 0.23] });
+    d.set(N('IRT'), pref);
+    d.set(N('NM'), PDFString.of('cpdf-' + r.id));
+    if (r.by) d.set(N('T'), PDFHexString.fromText(r.by));
+    d.set(N('M'), PDFString.fromDate(new Date(r.at || Date.now())));
+    d.set(N('Contents'), PDFHexString.fromText(r.state ? `${label} set by ${r.by || 'No name'}` : r.text));
+    if (r.state) { d.set(N('State'), PDFString.of(r.state)); d.set(N('StateModel'), PDFString.of('Review')); }
+    annots.push(out.context.register(d));
+  }
+});
+// On the page, a reply is part of its comment: no note icon of its own.
+FEATURE.afterRender.push(async (v) => {
+  const ids = (await cmPageAnnots(v.entry)).filter((a) => a.inReplyTo).map((a) => a.id); if (!ids.length) return;
+  const hide = () => { for (const id of ids) { const el = v.el.querySelector(`.annotationLayer [data-annotation-id="${CSS.escape(id)}"]`); if (el) el.style.display = 'none'; } };
+  hide(); setTimeout(hide, 300);
+});
 /* ---- who wrote a comment, and when ---- */
-// S.author: the name written as the author of your comments. undefined: not asked yet; '': asked, left blank.
+// S.author: the name written as the author of your comments; none until set in the Comments panel ('No name').
 const cmAuthorOf = (m) => m.author || S.author || '';
 // A PDF date (D:YYYYMMDDHHmmSS…) as milliseconds, or 0.
 function cmPdfDate(s) {
@@ -6261,16 +6972,17 @@ function cmPdfDate(s) {
   const t = Date.UTC(+m[1], (+m[2] || 1) - 1, +m[3] || 1, +m[4] || 0, +m[5] || 0, +m[6] || 0); return isFinite(t) ? t : 0;
 }
 const cmWhen = (t) => t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-async function cmAskName(first) {
-  const name = await dialog('Your name', `<p>${first ? 'Your comments show this name as their author. You can change it in the Comments panel.' : 'Shown as the author of your new comments.'}</p><label class="field"><span>Name</span><input id="dlgInput" type="text" value="${esc(S.author || '')}" autocomplete="name" maxlength="80"></label>`,
-    [{ label: first ? 'Skip' : 'Cancel' }, { label: 'Save', primary: true, input: true }]);
-  if (name == null) { if (first && S.author == null) { S.author = ''; saveSettings(); } return; }
-  S.author = name.trim(); saveSettings();
-  // The comment that brought the question up is yours too.
-  if (first && S.author && doc) for (const [key, list] of Object.entries(doc.marks)) if (key !== '__doc' && Array.isArray(list)) for (const m of list) if (m && m.at && !m.author) m.author = S.author;
+async function cmAskName() {
+  const name = await dialog('Your name', `<p>Shown as the author of your comments.</p><label class="field"><span>Name</span><input id="dlgInput" type="text" value="${esc(S.author || '')}" autocomplete="name" maxlength="80"></label>`,
+    [{ label: 'Cancel' }, { label: 'Save', primary: true, input: true }]);
+  if (name == null) return;
+  const had = S.author; S.author = name.trim(); saveSettings();
+  // Your comments made before there was a name take the first one given.
+  if (!had && S.author && doc) for (const [key, list] of Object.entries(doc.marks)) if (key !== '__doc' && Array.isArray(list)) for (const m of list) if (m && m.at && !m.author && !(m.type === 'cmReply' ? m.by : false)) m[m.type === 'cmReply' ? 'by' : 'author'] = S.author;
   cmPanelSoon();
 }
-// New comments get their date, and your name once you have given it; the first one asks for the name.
+// New comments get their date, and your name once you have set it. The first comment without a name says where to
+// set it, once, without stopping you.
 const cmChanged0 = changed;
 changed = function (before) {
   cmChanged0(before);
@@ -6280,7 +6992,7 @@ changed = function (before) {
     if (key === '__doc' || !Array.isArray(list)) continue;
     for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
   }
-  if (fresh && S.author == null && !CM.askingName) { CM.askingName = true; cmAskName(true).finally(() => { CM.askingName = false; }); }
+  if (fresh && !S.author && !S.cmNameTold) { S.cmNameTold = true; saveSettings(); toast('Comments are signed as "No name". Set your name in the Comments panel.'); }
 };
 const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
 const CM_EVERYONE = '*everyone*';
@@ -6299,8 +7011,10 @@ async function cmRenderPanel() {
   // Newest or oldest first; comments without a date go last.
   if (f.sort !== 'page') items.sort((p, q) => (!p.at - !q.at) || (f.sort === 'new' ? q.at - p.at : p.at - q.at) || p.n - q.n || q.y - p.y);
   CM.items = items;
+  if (selMark && items.some((it) => it.key === 'm:' + selMark.id)) CM.open = 'm:' + selMark.id; // the comment selected on the page
+  const focusReply = document.activeElement && document.activeElement.matches && document.activeElement.matches('#sidePanel [data-cm-reply]');
   const opt = (v, t, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(t)}</option>`;
-  const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'not set'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
+  const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'No name'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
   const bar = all.length ? `<div class="cm-filters">
     <label><span>Type</span><select data-cm-f="type">${opt('', 'All types', !f.type)}${types.map((t) => opt(t, t, f.type === t)).join('')}</select></label>
     <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
@@ -6308,25 +7022,45 @@ async function cmRenderPanel() {
   const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
   panel.innerHTML = you + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
-    : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span></span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
+    : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span>${it.status ? `<span class="cm-status" data-status="${esc(it.status)}">${esc(it.status)}</span>` : ''}</span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button>${cmThreadHtml(it, k)}</li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
-  $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => cmGoTo(items[+b.dataset.cmGo]));
+  $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => { const it = items[+b.dataset.cmGo]; cmGoTo(it); if (CM.open !== it.key) { CM.open = it.key; cmRenderPanel(); } });
+  $$('[data-cm-reply]', panel).forEach((ta) => {
+    const it = items[+ta.dataset.cmReply], send = () => { const t = ta.value.trim(); if (!t) { ta.focus(); return; } delete CM.drafts[it.key]; cmAddReply(it, t); ta.value = ''; };
+    ta.value = CM.drafts[it.key] || '';
+    ta.oninput = () => { CM.drafts[it.key] = ta.value; };
+    ta.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } };
+    $(`[data-cm-send="${ta.dataset.cmReply}"]`, panel).onclick = send;
+    if (focusReply) ta.focus();
+  });
+  $$('[data-cm-status]', panel).forEach((sel) => sel.onchange = () => { cmAddReply(items[+sel.dataset.cmStatus], null, sel.value); });
   $$('[data-cm-del]', panel).forEach((b) => b.onclick = () => cmDelete(items[+b.dataset.cmDel]));
   $$('[data-cm-f]', panel).forEach((el) => el.onchange = () => {
     const k = el.dataset.cmF; f[k] = el.value;
     if (k === 'sort') { S.cmSort = el.value; saveSettings(); }
     cmRenderPanel().then(() => { const again = $(`#sidePanel [data-cm-f="${k}"]`); if (again) again.focus(); });
   });
-  const nb = $('[data-cm-name]', panel); if (nb) nb.onclick = () => cmAskName(false);
+  const nb = $('[data-cm-name]', panel); if (nb) nb.onclick = () => cmAskName();
+}
+// A comment's replies always show; the open one (picked in the list or on the page) also takes a reply and a status.
+CM.drafts = {};
+function cmThreadHtml(it, k) {
+  const open = CM.open === it.key && cmCanReply(it);
+  if (!it.replies.length && !open) return '';
+  const reps = it.replies.map((r) => `<li class="cm-reply"><span class="cm-by">${esc([r.by || 'No name', cmWhen(r.at)].filter(Boolean).join(' · '))}</span><span class="cm-snip">${esc(r.text)}</span></li>`).join('');
+  const st = (CM_STATES.find(([v]) => v === it.status) || [, 'None'])[1];
+  const form = open ? `<div class="cm-form"><textarea data-cm-reply="${k}" rows="2" placeholder="Reply" aria-label="Reply to ${esc(it.label)} on page ${it.n + 1}"></textarea>
+    <div class="cm-form-bar"><label><span>Status</span><select data-cm-status="${k}">${[['None', 'None'], ...CM_STATES.slice(0, 3)].map(([v, pdf]) => `<option value="${pdf}"${pdf === st ? ' selected' : ''}>${v}</option>`).join('')}</select></label><button type="button" class="btn primary" data-cm-send="${k}">Reply</button></div></div>` : '';
+  return `<div class="cm-thread">${reps ? `<ul class="cm-replies" aria-label="Replies">${reps}</ul>` : ''}${form}</div>`;
 }
 function cmGoTo(it) {
   goPage(it.n);
-  if (it.m) { setTool('select'); selectMark({ key: pageKey(it.entry), id: it.m.id, entry: it.entry }); }
-  if (matchMedia('(max-width: 760px)').matches) toggleSidebar(false);
+  if (it.m) { setTool('select'); selectMark({ key: pageKey(it.entry), id: it.m.id, entry: it.entry }); } else if (selMark) selectMark(null);
+  if (isPhone()) toggleSidebar(false);
 }
 function cmDelete(it) {
   const before = snapshot(), list = marksOf(it.entry);
-  if (it.m) { const k = list.indexOf(it.m); if (k < 0) return; list.splice(k, 1); if (selMark && selMark.id === it.m.id) selMark = null; redrawPage(it.entry); changed(before); }
+  if (it.m) { const k = list.indexOf(it.m); if (k < 0) return; list.splice(k, 1); for (let j = list.length - 1; j >= 0; j--) if (list[j].type === 'cmReply' && list[j].to === it.m.id) list.splice(j, 1); if (selMark && selMark.id === it.m.id) selMark = null; redrawPage(it.entry); changed(before); }
   else { list.push({ id: uid(), type: 'ae', ref: it.a.id, rect: it.a.rect, subtype: it.a.subtype || '', deleted: true }); changed(before); syncHiddenComments(); redrawPage(it.entry); }
   toast(`${it.label} deleted`);
 }
@@ -6344,7 +7078,13 @@ renderSide = function () { if (S.side === 'comments') return cmRenderPanel(); re
 const cmPersist0 = persist;
 persist = function () { cmPersist0(); cmPanelSoon(); };
 const cmSelectMark0 = selectMark;
-selectMark = function (s) { cmSelectMark0(s); if (S.side === 'comments') $$('#sidePanel .cm-item').forEach((li, k) => { const it = CM.items && CM.items[k]; li.classList.toggle('on', !!(s && it && it.m && it.m.id === s.id)); }); };
+selectMark = function (s) {
+  cmSelectMark0(s);
+  if (S.side !== 'comments') return;
+  $$('#sidePanel .cm-item').forEach((li, k) => { const it = CM.items && CM.items[k]; li.classList.toggle('on', !!(s && it && it.m && it.m.id === s.id)); });
+  // A comment picked on the page opens in the list, ready for a reply.
+  if (s && CM.open !== 'm:' + s.id && CM.items && CM.items.some((it) => it.key === 'm:' + s.id)) { CM.open = 'm:' + s.id; cmPanelSoon(); }
+};
 
 addStyle(`
 .sidebar .side-tabs { grid-template-columns: repeat(2, 1fr); } /* four tabs: two rows of two */
@@ -6366,12 +7106,26 @@ addStyle(`
 .cm-go { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: flex-start; border: 0; background: none; text-align: left; padding: 7px 4px 7px 8px; cursor: pointer; color: var(--ink); }
 .cm-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin-top: 4px; box-shadow: 0 0 0 1px var(--line); }
 .cm-body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.cm-top { display: flex; gap: 6px; align-items: baseline; font-size: 13px; }
+.cm-top { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 13px; }
+.cm-top span { white-space: nowrap; }
 .cm-top b { font-weight: 600; }
 .cm-top span { color: var(--ink-3); font-size: 12px; }
 .cm-snip { font-size: 12px; color: var(--ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
 .cm-by { font-size: 11px; color: var(--ink-3); }
 .cm-del { width: 30px; height: 30px; margin: 4px 2px 0 0; opacity: .7; }
+.cm-item { flex-wrap: wrap; }
+.cm-status { font-size: 11px !important; font-weight: 600; padding: 0 7px; border-radius: 9px; line-height: 18px; background: var(--hover); color: var(--ink-2) !important; }
+.cm-status[data-status="Accepted"], .cm-status[data-status="Done"] { background: color-mix(in srgb, #2B8A3E 18%, transparent); color: var(--ink) !important; }
+.cm-status[data-status="Rejected"] { background: color-mix(in srgb, #C92A2A 18%, transparent); color: var(--ink) !important; }
+.cm-thread { flex: 1 0 100%; min-width: 0; box-sizing: border-box; padding: 0 10px 8px 26px; display: flex; flex-direction: column; gap: 6px; }
+.cm-replies { list-style: none; margin: 0; padding: 0 0 0 8px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.cm-reply { display: flex; flex-direction: column; gap: 1px; }
+.cm-form { display: flex; flex-direction: column; gap: 6px; }
+.cm-form textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; resize: vertical; min-height: 52px; width: 100%; box-sizing: border-box; }
+.cm-form-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cm-form-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); min-width: 0; }
+.cm-form-bar select { font: inherit; font-size: 12px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; height: 30px; }
+.cm-form-bar .btn { height: 30px; padding: 0 12px; font-size: 12px; }
 .cm-item:hover .cm-del, .cm-del:focus-visible { opacity: 1; }
 .cm-stamps { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 8px 0 4px; }
 .cm-stamp { border: 1px solid var(--line); background: #FFFFFF; border-radius: 10px; padding: 10px 6px; cursor: pointer; display: grid; place-items: center; min-height: 58px; }
@@ -6381,6 +7135,7 @@ addStyle(`
 `);
 TEST_HOOKS.cmItems = async () => (await cmItems()).map((it) => [it.label, it.n + 1, it.text, !!it.m]);
 TEST_HOOKS.setAuthor = (name) => { S.author = name; saveSettings(); };
+TEST_HOOKS.cmThreads = async () => (await cmItems()).map((it) => [it.label, it.status, it.replies.map((r) => [r.by, r.text])]);
 
 // ---- src/features/60-pages.js
 /* ---------------- page tools (src/features/60-pages.js) ----------------
@@ -6471,6 +7226,91 @@ async function pg60Insert() {
   pg60WithSource(other, (k) => { doc.pages.splice(at, 0, ...idx.map((i) => ({ src: k, i, rot: 0 }))); current = at; });
   pg60SetSel([]);
   toast(`Inserted ${pg60Plural(idx.length, 'page')}`);
+}
+
+/* ---- combine: this PDF and others, in an order you set ---- */
+const pg60Multi = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/pdf,.pdf', multiple: true, hidden: true, id: 'pg60Files' });
+document.body.appendChild(pg60Multi);
+// Resolves with [{ bytes, name }] (empty when nothing was chosen).
+function pg60PickPdfs() {
+  return new Promise((res) => {
+    pg60Multi.value = '';
+    pg60Multi.oncancel = () => res([]);
+    pg60Multi.onchange = async () => { const fs = [...pg60Multi.files]; pg60Multi.onchange = null; res(await Promise.all(fs.map(async (f) => ({ bytes: new Uint8Array(await f.arrayBuffer()), name: f.name })))); };
+    pg60Multi.click();
+  });
+}
+async function pg60LoadMany(files) {
+  const out = [];
+  for (const f of files) {
+    let pd;
+    try { pd = await loadProtected(f.bytes, f.name); } catch (e) { console.error(e); toast(`Could not open ${f.name}: it may not be a PDF.`); continue; }
+    if (pd) out.push({ ...f, pd, count: pd.numPages });
+  }
+  return out;
+}
+// The list in the Combine dialog: each file with its page count, moved up or down or taken out.
+function pg60FilesHtml(rows) {
+  const name = (r) => esc(r.cur ? `${r.name} (open now)` : r.name.replace(/\.pdf$/i, ''));
+  return rows.map((r, k) => `<li class="pg60-file" data-k="${k}">${ic(r.cur ? 'file-pen' : 'file')}<span class="pg60-fname">${name(r)}</span><span class="pg60-fcount">${pg60Plural(r.count, 'page')}</span>
+    <button type="button" class="icon-btn" data-mv="-1" aria-label="Move ${name(r)} up"${k ? '' : ' disabled'}>${ic('arrow-up')}</button>
+    <button type="button" class="icon-btn" data-mv="1" aria-label="Move ${name(r)} down"${k < rows.length - 1 ? '' : ' disabled'}>${ic('arrow-down')}</button>
+    ${r.cur ? '<span class="pg60-fgap"></span>' : `<button type="button" class="icon-btn" data-rm aria-label="Remove ${name(r)}">${ic('x')}</button>`}</li>`).join('');
+}
+async function pg60Combine() {
+  const rows = doc ? [{ cur: true, name: doc.name, count: doc.pages.length }] : [];
+  const drop = () => { for (const r of rows) if (r.pd) { try { r.pd.destroy(); } catch {} } };
+  let pick = true;
+  for (;;) {
+    if (pick) { rows.push(...await pg60LoadMany(await pg60PickPdfs())); pick = false; }
+    if (!rows.some((r) => !r.cur)) { drop(); return; }
+    const r = await pg60Ask('Combine PDFs', `
+      <p>The files are joined in this order. Move them up or down, or take one out.</p>
+      <ol class="pg60-files"></ol>
+      <p class="pg60-note pg60-total"></p>`,
+    [{ label: 'Cancel' }, { label: 'Add files…', value: 'add' }, { label: 'Combine', value: 'ok', primary: true }], (dlg) => {
+      const list = $('.pg60-files', dlg), btn = $('.dlg-foot .btn.primary', dlg);
+      const draw = (focus) => {
+        list.innerHTML = pg60FilesHtml(rows); icons();
+        const total = rows.reduce((t, x) => t + x.count, 0);
+        $('.pg60-total', dlg).textContent = `${pg60Plural(rows.length, 'file')}, ${pg60Plural(total, 'page')} in all.`;
+        btn.disabled = !rows.some((x) => !x.cur);
+        if (focus) { const b = $(`[data-k="${focus[0]}"] ${focus[1]}`, list); (b && !b.disabled ? b : btn).focus(); }
+      };
+      list.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        const k = +b.closest('[data-k]').dataset.k;
+        if (b.hasAttribute('data-rm')) { const [x] = rows.splice(k, 1); if (x.pd) { try { x.pd.destroy(); } catch {} } draw([Math.min(k, rows.length - 1), '[data-rm]']); return; }
+        const t = k + +b.dataset.mv; if (t < 0 || t >= rows.length) return;
+        [rows[k], rows[t]] = [rows[t], rows[k]]; draw([t, `[data-mv="${b.dataset.mv}"]`]);
+      });
+      draw();
+    });
+    if (!r) { drop(); return; }
+    if (r.action === 'add') { pick = true; continue; }
+    break;
+  }
+  let pages = 0;
+  if (doc) {
+    pageOp(() => {
+      const mine = doc.pages, out = [];
+      for (const x of rows) {
+        if (x.cur) { out.push(...mine); continue; }
+        const k = doc.sources.length; doc.sources.push(x.bytes); pdfDocs.set(k, x.pd);
+        out.push(...[...Array(x.count).keys()].map((i) => ({ src: k, i, rot: 0 })));
+      }
+      doc.pages = out; current = 0;
+    });
+    pages = doc.pages.length;
+  } else {
+    const [first, ...rest] = rows;
+    try { first.pd.destroy(); } catch {}
+    if (!(await serial(() => openBytes(first.bytes, first.name)))) { for (const x of rest) { try { x.pd.destroy(); } catch {} } return; }
+    if (rest.length) pageOp(() => { for (const x of rest) { const k = doc.sources.length; doc.sources.push(x.bytes); pdfDocs.set(k, x.pd); doc.pages.push(...[...Array(x.count).keys()].map((i) => ({ src: k, i, rot: 0 }))); } });
+    pages = doc.pages.length;
+  }
+  pg60SetSel([]);
+  toast(`Combined ${pg60Plural(rows.length, 'file')} into ${pg60Plural(pages, 'page')}`);
 }
 
 /* ---- replace pages with pages from another PDF ---- */
@@ -6668,6 +7508,12 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   pg60DeleteAsk(pg60Many() ? pg60Valid() : [+t.dataset.n]);
 });
+// Cmd/Ctrl+A on a page in the sidebar selects every page.
+document.addEventListener('keydown', (e) => {
+  if (!doc || $('#dialog').open || e.key.toLowerCase() !== 'a' || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey) return;
+  if (!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb'))) return;
+  e.preventDefault(); run('pg60_selAll');
+});
 function pg60Paint() {
   const many = pg60Many(), sel = new Set(pg60Valid());
   for (const t of $$('.thumb', pg60Panel)) t.classList.toggle('pg60-sel', many && sel.has(+t.dataset.n));
@@ -6675,7 +7521,7 @@ function pg60Paint() {
   let bar = $('.pg60-selbar', pg60Panel);
   if (!many) { if (bar) bar.remove(); return; }
   if (!bar) { bar = document.createElement('div'); bar.className = 'pg60-selbar'; list.parentNode.insertBefore(bar, list); }
-  bar.innerHTML = `<span>${sel.size} pages chosen</span><button type="button" class="btn link">Clear</button>`;
+  bar.innerHTML = `<span>${sel.size} pages selected</span><button type="button" class="btn link">Clear</button>`;
 }
 // Thumbnails show the crop too: clipped, and taking only the room of what is left.
 async function pg60ThumbCrop(t) {
@@ -6779,7 +7625,7 @@ async function pg60CropDialog(n = current, margins) {
     </div>
     <div class="pg60-label">Crop</div>
     ${pg60Opt('to', 'this', `This page (${n + 1})`, !many)}
-    ${many ? pg60Opt('to', 'chosen', `The chosen pages (${esc(pg60RangeText(pg60Valid()))})`, true) : ''}
+    ${many ? pg60Opt('to', 'chosen', `The selected pages (${esc(pg60RangeText(pg60Valid()))})`, true) : ''}
     ${pg60Opt('to', 'all', 'All pages')}
     ${pg60Opt('to', 'range', 'Pages', false, `<input class="pg60-wide" name="range" placeholder="1-3, 5" data-pick="range" autocomplete="off">`)}`,
   [{ label: 'Cancel' }, ...(doc.pages.some((x) => x.crop) ? [{ label: 'Remove crop', value: 'remove' }] : []), { label: 'Crop', value: 'ok', primary: true }]);
@@ -6820,19 +7666,21 @@ FEATURE.savePage.push(({ p, entry }) => {
 
 /* ---- commands, ribbon, menu ---- */
 cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app.dataset.tool === 'crop', run: () => { if (app.dataset.tool === 'crop') return setTool('select'); setTool('crop'); toast('Drag a box on the page to keep just that part'); } });
-cmd('pg60_crop', { label: 'Crop margins…', icon: 'scan', enabled: has, run: () => pg60CropDialog() });
+cmd('pg60_crop', { label: 'Crop margins…', icon: 'frame', enabled: has, run: () => pg60CropDialog() });
 cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
-cmd('pg60_insert', { rlabel: 'Insert PDF', label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
+cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
+cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => pg60Combine() });
+cmd('pg60_ins', { label: 'Insert pages', rlabel: 'Insert', icon: 'file-plus-2', menu: ['blank', 'pg60_insert', 'pg60_replace', '-', 'merge'] });
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
 cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: has, run: () => pg60DeleteAsk() });
-cmd('pg60_selAll', { label: 'Choose all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
-ribbonAdd('pages', 'Rotate', ['pg60_rotate']);
+cmd('pg60_selAll', { label: 'Select all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
+// One button per job: Rotate and Delete open their other choices from a small arrow, Insert is a list.
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
-ribbonAdd('pages', 'Insert', ['pg60_insert', 'pg60_replace']);
+ribbonAdd('pages', 'Insert', ['pg60_ins'], 'Remove');
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
-ribbonAdd('pages', 'Remove', ['pg60_delete', 'pg60_split']);
+ribbonAdd('pages', 'Remove', ['pg60_split']);
 menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
 addStyle(`
@@ -6854,6 +7702,14 @@ addStyle(`
 .pg60-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .pg60-grid .field { margin: 4px 0; }
 .pg60-grid input { width: 100%; box-sizing: border-box; }
+.pg60-files { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; overflow: auto; }
+.pg60-file { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; color: var(--ink); }
+.pg60-file + .pg60-file { border-top: 1px solid var(--line); }
+.pg60-file > svg { width: 16px; height: 16px; flex: none; color: var(--ink-3); }
+.pg60-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg60-fcount { color: var(--ink-3); font-size: 12px; white-space: nowrap; margin-right: 4px; }
+.pg60-fgap { width: 34px; flex: none; }
+.pg60-file .icon-btn:disabled { opacity: .35; cursor: default; }
 `);
 TEST_HOOKS.pg60 = { sel: () => pg60Valid(), setSel: (l) => pg60SetSel(l), crop: (idx, m) => pg60SetCrop(idx, m) };
 
@@ -6925,15 +7781,83 @@ async function ffLoadKnown() {
 }
 FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLastRadio = null; ffLoadKnown(); });
 
+/* ---- form design and filling in ----
+   On the Forms tab new fields are designed: moved, resized, given properties. Anywhere else (or with Preview on)
+   they can be filled in at once, like the fields already in the PDF; what is typed is the field's value. */
+let ffPreviewOn = false;
+const ffDesign = () => S.ribbon === 'forms' && !ffPreviewOn;
+const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list']);
+function ffRedrawAll() { selectMark(null); views.forEach((v) => { if (v.rendered) { drawMarks(v); ffLayer(v); } }); }
+(FEATURE.onTab ||= []).push((k) => { if (k !== 'forms') ffPreviewOn = false; ffRedrawAll(); });
+// Choosing a form tool goes back to designing.
+function ffEndPreview() { if (ffPreviewOn) { ffPreviewOn = false; ffRedrawAll(); } }
+function ffPreview() {
+  ffPreviewOn = !ffPreviewOn;
+  if (ffPreviewOn && ffIsTool()) setTool('select');
+  ffSelectX(null); ffRedrawAll(); refreshRibbon();
+  toast(ffPreviewOn ? 'Fill in the new fields to try them' : 'Back to designing the form');
+}
+// An HTML control over a new field, to fill it in. A change is kept like any other (undo takes it back).
+function ffFillControl(m, fs) {
+  let el;
+  if (m.kind === 'text' || m.kind === 'date') {
+    el = document.createElement(m.multi ? 'textarea' : 'input'); el.value = m.val || '';
+    if (m.max > 0) el.maxLength = m.max;
+    if (m.kind === 'date') el.placeholder = m.fmt || FF_DATE_FORMATS[0];
+  } else if (m.kind === 'check' || m.kind === 'radio') {
+    el = document.createElement('input'); el.type = m.kind === 'check' ? 'checkbox' : 'radio'; el.checked = !!m.val;
+  } else {
+    el = document.createElement('select'); if (m.kind === 'list') el.size = Math.max(2, (m.opts || []).length);
+    for (const o of m.opts || []) el.appendChild(Object.assign(document.createElement('option'), { value: o, textContent: o }));
+    el.value = m.val || ''; if (!(m.opts || []).includes(m.val)) el.selectedIndex = -1;
+  }
+  el.className = 'ff-ctl ff-ctl-' + m.kind; el.style.fontSize = fs + 'px';
+  el.setAttribute('aria-label', m.tip || m.name); el.dataset.field = m.name;
+  if (m.ro) el.disabled = true;
+  if (m.req) el.required = true;
+  el.addEventListener('pointerdown', (e) => e.stopPropagation()); // fill it in, don't select or move it
+  el.addEventListener('change', () => {
+    const before = snapshot(), val = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+    if (m.kind === 'radio') { for (const r of ffMarks()) if (r.kind === 'radio' && r.name === m.name) r.val = r.id === m.id; }
+    else m.val = val;
+    changed(before);
+    if (m.kind === 'radio') views.forEach((v) => v.rendered && drawMarks(v));
+  });
+  return el;
+}
+// The controls sit in their own layer over the page (not inside the SVG, where some browsers misplace them), drawn
+// again with the marks.
+function ffFillLayer(v) {
+  let lay = v.el.querySelector('.ff-fill-layer');
+  const list = !doc || ffFlat() || ffDesign() ? [] : marksOf(v.entry).filter((m) => m.type === 'ff' && FF_FILLABLE.has(m.kind));
+  if (!list.length) { if (lay) lay.remove(); return; }
+  if (!lay) { lay = document.createElement('div'); lay.className = 'ff-fill-layer'; v.el.appendChild(lay); }
+  if (lay.contains(document.activeElement) && lay.__sig === JSON.stringify(list) + scale) return; // typing in it: leave it
+  lay.__sig = JSON.stringify(list) + scale;
+  const had = [...lay.children].indexOf(document.activeElement); // a tick moved focus nowhere: keep it on that field
+  lay.innerHTML = '';
+  for (const m of list) {
+    const [X0, Y0, X1, Y1] = ffBox(m), pts = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]].map(([x, y]) => toView(v, x, y));
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]), w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+    const d = ((totalRot(v) - (m.rot || 0)) % 360 + 360) % 360, lw = d % 180 ? h : w, lh = d % 180 ? w : h;
+    const cx = Math.min(...xs) + w / 2, cy = Math.min(...ys) + h / 2;
+    const fs = (m.size || (m.kind === 'list' ? 9 : Math.min(12, Math.max(6, (lh / scale) * .62)))) * scale;
+    const el = ffFillControl(m, fs);
+    Object.assign(el.style, { left: `${cx - lw / 2}px`, top: `${cy - lh / 2}px`, width: `${lw}px`, height: `${lh}px`, transform: d ? `rotate(${d}deg)` : '' });
+    lay.appendChild(el);
+  }
+  if (had >= 0 && lay.children[had]) lay.children[had].focus({ preventScroll: true });
+}
+
 /* ---- drawing new fields (they look as they will once saved) ---- */
 function ffDraw(v, m, svg) {
   ffHookSvg(v, svg);
-  const flat = ffFlat();
+  const flat = ffFlat(), filling = !flat && !ffDesign() && FF_FILLABLE.has(m.kind);
   const [X0, Y0, X1, Y1] = ffBox(m);
   const pts = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]].map(([x, y]) => toView(v, x, y));
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-  const g = svgEl('g', { class: 'mk ff-mk' + (flat ? ' ff-flat' : '') });
+  const g = svgEl('g', { class: (filling ? 'ff-fill ' : 'mk ') + 'ff-mk' + (flat ? ' ff-flat' : '') });
   const d = ((totalRot(v) - (m.rot || 0)) % 360 + 360) % 360;
   const lw = d % 180 ? h : w, lh = d % 180 ? w : h, cx = x + w / 2, cy = y + h / 2;
   const inner = svgEl('g', { transform: `rotate(${d} ${cx} ${cy}) translate(${cx - lw / 2} ${cy - lh / 2})` });
@@ -6942,6 +7866,11 @@ function ffDraw(v, m, svg) {
   const clipId = 'ffc' + m.id;
   const clip = svgEl('clipPath', { id: clipId }); clip.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh })); inner.appendChild(clip);
   const body = svgEl('g', { 'clip-path': `url(#${clipId})` });
+  if (filling) {
+    if (m.kind !== 'radio') inner.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh, fill: m.kind === 'check' || m.kind === 'list' ? '#fff' : 'none', stroke: m.kind === 'check' ? '#000' : FF_BORDER, 'stroke-width': s }));
+    g.appendChild(inner);
+    return g;
+  }
   if (m.kind === 'radio') {
     inner.appendChild(svgEl('rect', { class: 'ff-hit', x: 0, y: 0, width: lw, height: lh }));
     const r = Math.min(lw, lh) / 2 - .5 * s;
@@ -6997,7 +7926,7 @@ function ffIsDouble(e, id) {
 function ffHookSvg(v, svg) {
   if (svg.__ff) return; svg.__ff = true;
   svg.addEventListener('pointerdown', (e) => {
-    const hit = e.target.closest && e.target.closest('.ff-mk'); if (!hit || e.target.closest('.ff-handle')) return;
+    const hit = e.target.closest && e.target.closest('.ff-mk'); if (!hit || hit.classList.contains('ff-fill') || e.target.closest('.ff-handle')) return;
     const tool = app.dataset.tool; if (tool !== 'select' && !/^ff_/.test(tool)) return;
     if (ffIsDouble(e, hit.dataset.id)) ffOnRelease(e, () => ffProps(hit.dataset.id));
   }, true);
@@ -7083,7 +8012,7 @@ function ffToolDown(kind) {
 for (const [kind, K] of Object.entries(FF_KINDS)) {
   const t = 'ff_' + kind;
   FEATURE.tools[t] = { down: ffToolDown(kind) };
-  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { const was = app.dataset.tool; setTool(t); ffLoadKnown(); if (was !== t) toast(`Drag on the page to add a ${K.label.toLowerCase()}`); } });
+  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { const was = app.dataset.tool; ffEndPreview(); setTool(t); ffLoadKnown(); if (was !== t) toast(`Drag on the page to add a ${K.label.toLowerCase()}`); } });
 }
 FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (the fields already in the PDF have their own layer)
   const hit = e.target.closest && e.target.closest('.ff-mk');
@@ -7093,7 +8022,7 @@ FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (th
   selectMark({ key: pageKey(v.entry), id: hit.dataset.id, entry: v.entry });
   if (m) startMove(e, v, m);
 } };
-cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { const was = app.dataset.tool; setTool('ff_edit'); ffLoadKnown(); if (was !== 'ff_edit') toast('Click a field to select it; double-click it for its properties'); } });
+cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { const was = app.dataset.tool; ffEndPreview(); setTool('ff_edit'); ffLoadKnown(); if (was !== 'ff_edit') toast('Click a field to select it; double-click it for its properties'); } });
 
 /* ---- fields already in the PDF: outlined while a form tool is chosen ---- */
 async function ffWidgets(v) {
@@ -7103,6 +8032,7 @@ async function ffWidgets(v) {
 function ffGone(entry) { return new Set(marksOf(entry).filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref)); }
 function ffLayer(v) {
   if (!doc || !v.rendered || !v.el.isConnected) return;
+  ffFillLayer(v);
   app.dataset.ffflat = ffFlat() ? 'on' : 'off';
   let s = v.el.querySelector('svg.ff-layer');
   if (!s) {
@@ -7546,16 +8476,18 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
 
 /* ---- commands, ribbon, menu ---- */
 cmd('ffProps', { label: 'Properties…', icon: 'sliders-horizontal', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffPropsSelected });
+FEATURE.markTypes.ff.menu = ['ffProps']; // in the mark's right-click menu
 cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffDeleteSelected });
-cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-text', enabled: has, run: ffRecognize });
+cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-search', enabled: has, run: ffRecognize });
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });
-cmd('ffFlatten', { label: 'Flatten form', icon: 'layers', enabled: has, pressed: ffFlat, run: ffFlatten });
+cmd('ffFlatten', { label: 'Flatten form', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
+cmd('ffPreview', { label: 'Preview', icon: 'eye', enabled: () => has() && !ffFlat(), pressed: () => ffPreviewOn, run: ffPreview });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
-ribbonAdd('forms', 'Form', ['ffRecognize', 'ffClear', 'ffFlatten']);
+ribbonAdd('forms', 'Form', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);
 menuAdd('Forms', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 menuAdd('Forms', ['ff_edit', 'ffProps', 'ffDelete']);
-menuAdd('Forms', ['ffRecognize', 'ffClear', 'ffFlatten']);
+menuAdd('Forms', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);
 TEST_HOOKS.ffProposals = () => ffProposals.map(({ kind, x1, y1, x2, y2 }) => ({ kind, x1, y1, x2, y2 }));
 
 addStyle(`
@@ -7568,6 +8500,13 @@ addStyle(`
 .app[data-tool^="ff_"] .marks .ff-tag, .app[data-tool^="ff_"] .ff-layer .ff-tag, .marks .ff-mk.sel .ff-tag { display: block; }
 .ff-tag rect { fill: #AE1747; }
 .ff-tag text { fill: #fff; font: 600 10px/1 var(--font-ui); }
+.ff-fill-layer { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.ff-fill-layer .ff-ctl { position: absolute; pointer-events: auto; transform-origin: 50% 50%; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; min-width: 0; line-height: 1.1; margin: 0; padding: 0 2px; border: 0; border-radius: 0; font-family: Helvetica, Arial, sans-serif; color: #111; background: rgba(0, 54, 255, .13); outline: none; resize: none; }
+.ff-fill-layer .ff-ctl:focus { background: transparent; box-shadow: inset 0 0 0 1px #2448C9; }
+.ff-fill-layer .ff-ctl:disabled { background: transparent; }
+.ff-fill-layer select.ff-ctl-list { padding: 0; }
+.ff-fill-layer .ff-ctl-check, .ff-fill-layer .ff-ctl-radio { accent-color: #111; background: none; padding: 0; cursor: pointer; }
+.ff-fill-layer .ff-ctl-radio { border-radius: 50%; }
 .marks .ff-handle { fill: #fff; stroke: #AE1747; stroke-width: 1.5; cursor: nwse-resize; pointer-events: auto; }
 .ff-layer { position: absolute; inset: 0; z-index: 5; overflow: visible; pointer-events: none; width: 100%; height: 100%; }
 .ff-layer .ffx { display: none; fill: rgba(174, 23, 71, .05); stroke: #AE1747; stroke-width: 1; stroke-dasharray: 4 2; }
@@ -7992,6 +8931,9 @@ async function protImageOp(st, ctm, info) {
   const box = quadBox(matQuad(ctm)), hits = st.areas.filter((a) => protOverlap(a.box, box));
   if (!hits.length) return null;
   if (hits.some((a) => protContains(a.box, box))) return ' ';
+  // The same picture drawn again in the same place (some PDFs draw it twice) uses the one redacted copy.
+  const key = info.key && `${info.key}|${ctm.map((n) => n.toFixed(2)).join(',')}`, cache = (st.redImages ||= new Map());
+  if (key && cache.has(key)) return ` /${protAddXObject(st.L, st.out, info.res, cache.get(key), 'CPDFRed')} Do `;
   const im = st.cm && st.cm.images.find((i) => !!i.inline === !!info.inline && quadBox(i.quad).every((n, k) => Math.abs(n - box[k]) < .75));
   const c = im && await protImageCanvas(st.page, im), inv = protInv(ctm);
   if (!c || !inv) return ' '; // its pixels can't be read: it goes, rather than leave what's under the box in the file
@@ -8002,8 +8944,24 @@ async function protImageOp(st, ctm, info) {
     g.fillStyle = a.fill; g.strokeStyle = a.fill; g.lineWidth = 2; g.fill(); g.stroke();
   }
   const { L, out } = st;
-  const img = info.jpeg ? await out.embedJpg(c.toDataURL('image/jpeg', .92)) : await out.embedPng(c.toDataURL('image/png'));
-  return ` /${protAddXObject(L, out, info.res, img.ref, 'CPDFRed')} Do `;
+  const ref = info.jpeg ? protJpegXObject(out, c, info.smask) : (await out.embedPng(c.toDataURL('image/png'))).ref;
+  if (key) cache.set(key, ref);
+  return ` /${protAddXObject(L, out, info.res, ref, 'CPDFRed')} Do `;
+}
+// A JPEG picture stays a JPEG. When it had a soft mask (see-through parts), the mask is saved beside it as a small
+// grey picture made from the redacted pixels, so the painted-over area is solid and the file does not grow.
+function protJpegXObject(out, c, smask) {
+  const w = c.width, h = c.height, g = c.getContext('2d');
+  let alpha = null;
+  if (smask) {
+    const id = g.getImageData(0, 0, w, h), d = id.data; alpha = new Uint8Array(w * h); let solid = true;
+    for (let i = 0; i < w * h; i++) { alpha[i] = d[i * 4 + 3]; if (alpha[i] !== 255) solid = false; d[i * 4 + 3] = 255; }
+    if (solid) alpha = null; else g.putImageData(id, 0, 0); // colours without their see-through, for the JPEG
+  }
+  const jpg = Uint8Array.from(atob(c.toDataURL('image/jpeg', .92).split(',')[1]), (ch) => ch.charCodeAt(0));
+  const dict = { Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode' };
+  if (alpha) dict.SMask = out.context.register(out.context.flateStream(alpha, { Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+  return out.context.register(out.context.stream(jpg, dict));
 }
 // Rewrites a content stream so nothing under the redaction areas is left in it: letters are taken out (the rest of
 // their line stays where it was), pictures are cut or painted over, and forms are rewritten the same way.
@@ -8069,7 +9027,7 @@ async function protRewrite(st, src, res, ctm0, depth) {
       const sub = String(obj.dict.lookup(PDFName.of('Subtype')) || '');
       if (sub === '/Image') {
         const filt = String(obj.dict.lookup(PDFName.of('Filter')) || '');
-        const r = await protImageOp(st, ctm, { res, jpeg: /DCTDecode/.test(filt) && !obj.dict.has(PDFName.of('SMask')) });
+        const r = await protImageOp(st, ctm, { res, jpeg: /DCTDecode/.test(filt), smask: obj.dict.has(PDFName.of('SMask')), key: ref instanceof PDFRef ? ref.toString() : null });
         if (r != null) { edits.push([start, end, r]); touched.add(name); }
       } else if (sub === '/Form' && depth < 8) {
         const mt = obj.dict.lookup(PDFName.of('Matrix')), M = (mt && protNums(out, mt)) || [1, 0, 0, 1, 0, 0];
@@ -8522,8 +9480,8 @@ async function protCompressDlg() {
   const r = await protAsk('Compress', `<p>Makes the PDF smaller when you save: pictures larger than needed are made smaller, and the file is packed more tightly.</p>
     <div class="prot-checks">${radio('150', 'Balanced', 'Pictures at 150 pixels per inch: good on screen and in print.')}${radio('96', 'Smallest', 'Pictures at 96 pixels per inch: good on screen.')}${radio('keep', 'Keep pictures as they are', 'Only the file is packed.')}</div>
     <div class="prot-size" id="protSize" aria-live="polite">Working out the size…</div>`,
-  [...(cur ? [{ label: 'Don’t compress', value: 'off' }] : []), { label: 'Cancel' }, { label: 'Compress', value: 'on', primary: true }], (dlg) => {
-    const out = $('#protSize', dlg); let ask = 0;
+  [...(cur ? [{ label: 'Don’t compress', value: 'off' }] : []), { label: 'Cancel' }, { label: 'Compress', value: 'on', primary: true }], (dlg, upd) => {
+    const out = $('#protSize', dlg); let ask = 0, tried = false;
     const show = async () => {
       const n = ++ask, lv = ($('input[name=level]:checked', dlg) || {}).value || '150';
       out.textContent = 'Working out the size…';
@@ -8533,13 +9491,25 @@ async function protCompressDlg() {
         if (n !== ask) return;
         if (before == null || after == null) { out.textContent = 'The size can’t be worked out.'; return; }
         const pc = Math.round((1 - after / before) * 100), none = after >= before * .98;
+        // Balanced gains next to nothing: once, see whether Smallest does better and choose it if so.
+        if (none && lv === '150' && !tried) {
+          tried = true;
+          const small = await protMeasure(PROT_LEVELS['96']);
+          if (n !== ask) return;
+          if (small != null && small <= before * .95) {
+            const r96 = $('input[name=level][value="96"]', dlg); r96.checked = true; upd();
+            if (document.activeElement && document.activeElement.name === 'level') r96.focus();
+            const spc = Math.round((1 - small / before) * 100);
+            out.textContent = `Now ${protSize(before)}. Balanced would save less than 2%. Smallest saves ${spc}% (${protSize(small)}), so it is selected.`;
+            out.dataset.before = before; out.dataset.after = small; out.classList.remove('none');
+            return;
+          }
+        }
+        // Compress stays the main button; the note says how little it would gain.
         out.textContent = none
-          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.${lv === '96' ? ' Keep it as it is.' : ' Try Smallest, or keep it as it is.'}`
+          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.`
           : `Now ${protSize(before)}. Compressed: ${protSize(after)} (${pc}% smaller).`;
         out.dataset.before = before; out.dataset.after = after; out.classList.toggle('none', none);
-        // With nothing to gain, Cancel is the main button.
-        const on = $('.dlg-foot [data-a]:last-child', dlg), cancel = [...$$('.dlg-foot [data-a]', dlg)].find((b) => b.textContent === 'Cancel');
-        if (on && cancel) { on.classList.toggle('primary', !none); cancel.classList.toggle('primary', none); }
       } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }
     };
     $$('input[name=level]', dlg).forEach((x) => x.addEventListener('change', show));
@@ -8556,7 +9526,7 @@ const protHasPending = () => protRedMarks(false).length > 0;
 cmd('protRedText', { label: 'Mark text', icon: 'text-select', enabled: has, pressed: () => app.dataset.tool === 'protredtext', run: () => { if (protMarkSelection()) return; setTool('protredtext'); toast('Select the text to redact'); } });
 cmd('protRedArea', { label: 'Mark area', icon: 'box-select', enabled: has, pressed: () => app.dataset.tool === 'protredarea', run: () => { setTool('protredarea'); toast('Drag over the area to redact'); } });
 cmd('protRedSearch', { label: 'Search and redact…', icon: 'search-check', enabled: has, run: protSearch });
-cmd('protRedApply', { label: 'Apply redactions…', icon: 'eraser', enabled: () => has() && protHasPending(), run: protApply });
+cmd('protRedApply', { label: 'Apply redactions…', icon: 'file-check-2', enabled: () => has() && protHasPending(), run: protApply });
 cmd('protPassword', { label: 'Set password…', icon: 'lock', enabled: has, pressed: () => !!(protSec() && protSec().mode === 'set'), run: protPassword });
 cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: has, run: protRemoveSecurity });
 cmd('protFlatten', { label: 'Flatten…', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
@@ -8981,7 +9951,7 @@ addStyle(`
 .ocr-hint { position: sticky; top: 10px; z-index: 15; margin: 10px auto -4px; width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; display: flex; align-items: center; gap: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.15); font-size: 13px; }
 .ocr-hint[hidden] { display: none; }
 .ocr-hint > svg { color: var(--accent); flex: none; }
-@media (max-width: 760px) { .ocr-hint { flex-wrap: wrap; width: auto; } .ocr-hint span { flex: 1 1 60%; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .ocr-hint { flex-wrap: wrap; width: auto; } .ocr-hint span { flex: 1 1 60%; } }
 `);
 
 TEST_HOOKS.ocrUseEngine = (e) => { ocrEngine = e; };
@@ -9036,7 +10006,7 @@ addStyle(`
 .crd-bar.crd-readbar { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); transform: none; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); opacity: .75; transition: opacity .2s; }
 .crd-bar.crd-readbar:hover, .crd-bar.crd-readbar:focus-within { opacity: 1; }
 .app.crd-reading ~ .crd-saybar { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .crd-bar { bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
   .crd-bar .crd-voice { max-width: 104px; }
   .crd-bar .crd-where { display: none; }
@@ -9365,7 +10335,7 @@ function crdReadMode(on = !crdReading()) {
   closePopover();
   app.classList.toggle('crd-reading', on);
   crdReadBar().hidden = !on; crdReadWhere();
-  if (on) toast('Read mode: arrow keys turn the pages, Esc leaves');
+  if (on) toast(coarse() ? 'Read mode: the arrows at the bottom turn the pages' : 'Read mode: arrow keys turn the pages, Esc leaves');
   const at = current;
   setTimeout(async () => {
     if (on) { crdZoomBefore = S.zoom; await crdReadFit(at); }
@@ -9580,7 +10550,7 @@ async function beforeQuit() {
   }
   NATIVE.core.invoke('quit_app').catch(() => {});
 }
-const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S' };
+const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
 // The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
 // Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
 var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
@@ -9600,7 +10570,7 @@ function macMenu() {
   const json = JSON.stringify(menus);
   if (json === lastMenu) return;
   lastMenu = json;
-  MAC_APP.core.invoke('set_menu', { menus }).catch(() => { lastMenu = ''; });
+  MAC_APP.core.invoke('set_menu', { menus }).then(() => document.documentElement.classList.add('mac-app'), () => { lastMenu = ''; });
 }
 function scheduleMacMenu() { if (!MAC_APP) return; clearTimeout(menuTimer); menuTimer = setTimeout(macMenu, 120); }
 if (NATIVE) {

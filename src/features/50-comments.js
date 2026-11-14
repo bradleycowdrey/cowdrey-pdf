@@ -488,7 +488,7 @@ cmd('cm_fill', {
     refreshRibbon(); toast(S.cmFill ? 'Shapes are filled' : 'Shapes are outlines');
   },
 });
-cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (matchMedia('(max-width: 760px)').matches) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
+cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (isPhone()) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
 // Compact groups, so the whole tab fits a laptop screen: Shapes is a grid of icons (closed shapes above, lines below).
 ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Shapes', 'rows');
 ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon'], null, 'icons');
@@ -694,7 +694,7 @@ function cmThreadHtml(it, k) {
 function cmGoTo(it) {
   goPage(it.n);
   if (it.m) { setTool('select'); selectMark({ key: pageKey(it.entry), id: it.m.id, entry: it.entry }); } else if (selMark) selectMark(null);
-  if (matchMedia('(max-width: 760px)').matches) toggleSidebar(false);
+  if (isPhone()) toggleSidebar(false);
 }
 function cmDelete(it) {
   const before = snapshot(), list = marksOf(it.entry);

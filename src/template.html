@@ -30,6 +30,9 @@
 html, body { margin: 0; height: 100%; }
 body { background: var(--chrome); color: var(--ink); font: 14px/1.4 var(--font-ui); -webkit-font-smoothing: antialiased; overflow: hidden; }
 button { font: inherit; color: inherit; }
+/* Keyboard focus: one ring in the accent everywhere (rules below may move it inside a control). */
+:root { accent-color: var(--accent); }
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ic, [data-lucide] { width: 18px; height: 18px; flex: none; stroke-width: 1.75; }
 .app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; height: 100dvh; }
 .app > *, .workspace > * { min-width: 0; } /* a wide ribbon scrolls; it never widens the window */
@@ -44,7 +47,8 @@ button { font: inherit; color: inherit; }
 .menubar { display: flex; gap: 2px; margin-left: -6px; }
 .menubar > button { border: 0; background: none; padding: 2px 6px; border-radius: 5px; color: var(--ink); cursor: default; font-size: 14px; }
 .menubar > button:hover, .menubar > button[aria-expanded="true"] { background: var(--hover); }
-.menubar > button:focus-visible { outline-offset: -2px; }
+.menubar > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mac-app .menubar { display: none; } /* the Mac app shows these menus in the macOS menu bar */
 .tb-actions { display: flex; gap: 8px; align-items: center; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--hover); }
@@ -53,6 +57,8 @@ button { font: inherit; color: inherit; }
 .btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
 .icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn:disabled, .icon-btn:disabled:hover { opacity: .4; cursor: default; background: none; color: var(--ink-2); }
+.tb-undo { display: none; }
 .btn:disabled, .btn:disabled:hover { opacity: .45; cursor: default; background: var(--surface); }
 .btn.primary:disabled, .btn.primary:disabled:hover { background: var(--brand); }
 .more-btn { display: none; }
@@ -104,6 +110,7 @@ button { font: inherit; color: inherit; }
   .r-swatches .r-items { display: grid; grid-template-columns: repeat(4, 18px); grid-template-rows: repeat(2, 18px); gap: 8px 6px; align-content: center; padding: 0 2px; }
   .r-icons .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+.swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* workspace */
 .workspace { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
@@ -135,6 +142,7 @@ button { font: inherit; color: inherit; }
 
 /* pages */
 .viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; touch-action: pan-x pan-y; } /* a pinch zooms the pages, not the window */
+.viewer:focus-visible { outline-offset: -3px; }
 .pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 64px; }
 .page { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; --scale-round-x: 1px; --scale-round-y: 1px; color-scheme: light; }
 .page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -149,6 +157,11 @@ button { font: inherit; color: inherit; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
 .marks .mk { pointer-events: auto; cursor: pointer; }
+/* Touch: with a drawing or placing tool a finger draws on the page instead of scrolling it; with the text tools
+   (Highlight, Underline…) a finger selects text; with Select a finger drags a mark. */
+.app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
+.app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page .textLayer,
+.app[data-tool="select"] .marks .mk { touch-action: none; }
 .app[data-tool="select"] .marks .mk:hover { filter: drop-shadow(0 0 2px var(--accent)); }
 .marks .mk.sel { filter: drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
 .marks text { user-select: none; }
@@ -202,6 +215,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .dlg-body a { color: var(--accent); }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 16px; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.field :is(input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 .field input, .field textarea { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .sig-pad { width: 100%; height: 160px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; touch-action: none; display: block; }
 .sig-pad.typed { cursor: default; }
@@ -235,15 +249,17 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .findbar input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 200px; }
 .findbar .count { color: var(--ink-3); font-size: 12px; min-width: 56px; text-align: center; }
 
-/* phones: the ribbon becomes a scrolling tool row; the sidebar becomes an overlay */
-@media (max-width: 760px) {
-  .menubar, .sb-brand, .tb-actions .btn span, .save-state { display: none; }
-  .more-btn { display: grid; }
+/* phones (and phones on their side): the ribbon becomes a scrolling tool row; the sidebar becomes an overlay;
+   Undo and Redo sit in the title bar, Appearance moves into More. Keep in step with PHONE_MQ in app.js. */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .menubar, .sb-brand, .tb-actions .btn span, .save-state, #themeBtn { display: none; }
+  .more-btn, .tb-undo { display: grid; }
+  .tb-actions { gap: 2px; }
   .tb-actions .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
   .tb-actions .icon-btn { width: 40px; height: 40px; }
   .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
   .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
-  .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+  .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); transition: transform .2s, visibility 0s; } /* visible at once, so it can take focus */
   .app[data-sidebar="open"]::after { content: ""; position: fixed; inset: 0; z-index: 29; background: rgba(18, 12, 15, .35); }
   .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 6px; }
   .side-tabs button { min-height: 40px; }
@@ -260,6 +276,16 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .findbar input { flex: 1; width: auto; min-width: 0; }
   .findbar .count { min-width: 44px; }
   .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+}
+/* a phone on its side: the bars get thinner and the ribbon shows icons only (the names stay for screen readers and
+   tooltips), so the document keeps more than half of the height */
+@media (max-height: 500px) and (pointer: coarse) {
+  .titlebar { padding-top: calc(3px + env(safe-area-inset-top, 0px)); padding-bottom: 3px; }
+  .ribbon-tabs button { min-height: 36px; padding-top: 3px; padding-bottom: 4px; }
+  .ribbon-body { height: 52px; padding-top: 2px; padding-bottom: 2px; }
+  .rb { justify-content: center; align-self: center; position: relative; }
+  .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .statusbar { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media print {
@@ -279,6 +305,8 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <nav class="menubar" id="menubar" aria-label="Menus"></nav>
     </div>
     <div class="tb-actions">
+      <button class="icon-btn tb-undo" type="button" data-cmd="undo" title="Undo" aria-label="Undo" disabled><i data-lucide="undo-2"></i></button>
+      <button class="icon-btn tb-undo" type="button" data-cmd="redo" title="Redo" aria-label="Redo" disabled><i data-lucide="redo-2"></i></button>
       <button class="icon-btn" id="themeBtn" type="button" title="Theme" aria-label="Theme"><i data-lucide="sun-moon"></i></button>
       <button class="btn" type="button" data-cmd="open" aria-label="Open"><i data-lucide="folder-open"></i><span>Open</span></button>
       <button class="btn primary" type="button" data-cmd="save" id="saveBtn" aria-label="Save PDF"><i data-lucide="download"></i><span>Save PDF</span></button>
@@ -301,7 +329,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       </div>
       <div class="side-panel" id="sidePanel" role="tabpanel"></div>
     </aside>
-    <main class="viewer" id="viewer" tabindex="-1">
+    <main class="viewer" id="viewer" tabindex="0" aria-label="Document">
       <div class="find-dock"><div class="findbar" id="findbar" hidden>
         <i data-lucide="search"></i><input id="findInput" type="search" placeholder="Find in document" aria-label="Find">
         <span class="count" id="findCount"></span>

@@ -10,7 +10,7 @@
 
 const BM = { sel: null, cache: null, renaming: null, drag: null };
 const bmMark = () => (doc ? docMarks().find((m) => m.type === 'bookmarks') : null);
-const bmPhone = () => matchMedia('(max-width: 760px)').matches;
+const bmPhone = () => isPhone();
 const bmPageOf = (key) => (key == null || !doc ? -1 : doc.pages.findIndex((e) => pageKey(e) === key));
 
 // The PDF's own outline as a tree of bookmarks (read once per opened file).
@@ -338,7 +338,7 @@ TEST_HOOKS.bmMove = bmMove;
 
 addStyle(`
 .bm-bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 2px; padding: 0 0 6px; background: var(--chrome); }
-@media (max-width: 760px) { .bm-bar { background: var(--surface); } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .bm-bar { background: var(--surface); } }
 .bm-bar .icon-btn { width: 32px; height: 32px; }
 .bm-bar .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 .bm-bar .icon-btn:disabled { opacity: .35; cursor: default; }
