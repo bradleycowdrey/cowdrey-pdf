@@ -31,6 +31,10 @@ function pdDate(fmt, d = new Date()) {
   return fmt.replace(/yyyy|yy|mmmm|mm|m|dd|d/g, (t) => ({ yyyy: Y, yy: p2(Y % 100), mmmm: PD_MONTHS[M - 1], mm: p2(M), m: M, dd: p2(D), d: D }[t]));
 }
 const pdBates = (m, num) => `${m.prefix || ''}${String(num).padStart(Math.max(1, Math.min(12, m.digits | 0)), '0')}${m.suffix || ''}`;
+// A place in a header's text moved out of any field it falls inside (to the field's end).
+function pdOutside(s, at) { for (const mt of String(s).matchAll(/<<[^<>]*>>/g)) if (at > mt.index && at < mt.index + mt[0].length) return mt.index + mt[0].length; return at; }
+// Text with a broken field in it ("<<pa<<page>>ge>>"): what is left of << or >> once the real fields are taken out.
+const pdBroken = (s) => /<<|>>/.test(String(s || '').replace(/<<\s*(pages|page|date)\s*>>/gi, ''));
 function pdTokens(s, page, pages, date) { return String(s).replace(/<<\s*(pages|page|date)\s*>>/gi, (_, t) => ({ page, pages, date }[t.toLowerCase()])); }
 
 // Centres for a tiled watermark: a grid turned with the watermark, rows offset by half a step, covering the page.
@@ -151,6 +155,9 @@ addStyle(`
 .pd-form .field > span, .pd-slots .field > span { font-size: 12px; color: var(--ink-3); }
 .pd-slots .field { margin: 6px 0; min-width: 0; }
 .pd-slots .field input { min-width: 0; width: 100%; box-sizing: border-box; padding: 7px 10px; }
+.pd-slots .field input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.pd-err { font-size: 12px; color: var(--danger); margin: 0 0 6px; }
+.pd-err[hidden] { display: none; }
 .pd-form .field select, .pd-form .field input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; width: 100%; box-sizing: border-box; }
 .pd-form .field input[type="color"] { padding: 2px 4px; height: 36px; cursor: pointer; }
 .pd-form .field input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 36px; }
@@ -370,6 +377,7 @@ function pdBody(type, m) {
     <p class="pd-note">The background goes behind everything on the page.</p>`;
   if (type === 'pd_headfoot') return `<div class="pd-slots">${PD_SLOTS.map(([k, t]) => F.text(k, t, m[k])).join('')}</div>
     <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
+    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p>
     <div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
     ${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>`;
   return `<div class="pd-form">${F.text('prefix', 'Prefix', m.prefix)}${F.text('suffix', 'Suffix', m.suffix)}${F.num('start', 'Start number', m.start, 0, 999999999999)}${F.num('digits', 'Digits', m.digits, 1, 12)}
@@ -382,6 +390,7 @@ function pdCheck(type, m) {
   if ((type === 'pd_watermark' || type === 'pd_background') && m.kind === 'image' && !m.data) return 'Choose a picture first';
   if (type === 'pd_watermark' && m.kind === 'text' && !String(m.text || '').trim()) return 'Type the watermark text';
   if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim())) return 'Type a header or footer in at least one place';
+  if (type === 'pd_headfoot' && PD_SLOTS.some(([k]) => pdBroken(m[k]))) return 'A page number, page count or date field is broken. Delete it and insert it again.';
   return null;
 }
 // A small picture of one page in the dialog, with the settings being changed drawn on it (by pdLayout, as on the page
@@ -397,6 +406,8 @@ function pdPreview(dlg, type, m, existing) {
     const c = document.createElement('canvas'); c.width = Math.round(v.width); c.height = Math.round(v.height);
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
     await pg.render({ canvas: c, canvasContext: g, viewport: v }).promise;
+    // The page as it is now: its edits, mark-up and redactions (its page design is drawn below, from the settings).
+    try { await thumbOverlays(e, n, pg, v, g, null, { design: false }); } catch {}
     return { c, W: v1.width, H: v1.height };
   };
   const paint = () => {
@@ -441,14 +452,21 @@ async function pdEdit(type, existing) {
       const sync = () => {
         pdRead(dlg, m);
         const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
+        // A field that was typed over or split is marked, and the dialog can't be confirmed until it is fixed.
+        let bad = false;
+        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        const pb = $('.dlg-foot .btn.primary', dlg); if (pb && type === 'pd_headfoot') pb.disabled = bad;
+        const note = $('[data-pd-err]', dlg); if (note) note.hidden = !bad;
         preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
       body.addEventListener('click', (e) => { const s = e.target.closest('[data-pdc]'); if (!s) return; const i = $(`input[data-k="${s.dataset.pdc}"]`, body); i.value = s.dataset.c.toLowerCase(); i.dispatchEvent(new Event('input', { bubbles: true })); });
       body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
+      // A field goes in at the caret, but never inside another field ("Page <<pa|ge>>" puts it after "<<page>>").
       for (const b of $$('[data-token]', dlg)) b.onclick = () => {
-        const el = focusSlot || $('[data-k="bc"]', dlg), at = el.selectionStart ?? el.value.length;
-        el.value = el.value.slice(0, at) + b.dataset.token + el.value.slice(el.selectionEnd ?? at); el.focus(); el.selectionStart = el.selectionEnd = at + b.dataset.token.length; sync();
+        const el = focusSlot || $('[data-k="bc"]', dlg), tok = b.dataset.token;
+        const at = pdOutside(el.value, el.selectionStart ?? el.value.length), end = Math.max(at, pdOutside(el.value, el.selectionEnd ?? at));
+        el.value = el.value.slice(0, at) + tok + el.value.slice(end); el.focus(); el.selectionStart = el.selectionEnd = at + tok.length; sync();
       };
       const file = $('[data-file]', dlg);
       if (file) file.onchange = async () => {

@@ -16,7 +16,7 @@ export default async (h) => {
   await test('Protect: search and redact a figure, an area of a picture and a note; the saved PDF no longer has them', async () => {
     const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
     await p.click('[data-rt="protect"]');
-    await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', '42,000'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+    await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', '42,000'); await answer(p, 'Find'); await answer(p, 'Mark'); await p.waitForTimeout(300);
     eq(await marks(p), ['redact'], 'one match marked');
     ok(await p.$('.page[data-n="0"] .prot-red:not(.applied)'), 'red outline on the page');
     await p.click('[data-cmd="protRedArea"]');
@@ -60,7 +60,7 @@ export default async (h) => {
 
   await test('Protect: redact a word in a PDF from Chrome, with text on the box; neighbouring words stay in place', async () => {
     const p = await open(); await openPdf(p, CHROME, 'Summary.pdf');
-    await run(p, 'protRedSearch'); await p.fill('#dialog input[name=text]', 'grew'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+    await run(p, 'protRedSearch'); await p.fill('#dialog input[name=text]', 'grew'); await answer(p, 'Find'); await answer(p, 'Mark'); await p.waitForTimeout(300);
     await run(p, 'protRedApply'); await p.waitForSelector('#dialog[open] input[name=label]');
     await p.fill('#dialog input[name=label]', 'Redacted'); await p.click('#dialog [data-sw="#E03131"]'); await answer(p, 'Apply'); await p.waitForTimeout(400);
     const m = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().find((x) => x.type === 'redact'));
@@ -102,7 +102,7 @@ export default async (h) => {
     await openPdf(p, file, 'Contact.pdf');
     eq(await p.evaluate(() => window.__cowdreyPdf.protFind({ email: true, phone: true })), ['555-123-4567', 'jo.smith@example.com']);
     await run(p, 'protRedSearch'); await p.waitForSelector('#dialog[open] input[name=text]');
-    await p.fill('#dialog input[name=text]', ''); await p.check('#dialog input[name=email]'); await p.check('#dialog input[name=phone]'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+    await p.fill('#dialog input[name=text]', ''); await p.check('#dialog input[name=email]'); await p.check('#dialog input[name=phone]'); await answer(p, 'Find'); await answer(p, 'Mark'); await p.waitForTimeout(300);
     await run(p, 'protRedApply'); await answer(p, 'Apply'); await p.waitForTimeout(300);
     const t2 = await textOf(await savedOf(p));
     ok(!/555|4567|example|smith/.test(t2) && t2.includes('Call') && t2.includes('today.') && t2.includes('2024-01-05') && t2.includes('invoice 42 stay.'), t2);
@@ -113,7 +113,7 @@ export default async (h) => {
     const p = await open(); await openPdf(p, CHROME, 'Summary.pdf');
     await run(p, 'rotR'); await p.waitForTimeout(500);
     // Where "grew" is, in PDF coordinates (from Search and redact, then undone), and drag over it on the turned page.
-    await run(p, 'protRedSearch'); await p.fill('#dialog input[name=text]', 'grew'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+    await run(p, 'protRedSearch'); await p.fill('#dialog input[name=text]', 'grew'); await answer(p, 'Find'); await answer(p, 'Mark'); await p.waitForTimeout(300);
     const b = await p.evaluate(() => { const q = Object.values(window.__cowdreyPdf.doc.marks).flat().find((x) => x.type === 'redact').quads[0]; const xs = q.map((t) => t[0]), ys = q.map((t) => t[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; });
     await run(p, 'undo'); await p.waitForTimeout(100); eq(await marks(p), []);
     const x0 = b[0], y0 = b[1] + 2, gw = b[2] - b[0];
@@ -212,7 +212,7 @@ export default async (h) => {
       ok(top >= 660 + .72 * 40 - .01 && bottom <= 660 - .14 * 40 + .01, `still covers the word: ${bottom} – ${top}`);
       // applied: the line above keeps its words
       await p.click('[data-rt="protect"]');
-      await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'PDFelement'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+      await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'PDFelement'); await answer(p, 'Find'); await answer(p, 'Mark'); await p.waitForTimeout(300);
       await p.click('[data-cmd="protRedApply"]'); await answer(p, 'Apply'); await p.waitForTimeout(500);
       await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr1/fix-features/redact-tight.png' });
       const t = await textOf(await savedOf(p));
@@ -326,7 +326,7 @@ export default async (h) => {
     try {
       const p = await open(); await openPdf(p, file, 'Picture.pdf');
       await p.click('[data-rt="protect"]');
-      await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'secret code'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+      await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'secret code'); await answer(p, 'Find'); await answer(p, 'Mark'); await p.waitForTimeout(300);
       await p.click('[data-cmd="protRedApply"]'); await answer(p, 'Apply'); await p.waitForTimeout(500);
       const out = await savedOf(p), d = await PDFDocument.load(out);
       ok(out.length < size0 * 1.3, `about the same size: ${size0} → ${out.length}`);

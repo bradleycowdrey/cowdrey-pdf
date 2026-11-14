@@ -81,6 +81,21 @@ addStyle(`
 .prot-sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
 .prot-sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
 .marks .prot-red.applied { cursor: default; }
+.prot-hit-sum { margin: 0 0 6px; }
+.prot-hit-bar { display: flex; gap: 6px; margin: 0 0 6px; }
+.prot-hit-bar .btn { height: 28px; padding: 0 10px; font-size: 12px; }
+.prot-hits { list-style: none; margin: 0; padding: 2px; max-height: 210px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--chrome); }
+.prot-hit { display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+.prot-hit.on { background: var(--accent-soft); }
+.prot-hit input { accent-color: var(--brand); width: 16px; height: 16px; margin: 4px 0 0; flex: none; }
+.prot-hit-go { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: baseline; border: 0; background: none; padding: 2px 0; text-align: left; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.prot-hit-pg { flex: none; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 52px; }
+.prot-hit-ctx { min-width: 0; overflow-wrap: anywhere; }
+.prot-hit-ctx mark { background: color-mix(in srgb, #E03131 22%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; font-weight: 600; }
+.prot-hit-view { margin: 8px 0 0; }
+.prot-hit-view canvas { display: block; width: 100%; height: auto; max-height: 180px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.prot-hit-view figcaption { font-size: 12px; color: var(--ink-3); margin-top: 4px; overflow-wrap: anywhere; }
+@media (pointer: coarse) { .prot-hit { padding: 6px; } .prot-hit input { width: 22px; height: 22px; margin-top: 1px; } }
 `);
 
 /* ----- redaction marks ----- */
@@ -219,7 +234,9 @@ async function protFind(rx) {
         const [y0, y1] = protGlyphBand(tc, it), x0 = a[j0], x1 = a[j1 + 1];
         quads.push([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)]);
       }
-      if (quads.length) found.push({ entry, quads, text: mt[0] });
+      // With the words around it, for the list of matches to check.
+      const near = (t) => t.replace(/\s+/g, ' ');
+      if (quads.length) found.push({ entry, quads, text: mt[0], before: near(s.slice(Math.max(0, mt.index - 40), mt.index)), after: near(s.slice(mt.index + mt[0].length, mt.index + mt[0].length + 40)) });
     }
   }
   return found;
@@ -251,17 +268,80 @@ async function protSearch() {
       <label class="prot-check"><input type="checkbox" name="matchCase"${last.matchCase ? ' checked' : ''}> Match case</label>
       <label class="prot-check"><input type="checkbox" name="email"${last.email ? ' checked' : ''}> Email addresses</label>
       <label class="prot-check"><input type="checkbox" name="phone"${last.phone ? ' checked' : ''}> Phone numbers</label>
-    </div>`, [{ label: 'Cancel' }, { label: 'Mark all', value: 'mark', primary: true }]);
-  if (!r || r.action !== 'mark') return;
+    </div>`, [{ label: 'Cancel' }, { label: 'Find', value: 'find', primary: true }]);
+  if (!r || r.action !== 'find') return;
   S.protSearch = { text: r.text, wholeWords: r.wholeWords, matchCase: r.matchCase, email: r.email, phone: r.phone }; saveSettings();
   const rx = protRegex(r);
   if (!rx) { toast('Type something to find, or choose a pattern'); return; }
   const found = await protFind(rx);
   if (!found.length) { toast('No matches found'); return; }
+  const pick = await protReview(found);
+  if (pick === 'back') return protSearch();
+  if (!pick || !pick.length) return;
   const before = snapshot();
-  for (const f of found) marksOf(f.entry).push({ id: uid(), type: 'redact', quads: f.quads, fill: '#000000', label: '', applied: false, found: f.text });
+  for (const f of pick) marksOf(f.entry).push({ id: uid(), type: 'redact', quads: f.quads, fill: '#000000', label: '', applied: false, found: f.text });
   views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
-  toast(`${found.length} match${found.length === 1 ? '' : 'es'} marked for redaction`);
+  // The view goes to the first one, so what was marked can be seen.
+  const pages = [...new Set(pick.map(protPageNo))].sort((a, b) => a - b);
+  goPage(pages[0] - 1);
+  toast(`${pick.length} marked for redaction on page${pages.length > 1 ? 's' : ''} ${pages.length > 6 ? pages.slice(0, 6).join(', ') + '…' : pages.join(', ')}`);
+}
+const protPageNo = (f) => doc.pages.indexOf(f.entry) + 1;
+/* The matches, to check before marking: each with its page and the words around it, ticked. Choosing one shows it
+   on its page, in the dialog. Untick any that should stay. */
+async function protReview(found) {
+  let picked = found.map(() => true);
+  const pages = [...new Set(found.map(protPageNo))];
+  const list = found.map((f, k) => `<li class="prot-hit" data-k="${k}"><input type="checkbox" checked aria-label="Mark match ${k + 1} on page ${protPageNo(f)}">
+    <button type="button" class="prot-hit-go" data-go="${k}"><span class="prot-hit-pg">Page ${protPageNo(f)}</span><span class="prot-hit-ctx">${f.before.trim() ? '…' : ''}${esc(f.before.trimStart())}<mark>${esc(f.text)}</mark>${esc(f.after.trimEnd())}${f.after.trim() ? '…' : ''}</span></button></li>`).join('');
+  const res = await dialog('Search and redact', `<p class="prot-hit-sum">${found.length} match${found.length === 1 ? '' : 'es'} on ${pages.length === 1 ? 'page ' + pages[0] : pages.length + ' pages'}. Untick any you want to keep.</p>
+    <div class="prot-hit-bar"><button type="button" class="btn" data-all="1">Tick all</button><button type="button" class="btn" data-all="0">Untick all</button></div>
+    <ul class="prot-hits" aria-label="Matches">${list}</ul>
+    <figure class="prot-hit-view"><canvas width="1" height="1" aria-hidden="true"></canvas><figcaption aria-live="polite"></figcaption></figure>`,
+  [{ label: 'Back', value: 'back' }, { label: 'Cancel' }, { label: 'Mark', value: 'mark', primary: true }], (dlg) => {
+    const pb = $('.dlg-foot .btn.primary', dlg), boxes = $$('.prot-hit input', dlg);
+    const count = () => { picked = boxes.map((b) => b.checked); const n = picked.filter(Boolean).length; pb.textContent = n === found.length && n > 1 ? `Mark all ${n}` : `Mark ${n}`; pb.disabled = !n; };
+    let shownK = -1;
+    const show = async (k) => {
+      shownK = k; $$('.prot-hit', dlg).forEach((li) => li.classList.toggle('on', +li.dataset.k === k));
+      const f = found[k], cap = $('figcaption', dlg); cap.textContent = `Page ${protPageNo(f)}: ${f.text}`;
+      try { const c = await protHitShot(f); if (shownK !== k || !dlg.open) return; const cv = $('.prot-hit-view canvas', dlg); cv.width = c.width; cv.height = c.height; cv.getContext('2d').drawImage(c, 0, 0); } catch {}
+    };
+    $('.prot-hits', dlg).addEventListener('change', count);
+    $('.prot-hits', dlg).addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) show(+g.dataset.go); });
+    // Up and down move between the matches.
+    $('.prot-hits', dlg).addEventListener('keydown', (e) => {
+      if (!/^(ArrowUp|ArrowDown)$/.test(e.key)) return;
+      const gos = $$('[data-go]', dlg), at = gos.indexOf(e.target.closest('[data-go]')), k = Math.max(0, Math.min(gos.length - 1, (at < 0 ? shownK : at) + (e.key === 'ArrowDown' ? 1 : -1)));
+      e.preventDefault(); gos[k].focus(); show(k);
+    });
+    $$('[data-all]', dlg).forEach((b) => b.onclick = () => { boxes.forEach((x) => { x.checked = b.dataset.all === '1'; }); count(); });
+    count(); show(0);
+  });
+  if (res === 'back') return 'back';
+  return res === 'mark' ? found.filter((f, k) => picked[k]) : null;
+}
+// A close-up of one match on its page, outlined, for the list of matches.
+const protShots = new WeakMap();
+async function protHitShot(f) {
+  const page = await pageOf(f.entry), rotation = (page.rotate + f.entry.rot) % 360;
+  const v = page.getViewport({ scale: 2, rotation });
+  let full = protShots.get(f.entry);
+  if (!full) {
+    full = document.createElement('canvas'); full.width = Math.round(v.width); full.height = Math.round(v.height);
+    const g = full.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, full.width, full.height);
+    await page.render({ canvas: full, canvasContext: g, viewport: v }).promise;
+    protShots.set(f.entry, full);
+  }
+  const pts = f.quads.flat().map(([x, y]) => v.convertToViewportPoint(x, y)), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  const W = Math.min(full.width, Math.max(520, b[2] - b[0] + 120)), H = Math.min(full.height, Math.max(140, b[3] - b[1] + 80));
+  const x0 = Math.max(0, Math.min(full.width - W, (b[0] + b[2]) / 2 - W / 2)), y0 = Math.max(0, Math.min(full.height - H, (b[1] + b[3]) / 2 - H / 2));
+  const c = document.createElement('canvas'); c.width = Math.round(W); c.height = Math.round(H);
+  const g = c.getContext('2d'); g.drawImage(full, x0, y0, W, H, 0, 0, W, H);
+  g.fillStyle = 'rgba(224,49,49,.12)'; g.strokeStyle = '#E03131'; g.lineWidth = 3;
+  for (const q of f.quads) { g.beginPath(); q.map(([x, y]) => v.convertToViewportPoint(x, y)).forEach(([x, y], i) => (i ? g.lineTo(x - x0, y - y0) : g.moveTo(x - x0, y - y0))); g.closePath(); g.fill(); g.stroke(); }
+  return c;
 }
 
 /* ----- apply ----- */

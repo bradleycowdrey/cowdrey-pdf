@@ -209,7 +209,7 @@ window.addEventListener('drop', (e) => {
 });
 
 /* ---- read aloud ---- */
-const crdSay = { on: false, paused: false, n: 0, k: 0, sents: [], items: [], token: 0 };
+const crdSay = { on: false, paused: false, n: 0, k: 0, sents: [], items: [], token: 0, start: 0, fails: 0 };
 const crdSynth = () => window.speechSynthesis;
 const crdVoices = () => { try { return crdSynth().getVoices() || []; } catch { return []; } };
 // Sentences of a page, each with the text items it covers (for the highlight). Long runs are cut at an item edge.
@@ -273,7 +273,7 @@ function crdSayUi() {
 function crdSayStart() {
   if (!has() || !crdSynth()) return;
   if (crdSay.on) { crdSayToggle(); return; }
-  Object.assign(crdSay, { on: true, paused: false });
+  Object.assign(crdSay, { on: true, paused: false, start: current, fails: 0 });
   crdSayUi();
   crdSayPage(current, 0);
 }
@@ -296,11 +296,28 @@ function crdSaySpeak() {
   u.rate = S.crdRate || 1;
   const v = S.crdVoice && crdVoices().find((x) => x.voiceURI === S.crdVoice);
   if (v) { u.voice = v; u.lang = v.lang; }
+  let began = false;
   const next = () => { if (token !== crdSay.token || !crdSay.on || crdSay.paused) return; crdSay.k++; crdSaySpeak(); };
-  u.onend = next;
-  u.onerror = (e) => { if (e && /interrupted|canceled/.test(e.error)) return; next(); };
+  u.onstart = () => { began = true; crdSay.fails = 0; };
+  u.onend = () => { began = true; crdSay.fails = 0; next(); };
+  // When speech can't work (no voice, no sound, not allowed), reading stops with a message, back on the page it
+  // began on. It never skips on through the document. One sentence that fails is skipped, three in a row stop it.
+  u.onerror = (e) => {
+    const err = String((e && e.error) || '');
+    if (/interrupted|canceled/.test(err) || token !== crdSay.token || !crdSay.on) return;
+    if (/synthesis-failed|synthesis-unavailable|not-allowed|voice-unavailable|language-unavailable|audio-busy|audio-hardware|network/.test(err) || ++crdSay.fails >= 3) return crdSayFail(err);
+    next();
+  };
   crdSayPaint();
   crdSynth().speak(u);
+  // Some systems have no voice at all and never answer: nothing starts, nothing is queued.
+  setTimeout(() => { const sy = crdSynth(); if (!began && token === crdSay.token && crdSay.on && !crdSay.paused && sy && sy.speaking === false && sy.pending === false) crdSayFail('synthesis-unavailable'); }, 8000);
+}
+function crdSayFail(err) {
+  const back = crdSay.start ?? crdSay.n;
+  crdSayStop();
+  if (doc && back < doc.pages.length && back !== current) goPage(back);
+  toast(err === 'not-allowed' ? 'Read aloud needs a click to start. Choose Read aloud again.' : 'Read aloud isn\'t available: no voice could speak. Check your system\'s voices.');
 }
 function crdSayToggle() {
   if (!crdSay.on) return crdSayStart();
