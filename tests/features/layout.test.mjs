@@ -13,6 +13,9 @@ export default async (h) => {
     eq(tabs.map((t) => [t.title, t.name, t.icon]), [['Pages', 'Pages', true], ['Outline', 'Outline', true], ['Recent', 'Recent', true], ['Comments', 'Comments', true]]);
     ok(tabs.every((t) => t.h <= 44), 'short tabs');
     eq(await p.$eval('.side-tabs [data-side="comments"]', (b) => b.getAttribute('aria-controls')), 'sidePanel');
+    await p.click('.side-tabs [data-side="comments"]'); await p.waitForSelector('#sidePanel .cm-tools');
+    const tools = await p.$$eval('#sidePanel .cm-tools .btn', (b) => b.map((x) => [Math.round(x.getBoundingClientRect().top), x.scrollWidth <= x.clientWidth + 1]));
+    eq(tools.length, 3); eq(new Set(tools.map((t) => t[0])).size, 1, 'Hide, Export and Import in one row'); ok(tools.every((t) => t[1]), 'names fit');
     await p.ctx.close();
     const q = await open({ width: 390, height: 844, touch: true }); await openPdf(q);
     await q.tap('.statusbar .sb-pages'); await q.waitForTimeout(400);

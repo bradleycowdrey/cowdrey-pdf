@@ -941,6 +941,8 @@ addStyle(`
 .app[data-hide-marks="1"] .page .annotationLayer :is(section:not(.linkAnnotation):not([class*="WidgetAnnotation"]), .popup) { display: none !important; }
 .cm-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
 .cm-tools .btn { height: 28px; padding: 0 7px; font-size: 12px; gap: 4px; white-space: nowrap; }
+.sidebar .cm-tools { flex-wrap: nowrap; } /* Hide, Export and Import share one row */
+.sidebar .cm-tools .btn { flex: 1 1 auto; min-width: 0; justify-content: center; padding: 0 4px; }
 .cm-tools .btn svg { width: 14px; height: 14px; }
 .cm-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .app[data-tool="cmstamp"] .marks { cursor: copy; }
