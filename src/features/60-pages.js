@@ -259,7 +259,7 @@ function pg60RotateMany(idx, d) {
 function pg60DeleteMany(idx) {
   const gone = new Set(idx);
   pageOp(() => { doc.pages = doc.pages.filter((_, n) => !gone.has(n)); current = Math.max(0, Math.min(idx[0], doc.pages.length - 1)); });
-  pg60SetSel([]);
+  pg60SetSel([]); pagesDeleted(idx);
   toast(`Deleted ${pg60Plural(idx.length, 'page')}`);
 }
 // Asks before deleting: which pages (a range, starting with idx), with the count on the button. Enter deletes.
@@ -292,6 +292,7 @@ function pg60MoveMany(idx, d) {
     pg60Sel = new Set(a.map((x, n) => (x.sel ? n : -1)).filter((n) => n >= 0));
     current = Math.min(...pg60Sel);
   });
+  const now = [...pg60Sel].sort((a, b) => a - b); pagesMoved(idx, current, now.every((n, k) => n === now[0] + k));
 }
 // Moves the chosen pages so they stand together before page `to` (an index before the move).
 function pg60MoveTo(idx, to) {
@@ -303,6 +304,7 @@ function pg60MoveTo(idx, to) {
     pg60Sel = new Set(moving.map((_, k) => before.length + k));
     current = before.length;
   });
+  pagesMoved(idx, current);
 }
 function pg60DupMany(idx) {
   const set = new Set(idx);
@@ -536,8 +538,8 @@ cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app
 cmd('pg60_crop', { label: 'Crop margins…', icon: 'frame', enabled: has, run: () => pg60CropDialog() });
 cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: () => has() && doc.pages.length > 1, run: pg60Split });
 cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
-cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => pg60Combine() });
-cmd('pg60_ins', { label: 'Insert pages', rlabel: 'Insert', icon: 'file-plus-2', menu: ['blank', 'pg60_insert', 'pg60_replace', '-', 'merge'] });
+cmd('merge', { label: 'Combine PDFs…', rlabel: 'Combine', icon: 'files', run: () => pg60Combine() });
+cmd('pg60_ins', { label: 'Insert pages', rlabel: 'Insert', icon: 'file-plus-2', menu: ['blank', 'pg60_insert', 'pg60_replace'] });
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
@@ -545,7 +547,9 @@ cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: () => h
 cmd('pg60_selAll', { label: 'Select all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
 // One button per job: Rotate and Delete open their other choices from a small arrow, Insert is a list.
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
-ribbonAdd('pages', 'Insert', ['pg60_ins'], 'Remove');
+ribbonAdd('pages', 'Insert', ['pg60_ins', 'merge'], 'Remove');
+// Combine is one of the first things people look for: on Home too, next to Open.
+{ const f = RIBBON.home[1].find(([g]) => g === 'File'); if (f && !f[1].includes('merge')) f[1].splice(f[1].indexOf('open') + 1, 0, 'merge'); }
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
 ribbonAdd('pages', 'Remove', ['pg60_split']);
 menuOrder('Pages', ['pg60_selAll', '-', 'rotL', 'rotR', 'rotAll', 'pg60_rotate', '-', 'up', 'down', 'pg60_reverse', 'dup', '-', 'blank', 'pg60_insert', 'pg60_replace', 'merge', '-', 'extract', 'pg60_split', '-', 'delPage', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
@@ -587,15 +591,29 @@ async function pg60Blank(count, size, at) {
   toast(count === 1 ? 'Inserted a blank page' : `Inserted ${count} blank pages`);
 }
 if (C.blank) { C.blank.label = 'Insert blank pages…'; C.blank.run = pg60BlankAsk; }
+// One blank page the size of this page, before or after it (the chosen pages: before the first or after the last).
+async function pg60BlankBy(after) {
+  if (!has()) return;
+  const t = pg60Targets(), n = after ? t[t.length - 1] : t[0], e = doc.pages[n], page = await pageOf(e);
+  const vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
+  await pg60Blank(1, [vp.width, vp.height], after ? n + 1 : n);
+}
+cmd('pg60_blankBefore', { label: 'Insert blank page before', icon: 'between-horizontal-start', enabled: has, run: () => pg60BlankBy(false) });
+cmd('pg60_blankAfter', { label: 'Insert blank page after', icon: 'between-horizontal-end', enabled: has, run: () => pg60BlankBy(true) });
+// Moves the page (or the chosen pages) to the start or the end.
+const pg60AtEdge = (end) => { const t = pg60Targets(); return end ? t.every((n, k) => n === doc.pages.length - t.length + k) : t.every((n, k) => n === k); };
+cmd('pg60_toStart', { label: 'Move to start', icon: 'arrow-up-to-line', enabled: () => has() && !pg60AtEdge(false), run: () => pg60MoveTo(pg60Targets(), 0) });
+cmd('pg60_toEnd', { label: 'Move to end', icon: 'arrow-down-to-line', enabled: () => has() && !pg60AtEdge(true), run: () => pg60MoveTo(pg60Targets(), doc.pages.length) });
 
-/* ---- Organize: every page in a grid that fills the window. Click, Shift- and Cmd/Ctrl-click choose pages, drag
-   moves them, and the bar's commands (rotate, insert, duplicate, extract, delete) work on the chosen pages. ---- */
+/* ---- Organize: every page in a grid that fills the window, with the sidebar out of the way. Click, Shift- and
+   Cmd/Ctrl-click choose pages, drag moves them, and the Pages ribbon and a page's right-click menu work on the chosen
+   pages (the grid's own bar only counts them, selects all and goes back). ---- */
 const pg60Org = document.createElement('section');
 pg60Org.className = 'pg60-org'; pg60Org.id = 'pg60Org'; pg60Org.hidden = true; pg60Org.setAttribute('aria-label', 'Organize pages');
 pg60Org.innerHTML = `<div class="pg60-org-bar">
   <span class="pg60-org-count" aria-live="polite"></span>
-  <span class="pg60-org-tools">${[['pg60_selAll', 'Select all'], ['rotL', 'Rotate left'], ['rotR', 'Rotate right'], ['blank', 'Insert'], ['dup', 'Duplicate'], ['extract', 'Extract'], ['delPage', 'Delete']].map(([id, l]) => `<button type="button" class="btn" data-org="${id}" title="${esc(C[id] ? C[id].label : l)}">${ic(C[id] ? C[id].icon : 'circle')}<span>${l}</span></button>`).join('')}</span>
-  <button type="button" class="btn primary" data-org-done>${ic('x')}<span>Close</span></button>
+  <span class="pg60-org-tools"><button type="button" class="btn" data-org="pg60_selAll" title="${esc(C.pg60_selAll.label)}">${ic(C.pg60_selAll.icon)}<span>Select all</span></button></span>
+  <button type="button" class="btn" data-org-done title="Back to the document (Esc)">${ic('check')}<span>Done</span></button>
 </div>
 <div class="pg60-org-grid" role="listbox" aria-label="Pages" aria-multiselectable="true"></div>`;
 $('.workspace').appendChild(pg60Org);
@@ -711,6 +729,8 @@ addStyle(`
 .pg60-org { grid-row: 1; grid-column: -2 / -1; z-index: 3; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--canvas); }
 .pg60-org[hidden] { display: none; }
 .app[data-organize="1"] .viewer { visibility: hidden; }
+.app[data-organize="1"] .workspace { grid-template-columns: 0 1fr; }
+.app[data-organize="1"]:not([data-sidebar="open"]) .sidebar { visibility: hidden; }
 .pg60-org-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--chrome); border-bottom: 1px solid var(--line); }
 .pg60-org-count { color: var(--ink-2); font-size: 13px; white-space: nowrap; margin-right: auto; }
 .pg60-org-tools { display: flex; gap: 4px; overflow-x: auto; min-width: 0; scrollbar-width: none; }

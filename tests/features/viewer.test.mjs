@@ -145,7 +145,7 @@ export default async (h) => {
     const p = await open(); await reopen(p, await longPdf(4));
     // a page in the sidebar
     await p.click('.thumb[data-n="2"]', { button: 'right' }); await p.waitForTimeout(150);
-    eq(await menu(p), ['Rotate left', 'Rotate right', 'Duplicate page', 'Insert blank page after', 'Extract pages…', 'Move page up', 'Move page down', 'Delete page']);
+    eq(await menu(p), ['Rotate left', 'Rotate right', 'Insert blank page before', 'Insert blank page after', 'Insert from PDF…', 'Replace pages…', 'Duplicate page', 'Extract pages…', 'Crop margins…', 'Move page up', 'Move page down', 'Move to start', 'Move to end', 'Delete page']);
     await pick(p, 'Rotate right');
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.rot)), [0, 0, 90, 0]);
     await p.click('.thumb[data-n="0"]', { button: 'right' }); await pick(p, 'Insert blank page after'); await p.waitForTimeout(400);

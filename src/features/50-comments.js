@@ -726,7 +726,7 @@ function cmPanelSoon() { if (S.side !== 'comments') return; clearTimeout(CM.pane
 {
   const tabs = $('.side-tabs');
   const b = document.createElement('button');
-  Object.assign(b, { type: 'button', textContent: 'Comments' }); b.setAttribute('role', 'tab'); b.dataset.side = 'comments'; b.setAttribute('aria-selected', 'false');
+  Object.assign(b, { type: 'button', title: 'Comments', innerHTML: `${ic('message-square')}<span>Comments</span>` }); b.setAttribute('role', 'tab'); b.dataset.side = 'comments'; b.setAttribute('aria-selected', 'false'); b.setAttribute('aria-controls', 'sidePanel');
   b.addEventListener('click', () => setSide('comments'));
   tabs.appendChild(b);
 }
@@ -953,13 +953,14 @@ TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;
 TEST_HOOKS.cmExportXfdf = async () => { await cmExportXfdf(); return CM.lastXfdf; };
 
 addStyle(`
-.sidebar .side-tabs { grid-template-columns: repeat(2, 1fr); } /* four tabs: two rows of two */
 .app[data-tool="cmunderline"] .marks, .app[data-tool="cmstrike"] .marks, .app[data-tool="cmsquiggly"] .marks { pointer-events: none !important; }
 .app[data-tool="cmtype"] .marks { cursor: text; }
 .app[data-hide-marks="1"] .page .marks :is([data-type="hl"], [data-type="ink"], [data-type="rect"], [data-type="note"], [data-type^="cm"], .mk-selbox-g),
 .app[data-hide-marks="1"] .page .annotationLayer :is(section:not(.linkAnnotation):not([class*="WidgetAnnotation"]), .popup) { display: none !important; }
 .cm-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
 .cm-tools .btn { height: 28px; padding: 0 7px; font-size: 12px; gap: 4px; white-space: nowrap; }
+.sidebar .cm-tools { flex-wrap: nowrap; } /* Hide, Export and Import share one row */
+.sidebar .cm-tools .btn { flex: 1 1 auto; min-width: 0; justify-content: center; padding: 0 4px; }
 .cm-tools .btn svg { width: 14px; height: 14px; }
 .cm-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .app[data-tool="cmstamp"] .marks { cursor: copy; }

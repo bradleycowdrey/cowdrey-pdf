@@ -72,14 +72,15 @@ FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLast
 const ffDesign = () => S.ribbon === 'forms' && ffIsTool();
 const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list']);
 function ffRedrawAll() { selectMark(null); views.forEach((v) => { if (v.rendered) { drawMarks(v); ffLayer(v); } }); }
-(FEATURE.onTab ||= []).push(() => { ffRedrawAll(); });
+(FEATURE.onTab ||= []).push(() => { ffFillOn = false; ffRedrawAll(); });
 // Choosing a form tool designs the form; Select (or Esc) fills it in.
 let ffWasDesign = false;
-new MutationObserver(() => { const d = ffDesign(); if (d !== ffWasDesign) { ffWasDesign = d; if (!d) ffSelectX(null); ffRedrawAll(); } }).observe(app, { attributes: true, attributeFilter: ['data-tool'] });
+new MutationObserver(() => { if (app.dataset.tool !== 'select') ffFillOn = false; const d = ffDesign(); if (d !== ffWasDesign) { ffWasDesign = d; if (!d) ffSelectX(null); ffRedrawAll(); } }).observe(app, { attributes: true, attributeFilter: ['data-tool'] });
 function ffEndPreview() {}
-// Fill in: leave form design to try the fields; pressed again, back to Edit fields.
+// Fill in: leave form design to try the fields (pressed only once chosen); pressed again, back to Edit fields.
+let ffFillOn = false;
 function ffPreview() {
-  if (ffIsTool()) { setTool('select'); toast('Fill in the fields to try them'); }
+  if (!ffFillOn) { if (app.dataset.tool !== 'select') setTool('select'); ffFillOn = true; refreshRibbon(); toast('Fill in the fields to try them'); }
   else { setTool('ff_edit'); ffLoadKnown(); }
 }
 Object.assign(TOOL_HINTS, { ff_edit: 'Click a field to select it; double-click for its properties' });
@@ -775,7 +776,7 @@ const ffHasForm = () => {
 };
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: () => has() && ffHasForm(), run: ffClear });
 cmd('ffFlatten', { label: 'Flatten form', tip: 'Flatten form: make the form fields part of the page when you save. Comments stay comments.', icon: 'layers-2', enabled: () => has() && ffHasForm(), pressed: ffFlat, run: ffFlatten });
-cmd('ffPreview', { label: 'Fill in', icon: 'text-cursor-input', enabled: () => has() && !ffFlat(), pressed: () => S.ribbon === 'forms' && !ffIsTool(), run: ffPreview });
+cmd('ffPreview', { label: 'Fill in', icon: 'pencil-line', enabled: () => has() && !ffFlat(), pressed: () => S.ribbon === 'forms' && ffFillOn && app.dataset.tool === 'select', run: ffPreview });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
 ribbonAdd('forms', 'Form', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);

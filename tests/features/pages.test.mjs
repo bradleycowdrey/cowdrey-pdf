@@ -178,7 +178,8 @@ export default async (h) => {
     const p = await open({ width: 1440, height: 900 }); await openPdf(p, ABC, 'Letters.pdf');
     await p.click('[data-rt="pages"]'); await settle(p);
     const ids = await p.$$eval('#ribbonBody [data-cmd], #ribbonBody [data-rmenu]', (b) => b.map((x) => x.dataset.cmd || 'menu:' + x.dataset.rmenu));
-    for (const gone of ['rotL', 'rotAll', 'pg60_rotate', 'pg60_delete', 'merge', 'pg60_insert', 'blank']) ok(!ids.includes(gone), `${gone} is not on the ribbon: ${ids}`);
+    for (const gone of ['rotL', 'rotAll', 'pg60_rotate', 'pg60_delete', 'pg60_insert', 'blank']) ok(!ids.includes(gone), `${gone} is not on the ribbon: ${ids}`);
+    ok(ids.indexOf('merge') === ids.indexOf('menu:pg60_ins') + 1, 'Combine is next to Insert: ' + ids);
     eq(ids.filter((x) => /^(rotR|delPage|menu:)/.test(x)), ['rotR', 'menu:rotR', 'menu:pg60_ins', 'delPage', 'menu:delPage']);
     eq(await p.$$eval('#ribbonBody .rb[data-cmd="rotR"] span, #ribbonBody .rb[data-cmd="delPage"] span, #ribbonBody .rb[data-rmenu="pg60_ins"] > span', (s) => s.map((x) => x.textContent)), ['Rotate', 'Insert', 'Delete']);
     ok(await p.$eval('#ribbonBody', (b) => b.scrollWidth <= b.clientWidth + 1), 'the whole tab fits');
@@ -191,8 +192,8 @@ export default async (h) => {
     eq(await p.evaluate(() => document.activeElement.dataset.rmenu), 'rotR', 'focus back on the arrow');
     eq(await menu('delPage'), ['delPage', 'pg60_delete']);
     await p.click('#popover [data-cmd="pg60_delete"]'); await dlg(p); await p.click('#dialog [data-x]');
-    eq(await menu('pg60_ins'), ['blank', 'pg60_insert', 'pg60_replace', 'merge']);
-    eq(await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent)), ['Insert blank pages…', 'Insert from PDF…', 'Replace pages…', 'Combine PDFs…']);
+    eq(await menu('pg60_ins'), ['blank', 'pg60_insert', 'pg60_replace']);
+    eq(await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent)), ['Insert blank pages…', 'Insert from PDF…', 'Replace pages…']);
     await p.click('#popover [data-cmd="blank"]'); await dlg(p); await primary(p); await settle(p);
     eq(await p.$$eval('.thumb', (e) => e.length), 4, 'blank page inserted from the list');
     // the Rotate face rotates right; Select all pages (the menu, or Ctrl+A on a page in the sidebar)

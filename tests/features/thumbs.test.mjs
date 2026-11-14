@@ -137,7 +137,7 @@ export default async (h) => {
     ok(await p.$eval('.pg60-cell[data-n="0"] canvas', (c) => c.width > 150 && c.offsetHeight > 150), 'pages drawn large');
     await p.click('.pg60-cell[data-n="1"]'); await p.click('.pg60-cell[data-n="3"]', { modifiers: ['Shift'] });
     eq(await p.$$eval('.pg60-cell[aria-selected="true"]', (c) => c.map((x) => x.dataset.n)), ['1', '2', '3']);
-    await p.click('.pg60-org-bar [data-org="rotR"]'); await settle(p, 600);
+    await p.click('#ribbonBody [data-cmd="rotR"]'); await settle(p, 600); // the Pages ribbon works on the chosen pages
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.rot)), [0, 90, 90, 90, 0]);
     // Drag page 5 in front of page 1
     const a = await p.locator('.pg60-cell[data-n="4"]').boundingBox(), b = await p.locator('.pg60-cell[data-n="0"]').boundingBox();

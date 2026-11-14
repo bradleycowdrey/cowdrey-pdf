@@ -46,7 +46,8 @@ function toast(msg) {
   msg = touchWords(msg);
   // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
   // of a toast that goes after a moment and covers the page (toasts are for what happened).
-  if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); return; }
+  // (A phone's chip has room for the tool's name only: there the hint is also shown once, as a toast.)
+  if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
@@ -174,7 +175,14 @@ async function showDoc(d, loaded) {
   for (const f of FEATURE.onDocShown) { try { f(d); } catch (e) { console.warn(e); } }
   return true;
 }
-function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
+// The name in the title bar: when it is too long, its middle gives way (the start and its last few letters stay),
+// and the whole name is its tooltip.
+function setTitle() {
+  const name = doc ? doc.name : 'Cowdrey.PDF', t = $('#docTitle'), cut = name.slice(-11).search(/[ _-][^ _-]{2,}$/);
+  const k = name.length <= 14 ? 0 : cut >= 0 ? 11 - cut : Math.min(8, Math.floor(name.length / 3)); // from the last word, when it is short
+  t.innerHTML = `<span class="dt-a">${esc(name.slice(0, name.length - k))}</span>${k ? `<span class="dt-b">${esc(name.slice(-k))}</span>` : ''}`;
+  t.title = name; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF';
+}
 // `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
 // Documents with changes says they are kept there.
 function setSaved(saved, opened) {
@@ -283,6 +291,11 @@ async function renderView(v) {
       await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: PDFJS_ICONS, downloadManager: null });
       al.addEventListener('input', () => setSaved(false));
       al.addEventListener('change', () => setSaved(false));
+      // A field with no tooltip (/TU) is named after the field itself (/T), so a screen reader can say what it is for.
+      for (const f of al.querySelectorAll('input, select, textarea')) {
+        if (f.getAttribute('aria-label') || f.title || !f.name) continue;
+        f.setAttribute('aria-label', f.name.split('.').pop().replace(/[_]+/g, ' ').trim() || 'Form field');
+      }
     }
   } catch (e) { console.warn('annotation layer', e); }
   if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
@@ -1099,6 +1112,8 @@ function setTool(t) {
   if (t !== was) toolHint = TOOL_HINTS[t] || '';
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
+  // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).
+  if (t !== was && t !== 'select' && isPhone()) setTimeout(() => { const m = $('#toast'); if (app.dataset.tool === t && toolHint && !(m.classList.contains('show') && m.textContent === touchWords(toolHint))) toast(toolHint); }, 0);
   refreshRibbon();
 }
 /* ---- the mode chip: while a tool other than Select is on, the status bar says which, and how to use it ---- */
@@ -1117,9 +1132,13 @@ function modeChip() {
   const t = app.dataset.tool, on = !!doc && t && t !== 'select';
   chip.hidden = !on; app.classList.toggle('tool-on', on);
   if (!on) return;
-  let name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  const name = toolName(t);
+  let hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
   if (dragTool(t) && !coarse()) hint = (hint || 'drag on the page') + ', or press Enter to add one';
-  chip.title = $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
+  const rest = [name && hint ? `: ${hint}` : name ? '' : hint, coarse() ? '' : ' · Esc to stop'].join('');
+  chip.title = (name || '') + rest;
+  // The name and the rest apart, so a phone can show the name alone (the rest is still read out).
+  $('.mode-text', chip).innerHTML = `<span class="mode-name">${esc(name || '')}</span><span class="mode-hint">${esc(name ? rest : rest.replace(/^ · /, ''))}</span>`;
 }
 $('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
 
@@ -2367,8 +2386,12 @@ function pageOp(fn, layout = true) {
 }
 const rotatePage = (d) => pageOp(() => { const e = doc.pages[current]; e.rot = (e.rot + d + 360) % 360; });
 const rotateAll = (d) => pageOp(() => doc.pages.forEach((e) => { e.rot = (e.rot + d + 360) % 360; }));
-const deletePage = () => pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); });
-const movePage = (d) => pageOp(() => { const t = current + d; if (t < 0 || t >= doc.pages.length) return; const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; });
+// Page moves and deletes are read out (the pages change under a screen reader's cursor without a word otherwise).
+// `idx`: the pages moved (indexes before the move); `to`: where the first of them is now.
+function pagesMoved(idx, to, together = true) { if (doc) announce(idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`); }
+function pagesDeleted(n) { if (doc) announce(`${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted. ${doc.pages.length} left.`); }
+const deletePage = () => { const n = current; pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); }); pagesDeleted([n]); };
+const movePage = (d) => { const t = current + d, n = current; if (!doc || t < 0 || t >= doc.pages.length) return; pageOp(() => { const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; }); pagesMoved([n], t); };
 const duplicatePage = () => pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; });
 async function insertBlank() {
   const L = await loadPdfLib();
@@ -2883,10 +2906,12 @@ function stepFind(d, to) {
     const top = v.el.offsetTop + b.y + b.h / 2 - viewer.clientHeight / 2, left = v.el.offsetLeft + b.x + b.w / 2 - viewer.clientWidth / 2;
     viewer.scrollTo({ top: Math.max(0, top), left: viewer.scrollWidth > viewer.clientWidth ? Math.max(0, left) : 0, behavior: 'instant' });
   }
-  $$('#findList [data-hit]').forEach((x) => { const on = +x.dataset.hit === findState.now; x.setAttribute('aria-current', on ? 'true' : 'false'); if (on) x.scrollIntoView({ block: 'nearest' }); });
+  const inList = $('#findList').contains(document.activeElement);
+  $$('#findList [data-hit]').forEach((x) => { const on = +x.dataset.hit === findState.now; x.setAttribute('aria-current', on ? 'true' : 'false'); x.setAttribute('aria-selected', on); if (!inList) x.tabIndex = on ? 0 : -1; if (on) x.scrollIntoView({ block: 'nearest' }); });
   renderView(v).then(() => views.forEach((x) => x.rendered && paintFind(x)));
 }
-// All results: each match with its page and the words around it; choosing one goes to it.
+// All results: each match with its page and the words around it; choosing one goes to it. A list box: one Tab stop
+// (the match in view), the arrows, Home and End move, Enter or a click goes to the match.
 const FIND_LIST_MAX = 500;
 function findListDraw() {
   const list = $('#findList'); if (!list || list.hidden) return;
@@ -2898,21 +2923,23 @@ function findListDraw() {
     const flat = (x) => esc(x.replace(/\s+/g, ' '));
     const a = Math.max(0, h.at - 40), b = Math.min(s.length, h.at + h.len + 40);
     const before = s.slice(a, h.at).replace(/^\S*\s/, a ? '' : '$&'), after = s.slice(h.at + h.len, b).replace(/\s\S*$/, b < s.length ? '' : '$&');
-    return `<li><button type="button" data-hit="${k}" aria-current="${k === findState.now}"><b>Page ${h.n + 1}</b><span>${a ? '…' : ''}${flat(before)}<mark>${flat(s.slice(h.at, h.at + h.len))}</mark>${flat(after)}${b < s.length ? '…' : ''}</span></button></li>`;
+    const on = k === (findState.now >= 0 && findState.now < Math.min(hits.length, FIND_LIST_MAX) ? findState.now : 0);
+    return `<li role="none"><button type="button" role="option" data-hit="${k}" aria-current="${k === findState.now}" aria-selected="${k === findState.now}" tabindex="${on ? 0 : -1}"><b>Page ${h.n + 1}</b><span>${a ? '…' : ''}${flat(before)}<mark>${flat(s.slice(h.at, h.at + h.len))}</mark>${flat(after)}${b < s.length ? '…' : ''}</span></button></li>`;
   };
-  list.innerHTML = `<p class="find-head">${hits.length === 1 ? '1 result' : `${hits.length} results`}${hits.length > FIND_LIST_MAX ? `, first ${FIND_LIST_MAX} shown` : ''}</p><ol>${hits.slice(0, FIND_LIST_MAX).map(row).join('')}</ol>`;
+  list.innerHTML = `<p class="find-head">${hits.length === 1 ? '1 result' : `${hits.length} results`}${hits.length > FIND_LIST_MAX ? `, first ${FIND_LIST_MAX} shown` : ''}</p><ol role="listbox" aria-label="Results">${hits.slice(0, FIND_LIST_MAX).map(row).join('')}</ol>`;
 }
 function findListShow(on) {
   const list = $('#findList'), btn = $('#findAll');
   list.hidden = !on; btn.setAttribute('aria-pressed', on); btn.setAttribute('aria-expanded', on);
   findListDraw();
 }
-$('#findList').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) stepFind(0, +b.dataset.hit); });
+$('#findList').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) { $$('#findList [data-hit]').forEach((x) => { x.tabIndex = x === b ? 0 : -1; }); stepFind(0, +b.dataset.hit); } });
 $('#findList').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); findListShow(false); $('#findAll').focus(); return; }
   const bs = $$('#findList [data-hit]'), k = bs.indexOf(document.activeElement); if (k < 0) return;
   const n = { ArrowDown: k + 1, ArrowUp: k - 1, Home: 0, End: bs.length - 1 }[e.key]; if (n === undefined) return;
-  e.preventDefault(); e.stopPropagation(); bs[Math.max(0, Math.min(bs.length - 1, n))].focus();
+  e.preventDefault(); e.stopPropagation();
+  const t = bs[Math.max(0, Math.min(bs.length - 1, n))]; bs.forEach((x) => { x.tabIndex = x === t ? 0 : -1; }); t.focus();
 });
 $('#findAll').onclick = () => findListShow($('#findList').hidden);
 for (const [id, k] of [['#findCase', 'matchCase'], ['#findWord', 'words']]) $(id).onclick = () => { findOpts[k] = !findOpts[k]; $(id).setAttribute('aria-pressed', findOpts[k]); runFind($('#findInput').value.trim()); };
@@ -2979,7 +3006,7 @@ async function renderSide() {
       e.preventDefault(); t.classList.remove('drag-over');
       const from = +e.dataTransfer.getData('text/plain'), to = +t.dataset.n;
       if (Number.isNaN(from) || from === to) return;
-      pageOp(() => { const [x] = doc.pages.splice(from, 1); doc.pages.splice(to, 0, x); current = to; });
+      pageOp(() => { const [x] = doc.pages.splice(from, 1); doc.pages.splice(to, 0, x); current = to; }); pagesMoved([from], to);
     };
   });
   markThumb();
@@ -3527,7 +3554,11 @@ function thumbMenu(t, at) {
   if (typeof pg60Valid === 'function' && !pg60Valid().includes(n)) pg60SetSel([]);
   const on = (id, o) => ctxCmd(id, { ...o, run: () => { current = n; markThumb(); run(id); } });
   const was = current; current = n; // what can be done to this page
-  const items = [on('rotL'), on('rotR'), '-', on('dup'), ctxCmd('blank', { label: 'Insert blank page after', run: () => { current = n; markThumb(); insertBlank(); } }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
+  const items = [on('rotL'), on('rotR'), '-',
+    C.pg60_blankBefore ? on('pg60_blankBefore') : null, C.pg60_blankAfter ? on('pg60_blankAfter') : ctxCmd('blank', { label: 'Insert blank page after', run: () => { current = n; markThumb(); insertBlank(); } }),
+    on('pg60_insert', { label: 'Insert from PDF…' }), on('pg60_replace'), '-',
+    on('dup'), on('extract'), on('pg60_crop'), '-',
+    on('up'), on('down'), on('pg60_toStart'), on('pg60_toEnd'), '-', on('delPage')];
   current = was;
   openCtx(items, at, t, `Page ${n + 1}`); t.classList.add('ctx-for'); // shows which page the menu is for
   return true;
@@ -3581,7 +3612,7 @@ document.addEventListener('keydown', (e) => {
   const a = document.activeElement;
   if (pop.contains(a) || typingIn(a)) return;
   e.preventDefault(); e.stopPropagation(); ctxOpened = Date.now();
-  const t = a && a.closest && a.closest('#sidePanel .thumb');
+  const t = a && a.closest && a.closest('#sidePanel .thumb, .pg60-cell');
   if (t) { const r = t.getBoundingClientRect(); thumbMenu(t, { x: r.left + r.width / 2, y: r.top + r.height / 2 }); return; }
   const m = selectedMark(), mv = m && views.find((x) => x.entry === selMark.entry), me = mv && mv.el.querySelector(`.mk[data-id="${CSS.escape(m.id)}"]`);
   if (me) { const r = me.getBoundingClientRect(); markMenu(mv, m, { x: r.left, y: r.bottom + 4 }); return; }
@@ -3834,11 +3865,17 @@ function refreshRibbon() {
   }
   const sw = $('#ribbonBody [data-color]') && swatchNow(); $$('#ribbonBody [data-color]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.color === sw));
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
-  let shift = false;
+  let shift = false, appeared = null;
   $$('#ribbonBody .r-group').forEach((g) => {
     const bs = $$('[data-cmd]', g); if (!bs.length || !bs.every((b) => C[b.dataset.cmd].contextual)) return;
-    const hide = bs.every((b) => b.disabled); if (g.hidden !== hide) { g.hidden = hide; shift = true; }
+    g.classList.add('r-ctx');
+    const hide = bs.every((b) => b.disabled); if (g.hidden !== hide) { g.hidden = hide; shift = true; if (!hide) appeared = g; }
   });
+  // One that appears is scrolled into view, whole (it comes last, so it may start past the edge).
+  if (appeared) {
+    const row = $('#ribbonBody'), r = row.getBoundingClientRect(), b = appeared.getBoundingClientRect();
+    if (b.right > r.right - 8 || b.left < r.left) row.scrollTo({ left: Math.max(0, Math.min(row.scrollLeft + b.left - r.left - 16, row.scrollLeft + b.right - r.right + 16)), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
   if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
   $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });
@@ -3897,7 +3934,8 @@ function applyTheme() {
   if (S.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
   app.dataset.darkpage = S.darkPage ? 'on' : 'off';
   $('#themeBtn').innerHTML = ic({ system: 'sun-moon', light: 'sun', dark: 'moon' }[S.theme]);
-  $('#themeBtn').title = { system: 'Appearance: match system', light: 'Appearance: light', dark: 'Appearance: dark' }[S.theme];
+  $('#themeBtn').title = { system: 'Theme: match system', light: 'Theme: light', dark: 'Theme: dark' }[S.theme];
+  $('#themeBtn').setAttribute('aria-label', $('#themeBtn').title); // its name says the theme now
   icons();
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
@@ -3988,7 +4026,8 @@ const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': '
 var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
 function macMenu() {
   if (!MAC_APP) return;
-  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null });
+  // Only a real switch is a check item: a command that opens a window (its name ends in …) never is (Apple's HIG).
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
   const menus = MENUS.map(([title, ids]) => {
     // About and Check for Updates live in the Cowdrey.PDF menu.
     let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates').map((id) => id === '-' ? { kind: 'sep' } : item(id));
@@ -3997,6 +4036,7 @@ function macMenu() {
       while (rest.length && rest[0].kind === 'sep') rest.shift();
       items = [item('undo'), item('redo'), { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }, ...rest];
     }
+    items = items.filter((x, k, a) => x.kind !== 'sep' || (k > 0 && k < a.length - 1 && a[k - 1].kind !== 'sep')); // no separator at an end, or two together
     return { title, items };
   });
   const json = JSON.stringify(menus);
