@@ -47,7 +47,7 @@ export default async (h) => {
 
   await test('text: Escape in the paragraph editor keeps the change and stays in Edit PDF; a second Escape leaves', async () => {
     const p = await open(); await openPdf(p, file, 'Notes.pdf');
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     await p.keyboard.press('End'); await p.keyboard.type(' Kept.'); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
     if (await p.$('#dialog[open]')) await letRun(p);
@@ -61,7 +61,7 @@ export default async (h) => {
   });
   await test('text: paragraph mode edits a whole paragraph, re-wraps it to the block\'s width, and saves it in its own font', async () => {
     const p = await open(); await openPdf(p, file, 'Notes.pdf');
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     eq(await p.evaluate(() => document.querySelector('.app').dataset.tool), 'edit', 'Edit PDF is on');
     const [x, y] = await at(p, 120, 667);
     await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
@@ -98,7 +98,7 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
     const [x, y] = await at(p, 100, 563);
     await p.mouse.click(x, y); await p.waitForSelector('.line-editor'); await p.waitForSelector('.txt-bar');
-    ok(!(await p.$('.txt-bar [data-tf="center"]')), 'a line has no alignment');
+    ok(await p.$('.txt-bar [data-tf="center"]'), 'a line can be aligned (in its own box)'); ok(!(await p.$('.txt-bar [data-tf="spacing"]')), 'a line has no line spacing');
     await p.click('.txt-bar [data-tf="bigger"]'); await p.click('.txt-bar [data-tf="bigger"]');
     await p.click('.txt-bar [data-tf="bold"]'); await p.click('.txt-bar [data-tf="underline"]');
     await p.click('.txt-bar [data-tf="color"][data-c="#E03131"]');
@@ -200,7 +200,7 @@ export default async (h) => {
     ok(t1.includes('45,500') && !t1.includes('42,000') && t1.includes('heron') && !/pelican/i.test(t1), t1);
     ok(t2.includes('Budget review: 45,500') && !t2.includes('42,000'), t2);
     // In a paragraph made with paragraph mode, the paragraph's text is replaced and wrapped again
-    await p.evaluate(() => { window.__cowdreyPdf.views()[0].el.scrollIntoView(); window.__cowdreyPdf.run('txtParaMode'); }); await p.waitForTimeout(300);
+    await p.evaluate(() => { window.__cowdreyPdf.views()[0].el.scrollIntoView(); window.__cowdreyPdf.run('txtEditParas'); }); await p.waitForTimeout(300);
     const [x, y] = await at(p, 120, 651); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     await p.keyboard.press('Control+End'); await p.keyboard.type(' More soon.'); await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
     await p.keyboard.press('Control+h'); await p.waitForSelector('#dialog[open] #txtFind');
@@ -215,7 +215,7 @@ export default async (h) => {
   await test('text: on a rotated page a paragraph is edited, centred and saved along the page\'s own lines', async () => {
     const p = await open(); await openPdf(p, file, 'Notes.pdf');
     await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(500);
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode')); await p.waitForTimeout(300);
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas')); await p.waitForTimeout(300);
     const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     eq(await p.inputValue('.txt-editor'), PARA.join(' '), 'the whole paragraph');
     await p.click('.txt-bar [data-tf="center"]');
@@ -238,7 +238,7 @@ export default async (h) => {
 
   await test('text: a paragraph that grows past its lines warns, and shrinks to fit or runs on only when asked', async () => {
     const p = await open(); await openPdf(p, file, 'Notes.pdf');
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     ok(!(await p.$('.txt-over')), 'no warning while it fits');
     await p.keyboard.press('Control+End'); await p.keyboard.type(' A last short sentence was added here.');
@@ -276,7 +276,7 @@ export default async (h) => {
 
   await test('text: the format bar fits a phone screen', async () => {
     const p = await open({ width: 390, height: 844, touch: true }); await openPdf(p, file, 'Notes.pdf');
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-bar');
     const r = await p.$eval('.txt-bar', (b) => { const r = b.getBoundingClientRect(); return [r.left, r.right]; });
     ok(r[0] >= 0 && r[1] <= 390, 'bar inside the screen ' + r);

@@ -167,10 +167,11 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
-  await test('flow: Signature is on Protect only; Save PDF is in the title bar, not again on Home or Export', async () => {
+  await test('flow: Signature is on Protect and in Comment > Add (one command); Save PDF is in the title bar, not again on Home or Export', async () => {
     const p = await open(); await openPdf(p);
     const tab = async (t) => { await p.click(`[data-rt="${t}"]`); return p.$$eval('#ribbonBody [data-cmd]', (e) => e.map((x) => x.dataset.cmd)); };
-    ok(!(await tab('markup')).includes('sign'), 'not on Comment');
+    ok((await tab('markup')).includes('sign'), 'on Comment');
+    eq(await p.$$eval('#ribbonBody .r-group', (g) => g.filter((x) => x.querySelector('[data-cmd="sign"]')).map((x) => x.getAttribute('aria-label'))), ['Add'], 'in Comment > Add');
     ok((await tab('protect')).includes('sign'), 'on Protect');
     ok(!(await tab('home')).includes('save'), 'not on Home');
     ok(!(await tab('export')).includes('save'), 'not on Export');

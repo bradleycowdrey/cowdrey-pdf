@@ -131,7 +131,7 @@ export default async (h) => {
     const pg = pdf.addPage([612, 792]); PARA.forEach((t, k) => pg.drawText(t, { x: 72, y: 680 - k * 16, size: 12, font: reg, color: rgb(0.1, 0.1, 0.1) }));
     const file = h.path.join(h.fs.mkdtempSync(h.path.join((await import('node:os')).tmpdir(), 'cpdf-look-')), 'para.pdf'); h.fs.writeFileSync(file, await pdf.save());
     const p = await open(); await openPdf(p, file, 'Notes.pdf');
-    await run(p, 'txtParaMode');
+    await run(p, 'txtEditParas');
     const [x, y] = await h.at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor'); await p.waitForTimeout(400);
     eq(await p.$$eval('.txt-bar [data-tf="spacing"] option', (o) => o.map((x) => x.textContent)), ['As is', '1.0', '1.15', '1.5', '2.0'], 'line spacing');
     await p.selectOption('.txt-bar [data-tf="face"]', 'serif'); await p.click('.txt-bar [data-tf="center"]'); await p.selectOption('.txt-bar [data-tf="spacing"]', '1.5'); await p.waitForTimeout(200);

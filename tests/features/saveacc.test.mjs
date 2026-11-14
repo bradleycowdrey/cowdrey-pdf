@@ -241,7 +241,7 @@ export default async (h) => {
     pg.drawText('Below the paragraph', { x: 72, y: 500, size: 12, font });
     const file = tmp('double.pdf'); H.fs.writeFileSync(file, await pdf.save());
     const p = await open(); await openPdf(p, file, 'Double.pdf');
-    await p.evaluate(() => { window.__cowdreyPdf.run('tool_edit'); window.__cowdreyPdf.run('txtParaMode'); });
+    await p.evaluate(() => { window.__cowdreyPdf.run('tool_edit'); window.__cowdreyPdf.run('txtEditParas'); });
     const P = await lineOf(p, 'stores'), [px, py] = await atN(p, 0, P.tm[4] + 5, P.tm[5] + 4);
     await p.mouse.click(px, py); await p.waitForSelector('.txt-editor');
     await p.keyboard.press('Control+End'); await p.keyboard.type(' Then one more sentence was added to the end of it.');

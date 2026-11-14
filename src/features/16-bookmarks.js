@@ -327,6 +327,7 @@ FEATURE.outlinePanel = (panel) => bmRender(panel);
 FEATURE.onDocShown.push(() => { BM.sel = null; BM.renaming = null; BM.cache = null; });
 cmd('bmAdd', { label: 'Add bookmark', icon: 'bookmark-plus', key: 'Mod-b', enabled: has, run: () => bmAdd(false) });
 { const vm = MENUS.find(([t]) => t === 'View'), i = vm ? vm[1].indexOf('sidebar') : -1; if (i >= 0) vm[1].splice(i + 1, 0, 'bmAdd'); else menuAdd('View', ['bmAdd']); }
+ribbonAdd('home', 'Edit', ['bmAdd']);
 setTimeout(() => { try { ACCEL['Mod-b'] = 'CmdOrCtrl+B'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;

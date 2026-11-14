@@ -115,7 +115,7 @@ export default async (h) => {
 
   await test('Edit PDF: in paragraph mode and on a phone tap, the caret also goes where the text was touched', async () => {
     const p = await open(); await openPdf(p, await paraDoc(), 'Para.pdf');
-    await editTool(p); await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await editTool(p); await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const L = await lineOf(p, 'pilot'), k = L.str.indexOf('pilot'), fr = L.width / L.str.length;
     const [cx, cy] = await atN(p, 0, L.tm[4] + fr * (k + 1.5), L.tm[5] + 3);
     await p.mouse.click(cx, cy); await p.waitForSelector('.txt-editor'); await p.waitForTimeout(200);
@@ -246,7 +246,7 @@ export default async (h) => {
     await q.ctx.close();
     // A paragraph drawn again sits where its first line was
     const r = await open(); await openPdf(r, await paraDoc(), 'Para.pdf');
-    await editTool(r); await r.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await editTool(r); await r.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const P = await lineOf(r, 'pelican'), [px, py] = await atN(r, 0, P.tm[4] + 5, P.tm[5] + 4);
     await r.mouse.click(px, py); await r.waitForSelector('.txt-editor');
     await r.keyboard.press('Control+End'); await r.keyboard.type(' More.'); await r.keyboard.press('Control+Enter'); await r.waitForTimeout(400);
@@ -280,7 +280,7 @@ export default async (h) => {
 
   await test('Edit PDF: paragraph mode groups double-spaced body text, but not short lines spaced apart', async () => {
     const p = await open(); await openPdf(p, await paraDoc(31), 'Double.pdf');
-    await editTool(p); await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await editTool(p); await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const P = await lineOf(p, 'stores'), [px, py] = await atN(p, 0, P.tm[4] + 5, P.tm[5] + 4);
     await p.mouse.click(px, py); await p.waitForSelector('.txt-editor');
     eq(await p.inputValue('.txt-editor'), PARA.join(' '), 'the whole paragraph');
@@ -295,14 +295,14 @@ export default async (h) => {
     ['Apples', 'Plums', 'Cherries in June'].forEach((t, k) => pg.drawText(t, { x: 72, y: 680 - k * 31, size: 12, font }));
     const list = tmp('list.pdf'); H.fs.writeFileSync(list, await pdf.save());
     const r = await open(); await openPdf(r, list, 'List.pdf');
-    await editTool(r); await r.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await editTool(r); await r.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const Pl = await lineOf(r, 'Plums'), [lx, ly] = await atN(r, 0, Pl.tm[4] + 5, Pl.tm[5] + 4);
     await r.mouse.click(lx, ly); await r.waitForSelector('.line-editor');
     ok(!(await r.$('.txt-editor')), 'edited as a line'); await r.ctx.close();
     const file = GUIDE + 'pe10-win.pdf'; if (!H.fs.existsSync(file)) return;
     const q = await open(); await openPdf(q, file, 'Manual.pdf');
     await q.evaluate(() => window.__cowdreyPdf.views()[5].el.scrollIntoView()); await q.waitForTimeout(1200);
-    await q.evaluate(() => { window.__cowdreyPdf.run('tool_edit'); window.__cowdreyPdf.run('txtParaMode'); });
+    await q.evaluate(() => { window.__cowdreyPdf.run('tool_edit'); window.__cowdreyPdf.run('txtEditParas'); });
     const M = await lineOf(q, 'with PDF files easier', 5);
     if (!M) return;
     const [mx, my] = await atN(q, 5, M.tm[4] + 20, M.tm[5] + 4); await q.mouse.click(mx, my); await q.waitForSelector('.txt-editor');

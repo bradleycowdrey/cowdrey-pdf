@@ -509,7 +509,7 @@ MENUS.find(([t]) => t === 'File')[1].unshift('crdNewBlank', 'crdNewPictures', 'c
 { const f = MENUS.find(([t]) => t === 'File')[1]; f.splice(f.indexOf('exportImage') + 1, 0, 'crdExportPages'); }
 menuAdd('View', ['crdReadMode', 'crdReadAloud']);
 ribbonAdd('home', 'Create', ['crdBlank', 'crdPictures', 'crdClip'], 'Edit');
-ribbonAdd('home', 'Read', ['crdReadAloud', 'crdReadMode']);
+ribbonAdd('home', 'Read', ['crdReadAloud', 'crdReadMode'], null, 'rows'); RIBBON.home[1].find(([g]) => g === 'Read')[3] = 'keep'; // small on a laptop (Home fits), big on a phone
 ribbonAdd('export', 'Export', ['crdExportPages']);
 {
   const card = $('#drop .card');

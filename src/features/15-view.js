@@ -266,7 +266,7 @@ async function vwAttach(files) {
   if (!isPhone() && !S.sidebar) toggleSidebar(true);
 }
 TEST_HOOKS.attachFiles = (files) => vwAttach(files);
-cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click() });
+cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click(), menu: ['vw_attach', 'vw_files'] }); // its arrow: the Attachments panel
 cmd('vw_files', { label: 'Attachments', icon: 'paperclip', enabled: has, pressed: () => S.side === 'files' && (isPhone() ? app.dataset.sidebar === 'open' : S.sidebar), run: () => { setSide('files'); if (isPhone() || !S.sidebar) toggleSidebar(true); } });
 FEATURE.saveDoc.push(async ({ out }) => {
   for (const m of vwAdded()) {
@@ -293,6 +293,7 @@ setTimeout(async () => {
   const em = MENUS.find(([t]) => t === 'Edit')[1], j = em.indexOf('image'); // Edit: after Add picture
   em.splice(j < 0 ? em.length : j + 1, 0, 'vw_attach');
 }
+ribbonAdd('edit', 'Add', ['vw_attach']); // as in the Edit menu, after Picture; its arrow lists Attachments too
 addStyle(`
 .app[data-tool="hand"] .viewer, .app.vw-space .viewer { cursor: grab; user-select: none; -webkit-user-select: none; }
 .app[data-tool="hand"] .viewer :is(.page, .page *), .app.vw-space .viewer :is(.page, .page *) { cursor: grab !important; user-select: none !important; -webkit-user-select: none !important; }

@@ -145,7 +145,7 @@ export default async (h) => {
   await test('text: paragraph mode keeps lines that fitted when one letter is added to the last line', async () => {
     const file = await tightDoc();
     const p = await open(); await openPdf(p, file, 'Tight.pdf');
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const [x, y] = await at(p, 120, 683); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     await p.keyboard.press('Control+End'); await p.keyboard.type('!'); await p.keyboard.press('Control+Enter'); await p.waitForTimeout(400);
     ok(!(await p.$('#dialog[open]')), 'not asked: it still fits');

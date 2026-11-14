@@ -54,7 +54,7 @@ export default async (h) => {
     const [chk, icon] = await p.$eval('#popover [data-cmd="tool_highlight"]', (b) => [b.querySelector('.mchk').getBoundingClientRect().left, b.querySelector(':scope > svg').getBoundingClientRect().left]);
     ok(chk < icon, 'the check comes before the icon');
     await p.keyboard.press('Escape');
-    // File (on the web it also lists View's Actual size and Attachments, which are toggles): every row has its icon
+    // File: every row has its icon
     await p.click('#fileBtn'); await p.waitForTimeout(100);
     eq((await menuRows(p)).filter(([, icon]) => !icon).map(([id]) => id), []);
     eq(await p.$eval('#popover', (x) => x.classList.contains('has-chk')), !!(await p.$('#popover [data-chk]')), 'File: a check column only with a toggle in it');

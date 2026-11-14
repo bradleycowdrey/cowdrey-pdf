@@ -543,7 +543,7 @@ cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, 
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
 cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: () => has() && doc.pages.length > 1, run: () => pg60DeleteAsk() });
-cmd('pg60_selAll', { label: 'Select all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
+cmd('pg60_selAll', { label: 'Select all pages', rlabel: 'Select all', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
 // One button per job: Rotate and Delete open their other choices from a small arrow, Insert is a list.
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_ins', 'merge'], 'Remove');
@@ -723,7 +723,7 @@ function pg60OrgMove(from, to) {
 cmd('pg60_organize', { label: 'Organize pages', rlabel: 'Organize', icon: 'layout-grid', enabled: has, pressed: pg60OrgOn, run: () => pg60Organize(!pg60OrgOn()) });
 FEATURE.onDocShown.push(() => { if (pg60OrgOn()) pg60Organize(false); });
 FEATURE.onDocClosed.push(() => { if (pg60OrgOn()) pg60Organize(false); });
-ribbonAdd('pages', 'View', ['pg60_organize'], 'Rotate');
+ribbonAdd('pages', 'View', ['pg60_organize', 'pg60_selAll'], 'Rotate');
 menuAdd('View', ['pg60_organize']);
 TEST_HOOKS.pg60Org = { on: pg60OrgOn, move: pg60OrgMove };
 

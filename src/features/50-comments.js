@@ -494,10 +494,12 @@ cmd('cm_fill', {
 });
 cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (isPhone()) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
 // Compact groups, so the whole tab fits a laptop screen: Shapes is a grid of icons (closed shapes above, lines below).
-ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Shapes', 'rows');
-ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon'], null, 'icons');
+// The four mark-ups made on text side by side; Area highlight (dragged as a box) is with the shapes, last (under Polygon).
+ribbonAdd('markup', 'Text mark-up', ['tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly'], 'Shapes', 'rows');
+ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon', 'cm_area'], null, 'icons');
 ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add', 'rows');
-ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
+// Signature has its home on Protect (below) and is here too, beside Stamp, as in PDFelement: one command, two buttons.
+ribbonAdd('markup', 'Add', ['cm_stamp', 'sign'], null, 'rows');
 ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
 ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
