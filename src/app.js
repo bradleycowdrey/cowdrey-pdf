@@ -572,7 +572,7 @@ function onMarksDown(e, v) {
   const tool = app.dataset.tool;
   if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
   // A click on the page takes the focus off the ribbon, so Space or typing never runs the tool's button again.
-  if (tool !== 'select') { const a = document.activeElement; if (!a || !(a === viewer || viewer.contains(a))) viewer.focus({ preventScroll: true }); }
+  { const a = document.activeElement; if (!a || !(a === viewer || viewer.contains(a))) viewer.focus({ preventScroll: true }); }
   if (tool === 'edit') return editDownBusy(e, v);
   if (tool === 'erase') return startErase(e, v);
   if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
