@@ -355,7 +355,7 @@ async function renderView(v) {
       }
     }
   } catch (e) { console.warn('annotation layer', e); }
-  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
+  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; if (!stale()) editHints(v); }).catch(() => {}); // read ahead for Edit PDF
   if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   if (stale()) return;
   drawMarks(v);
@@ -629,6 +629,7 @@ function drawMarks(v) {
   }
   // A thumbnail is a picture of the layer, without the page's styles: no selection box or handles in it.
   if (v.thumb) return;
+  editHints(v, svg);
   drawSelection(v, svg);
   drawMarkBox(v, svg);
 }
@@ -1207,7 +1208,8 @@ function setTool(t) {
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
-  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
+  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; editHints(v); }).catch(() => {}); }), 0);
+  if (was === 'edit' && t !== 'edit') { $$('.marks .content-hints, .marks .content-hover').forEach((n) => n.remove()); $$('svg.marks').forEach((s) => { s.style.cursor = ''; }); } // the hover's cursor goes too
   if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; } // the hint for the tool being left goes with it
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
@@ -2077,20 +2079,41 @@ function startErase(e, v) {
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
-// Hover feedback for the Edit tool: what a click would edit is outlined.
-let hoverTimer = 0;
+// Hover feedback for the Edit tool: what a click would edit is outlined. Once a frame, for the last place the
+// pointer moved to (so where it stops is always the one shown), and an answer that comes after a newer one is dropped.
+let hoverSeq = 0, hoverRaf = 0;
 function onEditHover(e, v) {
   if (app.dataset.tool !== 'edit' || lineEditor) return;
-  const t = Date.now(); if (t - hoverTimer < 40) return; hoverTimer = t;
-  const [x, y] = toPdf(v, ...localPoint(e, v));
-  contentAt(v, x, y).then((hit) => {
-    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
-    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
-    svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
-    if (!hit) return;
-    const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark ? matQuad(hit.mark.mat) : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
-    svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  const pt = localPoint(e, v);
+  cancelAnimationFrame(hoverRaf);
+  hoverRaf = requestAnimationFrame(() => {
+    const my = ++hoverSeq, [x, y] = toPdf(v, ...pt);
+    contentAt(v, x, y).then((hit) => { if (my === hoverSeq && app.dataset.tool === 'edit' && !lineEditor) editHoverShow(v, hit); });
   });
+}
+// While Edit PDF is on, every line of text and picture that can be edited has a faint outline (under the marks), so
+// it shows at once what a click can change; the one under the pointer is outlined more strongly (above).
+function editHints(v, svg = v.el.querySelector('svg.marks')) {
+  if (!svg) return;
+  svg.querySelectorAll('.content-hints').forEach((n) => n.remove());
+  const cm = v.page && v.page._cmapValue; if (app.dataset.tool !== 'edit' || !cm || v.thumb) return;
+  const own = marksOf(v.entry), g = svgEl('g', { class: 'content-hints', 'aria-hidden': 'true' });
+  const poly = (q) => g.appendChild(svgEl('polygon', { points: q.map(([qx, qy]) => toView(v, qx, qy).map((n) => n.toFixed(1)).join(',')).join(' ') }));
+  for (const im of cm.images) {
+    const mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+    if (!(mark && mark.deleted)) poly(mark ? matQuad(mark.mat) : im.quad);
+  }
+  for (const L of cm.lines) poly(L.quad);
+  svg.insertBefore(g, svg.firstChild);
+}
+TEST_HOOKS.editHints = () => views.map((v) => v.el.querySelectorAll('svg.marks .content-hints polygon').length);
+function editHoverShow(v, hit) {
+  const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+  svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+  svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
+  if (!hit) return;
+  const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark ? matQuad(hit.mark.mat) : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
+  svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
 }
 
 /* Saving content edits. A small reader for page content streams: it finds where each piece of text and each picture

@@ -732,18 +732,23 @@ onEditDown = async function (e, v) {
 };
 // Paragraph mode: hovering outlines the whole paragraph.
 const txtCoreHover = onEditHover;
+// As the core's: once a frame, for where the pointer is now, and late answers dropped (the same hoverSeq and hoverRaf).
 onEditHover = function (e, v) {
   if (txtEd) return;
   if (!S.txtPara || app.dataset.tool !== 'edit' || lineEditor) return txtCoreHover(e, v);
-  const t = Date.now(); if (t - (v._txtHover || 0) < 60) return; v._txtHover = t;
-  const [x, y] = toPdf(v, ...localPoint(e, v));
-  contentMap(v.page).then((cm) => {
-    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
-    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
-    const L = cm.lines.find((l) => inQuad(l.quad, x, y));
-    if (!L || txtCovered(v.entry, L)) return txtCoreHover(e, v);
-    svg.style.cursor = 'text';
-    for (const l of txtBlock(cm, L, v.entry).lines) svg.appendChild(svgEl('polygon', { class: 'content-hover', points: l.quad.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  const pt = localPoint(e, v);
+  cancelAnimationFrame(hoverRaf);
+  hoverRaf = requestAnimationFrame(() => {
+    const my = ++hoverSeq, [x, y] = toPdf(v, ...pt);
+    contentMap(v.page).then((cm) => {
+      if (my !== hoverSeq || !S.txtPara || app.dataset.tool !== 'edit' || lineEditor || txtEd) return;
+      const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+      svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+      const L = cm.lines.find((l) => inQuad(l.quad, x, y));
+      if (!L || txtCovered(v.entry, L)) return txtCoreHover(e, v);
+      svg.style.cursor = 'text';
+      for (const l of txtBlock(cm, L, v.entry).lines) svg.appendChild(svgEl('polygon', { class: 'content-hover', points: l.quad.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+    });
   });
 };
 // Add text: click for text that fits, or drag across to make a box the text wraps in.
