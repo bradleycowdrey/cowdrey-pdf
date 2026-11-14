@@ -146,4 +146,23 @@ export default async (h) => {
     eq(bad, [], 'focus on Close or outside');
     await p.ctx.close();
   });
+
+  await test('status bar: no "Page [ ] of 0" on the start screen; Read aloud scrolls without animation when motion is reduced', async () => {
+    const p = await open({ width: 390, height: 844, init: () => {
+      window.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speak() {}, cancel() {}, pause() {}, resume() {}, getVoices: () => [], addEventListener() {} } });
+    } });
+    eq(await p.isVisible('#pageJump'), false, 'no page box without a document');
+    ok(!/of 0/.test(await p.$eval('.statusbar', (s) => s.innerText)), 'no "of 0"');
+    await shot(p, 'start-statusbar-dark-390.png');
+    await openPdf(p);
+    eq(await p.isVisible('#pageJump'), true, 'the page box with a document');
+    await p.emulateMedia({ reducedMotion: 'reduce' });
+    await p.evaluate(() => { const v = document.querySelector('#viewer'); window.__sb = []; const o = v.scrollBy.bind(v); v.scrollBy = (a) => { window.__sb.push(a && a.behavior); return o(a); }; v.scrollTop = document.querySelector('.page[data-n="0"]').offsetTop + 60; });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => window.__cowdreyPdf.run('crdReadAloud')); await p.waitForSelector('.crd-say'); await p.waitForTimeout(300);
+    const sb = await p.evaluate(() => window.__sb);
+    ok(sb.length > 0, 'it scrolled to the sentence'); ok(!sb.includes('smooth'), 'no smooth scroll: ' + sb);
+    await p.ctx.close();
+  });
 };

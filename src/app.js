@@ -472,6 +472,7 @@ viewer.addEventListener('scroll', () => {
 }, { passive: true });
 function updateStatus() {
   $('#pageCount').textContent = doc ? doc.pages.length : 0;
+  $('.sb-page').hidden = !doc;
   if (document.activeElement !== $('#pageJump')) $('#pageJump').value = doc && doc.pages.length ? current + 1 : '';
   refreshRibbon();
 }
