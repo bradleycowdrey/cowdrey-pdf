@@ -1040,6 +1040,8 @@ function inQuad(q, x, y) {
   return true;
 }
 const quadBox = (q) => { const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+// Where an edited line is drawn: its own place, moved along its baseline by dx when the text before it changed width.
+const teAt = (m) => { if (!m.dx) return m.tm; const { u } = lineFrame(m); return [m.tm[0], m.tm[1], m.tm[2], m.tm[3], m.tm[4] + u[0] * m.dx, m.tm[5] + u[1] * m.dx]; };
 const sameOrigin = (a, b) => Math.abs(a[4] - b[4]) < .5 && Math.abs(a[5] - b[5]) < .5;
 const stdFamily = (name) => /times|georgia|garamond|cambria|caladea|serif|antiqua|palatino|minion|baskerville|bookman|century/i.test(name) && !/sans/i.test(name) ? 'serif' : /courier|mono|consolas|menlo/i.test(name) ? 'mono' : 'sans';
 const cssFamily = (fam) => ({ serif: '"Times New Roman", Times, serif', mono: '"Courier New", Courier, monospace', sans: 'Helvetica, Arial, sans-serif' }[fam]);
@@ -1052,27 +1054,60 @@ function contentMap(page) {
       page.getOperatorList({ annotationMode: pdfjs.AnnotationMode.DISABLE }),
       page.getAnnotations({ intent: 'display' }).catch(() => []),
     ]);
-    const O = pdfjs.OPS, glyphs = new Map(), images = [], stack = [], invisible = new Set();
-    let font = null, ctm = [1, 0, 0, 1, 0, 0], mode = 0, raw = -1;
+    // The page's drawing, step by step: the graphics and text state at each piece of text (its colours, render mode,
+    // spacing), and each picture with the clip around it (a picture clipped to nothing is not one you can click).
+    const O = pdfjs.OPS, glyphs = new Map(), images = [], stack = [], invisible = new Set(), shows = [];
+    const I = [1, 0, 0, 1, 0, 0];
+    let g = { ctm: I, font: null, fs: 1, tr: 0, tc: 0, tw: 0, th: 1, tl: 0, rise: 0, lw: 1, fill: '#000000', stroke: '#000000', clip: null };
+    let tm = I, tlm = I, raw = -1, pendingClip = false;
+    const clipTo = (b) => { const c = g.clip; g.clip = c ? [Math.max(c[0], b[0]), Math.max(c[1], b[1]), Math.min(c[2], b[2]), Math.min(c[3], b[3])] : b; };
+    const boxQuad = (b, m) => [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].map(([x, y]) => apply(m, x, y));
+    const moveTo = (x, y) => { tlm = mul([1, 0, 0, 1, x, y], tlm); tm = tlm; };
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i], a = ops.argsArray[i];
-      if (fn === O.setFont) font = a[0];
-      else if (fn === O.setTextRenderingMode) mode = a[0];
-      else if (fn === O.showText && font) {
+      if (fn === O.save) stack.push({ ...g });
+      else if (fn === O.restore) g = stack.pop() || g;
+      else if (fn === O.transform) g.ctm = mul(a, g.ctm);
+      else if (fn === O.paintFormXObjectBegin) { stack.push({ ...g }); if (a && a[0]) g.ctm = mul(a[0], g.ctm); if (a && a[1] && a[1].length === 4) clipTo(quadBox(boxQuad(a[1], g.ctm))); }
+      else if (fn === O.paintFormXObjectEnd) g = stack.pop() || g;
+      else if (fn === O.clip || fn === O.eoClip) pendingClip = true;
+      else if (fn === O.constructPath) { const mm = a && a[2]; if (pendingClip && mm && mm.length === 4 && mm.every(Number.isFinite) && mm[2] >= mm[0]) clipTo(quadBox(boxQuad(mm, g.ctm))); pendingClip = false; }
+      else if (fn === O.setFont) { g.font = a[0]; g.fs = a[1]; }
+      else if (fn === O.setTextRenderingMode) g.tr = a[0];
+      else if (fn === O.setCharSpacing) g.tc = a[0];
+      else if (fn === O.setWordSpacing) g.tw = a[0];
+      else if (fn === O.setHScale) g.th = a[0] / 100;
+      else if (fn === O.setLeading) g.tl = a[0];
+      else if (fn === O.setTextRise) g.rise = a[0];
+      else if (fn === O.setLineWidth) g.lw = a[0];
+      else if (fn === O.setGState) { for (const [k, val] of a[0] || []) if (k === 'LW') g.lw = val; }
+      else if (fn === O.setFillRGBColor) g.fill = a[0];
+      else if (fn === O.setStrokeRGBColor) g.stroke = a[0];
+      else if (fn === O.beginText) tm = tlm = I;
+      else if (fn === O.setTextMatrix) tm = tlm = Array.from(a[0]);
+      else if (fn === O.moveText) moveTo(a[0], a[1]);
+      else if (fn === O.setLeadingMoveText) { g.tl = -a[1]; moveTo(a[0], a[1]); }
+      else if (fn === O.nextLine) moveTo(0, -g.tl);
+      else if (fn === O.showText && g.font) {
+        const font = g.font;
         // Text drawn invisibly (the words a scanner's OCR lays over a scanned page)
-        if (mode === 3 || mode === 7) invisible.add(font);
-        let g = glyphs.get(font); if (!g) glyphs.set(font, g = new Map());
-        for (const gl of a[0] || []) if (gl && gl.unicode && gl.fontChar != null && !g.has(gl.unicode)) g.set(gl.unicode, { fc: gl.fontChar, w: gl.width, code: gl.originalCharCode, inFont: gl.isInFont !== false });
-      } else if (fn === O.save) stack.push([ctm, mode]);
-      else if (fn === O.restore) [ctm, mode] = stack.pop() || [[1, 0, 0, 1, 0, 0], 0];
-      else if (fn === O.transform) ctm = mul(a, ctm);
-      else if (fn === O.paintFormXObjectBegin) { stack.push([ctm, mode]); if (a && a[0]) ctm = mul(a[0], ctm); }
-      else if (fn === O.paintFormXObjectEnd) [ctm, mode] = stack.pop() || [ctm, mode];
-      else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) {
-        raw++;
-        const quad = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(ctm, x, y));
-        const [x0, y0, x1, y1] = quadBox(quad);
-        if (x1 - x0 > 2 && y1 - y0 > 2) images.push({ n: images.length, raw, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad, mat: ctm.slice() });
+        if (g.tr === 3 || g.tr === 7) invisible.add(font);
+        let gm = glyphs.get(font); if (!gm) glyphs.set(font, gm = new Map());
+        let adv = 0;
+        for (const gl of a[0] || []) {
+          if (typeof gl === 'number') { adv -= gl / 1000 * g.fs; continue; }
+          if (!gl) continue;
+          if (gl.unicode && gl.fontChar != null && !gm.has(gl.unicode)) gm.set(gl.unicode, { fc: gl.fontChar, w: gl.width, code: gl.originalCharCode, inFont: gl.isInFont !== false });
+          adv += (gl.width || 0) / 1000 * g.fs + g.tc + (gl.isSpace ? g.tw : 0);
+        }
+        const trm = mul(tm, g.ctm), det = Math.sqrt(Math.abs(g.ctm[0] * g.ctm[3] - g.ctm[1] * g.ctm[2]));
+        shows.push({ o: apply(trm, 0, g.rise), font, fs: Math.abs(g.fs) || 1, tr: g.tr, tc: g.tc, tw: g.tw, lw: g.lw * det, fill: g.fill, stroke: g.stroke });
+        tm = mul([1, 0, 0, 1, adv * g.th, 0], tm);
+      } else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) {
+        raw++; // the picture's identity: its place among the page's picture draws, the same count saving uses
+        const quad = boxQuad([0, 0, 1, 1], g.ctm), b = quadBox(quad);
+        const c = g.clip ? [Math.max(b[0], g.clip[0]), Math.max(b[1], g.clip[1]), Math.min(b[2], g.clip[2]), Math.min(b[3], g.clip[3])] : b;
+        if (b[2] - b[0] > 2 && b[3] - b[1] > 2 && c[2] - c[0] > 2 && c[3] - c[1] > 2) images.push({ n: images.length, raw, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad, mat: g.ctm.slice() });
       }
     }
     // Lines: neighbouring pieces of text on one baseline, in one font and size, joined.
@@ -1092,12 +1127,38 @@ function contentMap(page) {
       }
       lines.push({ str: it.str, fontName: it.fontName, tm, width: it.width, ascent: st.ascent ?? .8, descent: st.descent ?? -.2, family: st.fontFamily || 'sans-serif' });
     }
-    for (const L of lines) { L.str = L.str.replace(/\s+$/, ''); L.quad = lineQuad(L, .3); }
+    for (const L of lines) { L.str = L.str.replace(/\s+$/, ''); L.quad = lineQuad(L, .3); L.st = lineState(L, shows); }
     const A = pdfjs.AnnotationType;
     const comments = annots.filter((a) => a.rect && a.id && ![A.WIDGET, A.LINK, A.POPUP].includes(a.annotationType));
     return { lines: lines.filter((L) => L.str && L.width > 0), images, comments, glyphs, invisible };
   })());
 }
+// The text state a line was drawn with: the piece of text that starts it (or, when pdf.js split a piece, the one
+// before it on its baseline). Spacing is kept relative to the font size (the new text is set at size 1, scaled by the
+// line's matrix), line width in page units.
+function lineState(L, shows) {
+  const f = lineFrame(L); let best = null, bestA = -Infinity;
+  for (const r of shows) {
+    if (r.font !== L.fontName) continue;
+    const dx = r.o[0] - f.o[0], dy = r.o[1] - f.o[1], along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+    if (Math.abs(perp) > Math.max(.5, f.size * .2) || along > .5) continue;
+    if (along > bestA) { best = r; bestA = along; }
+    if (Math.abs(along) < .5) break;
+  }
+  if (!best) return null;
+  return { tr: best.tr, tc: best.tc / best.fs, tw: best.tw / best.fs, lw: best.lw, fill: best.fill, stroke: best.stroke };
+}
+// What an edited line carries over from the original (only what differs from plain filled text).
+function teState(L, ocr) {
+  const st = L.st, out = {}; if (!st || ocr) return out;
+  const tr = st.tr % 4; // the clipping modes (4 to 7) draw as 0 to 3
+  if (tr === 1 || tr === 2) { out.tr = tr; out.lw = +(+st.lw).toFixed(3); if (/^#[0-9a-f]{6}$/i.test(st.stroke)) out.stroke = st.stroke; }
+  if (Math.abs(st.tc) > 1e-4) out.tc = +st.tc.toFixed(4);
+  if (Math.abs(st.tw) > 1e-4) out.tw = +st.tw.toFixed(4);
+  return out;
+}
+// The line's own colour, as the PDF sets it (the fill, or the stroke for outlined text); else as sampled on screen.
+const lineColor = (L, sampled) => { const st = L.st, c = st && (st.tr % 4 === 1 ? st.stroke : st.fill); return /^#[0-9a-f]{6}$/i.test(c || '') ? c.toLowerCase() : sampled; };
 const fontObj = (page, name) => new Promise((res) => { try { page.commonObjs.get(name, res); } catch { res(null); } setTimeout(() => res(null), 3000); });
 
 // The colours behind and of a piece of the page, read from what was drawn.
@@ -1159,27 +1220,31 @@ function teImage(v, m) {
   const cm = v.page._cmapValue, ratio = Math.min(window.devicePixelRatio || 1, 2);
   const L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm));
   const loaded = L ? L.fontName : null, map = !m.ocr && !m.type3 && loaded && cm.glyphs.get(loaded);
-  const key = [m.id, m.text, m.color, scale, ratio, loaded].join('|');
+  const key = [m.id, m.text, m.color, scale, ratio, loaded, m.tr, m.lw, m.stroke, m.tc, m.tw].join('|');
   if (teCache.has(key)) return teCache.get(key);
   const { size, u } = lineFrame(m), hsc = Math.hypot(m.tm[0], m.tm[1]) / (Math.hypot(m.tm[2], m.tm[3]) || 1);
   const px = size * scale * ratio, fb = `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`, own = `${px}px "${loaded}", ${cssFamily(m.fam)}`;
+  // The line's own spacing (Tc, Tw, relative to its size) and outline (render modes 1 and 2), as the saved line has them.
+  const tc = (m.tc || 0) * px, tw = (m.tw || 0) * px, stroke = m.tr === 1 || m.tr === 2;
+  const setSpacing = () => { g.letterSpacing = tc + 'px'; g.wordSpacing = tw + 'px'; };
   // Runs of letters drawn with the PDF's font, and runs the font doesn't have (drawn in the closest standard font).
   // A letter pdf.js maps to a control code (a space, usually) is not drawn, only advanced by its width.
   const runs = [];
   for (const ch of m.text) {
     const g0 = map && map.get(ch), gl = g0 && g0.inFont ? g0 : null, blank = !!gl && /^[\x00-\x1f\x7f-\x9f]$/.test(gl.fc);
     const kind = blank ? 'gap' : gl ? 'own' : 'fb', last = runs[runs.length - 1];
-    if (kind === 'gap') runs.push({ kind, s: '', adv: (gl.w || 250) / 1000 * px * hsc });
+    if (kind === 'gap') runs.push({ kind, s: '', adv: ((gl.w || 250) / 1000 * px + tc + (ch === ' ' ? tw : 0)) * hsc });
     else if (last && last.kind === kind) last.s += kind === 'own' ? gl.fc : ch;
     else runs.push({ kind, s: kind === 'own' ? gl.fc : ch });
   }
   const c = document.createElement('canvas'), g = c.getContext('2d');
-  let w = 0; for (const r of runs) { if (r.kind === 'gap') { r.w = r.adv; w += r.w; continue; } g.font = r.kind === 'own' ? own : fb; r.w = g.measureText(r.s).width * hsc; w += r.w; }
-  const asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px;
-  c.width = Math.ceil(w + 4); c.height = Math.ceil(asc + desc + 2);
-  g.fillStyle = m.color; let x = 0;
-  for (const r of runs) { if (r.s) { g.save(); g.font = r.kind === 'own' ? own : fb; g.translate(x, asc); g.scale(hsc, 1); g.fillText(r.s, 0, 0); g.restore(); } x += r.w; }
-  const out = { url: c.toDataURL('image/png'), w: c.width / ratio, h: c.height / ratio, asc: asc / ratio };
+  let w = 0; setSpacing(); for (const r of runs) { if (r.kind === 'gap') { r.w = r.adv; w += r.w; continue; } g.font = r.kind === 'own' ? own : fb; r.w = g.measureText(r.s).width * hsc; w += r.w; }
+  const asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, lw = stroke ? (m.lw || 0) * scale * ratio : 0;
+  c.width = Math.ceil(w + 4 + lw); c.height = Math.ceil(asc + desc + 2 + lw);
+  setSpacing(); g.fillStyle = m.color; g.strokeStyle = m.stroke || m.color; g.lineWidth = lw; g.lineJoin = 'round'; let x = lw / 2;
+  for (const r of runs) { if (r.s) { g.save(); g.font = r.kind === 'own' ? own : fb; g.translate(x, asc + lw / 2); g.scale(hsc, 1); if (m.tr !== 1) g.fillText(r.s, 0, 0); if (stroke && lw > 0) g.strokeText(r.s, 0, 0); g.restore(); } x += r.w; }
+  // adv: the new text's width in page units (how far the text after it moves)
+  const out = { url: c.toDataURL('image/png'), w: c.width / ratio, h: c.height / ratio, asc: (asc + lw / 2) / ratio, ox: lw / 2 / ratio, adv: w / ratio / scale };
   void u; if (teCache.size > 200) teCache.clear(); teCache.set(key, out);
   return out;
 }
@@ -1189,11 +1254,14 @@ function drawContentMark(v, m, svg) {
   if (m.type === 'erase') { const g = poly(m.quad, m.bg); g.setAttribute('class', 'mk'); if (m.drafting) { g.setAttribute('fill', 'none'); g.setAttribute('stroke', 'var(--accent)'); g.setAttribute('stroke-dasharray', '4 3'); } return g; }
   if (m.type === 'te') {
     const g = svgEl('g', { class: 'mk' });
-    g.appendChild(poly(m.quad, m.bg));
+    // What the line covers goes under every edited line's new text (the text before it may now run over it).
+    const cover = poly(m.quad, m.bg);
+    if (svg) { let under = svg.querySelector(':scope > g.te-under'); if (!under) under = svg.insertBefore(svgEl('g', { class: 'te-under' }), svg.firstChild); under.appendChild(cover); }
+    else g.appendChild(cover);
     if (!editingIds.has(m.id)) {
-      const im = teImage(v, m), [ox, oy] = toView(v, m.tm[4], m.tm[5]), { u } = lineFrame(m);
-      const [ax, ay] = toView(v, m.tm[4] + u[0], m.tm[5] + u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
-      g.appendChild(svgEl('image', { x: ox, y: oy - im.asc, width: im.w, height: im.h, href: im.url, transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` }));
+      const t = teAt(m), im = teImage(v, m), [ox, oy] = toView(v, t[4], t[5]), { u } = lineFrame(m);
+      const [ax, ay] = toView(v, t[4] + u[0], t[5] + u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
+      g.appendChild(svgEl('image', { x: ox - (im.ox || 0), y: oy - im.asc, width: im.w, height: im.h, href: im.url, transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` }));
     }
     return g;
   }
@@ -1244,7 +1312,8 @@ async function editDownBusy(e, v) {
   keys.off = () => window.removeEventListener('keydown', kh, true);
   window.addEventListener('keydown', kh, true);
   app.dataset.busy = '';
-  try { await onEditDown(e, v); } finally { if (editKeys === keys) editReady(); }
+  editAt = { x: e.clientX, y: e.clientY, detail: e.detail || 1 };
+  try { await onEditDown(e, v); } finally { editAt = null; if (editKeys === keys) editReady(); }
 }
 // The editor is open (or nothing will open): hand it the keys typed while waiting.
 function editReady() {
@@ -1275,7 +1344,7 @@ async function onEditDown(e, v) {
   // An edit made earlier: change it again.
   const own = e.target.closest && e.target.closest('.mk');
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
-  if (om && om.type === 'te') { selectContent(null); return openLineEditor(v, om, false); }
+  if (om && om.type === 'te') { selectContent(null); return openLineEditor(await phoneZoomTo(v, om), om, false); }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: cm.images[om.n] || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
   if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
@@ -1396,17 +1465,49 @@ async function editComment(v, a, mark) {
 let lineEditor = null;
 async function editLine(v, L, mark) {
   const cm = await contentMap(v.page); v.page._cmapValue = cm;
-  let m = mark;
-  if (!m) {
-    const fo = await fontObj(v.page, L.fontName) || {};
-    const name = String(fo.name || ''), { bg, fg } = sampleColors(v, L.quad);
-    // The character code of each letter this font has (for fonts without a Unicode table, the only reliable source)
-    const codes = {}; for (const [u, gl] of cm.glyphs.get(L.fontName) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
-    const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
-    m = { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : fg, codes, ocr, type3: !!fo.isType3Font };
-  }
+  const m = mark || await teMarkFor(v, L, cm);
   await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
+  v = await phoneZoomTo(v, m);
   openLineEditor(v, m, !mark);
+}
+// A te mark for a line of the page, not yet in the page's list: its text, font, colours and the original's text state.
+async function teMarkFor(v, L, cm) {
+  const fo = await fontObj(v.page, L.fontName) || {};
+  const name = String(fo.name || ''), { bg, fg } = sampleColors(v, L.quad);
+  // The character code of each letter this font has (for fonts without a Unicode table, the only reliable source)
+  const codes = {}; for (const [u, gl] of cm.glyphs.get(L.fontName) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
+  const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
+  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
+}
+// On a phone, a line too small to read or tap into (under 14 px) is zoomed to about 18 px first, around the tap;
+// the zoom and scroll come back when the editor closes. Returns the page's view at the new zoom.
+let phoneZoom = null; // { zoom, top, left, timer }
+async function phoneZoomTo(v, m) {
+  if (!isPhone() || !views.includes(v)) return v;
+  if (phoneZoom && phoneZoom.timer) { clearTimeout(phoneZoom.timer); phoneZoom.timer = 0; }
+  const px = lineFrame(m).size * scale; if (px >= 14) return v;
+  const n = views.indexOf(v), [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
+  const at = editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y };
+  if (!phoneZoom) phoneZoom = { zoom: S.zoom, top: viewer.scrollTop, left: viewer.scrollLeft, timer: 0 };
+  const z = Math.min(400, Math.ceil(scale * 100 * 18 / px));
+  const fx = (at.x - r.left) / r.width, fy = (at.y - r.top) / r.height;
+  await setZoom(z, at);
+  const nv = views[n]; if (!nv) return v;
+  // The tap's spot stays under the finger (as far as the page can scroll), so the caret goes where it was tapped.
+  let b = nv.el.getBoundingClientRect();
+  viewer.scrollLeft += b.left + fx * b.width - at.x; viewer.scrollTop += b.top + fy * b.height - at.y;
+  b = nv.el.getBoundingClientRect();
+  if (editAt) editAt = { ...editAt, x: b.left + fx * b.width, y: b.top + fy * b.height };
+  renderView(nv);
+  return nv;
+}
+function phoneZoomBack() {
+  if (!phoneZoom || phoneZoom.timer) return;
+  // A moment later, unless another line is opened in the meantime (it keeps this zoom).
+  phoneZoom.timer = setTimeout(async () => {
+    const pz = phoneZoom; phoneZoom = null; if (!pz || lineEditor) { if (pz && lineEditor) phoneZoom = { ...pz, timer: 0 }; return; }
+    await setZoom(pz.zoom); viewer.scrollTop = pz.top; viewer.scrollLeft = pz.left;
+  }, 350);
 }
 // The line editor types in the PDF's own font. pdf.js loads each font with its letters moved to other code points,
 // so a copy of the font is made whose character map gives each letter (as typed) the glyph pdf.js drew it with.
@@ -1478,21 +1579,23 @@ function lineFace(v, m, ready) {
   return ownFace(v.page, L.fontName, map).then((fam) => { if (fam) { (v.page._ownFace ||= {})[m.id] = fam; ready && ready(); } return fam; });
 }
 function openLineEditor(v, m, isNew) {
-  const { size, u } = lineFrame(m), px = size * scale;
-  const [ox, oy] = toView(v, m.tm[4], m.tm[5]), [ax, ay] = toView(v, m.tm[4] + u[0], m.tm[5] + u[1]);
+  const { size, u } = lineFrame(m), px = size * scale, t = teAt(m), hsc = Math.hypot(m.tm[0], m.tm[1]) / (Math.hypot(m.tm[2], m.tm[3]) || 1);
+  const [ox, oy] = toView(v, t[4], t[5]), [ax, ay] = toView(v, t[4] + u[0], t[5] + u[1]);
   const ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px;
   const ed = document.createElement('div');
   ed.className = 'line-editor'; ed.spellcheck = false; ed.setAttribute('role', 'textbox'); ed.setAttribute('aria-label', 'Edit this line');
   try { ed.contentEditable = 'plaintext-only'; } catch { ed.contentEditable = 'true'; }
   if (ed.contentEditable !== 'plaintext-only') ed.contentEditable = 'true';
   ed.textContent = m.text;
-  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale + 4) + 'px', font: lineFont(v, m, px), color: m.color, background: m.bg, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` });
+  // The line's spacing, width scale and outline, so the text keeps its length and weight while it is typed.
+  const outline = (m.tr === 1 || m.tr === 2) && m.lw ? `${Math.max(.5, m.lw * scale)}px ${m.stroke || m.color}` : '';
+  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale / hsc + 4) + 'px', font: lineFont(v, m, px), color: m.tr === 1 ? 'transparent' : m.color, background: m.bg, letterSpacing: (m.tc || 0) * px + 'px', wordSpacing: (m.tw || 0) * px + 'px', webkitTextStroke: outline, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` + (Math.abs(hsc - 1) > .01 ? ` scaleX(${hsc})` : '') });
   v.el.appendChild(ed);
   editingIds.add(m.id); drawMarks(v);
-  lineEditor = { ed, v, m, isNew };
+  lineEditor = { ed, v, m, isNew, follow: teFollowers(v, m) };
   if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
-  const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  placeCaret(ed, editAt);
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
@@ -1500,20 +1603,105 @@ function openLineEditor(v, m, isNew) {
   });
   ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed) closeLineEditor(true); }, 0));
 }
+// Where a click (or tap) on the page put the caret: { x, y, detail } on screen, set while the Edit tool handles it.
+// Opened from the keyboard (no click), the editor selects all of the line.
+let editAt = null;
+// The offset in an editor's text under a point on screen, or -1.
+function offsetAt(el, x, y) {
+  if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    const p = document.caretPositionFromPoint ? document.caretPositionFromPoint(x, y) : null;
+    return p && p.offsetNode === el ? p.offset : -1;
+  }
+  let node = null, off = 0;
+  const p = document.caretPositionFromPoint ? document.caretPositionFromPoint(x, y) : null;
+  if (p) { node = p.offsetNode; off = p.offset; }
+  else if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); if (r) { node = r.startContainer; off = r.startOffset; } }
+  if (!node || !el.contains(node)) {
+    // Outside the text (before or after it on its line): the nearest end.
+    const b = el.getBoundingClientRect(); if (y < b.top - 4 || y > b.bottom + 4) return -1;
+    return x <= b.left ? 0 : (el.textContent || '').length;
+  }
+  if (node === el) return off ? (el.textContent || '').length : 0;
+  return off;
+}
+// The word (letters and digits) around an offset.
+function wordAt(text, k) {
+  const w = /[\p{L}\p{N}_'’-]/u; let a = k, b = k;
+  if (!w.test(text[a] || '') && w.test(text[a - 1] || '')) a = b = k - 1;
+  while (a > 0 && w.test(text[a - 1])) a--;
+  while (b < text.length && w.test(text[b])) b++;
+  return b > a ? [a, b] : [k, Math.min(text.length, k + 1)];
+}
+// Puts the caret where the click was: one click places it, a double click selects the word, a triple click the line.
+function placeCaret(el, at) {
+  const field = el.tagName === 'TEXTAREA', text = field ? el.value : el.textContent || '';
+  let a = 0, b = text.length;
+  if (at && at.detail !== 3) {
+    const k = offsetAt(el, at.x, at.y);
+    if (k >= 0) { a = b = Math.min(k, text.length); if (at.detail === 2) [a, b] = wordAt(text, a); }
+    else a = b = text.length;
+  }
+  if (field) { el.setSelectionRange(a, b); return; }
+  const tn = el.firstChild, sel = getSelection(), r = document.createRange();
+  if (tn && tn.nodeType === 3) { r.setStart(tn, Math.min(a, tn.length)); r.setEnd(tn, Math.min(b, tn.length)); } else r.selectNodeContents(el);
+  sel.removeAllRanges(); sel.addRange(r);
+}
+// Text that follows a line on its baseline in another font (a bold word after a regular one): when the line's text
+// changes width, what follows moves along with its end, as in a word processor. Read while the line is being edited.
+function teFollowers(v, m) {
+  const out = { list: null };
+  out.ready = (async () => {
+    const cm = v.page._cmapValue || await contentMap(v.page), own = marksOf(v.entry), list = [];
+    let cur = m;
+    for (let k = 0; k < 12; k++) {
+      const f = lineFrame(cur);
+      const next = cm.lines.find((l) => {
+        if (sameOrigin(l.tm, cur.tm)) return false;
+        const g = lineFrame(l); if (Math.abs(g.size - f.size) > f.size * .6 || g.u[0] * f.u[0] + g.u[1] * f.u[1] < .999) return false;
+        const dx = l.tm[4] - f.o[0], dy = l.tm[5] - f.o[1], along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+        return Math.abs(perp) < f.size * .35 && along > cur.width - Math.max(1, f.size * .3) && along < cur.width + f.size * .8;
+      });
+      if (!next || (FEATURE.lineTaken && FEATURE.lineTaken(v.entry, next))) break;
+      const mk = own.find((x) => x.type === 'te' && sameOrigin(x.tm, next.tm)) || await teMarkFor(v, next, cm);
+      list.push(mk); cur = mk;
+    }
+    out.list = list;
+  })().catch(() => { out.list = []; });
+  return out;
+}
+// Moves the text after an edited line by how much wider or narrower the line now is. Returns true if anything moved.
+function teReflow(v, m, follow) {
+  if (!follow || !follow.list || !follow.list.length) return false;
+  const list = marksOf(v.entry), grow = (x) => (x.text === x.orig ? 0 : teImage(v, x).adv - x.width);
+  let shift = (m.dx || 0) + grow(m), moved = false;
+  for (const f of follow.list) {
+    const dx = Math.abs(shift) < .05 ? 0 : +shift.toFixed(3), inList = list.includes(f);
+    if ((f.dx || 0) !== dx) moved = true;
+    if (dx) f.dx = dx; else delete f.dx;
+    if (!inList && dx) list.push(f);
+    else if (inList && !dx && f.text === f.orig) list.splice(list.indexOf(f), 1);
+    shift = (f.dx || 0) + grow(f);
+  }
+  return moved;
+}
 // Escape, like clicking away, keeps what was typed; Undo takes it back. Says so once a session.
 let keptHinted = false;
 function keptHint(changedSomething) { if (changedSomething && !keptHinted) { keptHinted = true; toast(coarse() ? 'Change kept. Undo takes it back.' : `Change kept. ${fmtKey('Mod-z')} undoes it.`); } }
 // Returns true if the edit changed the page.
 function closeLineEditor(commit) {
   if (!lineEditor) return false;
-  const { ed, v, m, isNew } = lineEditor; lineEditor = null;
+  const { ed, v, m, isNew, follow } = lineEditor; lineEditor = null;
   editingIds.delete(m.id);
   const text = ed.textContent.replace(/[\r\n]+/g, ' ');
   ed.remove();
+  phoneZoomBack();
   if (commit && text !== m.text) {
     const before = snapshot(), list = marksOf(v.entry);
-    if (text === m.orig && !isNew) list.splice(list.indexOf(m), 1); // back to the original: no edit left
+    if (text === m.orig && !isNew && !m.dx) list.splice(list.indexOf(m), 1); // back to the original: no edit left
     else { m.text = text; if (isNew) list.push(m); }
+    // What follows on the line moves with its new end (once read; that takes a moment only the first time).
+    if (follow.list) teReflow(v, m, follow);
+    else follow.ready.then(() => { const b2 = snapshot(); if (teReflow(v, m, follow)) { changed(b2); drawMarks(v); } });
     changed(before);
     drawMarks(v); return true;
   }

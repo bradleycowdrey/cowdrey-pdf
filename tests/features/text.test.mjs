@@ -188,7 +188,7 @@ export default async (h) => {
     // In a paragraph made with paragraph mode, the paragraph's text is replaced and wrapped again
     await p.evaluate(() => { window.__cowdreyPdf.views()[0].el.scrollIntoView(); window.__cowdreyPdf.run('txtParaMode'); }); await p.waitForTimeout(300);
     const [x, y] = await at(p, 120, 651); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
-    await p.keyboard.press('End'); await p.keyboard.type(' More soon.'); await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
+    await p.keyboard.press('Control+End'); await p.keyboard.type(' More soon.'); await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
     await p.keyboard.press('Control+h'); await p.waitForSelector('#dialog[open] #txtFind');
     await p.fill('#txtFind', 'soon'); await p.fill('#txtWith', 'in the spring');
     await p.click('#dialog .dlg-foot button:has-text("Replace all")'); await p.waitForTimeout(500);
@@ -205,7 +205,7 @@ export default async (h) => {
     const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     eq(await p.inputValue('.txt-editor'), PARA.join(' '), 'the whole paragraph');
     await p.click('.txt-bar [data-tf="center"]');
-    await p.keyboard.press('End'); await p.keyboard.type(' Added at the end of the paragraph, which wraps again.');
+    await p.keyboard.press('Control+End'); await p.keyboard.type(' Added at the end of the paragraph, which wraps again.');
     await shot(p, 'rotated-editing.png');
     await p.keyboard.press('Control+Enter'); await letRun(p);
     const [m] = await allMarks(p);
@@ -227,7 +227,7 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
     const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     ok(!(await p.$('.txt-over')), 'no warning while it fits');
-    await p.keyboard.press('End'); await p.keyboard.type(' A last short sentence was added here.');
+    await p.keyboard.press('Control+End'); await p.keyboard.type(' A last short sentence was added here.');
     await p.waitForSelector('.txt-over'); ok((await p.textContent('.txt-over')).includes('This paragraph is now longer than the space it had'), 'warned while typing');
     await shot(p, 'paragraph-longer.png');
     // committing asks; Keep editing goes back to the text as typed
@@ -252,7 +252,7 @@ export default async (h) => {
     // Asked on commit, Shrink to fit there too
     await p.evaluate(() => window.__cowdreyPdf.run('tool_edit')); await p.waitForTimeout(300);
     const [x2, y2] = await at(p, 120, 667); await p.mouse.click(x2, y2); await p.waitForSelector('.txt-editor');
-    await p.keyboard.press('End'); await p.keyboard.type(' One more line of words to push it down again.');
+    await p.keyboard.press('Control+End'); await p.keyboard.type(' One more line of words to push it down again.');
     await p.keyboard.press('Control+Enter'); await p.waitForSelector('#dialog[open] .dlg-foot');
     await p.click('#dialog .dlg-foot button:has-text("Shrink to fit")'); await p.waitForTimeout(400);
     [m] = (await allMarks(p)).filter((x) => x.type === 'tpara');

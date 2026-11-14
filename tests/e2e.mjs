@@ -346,7 +346,7 @@ await test('Edit PDF: a line is rewritten in its own font and colour; the saved 
   const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Budget' }).first().boundingBox();
   await p.mouse.click(b.x + 20, b.y + b.height / 2);
   await p.waitForSelector('.line-editor'); eq(await p.textContent('.line-editor'), 'Budget: 42,000 dollars, on track.');
-  await p.keyboard.type('Budget: 45,500 dollars, on track.'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+  await p.keyboard.press('Control+a'); await p.keyboard.type('Budget: 45,500 dollars, on track.'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
   const [m] = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat());
   eq([m.type, m.text, /Carlito-Bold/.test(m.font), m.bg], ['te', 'Budget: 45,500 dollars, on track.', true, '#edf2fc'], 'edit');
   ok(parseInt(m.color.slice(1, 3), 16) < 60, 'dark text colour ' + m.color);
@@ -370,11 +370,11 @@ await test('Edit PDF: Escape keeps the edit and Undo takes it back; typing the o
   await p.keyboard.press('Control+z'); await p.waitForTimeout(200);
   eq(await marks(p), [], 'Undo cancels it');
   await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
-  await p.keyboard.type('Prepared by Alex on 4 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+  await p.keyboard.press('Control+a'); await p.keyboard.type('Prepared by Alex on 4 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
   eq(await marks(p), ['te']);
   await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
   eq(await p.textContent('.line-editor'), 'Prepared by Alex on 4 March.', 'reopens the edit');
-  await p.keyboard.type('Prepared by the delivery team on 3 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+  await p.keyboard.press('Control+a'); await p.keyboard.type('Prepared by the delivery team on 3 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
   eq(await marks(p), [], 'back to the original');
   await p.evaluate(() => window.__cowdreyPdf.run('undo')); await p.waitForTimeout(200);
   eq(await marks(p), ['te'], 'undo');
@@ -436,7 +436,7 @@ await test('Edit PDF: a PDF from Chrome keeps its subset fonts; letters they lac
   for (const [find, typed] of [['Revenue', 'Revenue grew by 12% in every region, quickly.'], ['Next review', 'Next review: 21 July.']]) {
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
     await p.mouse.click(b.x + 8, b.y + b.height / 2); await p.waitForSelector('.line-editor');
-    await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    await p.keyboard.press('Control+a'); await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
   }
   const ms = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat());
   eq(ms.map((m) => [/Carlito/.test(m.font), m.fam, m.bold]), [[true, 'sans', false], [true, 'sans', true]]);
@@ -453,7 +453,7 @@ await test('Edit PDF: saving keeps the next word in another font, lines broken w
   for (const [find, typed] of [['Hello', 'Howdy'], ['Line two', 'Line 2']]) {
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
     await p.mouse.click(b.x + 5, b.y + b.height / 2); await p.waitForSelector('.line-editor');
-    await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    await p.keyboard.press('Control+a'); await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
   }
   await reopen(p, await savedOf(p));
   const items = await p.evaluate(async () => { const v = window.__cowdreyPdf.views()[0]; const tc = await v.page.getTextContent(); return tc.items.filter((i) => i.str.trim()).map((i) => [i.str, Math.round(i.transform[5])]); });

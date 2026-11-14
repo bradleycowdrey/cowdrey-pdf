@@ -160,7 +160,7 @@ export default async (h) => {
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Invoice' }).first().boundingBox();
     await p.mouse.click(b.x + 10, b.y + b.height / 2);
     await p.waitForSelector('.line-editor'); eq(await p.textContent('.line-editor'), 'Invoice 4471 due 12 March');
-    await p.keyboard.type('Invoice 4471 paid 9 March'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    await p.keyboard.press('Control+a'); await p.keyboard.type('Invoice 4471 paid 9 March'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
     const [m] = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat());
     eq([m.type, m.ocr, m.text], ['te', true, 'Invoice 4471 paid 9 March'], 'an edit of OCR text');
     await reopen(p, await savedOf(p));

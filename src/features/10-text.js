@@ -99,9 +99,10 @@ async function txtTeFor(v, L, cm) {
   const name = String(fo.name || ''), { bg, fg } = sampleColors(v, L.quad);
   const codes = {}; for (const [u, gl] of cm.glyphs.get(L.fontName) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
   const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
-  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : fg, codes, ocr, type3: !!fo.isType3Font };
+  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
 }
 const txtCovered = (entry, L) => marksOf(entry).some((m) => m.type === 'tpara' && m.src.some((s) => sameOrigin(s.tm, L.tm)));
+FEATURE.lineTaken = txtCovered; // a line in a rewritten paragraph is not moved by the line before it
 // Lines that make a paragraph with L: same font and size, same left edge, evenly spaced, one under the other.
 function txtBlock(cm, L, entry) {
   const f0 = lineFrame(L), sz = f0.size;
@@ -343,7 +344,9 @@ function txtOpenEditor(v, o) {
   });
   ta.addEventListener('blur', () => setTimeout(() => { if (txtEd === E && !txtBarBusy() && document.activeElement !== ta) txtCloseEditor(true); }, 0));
   txtShowBar(v, ta, E.fmt, o.opts, () => { fit(); }, () => ta.focus({ preventScroll: true }));
-  ta.focus({ preventScroll: true }); ta.select();
+  ta.focus({ preventScroll: true });
+  // Opened by a click with Edit PDF: the caret goes where the click was (a double click selects the word). Else all.
+  if (editAt) placeCaret(ta, editAt); else ta.select();
 }
 function txtCloseEditor(commit) {
   const E = txtEd; if (!E) return;
@@ -510,7 +513,7 @@ closeLineEditor = function (commit) {
   if (!le || !commit || !T || txtSameFmt(T.fmt, T.base)) return txtCoreCloseLine(commit);
   lineEditor = null; editingIds.delete(le.m.id);
   const text = le.ed.textContent.replace(/[\r\n]+/g, ' ');
-  le.ed.remove();
+  le.ed.remove(); phoneZoomBack();
   const before = snapshot(), list = marksOf(le.v.entry);
   if (!le.isNew) { const k = list.indexOf(le.m); if (k >= 0) list.splice(k, 1); }
   const m = txtNewPara([le.m], 0, T.base.size * 1.2);

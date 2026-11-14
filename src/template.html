@@ -150,7 +150,7 @@ button { font: inherit; color: inherit; }
 /* pages */
 .viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; touch-action: pan-x pan-y; } /* a pinch zooms the pages, not the window */
 .viewer:focus-visible { outline-offset: -3px; }
-.pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 64px; }
+.pages { display: flex; flex-direction: column; align-items: safe center; gap: 18px; padding: 24px 16px 64px; }
 .page { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; --scale-round-x: 1px; --scale-round-y: 1px; color-scheme: light; }
 .page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
 .app[data-darkpage="on"] .page canvas.pdf { filter: invert(.92) hue-rotate(180deg); }
