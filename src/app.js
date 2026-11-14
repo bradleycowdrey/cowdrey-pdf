@@ -208,7 +208,23 @@ function setTitle() {
   const k = name.length <= 14 ? 0 : cut >= 0 ? 11 - cut : Math.min(8, Math.floor(name.length / 3)); // from the last word, when it is short
   t.innerHTML = `<span class="dt-a">${esc(name.slice(0, name.length - k))}</span>${k ? `<span class="dt-b">${esc(name.slice(-k))}</span>` : ''}`;
   t.title = name; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF';
+  fitTitle();
 }
+// A name too long for the title bar loses letters from its middle: the ellipsis is put in here, right after the last
+// letter that fits, so the kept end follows it with no gap (the browser's own ellipsis stops at a whole letter and
+// leaves the rest of the width empty). The letters left out stay in the text, hidden, so the name is read out whole.
+function fitTitle() {
+  const t = $('#docTitle'), a = $('.dt-a', t), b = $('.dt-b', t); if (!a || !b) return;
+  const full = a.textContent, cut = (k) => { a.classList.toggle('dt-cut', k < full.length); a.innerHTML = k < full.length ? `${esc(full.slice(0, k))}<span class="dt-x">${esc(full.slice(k))}</span>` : esc(full); };
+  cut(full.length);
+  if (a.scrollWidth <= a.clientWidth) return;
+  let lo = 1, hi = full.length - 1;
+  while (lo < hi) { const k = (lo + hi + 1) >> 1; cut(k); if (a.scrollWidth <= a.clientWidth) lo = k; else hi = k - 1; }
+  while (lo > 1 && /\s/.test(full[lo - 1])) lo--; // no space before the ellipsis
+  cut(lo);
+}
+window.addEventListener('resize', () => fitTitle());
+document.fonts && document.fonts.ready.then(() => fitTitle());
 // `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
 // Documents with changes says they are kept there.
 function setSaved(saved, opened) {
@@ -1172,7 +1188,7 @@ function setTool(t) {
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
   if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
-  if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; }
+  if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; } // the hint for the tool being left goes with it
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
   // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).
@@ -1419,7 +1435,7 @@ const teCache = new Map();
 function teImage(v, m) {
   const cm = v.page._cmapValue, ratio = Math.min(window.devicePixelRatio || 1, 2);
   const L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm));
-  const loaded = L ? L.fontName : null, map = !m.ocr && !m.type3 && loaded && cm.glyphs.get(loaded);
+  const loaded = m.loaded || (L ? L.fontName : null), map = !m.ocr && !m.type3 && loaded && cm && cm.glyphs.get(loaded);
   const key = [m.id, m.text, m.color, scale, ratio, loaded, m.tr, m.lw, m.stroke, m.tc, m.tw].join('|');
   if (teCache.has(key)) return teCache.get(key);
   const { size, u } = lineFrame(m), hsc = Math.hypot(m.tm[0], m.tm[1]) / (Math.hypot(m.tm[2], m.tm[3]) || 1);

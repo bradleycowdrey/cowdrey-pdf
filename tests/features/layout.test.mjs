@@ -29,7 +29,7 @@ export default async (h) => {
     eq(await p.textContent('#docTitle'), 'pdfelement-guide'); eq(await p.getAttribute('#docTitle', 'title'), 'pdfelement-guide');
     eq(await p.$eval('#docTitle', (e) => e.tagName), 'H1');
     const t = await p.$eval('#docTitle', (e) => [e.getBoundingClientRect().width, e.querySelector('.dt-b').textContent, e.querySelector('.dt-b').getBoundingClientRect().width > 20]);
-    ok(t[0] >= 110, 'the name has room: ' + t[0]); eq(t.slice(1), ['-guide', true], 'the end of the name stays');
+    ok(t[0] >= 100, 'the name has room (cut to whole letters, with no empty room after the ellipsis): ' + t[0]); eq(t.slice(1), ['-guide', true], 'the end of the name stays');
     await run(p, 'tool_edit'); await p.waitForTimeout(100);
     const chip = await p.$eval('#modeChip', (c) => { const n = c.querySelector('.mode-name'), m = c.querySelector('.mode-text'); return [n.textContent, n.scrollWidth <= m.clientWidth + 1, c.querySelector('.mode-hint').getBoundingClientRect().width <= 1]; });
     eq(chip, ['Edit PDF', true, true], 'the chip shows the name in full');
