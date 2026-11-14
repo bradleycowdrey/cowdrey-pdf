@@ -1,6 +1,8 @@
 // End-to-end tests for Cowdrey.PDF. Run: (cd desktop && npm ci) && node tests/sample.mjs && node tests/e2e.mjs
 import fs from 'node:fs'; import path from 'node:path'; import { createRequire } from 'node:module';
-import { open, openPdf, close, missing, root } from './harness.mjs';
+import { open as openApp, openPdf, close, missing, root } from './harness.mjs';
+// The app asks for your name the first time you make a comment: tests start with one, unless they ask for the question.
+async function open(o = {}) { const p = await openApp(o); if (!o.askName) await p.evaluate(() => window.__cowdreyPdf.setAuthor && window.__cowdreyPdf.setAuthor('Tester')); return p; }
 const require = createRequire(import.meta.url);
 const { PDFDocument } = require('../desktop/node_modules/pdf-lib');
 const results = [];

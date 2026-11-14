@@ -106,6 +106,50 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await h.test('comments: your name is asked once and written as the author; the panel filters by type and author and sorts by date', async () => {
+    const p = await open({ height: 1500, askName: true }); await openPdf(p, WORD, 'Pelican report.pdf');
+    await p.click('[data-rt="markup"]');
+    await p.click('[data-cmd="cm_oval"]'); await drag(p, [60, 470], [180, 400]);
+    await p.waitForSelector('#dialog[open] #dlgInput');
+    eq(await p.textContent('#dialog h2'), 'Your name');
+    await p.fill('#dlgInput', 'Ada Lovelace'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(150);
+    await p.click('[data-cmd="cm_cloud"]'); await drag(p, [220, 470], [360, 400]); await p.waitForTimeout(150);
+    ok(!(await p.$('#dialog[open]')), 'asked only once');
+    await p.click('[data-cmd="cm_list"]'); await p.waitForSelector('#sidePanel .cm-item');
+    ok((await p.textContent('#sidePanel .cm-you')).includes('Ada Lovelace'), 'your name shown in the panel');
+    const bys = await p.$$eval('#sidePanel .cm-by', (e) => e.map((x) => x.textContent));
+    ok(bys.filter((b) => b.startsWith('Ada Lovelace · ')).length === 2 && bys.filter((b) => b === 'Reviewer').length === 2, 'author and date: ' + JSON.stringify(bys));
+    // filter by author, then by type
+    await p.selectOption('#sidePanel [data-cm-f="by"]', 'Reviewer'); await p.waitForTimeout(200);
+    eq(await p.$$eval('#sidePanel .cm-top b', (e) => e.map((x) => x.textContent).sort()), ['Note', 'Rectangle']);
+    eq(await p.textContent('#sidePanel .cm-head'), '2 of 4 comments');
+    await p.selectOption('#sidePanel [data-cm-f="by"]', '*everyone*'); await p.selectOption('#sidePanel [data-cm-f="type"]', 'Cloud'); await p.waitForTimeout(200);
+    eq(await p.$$eval('#sidePanel .cm-top b', (e) => e.map((x) => x.textContent)), ['Cloud']);
+    await p.selectOption('#sidePanel [data-cm-f="type"]', ''); await p.waitForTimeout(200);
+    // newest first: the cloud, then the oval, then the PDF's own (no date)
+    await p.selectOption('#sidePanel [data-cm-f="sort"]', 'new'); await p.waitForTimeout(200);
+    eq((await p.$$eval('#sidePanel .cm-top b', (e) => e.map((x) => x.textContent))).slice(0, 2), ['Cloud', 'Oval']);
+    // change the name: new comments use it, the earlier ones keep theirs
+    await p.click('#sidePanel [data-cm-name]'); await p.waitForSelector('#dialog[open] #dlgInput');
+    await p.fill('#dlgInput', 'A. Lovelace'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(150);
+    await p.click('[data-cmd="cm_line"]'); await drag(p, [400, 470], [540, 470]);
+    await run(p, 'tool_note'); await click(p, 500, 300); await typeIn(p, 'A note');
+    const d = await PDFDocument.load(await savedOf(p));
+    const who = annotsOf(d).map((a) => [sub(a), a.lookup(N('T')) ? a.lookup(N('T')).decodeText() : null]).sort();
+    eq(who, [['Circle', 'Ada Lovelace'], ['Line', 'A. Lovelace'], ['Square', 'Ada Lovelace'], ['Square', 'Reviewer'], ['Text', 'A. Lovelace'], ['Text', 'Reviewer']].sort(), JSON.stringify(who));
+    ok(!JSON.stringify(who).includes('Cowdrey.PDF'), 'never the app name');
+    eq(p.errors, []); await p.ctx.close();
+    // Skipping the question: comments have no author, and it is not asked again
+    const q = await open({ height: 1500, askName: true }); await openPdf(q);
+    await q.click('[data-rt="markup"]'); await q.click('[data-cmd="cm_oval"]'); await drag(q, [60, 470], [180, 400]);
+    await q.waitForSelector('#dialog[open] #dlgInput'); await q.click('#dialog .dlg-foot .btn:not(.primary)'); await q.waitForTimeout(150);
+    await q.click('[data-cmd="cm_cloud"]'); await drag(q, [220, 470], [360, 400]); await q.waitForTimeout(150);
+    ok(!(await q.$('#dialog[open]')), 'not asked again');
+    const d2 = await PDFDocument.load(await savedOf(q));
+    eq(annotsOf(d2).map((a) => a.has(N('T'))), [false, false], 'no author written');
+    await q.ctx.close();
+  });
+
   await h.test('comments: on a turned page, typewriter text and stamps stay upright, on screen and in the saved PDF', async () => {
     const p = await open({ height: 1500 }); await openPdf(p);
     await run(p, 'rotR'); await p.waitForTimeout(600);

@@ -177,6 +177,25 @@ function pg60DeleteMany(idx) {
   pg60SetSel([]);
   toast(`Deleted ${pg60Plural(idx.length, 'page')}`);
 }
+// Asks before deleting: which pages (a range, starting with idx), with the count on the button. Enter deletes.
+async function pg60DeleteAsk(idx = pg60Targets()) {
+  if (!has()) return;
+  const N = doc.pages.length;
+  const r = await pg60Ask('Delete pages', `
+    <label class="field"><span>Pages (this PDF has ${N})</span><input name="pages" value="${esc(pg60RangeText(idx))}" autocomplete="off" placeholder="e.g. 2-4, 7"></label>
+    <p class="pg60-note">You can undo this.</p>`,
+  [{ label: 'Cancel' }, { label: `Delete ${pg60Plural(idx.length, 'page')}`, value: 'ok', primary: true }], (dlg, vals) => {
+    const inp = $('input[name="pages"]', dlg), btn = $('.dlg-foot .btn.primary', dlg);
+    const upd = () => { const k = parseRange(vals.pages || '', N).length; btn.textContent = k ? `Delete ${pg60Plural(k, 'page')}` : 'Delete'; btn.disabled = !k; };
+    dlg.addEventListener('input', upd);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!btn.disabled) btn.click(); } });
+    requestAnimationFrame(() => { inp.focus(); inp.select(); });
+  });
+  if (!r || r.action !== 'ok') return;
+  const del = parseRange(r.vals.pages || '', N);
+  if (!del.length) { toast('No pages in that range'); return; }
+  pg60DeleteMany([...new Set(del)].sort((a, b) => a - b));
+}
 // Moves the chosen pages one place up (-1) or down (1), keeping them chosen.
 function pg60MoveMany(idx, d) {
   const set = new Set(idx);
@@ -220,7 +239,7 @@ function pg60Wrap(id, multi, enabled) {
 }
 pg60Wrap('rotL', (idx) => pg60RotateMany(idx, -90));
 pg60Wrap('rotR', (idx) => pg60RotateMany(idx, 90));
-pg60Wrap('delPage', pg60DeleteMany);
+pg60Wrap('delPage', (idx) => pg60DeleteAsk(idx)); // one page in view: at once (undo brings it back); several: asked
 pg60Wrap('extract', pg60ExtractMany);
 pg60Wrap('dup', pg60DupMany);
 pg60Wrap('up', (idx) => pg60MoveMany(idx, -1), (idx) => idx.some((n, k) => n !== k));
@@ -255,12 +274,14 @@ pg60Panel.addEventListener('drop', (e) => {
   let to = +t.dataset.n; if (to > from) to++; // dropped on a later page: put them after it
   pg60MoveTo(idx, to);
 }, true);
-// Delete or Backspace with pages chosen in the sidebar deletes them.
+// Delete or Backspace on a page in the sidebar asks to delete it (or the pages chosen there).
 document.addEventListener('keydown', (e) => {
   if (!doc || $('#dialog').open || !(e.key === 'Delete' || e.key === 'Backspace')) return;
-  if (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#sidePanel .thumb')) return;
+  const t = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
+  if (!t) return;
   if (selMark || selContent) return;
-  e.preventDefault(); run('delPage');
+  e.preventDefault();
+  pg60DeleteAsk(pg60Many() ? pg60Valid() : [+t.dataset.n]);
 });
 function pg60Paint() {
   const many = pg60Many(), sel = new Set(pg60Valid());
@@ -420,13 +441,14 @@ cmd('pg60_insert', { rlabel: 'Insert PDF', label: 'Insert from PDF…', icon: 'f
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
+cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: has, run: () => pg60DeleteAsk() });
 cmd('pg60_selAll', { label: 'Choose all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
 ribbonAdd('pages', 'Rotate', ['pg60_rotate']);
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_insert', 'pg60_replace']);
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
-ribbonAdd('pages', 'Remove', ['pg60_split']);
-menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', '-', 'tool_crop', 'pg60_crop']);
+ribbonAdd('pages', 'Remove', ['pg60_delete', 'pg60_split']);
+menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
 addStyle(`
 .app[data-tool="crop"] .marks { cursor: crosshair; }
@@ -442,6 +464,7 @@ addStyle(`
 .pg60-opt input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .pg60-opt input:not([type="radio"]) { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
 .pg60-num { width: 72px; }
+.pg60-note { font-size: 12px; color: var(--ink-3); margin: 4px 0 0; }
 .pg60-wide { flex: 1; min-width: 120px; }
 .pg60-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .pg60-grid .field { margin: 4px 0; }

@@ -121,6 +121,31 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('pages: Delete pages… takes a range and asks first; Delete on a page in the sidebar asks too', async () => {
+    const p = await open(); await openPdf(p, await named(['Q1', 'Q2', 'Q3', 'Q4', 'Q5']), 'Five.pdf');
+    await p.click('[data-rt="pages"]'); await p.click('#ribbonBody [data-cmd="pg60_delete"]'); await dlg(p);
+    eq(await p.inputValue('#dialog input[name="pages"]'), '1', 'starts with the page in view');
+    eq(await p.evaluate(() => document.activeElement.name), 'pages', 'the range field has the focus');
+    await p.fill('#dialog input[name="pages"]', '2-3, 5');
+    eq(await p.textContent('#dialog .btn.primary'), 'Delete 3 pages');
+    await p.fill('#dialog input[name="pages"]', '9');
+    eq(await p.$eval('#dialog .btn.primary', (b) => [b.textContent, b.disabled]), ['Delete', true], 'nothing to delete');
+    await p.fill('#dialog input[name="pages"]', '2-3, 5'); await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr1/fix-features/delete-pages.png' });
+    await p.keyboard.press('Enter'); await settle(p);
+    eq(await texts(p), ['Q1', 'Q4']);
+    // Delete key on a thumbnail: asks about that page; Cancel keeps it
+    await p.focus('.thumb[data-n="1"]'); await p.keyboard.press('Delete'); await dlg(p);
+    eq(await p.inputValue('#dialog input[name="pages"]'), '2', 'the page in the sidebar, not the one in view');
+    await p.click('#dialog .dlg-foot .btn:not(.primary)'); await settle(p);
+    eq(await texts(p), ['Q1', 'Q4'], 'cancelled');
+    await p.focus('.thumb[data-n="1"]'); await p.keyboard.press('Delete'); await dlg(p); await primary(p); await settle(p);
+    eq(await texts(p), ['Q1']);
+    await p.keyboard.press('Control+z'); await settle(p); eq(await texts(p), ['Q1', 'Q4'], 'undo');
+    // One page from the ribbon's Delete page: at once, as before
+    await run(p, 'delPage'); await settle(p); eq(await p.$('#dialog[open]'), null); eq((await texts(p)).length, 1);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('pages: several pages chosen in the sidebar are rotated, moved and deleted together', async () => {
     const p = await open(); await openPdf(p, await named(['P1', 'P2', 'P3', 'P4', 'P5']), 'Five.pdf');
     await p.click('.thumb[data-n="0"]'); await p.click('.thumb[data-n="2"]', { modifiers: ['Control'] });
@@ -132,7 +157,9 @@ export default async (h) => {
     await run(p, 'down'); await settle(p); // P1 and P3 move one place down together
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.i + 1)), [2, 1, 4, 3, 5]);
     eq(await p.evaluate(() => window.__cowdreyPdf.pg60.sel()), [1, 3], 'still chosen after moving');
-    await run(p, 'delPage'); await settle(p);
+    await run(p, 'delPage'); await dlg(p); // several pages: asked first
+    eq(await p.inputValue('#dialog input[name="pages"]'), '2, 4'); eq(await p.textContent('#dialog .btn.primary'), 'Delete 2 pages');
+    await primary(p); await settle(p);
     eq(await p.$$eval('.thumb', (e) => e.length), 3);
     const d = await PDFDocument.load(await savedOf(p));
     eq(d.getPageCount(), 3); eq(d.getPages().map((x) => x.getRotation().angle), [0, 0, 0]);

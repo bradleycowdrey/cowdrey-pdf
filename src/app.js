@@ -1587,7 +1587,7 @@ async function buildPdf(only) {
         p.drawImage(im, { x: m.x + down[0] * m.h, y: m.y + down[1] * m.h, width: m.w, height: m.h, rotate: degrees(m.rot) });
       }
       if (m.type === 'note') {
-        const annot = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], T: PDFHexString.fromText('Cowdrey.PDF'), F: 4, Open: false });
+        const annot = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], ...((m.author || S.author) ? { T: PDFHexString.fromText(m.author || S.author) } : {}), F: 4, Open: false });
         const ref = out.context.register(annot);
         let annots = p.node.lookup(PDFName.of('Annots'));
         if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
