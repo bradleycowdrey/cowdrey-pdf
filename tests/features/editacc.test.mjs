@@ -273,7 +273,7 @@ export default async (h) => {
     const [fx, fy] = await atN(q, 0, F.tm[4] + 5, F.tm[5] + 4); await q.mouse.click(fx, fy); await q.waitForSelector('.txt-bar');
     const sw2 = await q.$$eval('.txt-bar [data-tf="color"]', (b) => b.map((x) => [x.dataset.c, x.getAttribute('aria-pressed')]));
     eq(sw2.filter((x) => x[1] === 'true'), [['#000000', 'true']], 'its black, in black\'s place: ' + JSON.stringify(sw2));
-    eq(sw2.length, 6, 'one black, not two');
+    eq([sw2.length, sw2[0][0], sw2.some((x) => x[0] === '#111111')], [6, '#000000', false], 'one black, not two');
     await shot(q, 'format-bar-colour-light.png');
     await q.ctx.close();
   });
@@ -284,7 +284,21 @@ export default async (h) => {
     const P = await lineOf(p, 'stores'), [px, py] = await atN(p, 0, P.tm[4] + 5, P.tm[5] + 4);
     await p.mouse.click(px, py); await p.waitForSelector('.txt-editor');
     eq(await p.inputValue('.txt-editor'), PARA.join(' '), 'the whole paragraph');
+    await p.keyboard.press('Control+Enter'); await p.waitForTimeout(200);
+    // A line on its own (the heading) is edited as a line, and the app says why
+    const Hd = await lineOf(p, 'A heading'), [hx, hy] = await atN(p, 0, Hd.tm[4] + 5, Hd.tm[5] + 4);
+    await p.mouse.click(hx, hy); await p.waitForSelector('.line-editor');
+    eq(await p.textContent('#toast'), 'This line is not part of a paragraph, so it is edited on its own.');
     await p.keyboard.press('Escape'); await p.ctx.close();
+    // Short lines spaced as widely (a list) are not one paragraph
+    const L0 = pdfLib(), pdf = await L0.PDFDocument.create(), pg = pdf.addPage([612, 792]), font = await pdf.embedFont(L0.StandardFonts.Helvetica);
+    ['Apples', 'Plums', 'Cherries in June'].forEach((t, k) => pg.drawText(t, { x: 72, y: 680 - k * 31, size: 12, font }));
+    const list = tmp('list.pdf'); H.fs.writeFileSync(list, await pdf.save());
+    const r = await open(); await openPdf(r, list, 'List.pdf');
+    await editTool(r); await r.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    const Pl = await lineOf(r, 'Plums'), [lx, ly] = await atN(r, 0, Pl.tm[4] + 5, Pl.tm[5] + 4);
+    await r.mouse.click(lx, ly); await r.waitForSelector('.line-editor');
+    ok(!(await r.$('.txt-editor')), 'edited as a line'); await r.ctx.close();
     const file = GUIDE + 'pe10-win.pdf'; if (!H.fs.existsSync(file)) return;
     const q = await open(); await openPdf(q, file, 'Manual.pdf');
     await q.evaluate(() => window.__cowdreyPdf.views()[5].el.scrollIntoView()); await q.waitForTimeout(1200);

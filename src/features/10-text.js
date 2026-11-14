@@ -115,7 +115,7 @@ function txtBlock(cm, L, entry) {
   const rel = (c) => { const dx = c.tm[4] - f0.o[0], dy = c.tm[5] - f0.o[1]; return { c, a: dx * f0.u[0] + dy * f0.u[1], p: dx * f0.v[0] + dy * f0.v[1] }; };
   const like = (c) => c === L || (c.fontName === L.fontName && Math.abs(lineFrame(c).size - sz) < .05 && (() => { const f = lineFrame(c); return f.u[0] * f0.u[0] + f.u[1] * f0.u[1] > .999; })() && !txtCovered(entry, c));
   const cands = cm.lines.filter(like).map(rel).filter((x) => Math.abs(x.a) < sz * .6).sort((a, b) => b.p - a.p);
-  const k = cands.findIndex((x) => x.c === L), block = [cands[k]];
+  const k = cands.findIndex((x) => x.c === L), block = [cands[k]], colW = Math.max(...cands.map((x) => x.c.width));
   let lead = 0;
   const walk = (dir) => {
     let cur = k;
@@ -128,8 +128,8 @@ function txtBlock(cm, L, entry) {
       // Widely spaced lines are a paragraph only when they are full (wrapped) lines: every line but the last is
       // most of the block's width, so a list of short lines spaced apart stays separate.
       if (gap > sz * 1.9) {
-        const upper = dir > 0 ? cands[cur] : cands[j], widest = Math.max(...block.map((x) => x.c.width), cands[j].c.width);
-        if (upper.c.width < widest * .6) break;
+        const upper = dir > 0 ? cands[cur] : cands[j];
+        if (upper.c.width < colW * .6) break;
       }
       if (dir > 0) block.push(cands[j]); else block.unshift(cands[j]);
       cur = j;
@@ -274,7 +274,7 @@ function txtBoxHit(v, x, y) {
 // The swatches with a text's own colour: in place of a swatch it is close to (#000000 for #111111), else first.
 function txtOwnSwatches(own) {
   const rgb = (c) => txtHexRgb(c).map((x) => x * 255), o = rgb(own);
-  const near = TXT_SWATCHES.findIndex((c) => rgb(c).reduce((s, x, k) => s + Math.abs(x - o[k]), 0) < 30);
+  const near = TXT_SWATCHES.findIndex((c) => rgb(c).reduce((s, x, k) => s + Math.abs(x - o[k]), 0) < 60);
   return near >= 0 ? TXT_SWATCHES.map((c, k) => (k === near ? own : c)) : [own, ...TXT_SWATCHES.slice(0, -1)];
 }
 let txtBar = null, txtBarDown = false;
