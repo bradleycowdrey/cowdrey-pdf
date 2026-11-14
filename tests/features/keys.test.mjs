@@ -57,6 +57,39 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('Edit PDF: the format bar has few Tab stops: the swatches are one radio group and the size can be typed', async () => {
+    const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+    await editLine(p);
+    const stops = [];
+    for (let i = 0; i < 20; i++) {
+      await p.keyboard.press('Tab');
+      const a = await p.evaluate(() => { const e = document.activeElement; return e.classList.contains('line-editor') ? 'TEXT' : e.dataset.tf || e.getAttribute('aria-label'); });
+      if (a === 'TEXT') break; stops.push(a);
+    }
+    eq(stops, ['face', 'size', 'color', 'pick', 'bold', 'italic', 'underline'], 'Tab stops');
+    eq(await p.$eval('.txt-bar .txt-cols', (g) => g.getAttribute('role')), 'radiogroup');
+    eq(await p.$$eval('.txt-bar [data-tf="color"]', (b) => b.filter((x) => x.tabIndex === 0).length), 1, 'one swatch in the Tab order');
+    // Arrow keys move along the swatches and pick the colour
+    await p.keyboard.press('Tab'); await p.keyboard.press('Tab'); await p.keyboard.press('Tab');
+    const c0 = await p.evaluate(() => document.activeElement.dataset.c);
+    await p.keyboard.press('ArrowRight');
+    const [c1, checked, tabbable] = await p.evaluate(() => { const e = document.activeElement; return [e.dataset.c, e.getAttribute('aria-checked'), e.tabIndex]; });
+    ok(c1 && c1 !== c0, `moved ${c0} -> ${c1}`); eq([checked, tabbable], ['true', 0], 'the new swatch is checked and the Tab stop');
+    eq(await p.$eval('.line-editor', (e) => e.style.color), await p.evaluate((c) => { const d = document.createElement('i'); d.style.color = c; return d.style.color; }, c1), 'the line takes the colour');
+    // Type a size
+    await p.keyboard.press('Shift+Tab');
+    eq(await p.evaluate(() => document.activeElement.dataset.tf), 'size');
+    await p.keyboard.press('Control+a'); await p.keyboard.type('11.5'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
+    eq(await active(p), 'line-editor', 'Enter goes back to the text');
+    eq(await p.inputValue('.txt-bar .txt-size'), '11.5');
+    // Up and Down in the box step the size, as Bigger and Smaller do
+    await p.keyboard.press('Tab'); await p.keyboard.press('Tab'); await p.keyboard.press('ArrowUp'); eq(await p.inputValue('.txt-bar .txt-size'), '12');
+    await p.keyboard.press('Escape'); await p.keyboard.press('End'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+    const m = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().find((x) => x.type === 'tpara'));
+    eq(m && m.size, 12, 'the line has the typed size');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('Mac app: the menu bar greys out commands that do not apply, and sends only what changed', async () => {
     const p = await open({ init: h.macApp() }); await p.waitForTimeout(600);
     const full = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu').pop()[1].menus);

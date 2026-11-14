@@ -102,7 +102,7 @@ export default async (h) => {
     await p.click('.txt-bar [data-tf="bigger"]'); await p.click('.txt-bar [data-tf="bigger"]');
     await p.click('.txt-bar [data-tf="bold"]'); await p.click('.txt-bar [data-tf="underline"]');
     await p.click('.txt-bar [data-tf="color"][data-c="#E03131"]');
-    eq(await p.textContent('.txt-bar .txt-size'), '14');
+    eq(await p.inputValue('.txt-bar .txt-size'), '14');
     ok(await p.evaluate(() => document.activeElement.classList.contains('line-editor')), 'still typing in the line');
     await shot(p, 'line-format-bar.png');
     await p.keyboard.press('End'); await p.keyboard.type(' Approved.'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);

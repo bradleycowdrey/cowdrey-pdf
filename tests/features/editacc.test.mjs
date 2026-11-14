@@ -273,7 +273,7 @@ export default async (h) => {
     await editTool(p);
     const L = await lineOf(p, 'Hey there');
     const [cx, cy] = await atN(p, 0, L.tm[4] + 5, L.tm[5] + 4); await p.mouse.click(cx, cy); await p.waitForSelector('.txt-bar');
-    const sw = await p.$$eval('.txt-bar [data-tf="color"]', (b) => b.map((x) => [x.dataset.c, x.getAttribute('aria-pressed')]));
+    const sw = await p.$$eval('.txt-bar [data-tf="color"]', (b) => b.map((x) => [x.dataset.c, x.getAttribute('aria-checked')]));
     eq(sw[0], ['#0561ff', 'true'], 'its colour first, pressed'); eq(sw.filter((x) => x[1] === 'true').length, 1, 'only that one');
     eq(await p.$eval('.txt-bar .txt-dot', (d) => getComputedStyle(d).backgroundColor), 'rgb(5, 97, 255)');
     await p.click('.txt-bar [data-tf="colors"]').catch(() => {});
@@ -284,7 +284,7 @@ export default async (h) => {
     await editTool(q);
     const F = await lineOf(q, 'First');
     const [fx, fy] = await atN(q, 0, F.tm[4] + 5, F.tm[5] + 4); await q.mouse.click(fx, fy); await q.waitForSelector('.txt-bar');
-    const sw2 = await q.$$eval('.txt-bar [data-tf="color"]', (b) => b.map((x) => [x.dataset.c, x.getAttribute('aria-pressed')]));
+    const sw2 = await q.$$eval('.txt-bar [data-tf="color"]', (b) => b.map((x) => [x.dataset.c, x.getAttribute('aria-checked')]));
     eq(sw2.filter((x) => x[1] === 'true'), [['#000000', 'true']], 'its black, in black\'s place: ' + JSON.stringify(sw2));
     eq([sw2.length, sw2[0][0], sw2.some((x) => x[0] === '#111111')], [6, '#000000', false], 'one black, not two');
     await shot(q, 'format-bar-colour-light.png');
