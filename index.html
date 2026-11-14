@@ -679,7 +679,13 @@ button { font: inherit; color: inherit; }
 .more-btn { display: none; }
 
 /* ribbon */
-.ribbon { border-bottom: 1px solid var(--line); }
+.ribbon { border-bottom: 1px solid var(--line); position: relative; }
+/* Scroll arrows at a wide ribbon's faded edges, for a mouse (a finger swipes; the keyboard scrolls to what has focus) */
+.r-scroll { display: none; position: absolute; bottom: 20px; z-index: 2; width: 24px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2); box-shadow: 0 2px 8px rgba(0,0,0,.12); cursor: pointer; place-items: center; }
+.r-scroll:hover { color: var(--ink); background: var(--hover); }
+.r-scroll svg { width: 16px; height: 16px; }
+.r-scroll-l { left: 4px; } .r-scroll-r { right: 4px; }
+@media (hover: hover) and (pointer: fine) { .ribbon.more-l .r-scroll-l, .ribbon.more-r .r-scroll-r { display: grid; } }
 .ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; }
 .ribbon-tabs::-webkit-scrollbar { display: none; }
 .ribbon-tabs button { flex: none; }
@@ -714,6 +720,9 @@ button { font: inherit; color: inherit; }
 @media (pointer: coarse) { .rb-more { width: 28px; } }
 .rb[data-rmenu] > span svg { width: 12px; height: 12px; vertical-align: -2px; margin-left: 1px; }
 .rb[data-rmenu][aria-expanded="true"] { background: var(--hover); }
+.rb[data-on] { background: var(--accent-soft); color: var(--accent); }
+.pop-sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 8px; }
+.r-swatches .sw-more svg { width: 10px; height: 10px; }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
 /* compact ribbon groups (wide screens): small buttons in two rows, with names (r-rows) or as icons (r-icons) */
@@ -735,16 +744,14 @@ button { font: inherit; color: inherit; }
 .side-top { display: flex; align-items: center; }
 .side-top .side-tabs { flex: 1; min-width: 0; }
 .side-close { display: none; }
-.side-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
-.side-tabs button { border: 0; background: none; border-radius: 7px; padding: 5px 4px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
-.side-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-:root[data-theme="dark"] .side-tabs button[aria-selected="true"] { background: var(--press); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side-tabs button[aria-selected="true"] { background: var(--press); } }
+.side-tabs { grid-template-columns: repeat(3, 1fr); }
+.side-tabs.seg { display: grid; grid-auto-flow: row; margin: 10px; }
+.side-tabs.seg > button { padding: 5px 4px; }
 .side-panel { flex: 1; overflow: auto; padding: 0 10px 16px; }
 .thumbs { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 4px; }
 .thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--ink-3); font-size: 12px; }
 .thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; }
-.thumb[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
+.thumb[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .thumb.drag-over { outline: 2px dashed var(--accent); }
 .thumb.ctx-for { outline: 2px solid var(--accent); outline-offset: -2px; }
 .outline-list, .doc-list { list-style: none; margin: 0; padding: 0; }
@@ -777,11 +784,23 @@ button { font: inherit; color: inherit; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
 .app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page .textLayer,
 .app[data-tool="select"] .marks .mk { touch-action: none; }
+/* The text tools select the words under a comment or shape, as if it were not there. */
+.app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page :is(.marks, .marks *, .annotationLayer, .annotationLayer *) { pointer-events: none !important; }
 .app[data-tool="select"] .marks .mk:hover { filter: drop-shadow(0 0 2px var(--accent)); }
-.marks .mk.sel { filter: drop-shadow(0 0 2px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
+/* The selected mark: a dashed box and handles (bigger for a finger), in the brand colour with a light halo, which
+   shows on the white page in both themes (the light accent of the dark theme would not). */
+.marks .mk-selbox-g { pointer-events: none; }
+.marks .mk-selbox { fill: none; stroke: var(--brand); stroke-width: 1.5; stroke-dasharray: 5 3; filter: drop-shadow(0 0 1px rgba(255,255,255,.9)); }
+.marks .mk-handle { pointer-events: auto; fill: #fff; stroke: var(--brand); stroke-width: 1.5; touch-action: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+.marks .mk-handle.mk-handle-hit { fill: transparent; stroke: none; filter: none; }
+.marks .mk-handle:is([data-h="nw"], [data-h="se"]) { cursor: nwse-resize; }
+.marks .mk-handle:is([data-h="ne"], [data-h="sw"]) { cursor: nesw-resize; }
+.marks .mk-handle:is([data-h="n"], [data-h="s"]) { cursor: ns-resize; }
+.marks .mk-handle:is([data-h="e"], [data-h="w"]) { cursor: ew-resize; }
 .marks text { user-select: none; }
 .app[data-tool="edit"] .marks { cursor: default; }
 .app[data-tool="erase"] .marks { cursor: crosshair; }
+.app[data-busy] .marks, .app[data-busy] .marks * { cursor: progress !important; }
 .marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
 .marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
 .marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
@@ -799,7 +818,22 @@ button { font: inherit; color: inherit; }
 
 /* status bar */
 .statusbar { display: flex; align-items: center; gap: 16px; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mode-chip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0 2px 0 10px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: 12px; line-height: 24px; }
+.mode-chip[hidden] { display: none; }
+.mode-chip .mode-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode-chip .mode-stop { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
+.mode-chip .mode-stop:hover { background: var(--hover); color: var(--ink); }
+.mode-chip .mode-stop svg { width: 14px; height: 14px; }
+.app.tool-on .sb-brand { display: none; }
+/* phones: the chip takes the room of the zoom buttons (a pinch zooms) */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .statusbar > span:first-child { white-space: nowrap; }
+  .app.tool-on .mode-chip { flex: 1 1 0; }
+  .app.tool-on .sb-zoom .icon-btn, .app.tool-on .sb-spacer { display: none; }
+}
 .sb-spacer { flex: 1; }
+.sb-pages { display: none; }
 .sb-brand { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-brand a { color: inherit; }
 .sb-zoom { display: flex; align-items: center; gap: 6px; }
@@ -812,6 +846,10 @@ button { font: inherit; color: inherit; }
 .popover { position: fixed; z-index: 50; min-width: 220px; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
 .popover[hidden] { display: none; }
 .mi { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; cursor: pointer; color: var(--ink); }
+.mi > .mchk { display: none; }
+.popover.has-chk .mi { grid-template-columns: 16px 22px 1fr auto; gap: 6px; }
+.popover.has-chk .mi > .mchk { display: grid; grid-row: 1; grid-column: 1; place-items: center; color: var(--accent); }
+.mi > .mchk svg { width: 16px; height: 16px; stroke-width: 2.25; }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: none; }
 .mi:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .mh { font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 6px 8px 2px; }
@@ -834,10 +872,24 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .field input, .field textarea { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .sig-pad { width: 100%; height: 160px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; touch-action: none; display: block; }
 .sig-pad.typed { cursor: default; }
-.sig-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 0 0 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
-.sig-modes button { border: 0; background: none; border-radius: 7px; padding: 6px 4px; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; min-height: 32px; }
-.sig-modes button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-.sig-modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sig-modes.seg { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0 0 10px; }
+/* One segmented control for a choice of a few (tabs, or radio buttons in labels): a grey track, the chosen one raised. */
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); }
+.seg > button, .seg > label { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; border: 0; background: none; border-radius: 7px; padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; text-align: center; }
+.seg > label > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.seg > button:hover, .seg > label:hover { color: var(--ink); }
+.seg > [aria-selected="true"], .seg > label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+:root[data-theme="dark"] .seg > :is([aria-selected="true"], label:has(input:checked)) { background: var(--press); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg > :is([aria-selected="true"], label:has(input:checked)) { background: var(--press); } }
+.seg > button:focus-visible, .seg > label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* One colour picker: named round swatches, then + for any other colour (the system picker). */
+.sw-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sw-row .swatch, .pop-sw .swatch { width: 24px; height: 24px; }
+.sw-more { position: relative; display: inline-grid; place-items: center; background: conic-gradient(#E03131, #FFD43B, #69DB7C, #74C0FC, #2448C9, #F783AC, #E03131); color: #fff; }
+.sw-more svg { width: 14px; height: 14px; stroke-width: 3; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
+.sw-more input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.sw-more:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.swatch[data-color="#111111"], .swatch[data-c="#111111"] { box-shadow: 0 0 0 1px var(--ink-3); } /* black stays visible on the dark theme */
 .sig-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0; }
 .sig-row[hidden], .sig-row [hidden] { display: none; }
 .sig-row .field { flex: 1; margin: 0; }
@@ -863,6 +915,15 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .findbar[hidden] { display: none; }
 .findbar input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 200px; }
 .findbar .count { color: var(--ink-3); font-size: 12px; min-width: 56px; text-align: center; }
+.findbar .icon-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.find-list { position: absolute; top: calc(100% + 6px); left: 0; right: 0; max-height: min(420px, 55vh); overflow: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 4px; }
+.find-list[hidden] { display: none; }
+.find-list ol { list-style: none; margin: 0; padding: 0; }
+.find-list button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.find-list button:hover, .find-list button[aria-current="true"] { background: var(--accent-soft); }
+.find-list button b { color: var(--ink); font-size: 12px; font-weight: 600; }
+.find-list mark { background: rgba(255, 200, 0, .45); color: inherit; border-radius: 2px; }
+.find-list .find-head, .find-list .find-none { margin: 4px 8px 6px; color: var(--ink-3); font-size: 12px; }
 
 /* phones (and phones on their side): the ribbon becomes a scrolling tool row; the sidebar becomes an overlay;
    Undo and Redo sit in the title bar, Appearance moves into More. Keep in step with PHONE_MQ in app.js. */
@@ -879,6 +940,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 6px; }
   .side-tabs button { min-height: 40px; }
   .r-label { display: none; }
+  .r-group { padding: 0 4px; }
   .ribbon-body { height: 72px; }
   .ribbon-tabs button { min-height: 40px; }
   .rb { min-width: 44px; min-height: 44px; max-width: 76px; font-size: 11px; }
@@ -890,6 +952,8 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .findbar { left: 8px; right: 8px; top: 8px; }
   .findbar input { flex: 1; width: auto; min-width: 0; }
   .findbar .count { min-width: 44px; }
+  .findbar #findCase, .findbar #findWord { display: none; }
+  .sb-pages { display: grid; width: 40px; height: 40px; margin-left: -8px; }
   .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
 }
 /* a phone on its side: the bars get thinner and the ribbon shows icons only (the names stay for screen readers and
@@ -901,6 +965,33 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .rb { justify-content: center; align-self: center; position: relative; }
   .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .statusbar { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Touch: iOS zooms the whole app into any field with text under 16px, so fields are 16px there (not the text
+   editors on the page, which follow the page's size). Without a keyboard, menus show no shortcuts. */
+@media (max-width: 760px), (pointer: coarse) {
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"]), select, textarea):not(.page *, .txt-editor) { font-size: max(16px, 1em) !important; }
+}
+@media (hover: none) and (pointer: coarse) { .mi .k { display: none; } }
+/* A finger needs bigger swatches (one row of them on the ribbon of a touch screen). */
+@media (pointer: coarse) {
+  .swatch, .sw-row .swatch, .pop-sw .swatch { width: 32px; height: 32px; }
+  .sw-more svg, .r-swatches .sw-more svg { width: 16px; height: 16px; }
+  .r-swatches .r-items { gap: 4px; }
+}
+@media (pointer: coarse) and (min-width: 761px) { .r-swatches .r-items { grid-template-columns: repeat(8, 32px); grid-template-rows: 32px; } }
+/* Forced colours (Windows High Contrast): colours stay on swatches and on the page itself; what is pressed, chosen
+   or selected gets a Highlight outline, since backgrounds and shadows are replaced there. */
+@media (forced-colors: active) {
+  .page, .swatch, .sig-use, .sig-font { forced-color-adjust: none; }
+  .swatch { border-color: Canvas; box-shadow: 0 0 0 1px CanvasText; }
+  .swatch[aria-pressed="true"], .swatch[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 2px; }
+  .rb[aria-pressed="true"], .rb[data-on], .txt-b[aria-pressed="true"], .ribbon-tabs [aria-selected="true"], .side-tabs [aria-selected="true"], .seg > [aria-selected="true"], .seg > label:has(input:checked),
+  .thumb[aria-current="true"], .doc-item[aria-current="true"] .doc-open, .sig-font[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ribbon-tabs button[aria-selected="true"]::after { forced-color-adjust: none; background: Highlight; }
+  .mi:hover, .mi:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+  .mi > .mchk { color: Highlight; }
+  .marks .mk.sel { filter: drop-shadow(0 0 2px Highlight) drop-shadow(0 0 1px Highlight); }
+  .r-scroll { border-color: ButtonText; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media print {
@@ -931,14 +1022,16 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   <div class="ribbon">
     <div class="ribbon-tabs" role="tablist" aria-label="Ribbon" id="ribbonTabs"></div>
     <div class="ribbon-body" id="ribbonBody" role="tabpanel"></div>
+    <button class="r-scroll r-scroll-l" type="button" data-dir="-1" tabindex="-1" aria-hidden="true" title="Scroll left"><i data-lucide="chevron-left"></i></button>
+    <button class="r-scroll r-scroll-r" type="button" data-dir="1" tabindex="-1" aria-hidden="true" title="Scroll right"><i data-lucide="chevron-right"></i></button>
   </div>
   <div class="workspace">
     <aside class="sidebar" id="sidebar" aria-label="Sidebar">
       <div class="side-top">
-        <div class="side-tabs" role="tablist" aria-label="Sidebar">
+        <div class="side-tabs seg" role="tablist" aria-label="Sidebar">
           <button type="button" role="tab" data-side="thumbs" aria-selected="true" aria-controls="sidePanel">Pages</button>
           <button type="button" role="tab" data-side="outline" aria-selected="false" aria-controls="sidePanel">Outline</button>
-          <button type="button" role="tab" data-side="docs" aria-selected="false" aria-controls="sidePanel">Documents</button>
+          <button type="button" role="tab" data-side="docs" aria-selected="false" aria-controls="sidePanel">Recent</button>
         </div>
         <button class="icon-btn side-close" id="sideClose" type="button" title="Close sidebar" aria-label="Close sidebar"><i data-lucide="x"></i></button>
       </div>
@@ -947,10 +1040,14 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
     <main class="viewer" id="viewer" tabindex="0" aria-label="Document">
       <div class="find-dock"><div class="findbar" id="findbar" hidden>
         <i data-lucide="search"></i><input id="findInput" type="search" placeholder="Find in document" aria-label="Find">
-        <span class="count" id="findCount"></span>
-        <button class="icon-btn" type="button" id="findPrev" title="Previous"><i data-lucide="chevron-up"></i></button>
-        <button class="icon-btn" type="button" id="findNext" title="Next"><i data-lucide="chevron-down"></i></button>
-        <button class="icon-btn" type="button" id="findClose" title="Close"><i data-lucide="x"></i></button>
+        <span class="count" id="findCount" aria-live="polite"></span>
+        <button class="icon-btn" type="button" id="findCase" title="Match case" aria-label="Match case" aria-pressed="false"><i data-lucide="case-sensitive"></i></button>
+        <button class="icon-btn" type="button" id="findWord" title="Whole words" aria-label="Whole words" aria-pressed="false"><i data-lucide="whole-word"></i></button>
+        <button class="icon-btn" type="button" id="findPrev" title="Previous" aria-label="Previous"><i data-lucide="chevron-up"></i></button>
+        <button class="icon-btn" type="button" id="findNext" title="Next" aria-label="Next"><i data-lucide="chevron-down"></i></button>
+        <button class="icon-btn" type="button" id="findAll" title="All results" aria-label="All results" aria-pressed="false" aria-expanded="false" aria-controls="findList"><i data-lucide="list"></i></button>
+        <button class="icon-btn" type="button" id="findClose" title="Close" aria-label="Close"><i data-lucide="x"></i></button>
+        <div class="find-list" id="findList" hidden role="region" aria-label="All results"></div>
       </div></div>
       <div class="pages" id="pages"></div>
       <div class="drop" id="drop">
@@ -965,7 +1062,9 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
     </main>
   </div>
   <footer class="statusbar">
+    <button class="icon-btn sb-pages" type="button" data-cmd="sidebar" title="Pages and outline" aria-label="Pages and outline"><i data-lucide="panel-left"></i></button>
     <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> of <span id="pageCount">0</span></span>
+    <span class="mode-chip" id="modeChip" role="status" hidden><span class="mode-text"></span><button class="mode-stop" type="button" title="Stop (Esc)" aria-label="Stop and go back to Select"><i data-lucide="x"></i></button></span>
     <span class="sb-spacer"></span>
     <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>
     <span class="sb-zoom">
@@ -979,6 +1078,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 <div class="popover" id="popover" hidden role="menu"></div>
 <dialog id="dialog" aria-modal="true" aria-labelledby="dlgTitle"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="sr-only" id="announce" role="status" aria-live="polite"></div>
 <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="mergeInput" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="imageInput" accept="image/png,image/jpeg" multiple hidden>
@@ -1026,8 +1126,13 @@ const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a
 let toastTimer;
 // Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
 const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
+let toolHint = '', toolJustSet = null; // the mode chip's hint, and the tool chosen in this task (see setTool)
+const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
 function toast(msg) {
-  if (coarse()) msg = String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap');
+  msg = touchWords(msg);
+  // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
+  // of a toast that goes after a moment and covers the page (toasts are for what happened).
+  if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); return; }
   const t = $('#toast'); t.textContent = msg;
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
@@ -1044,6 +1149,7 @@ function toast(msg) {
    Feature modules in src/features/*.js are joined into this file by build.py (where /*FEATURES*\/ stands, before
    the apps and start sections) and plug in through this registry. See src/features/README.md. */
 const FEATURE = {
+  thumbLayers: [], // (v) => draw a feature's own layer (an svg in v.el) for a thumbnail; v.thumb is true
   markTypes: {},   // type -> { draw(v, m, svg) -> SVG element, save: async ({ L, out, p, m, entry, ctx }), under?: true (drawn and saved before other marks), move?(m, orig, dx, dy) }
   tools: {},       // tool id -> { down(e, v), move?(e, v) } — pointer handling on the page while the tool is chosen
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
@@ -1052,6 +1158,7 @@ const FEATURE = {
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
+  markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
 };
 function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
 const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
@@ -1158,7 +1265,7 @@ function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF
 function setSaved(saved, opened) {
   if (doc) doc.dirty = !saved;
   const kept = opened && doc && Object.values(doc.marks).some((l) => l && l.length);
-  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Documents' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
+  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Recent' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -1226,8 +1333,10 @@ async function renderView(v) {
   const pd = pdfDocs.get(v.entry.src);
   const canvasMap = new Map(); // pdf.js draws form widgets' looks (a checkbox ticked or not) here, for the form layer
   try {
-    v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage });
+    const skip = await imageSkip(v); if (stale()) return;
+    v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage, operationsFilter: skip.filter });
     await v.task.promise;
+    v.imgSig = skip.sig; v.imgHidden = skip.hidden;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); }
   v.task = null;
   if (stale()) return;
@@ -1235,6 +1344,10 @@ async function renderView(v) {
   try {
     const tl = document.createElement('div'); tl.className = 'textLayer'; el.appendChild(tl);
     await new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: tl, viewport }).render();
+    // As pdf.js's own viewer does: while selecting, an unselectable layer under the text fills the gaps, so a drag
+    // that ends past a line's last word stops there instead of reaching the next line.
+    const eoc = document.createElement('div'); eoc.className = 'endOfContent'; tl.append(eoc); tl.__eoc = eoc;
+    tl.addEventListener('pointerdown', () => tl.classList.add('selecting'));
   } catch (e) { console.warn('text layer', e); }
   if (stale()) return;
   // Form fields and links
@@ -1257,11 +1370,43 @@ async function renderView(v) {
       al.addEventListener('change', () => setSaved(false));
     }
   } catch (e) { console.warn('annotation layer', e); }
+  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
   if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   if (stale()) return;
   drawMarks(v);
   for (const f of FEATURE.afterRender) { try { f(v); } catch (e) { console.warn(e); } }
   if (findState.q) paintFind(v);
+}
+// Pictures moved or deleted with Edit PDF are left out when the page is drawn (so nothing has to be painted over
+// them, which would also hide what is drawn on top of them, such as text over a background picture).
+const imageSig = (v) => marksOf(v.entry).filter((m) => m.type === 'ie').map((m) => m.n).sort((a, b) => a - b).join(',');
+async function imageSkip(v) {
+  const sig = imageSig(v), hidden = new Set();
+  if (!sig) return { sig, hidden, filter: null };
+  let cm; try { cm = await contentMap(v.page); } catch { return { sig, hidden, filter: null }; }
+  const raws = new Set();
+  for (const n of sig.split(',').map(Number)) { const im = cm.images[n]; if (im && im.raw != null) { raws.add(im.raw); hidden.add(n); } }
+  const O = pdfjs.OPS, skipAt = new Set(); let seen = 0, k = -1;
+  const filter = (i, ol) => {
+    for (; seen <= i && seen < ol.fnArray.length; seen++) { const fn = ol.fnArray[seen]; if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) { k++; if (raws.has(k)) skipAt.add(seen); } }
+    return !skipAt.has(i);
+  };
+  return { sig, hidden, filter };
+}
+// The page drawn again, off screen, once the pictures to leave out change; then swapped in.
+async function repaintCanvas(v) {
+  const old = v.el.querySelector(':scope > canvas.pdf'); if (!old || v.repainting) return;
+  v.repainting = true;
+  const token = v.token, ratio = Math.min(window.devicePixelRatio || 1, 2), pd = pdfDocs.get(v.entry.src);
+  try {
+    const skip = await imageSkip(v);
+    const c = document.createElement('canvas'); c.className = 'pdf'; c.width = old.width; c.height = old.height;
+    await v.page.render({ annotationCanvasMap: new Map(), canvas: c, canvasContext: c.getContext('2d'), viewport: v.viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage, operationsFilter: skip.filter }).promise;
+    if (v.token !== token || !old.isConnected) return;
+    old.replaceWith(c); old.width = old.height = 0;
+    v.imgSig = skip.sig; v.imgHidden = skip.hidden;
+  } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); } finally { v.repainting = false; }
+  if (v.token === token) { if (imageSig(v) !== v.imgSig) repaintCanvas(v); else drawMarks(v); }
 }
 // Pages far from view give their drawing back, so a long PDF does not use more memory the further you scroll:
 // pages within KEEP_NEAR pages of those in view (and within a screen or two of it) stay drawn; the rest keep only
@@ -1305,15 +1450,25 @@ async function goToDest(dest) {
   } catch {}
 }
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+// Going to a page (a thumbnail, the page box, a link) holds `current` on that page while the view scrolls there, so
+// a page command straight after acts on the page asked for, even when it can't reach the top (the last pages).
+// Scrolling by hand (wheel, touch, keys, the scroll bar) lets the page in view decide again.
+let navLock = 0, navTimer;
+function navUnlock() { navLock = 0; clearTimeout(navTimer); }
 function goPage(n, instant) {
   if (!views.length) return;
   n = Math.max(0, Math.min(views.length - 1, n));
   current = n;
+  const lock = ++navLock; clearTimeout(navTimer);
+  navTimer = setTimeout(() => { if (navLock === lock) navLock = 0; }, 1500);
   viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant || reduceMotion.matches ? 'instant' : 'smooth' });
-  updateStatus();
+  updateStatus(); markThumb();
 }
+viewer.addEventListener('scrollend', () => { const lock = navLock; if (lock) setTimeout(() => { if (navLock === lock) navLock = 0; }, 50); });
+for (const ev of ['wheel', 'touchstart', 'pointerdown']) viewer.addEventListener(ev, navUnlock, { passive: true });
+viewer.addEventListener('keydown', (e) => { if (/^(Arrow|Page|Home|End| )/.test(e.key)) navUnlock(); });
 viewer.addEventListener('scroll', () => {
-  if (!views.length) return;
+  if (!views.length || navLock) return;
   const mid = viewer.scrollTop + viewer.clientHeight / 3;
   let n = 0;
   for (let k = 0; k < views.length; k++) if (views[k].el.offsetTop <= mid) n = k;
@@ -1434,6 +1589,7 @@ function drawMarks(v) {
   }
   svg.setAttribute('viewBox', `0 0 ${v.viewport.width} ${v.viewport.height}`);
   svg.innerHTML = '';
+  if (v.rendered && v.imgSig != null && imageSig(v) !== v.imgSig) repaintCanvas(v);
   const rotNow = totalRot(v);
   const all = marksOf(v.entry);
   const under = (x) => CONTENT_TYPES.has(x.type) || !!(FEATURE.markTypes[x.type] && FEATURE.markTypes[x.type].under);
@@ -1468,35 +1624,138 @@ function drawMarks(v) {
       g = svgEl('image', { class: 'mk', x, y, width: m.w * scale, height: m.h * scale, href: m.data, transform: `rotate(${(rotNow - m.rot + 360) % 360} ${x} ${y})` });
     }
     if (!g) continue;
-    g.dataset.id = m.id;
+    g.dataset.id = m.id; g.dataset.type = m.type;
+    if (g.classList.contains('mk')) { g.setAttribute('role', 'img'); g.setAttribute('aria-label', markLabel(m, true)); }
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
   }
   drawSelection(v, svg);
+  drawMarkBox(v, svg);
+}
+/* The selected mark: a dashed box around it, with handles that resize it.
+   Shapes, lines, drawings and area highlights stretch either way; stamps, text, callouts and pictures keep their
+   proportions (corner handles only). Notes and text mark-up only show the box. */
+const MARK_STRETCH = (m) => ['rect', 'ink', 'cmShape'].includes(m.type) || (m.type === 'hl' && m.area);
+const MARK_SCALE = { text: ['size', 'bw', 'w'], cmType: ['size'], cmCallout: ['size', 'bw', 'bh'], cmStamp: ['size', 'bw', 'bh'] };
+const MARK_HANDLES = { nw: [0, 0], n: [.5, 0], ne: [1, 0], e: [1, .5], se: [1, 1], s: [.5, 1], sw: [0, 1], w: [0, .5] };
+// The mark's box on screen (page pixels), from its geometry (strokes left out).
+function markViewBox(svg, el) {
+  let b; try { b = el.getBBox(); } catch { return null; }
+  const m = svg.getScreenCTM && svg.getScreenCTM() && el.getScreenCTM ? svg.getScreenCTM().inverse().multiply(el.getScreenCTM()) : null;
+  const pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => m ? [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f] : [x, y]);
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+function drawMarkBox(v, svg) {
+  if (!selMark || pageKey(v.entry) !== selMark.key) return;
+  const m = selectedMark(), el = m && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`);
+  if (!el || m.type === 'ff' || !el.classList.contains('mk')) return;
+  const b = markViewBox(svg, el); if (!b) return;
+  const pad = 4, [x0, y0, x1, y1] = [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
+  const g = svgEl('g', { class: 'mk-selbox-g' });
+  g.appendChild(svgEl('rect', { class: 'mk-selbox', x: x0, y: y0, width: x1 - x0, height: y1 - y0 }));
+  const stretch = MARK_STRETCH(m), keep = !!MARK_SCALE[m.type];
+  if (stretch || keep) {
+    const big = coarse(), s = big ? 14 : 9;
+    for (const [h, [fx, fy]] of Object.entries(MARK_HANDLES)) {
+      if (keep && h.length < 2) continue;
+      const hx = x0 + (x1 - x0) * fx, hy = y0 + (y1 - y0) * fy;
+      if (big) g.appendChild(svgEl('rect', { class: 'mk-handle mk-handle-hit', 'data-h': h, x: hx - 16, y: hy - 16, width: 32, height: 32 }));
+      g.appendChild(svgEl('rect', { class: 'mk-handle', 'data-h': h, x: hx - s / 2, y: hy - s / 2, width: s, height: s, rx: 2 }));
+    }
+  }
+  svg.appendChild(g);
+}
+// Moves the points of mark m (from its original o) by P, a map of PDF points; k scales its sizes (kept proportions).
+function resizeMark(m, o, P, k) {
+  const own = FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].resize;
+  if (own) return own(m, o, P, k);
+  if (o.rects) m.rects = o.rects.map((r) => [...P([r[0], r[1]]), ...P([r[2], r[3]])]);
+  if (o.pts) m.pts = o.pts.map(P);
+  if ('x1' in o) { [m.x1, m.y1] = P([o.x1, o.y1]); [m.x2, m.y2] = P([o.x2, o.y2]); }
+  if ('x' in o) [m.x, m.y] = P([o.x, o.y]);
+  if ('tx' in o) [m.tx, m.ty] = P([o.tx, o.ty]);
+  for (const f of MARK_SCALE[m.type] || []) if (typeof o[f] === 'number' && o[f] > 0) m[f] = o[f] * k;
+  if (m.type === 'text' && Array.isArray(o.lw)) m.lw = o.lw.map((n) => n * k);
+}
+// Dragging a handle: the opposite side stays where it is. One undo step.
+function startResize(e, v, h) {
+  const m = selectedMark(), svg = v.el.querySelector('svg.marks'), el = m && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`);
+  const b = el && markViewBox(svg, el); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const before = snapshot(), orig = JSON.parse(JSON.stringify(m)), keep = !MARK_STRETCH(m), [fx, fy] = MARK_HANDLES[h];
+  const ax = b[0] + (b[2] - b[0]) * (1 - fx), ay = b[1] + (b[3] - b[1]) * (1 - fy), w0 = Math.max(1, b[2] - b[0]), h0 = Math.max(1, b[3] - b[1]);
+  const [sx0, sy0] = localPoint(e, v);
+  let moved = false;
+  const move = (ev) => {
+    const [px, py] = localPoint(ev, v);
+    if (!moved && Math.hypot(px - sx0, py - sy0) < 2) return;
+    moved = true;
+    // the handle's side follows the pointer; a box can't be turned inside out
+    let sx = fx === .5 ? 1 : Math.max(4 / w0, (w0 + (fx ? px - sx0 : sx0 - px)) / w0);
+    let sy = fy === .5 ? 1 : Math.max(4 / h0, (h0 + (fy ? py - sy0 : sy0 - py)) / h0);
+    if (keep) sx = sy = Math.max(sx, sy, 8 / Math.max(w0, h0));
+    const P = ([x, y]) => { const [vx, vy] = toView(v, x, y); return toPdf(v, ax + (vx - ax) * sx, ay + (vy - ay) * sy); };
+    resizeMark(m, orig, P, sx);
+    drawMarks(v);
+  };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); if (moved) changed(before); };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
 }
 function redrawPage(entry) { for (const v of views) if (v.entry === entry && v.rendered) drawMarks(v); }
 function snapshot() { return JSON.stringify({ pages: doc.pages, marks: doc.marks }); }
-function changed(before) {
+// Each step of undo has a name ("Undo Watermark"): the one given, or worked out from what changed.
+function changed(before, what) {
   if (kbPlace) kbPlaced();
-  undoStack.push(before); if (undoStack.length > 100) undoStack.shift();
+  let name = what; if (!name) { try { name = changeName(before); } catch { name = ''; } }
+  undoStack.push({ s: before, what: name || 'Change' }); if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
-  setSaved(false); persist(); refreshRibbon();
+  setSaved(false); persist(); refreshRibbon(); thumbsLater();
 }
+const CHANGE_NAMES = { te: 'Text edit', tpara: 'Text edit', ie: 'Picture', erase: 'Erase', ae: 'Comment', hl: 'Highlight', ink: 'Drawing', rect: 'Rectangle', text: 'Text box', note: 'Note', img: 'Picture', pic: 'Picture', link: 'Link', lnkx: 'Link', redact: 'Redaction', cmMarkup: 'Text mark-up', cmShape: 'Shape', cmCallout: 'Callout', cmType: 'Typewriter text', cmStamp: 'Stamp', cmReply: 'Reply', ff: 'Form field', ffmod: 'Form field', ffflat: 'Flatten form', file: 'Attachment', docinfo: 'Document properties', bookmarks: 'Bookmarks', protsec: 'Security', pd_watermark: 'Watermark', pd_background: 'Background', pd_headfoot: 'Header & footer', pd_bates: 'Bates numbering' };
+const MOVE_KEYS = new Set(['x', 'y', 'x1', 'y1', 'x2', 'y2', 'pts', 'rects', 'quads', 'mat', 'tx', 'ty', 'dx', 'dy', 'rect']);
+function changeName(before) {
+  const o = JSON.parse(before), a = o.pages, b = doc.pages;
+  if (a.length !== b.length) return a.length < b.length ? 'Insert pages' : 'Delete pages';
+  const key = (e) => e.src + ':' + e.i;
+  if (a.some((e, k) => key(e) !== key(b[k]))) return 'Move pages';
+  for (let k = 0; k < a.length; k++) { const x = a[k], y = b[k]; if ((x.rot || 0) !== (y.rot || 0)) return 'Rotate pages'; if (JSON.stringify(x.crop || null) !== JSON.stringify(y.crop || null)) return 'Crop'; }
+  const flat = (marks) => { const m = new Map(); for (const list of Object.values(marks || {})) for (const x of list || []) if (x && x.id) m.set(x.id, x); return m; };
+  const was = flat(o.marks), now = flat(doc.marks);
+  const nameOf = (m) => (m.type === 'cmShape' && m.kind ? m.kind[0].toUpperCase() + m.kind.slice(1) : CHANGE_NAMES[m.type] || (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].label) || 'Change');
+  const low = (n) => n.replace(/^[A-Z](?![A-Z])/, (c) => c.toLowerCase());
+  for (const [id, m] of now) {
+    const p = was.get(id);
+    if (!p) return m.type === 'ie' && m.deleted ? 'Delete picture' : m.type === 'ae' && m.deleted ? 'Delete comment' : nameOf(m);
+    if (JSON.stringify(p) === JSON.stringify(m)) continue;
+    if (m.deleted && !p.deleted) return 'Delete ' + low(nameOf(m));
+    const diff = Object.keys({ ...p, ...m }).filter((k) => JSON.stringify(p[k]) !== JSON.stringify(m[k]));
+    return diff.length && diff.every((k) => MOVE_KEYS.has(k)) ? 'Move ' + low(nameOf(m)) : nameOf(m);
+  }
+  for (const [id, m] of was) if (!now.has(id)) return (m.type === 'te' || m.type === 'tpara') ? 'Text edit' : 'Delete ' + low(nameOf(m));
+  return 'Change';
+}
+const undoName = () => (undoStack.length ? undoStack[undoStack.length - 1].what : '');
+const redoName = () => (redoStack.length ? redoStack[redoStack.length - 1].what : '');
 function restore(s, layout) {
   const o = JSON.parse(s); doc.pages = o.pages; doc.marks = o.marks; selMark = null; selContent = null;
   syncHiddenComments();
   layout ? layoutPages(true).then(renderSide) : views.forEach((v) => v.rendered && drawMarks(v));
   if (!layout && S.side === 'outline') renderSide(); // bookmarks are kept with the marks
-  setSaved(false); persist(); refreshRibbon();
+  setSaved(false); persist(); refreshRibbon(); thumbsLater();
 }
-function undo() { if (!undoStack.length) return; const now = snapshot(); const prev = undoStack.pop(); redoStack.push(now); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); }
-function redo() { if (!redoStack.length) return; const now = snapshot(); const next = redoStack.pop(); undoStack.push(now); restore(next, true); }
+function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
+function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
   if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
-  if (tool === 'edit') return onEditDown(e, v);
+  // A click on the page takes the focus off the ribbon, so Space or typing never runs the tool's button again.
+  { const a = document.activeElement; if (!a || !(a === viewer || viewer.contains(a))) viewer.focus({ preventScroll: true }); }
+  if (tool === 'edit') return editDownBusy(e, v);
   if (tool === 'erase') return startErase(e, v);
+  const handle = e.target.closest('.mk-handle');
+  if (handle) return startResize(e, v, handle.dataset.h);
   if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
   const hit = e.target.closest('.mk');
   if (tool === 'select') {
@@ -1529,7 +1788,22 @@ async function onMarksDblClick(e, v) {
     if (hit && hit.kind === 'annot') { selectContent({ v, ...hit }); editComment(v, hit.a, hit.mark); }
   }
 }
-function selectMark(s) { selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon(); }
+function selectMark(s) {
+  const was = selMark; selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon();
+  if (s && (!was || was.id !== s.id)) { const m = selectedMark(); if (m) announce(`${markLabel(m)} selected. ${coarse() ? 'Drag it to move it.' : 'Arrow keys move it, Delete removes it.'}`); }
+}
+// What a mark is, in words ('Oval'; with its text too when `full`). Features add names for their marks.
+const MARK_NAMES = { hl: 'Highlight', ink: 'Drawing', rect: 'Rectangle', text: 'Text', note: 'Note', img: 'Picture', pic: 'Picture', tpara: 'Edited text', ff: 'Form field', redact: 'Redaction', link: 'Link' };
+function markLabel(m, full) {
+  let name = '', text = '';
+  for (const f of FEATURE.markLabels || []) { const d = f(m); if (d && d.label) { name = d.label; text = d.text || ''; break; } }
+  name ||= MARK_NAMES[m.type] || 'Item';
+  if (!text && typeof m.text === 'string') text = m.text;
+  text = String(text).replace(/\s+/g, ' ').trim();
+  return full && text ? `${name}: ${text.length > 80 ? text.slice(0, 79) + '…' : text}` : name;
+}
+// Said by screen readers, not shown.
+function announce(msg) { const a = $('#announce'); if (!a) return; a.textContent = ''; setTimeout(() => { a.textContent = msg; }, 30); }
 // A mark just drawn is selected, so it can be restyled at once (the tool stays on for the next one).
 const selectNew = (v, m) => { if (marksOf(v.entry).includes(m)) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry }); };
 function deleteSelected() {
@@ -1657,21 +1931,72 @@ function placeImage(v, px, py) {
   const m = marksOf(v.entry)[marksOf(v.entry).length - 1];
   pendingImage = null; drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
+/* Selecting text, as pdf.js's viewer does it (TextLayerBuilder): while a selection is made, each text layer's
+   endOfContent covers the layer, and (in browsers that need it: Safari, Chromium before 148) it is moved right after
+   the span the selection ends in, so the gap past a line's last word selects nothing more. */
+const TL = { down: false, prev: null, modern: undefined };
+function tlReset(tl) { const end = tl.__eoc; if (!end) return; if (tl.lastChild !== end) tl.append(end); end.style.width = end.style.height = end.style.userSelect = ''; tl.classList.remove('selecting'); }
+const tlResetAll = () => $$('.page .textLayer').forEach(tlReset);
+document.addEventListener('pointerdown', () => { TL.down = true; }, true);
+// after the text tools have read the selection (they do so as the button is let go)
+document.addEventListener('pointerup', () => { TL.down = false; setTimeout(tlResetAll, 30); });
+window.addEventListener('blur', () => { TL.down = false; tlResetAll(); });
+document.addEventListener('keyup', () => { if (!TL.down) tlResetAll(); });
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection(), layers = $$('.page .textLayer').filter((t) => t.__eoc);
+  if (!sel || !sel.rangeCount) { layers.forEach(tlReset); TL.prev = null; return; }
+  const range = sel.getRangeAt(0);
+  for (const t of layers) { if (range.intersectsNode(t)) t.classList.add('selecting'); else tlReset(t); }
+  if (TL.modern === undefined && layers.length) {
+    const ff = getComputedStyle(layers[0]).getPropertyValue('-moz-user-select') === 'none';
+    const v = navigator.userAgentData && navigator.userAgentData.brands ? (navigator.userAgentData.brands.find((b) => b.brand === 'Chromium') || {}).version : (/\bChrome\/(\d+)\b/.exec(navigator.userAgent) || [])[1];
+    TL.modern = ff || (!!v && parseInt(v, 10) >= 148);
+  }
+  if (TL.modern || !layers.length) return;
+  const prev = TL.prev, modifyStart = !!prev && (range.compareBoundaryPoints(Range.END_TO_END, prev) === 0 || range.compareBoundaryPoints(Range.START_TO_END, prev) === 0);
+  let anchor = modifyStart ? range.startContainer : range.endContainer;
+  if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+  if (anchor.classList && anchor.classList.contains('highlight')) anchor = anchor.parentNode;
+  if (!modifyStart && range.endOffset === 0) {
+    try { do { while (!anchor.previousSibling) anchor = anchor.parentNode; anchor = anchor.previousSibling; } while (!anchor.childNodes.length); } catch { anchor = null; }
+  }
+  const tl = anchor && anchor.parentElement && anchor.parentElement.closest('.textLayer'), end = tl && tl.__eoc;
+  if (end && anchor !== end) {
+    end.style.width = tl.style.width; end.style.height = tl.style.height; end.style.userSelect = 'text';
+    anchor.parentElement.insertBefore(end, modifyStart ? anchor : anchor.nextSibling);
+  }
+  TL.prev = range.cloneRange();
+});
+// A selection's rectangles on screen, without the ones that repeat another (a browser can give a line twice: once
+// for its text and once for the element around it), and without empty ones.
+function selectionRects(sel) {
+  const out = [];
+  const inter = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  for (let r = 0; r < sel.rangeCount; r++) {
+    for (const rect of sel.getRangeAt(r).getClientRects()) {
+      if (rect.width < 1 || rect.height < 1) continue;
+      const area = rect.width * rect.height;
+      const k = out.findIndex((o) => inter(o, rect) > .8 * Math.min(area, o.width * o.height));
+      if (k < 0) out.push(rect); else if (area > out[k].width * out[k].height) out[k] = rect;
+    }
+  }
+  return out;
+}
+const selectionText = (sel) => String(sel).replace(/\s+/g, ' ').trim().slice(0, 500);
 // Highlight: select text with the Highlight tool (or select it, then press Highlight).
 function highlightSelection() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return false;
-  const before = snapshot();
+  const before = snapshot(), text = selectionText(sel);
   let any = false;
-  for (let r = 0; r < sel.rangeCount; r++) {
-    for (const rect of sel.getRangeAt(r).getClientRects()) {
-      if (rect.width < 1 || rect.height < 1) continue;
+  {
+    for (const rect of selectionRects(sel)) {
       const v = views.find((vv) => { const b = vv.el.getBoundingClientRect(); return rect.top >= b.top - 2 && rect.bottom <= b.bottom + 2 && rect.left >= b.left - 2 && rect.right <= b.right + 2; });
       if (!v) continue;
       const b = v.el.getBoundingClientRect();
       const [x1, y1] = toPdf(v, rect.left - b.left, rect.top - b.top), [x2, y2] = toPdf(v, rect.right - b.left, rect.bottom - b.top);
       let list = marksOf(v.entry), m = list.find((mm) => mm.pending);
-      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: toolColor('highlight'), pending: true }; list.push(m); }
+      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: toolColor('highlight'), text, pending: true }; list.push(m); }
       m.rects.push([x1, y1, x2, y2]); any = true;
     }
   }
@@ -1736,10 +2061,33 @@ function setTool(t) {
   if (t in COLOR_TOOLS) S.colorTool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
-  if (t === 'edit' && was !== 'edit') toast(coarse() ? 'Tap text to change it, or a picture or comment to move it. Undo takes a change back.' : `Click text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
-  if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
+  // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
+  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
+  if (t !== was) toolHint = TOOL_HINTS[t] || '';
+  toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
+  modeChip();
   refreshRibbon();
 }
+/* ---- the mode chip: while a tool other than Select is on, the status bar says which, and how to use it ---- */
+// How to use a tool, for tools that don't say when chosen (features can add theirs).
+const TOOL_HINTS = {
+  highlight: 'Select text to highlight it', pen: 'Drag to draw', rect: 'Drag on the page', text: 'Click where the text goes', note: 'Click where the note goes',
+  edit: 'Click text to change it, or a picture or comment to move it', erase: 'Drag over anything to erase it',
+};
+function toolName(t) {
+  const ids = ['tool_' + t, t, 'cm_' + t.replace(/^cm/, ''), { cmtype: 'cm_typewriter', protredtext: 'protRedText', protredarea: 'protRedArea', crop: 'tool_crop' }[t]].filter((id) => id && C[id]);
+  const id = ids.find((x) => C[x].pressed && C[x].pressed()) || ids[0];
+  return id ? C[id].label.replace(/…$/, '') : '';
+}
+function modeChip() {
+  const chip = $('#modeChip'); if (!chip) return;
+  const t = app.dataset.tool, on = !!doc && t && t !== 'select';
+  chip.hidden = !on; app.classList.toggle('tool-on', on);
+  if (!on) return;
+  const name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  chip.title = $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
+}
+$('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
 
 /* ---------------- editing what is already in the PDF ----------------
    The Edit tool changes the PDF's own content; Erase area clears anything in a rectangle. Each change is a mark like
@@ -1789,7 +2137,7 @@ function contentMap(page) {
       page.getAnnotations({ intent: 'display' }).catch(() => []),
     ]);
     const O = pdfjs.OPS, glyphs = new Map(), images = [], stack = [], invisible = new Set();
-    let font = null, ctm = [1, 0, 0, 1, 0, 0], mode = 0;
+    let font = null, ctm = [1, 0, 0, 1, 0, 0], mode = 0, raw = -1;
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i], a = ops.argsArray[i];
       if (fn === O.setFont) font = a[0];
@@ -1805,9 +2153,10 @@ function contentMap(page) {
       else if (fn === O.paintFormXObjectBegin) { stack.push([ctm, mode]); if (a && a[0]) ctm = mul(a[0], ctm); }
       else if (fn === O.paintFormXObjectEnd) [ctm, mode] = stack.pop() || [ctm, mode];
       else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) {
+        raw++;
         const quad = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(ctm, x, y));
         const [x0, y0, x1, y1] = quadBox(quad);
-        if (x1 - x0 > 2 && y1 - y0 > 2) images.push({ n: images.length, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad, mat: ctm.slice() });
+        if (x1 - x0 > 2 && y1 - y0 > 2) images.push({ n: images.length, raw, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad, mat: ctm.slice() });
       }
     }
     // Lines: neighbouring pieces of text on one baseline, in one font and size, joined.
@@ -1934,7 +2283,7 @@ function drawContentMark(v, m, svg) {
   }
   if (m.type === 'ie') {
     const g = svgEl('g', { class: 'mk' });
-    g.appendChild(poly(m.quad, m.bg));
+    if (!(v.imgHidden && v.imgHidden.has(m.n))) g.appendChild(poly(m.quad, m.bg));
     if (!m.deleted && m.data) {
       // The picture's top-left, top-right and bottom-left corners on screen give the SVG matrix.
       const o = toView(v, ...apply(m.mat, 0, 1)), x = toView(v, ...apply(m.mat, 1, 1)), y = toView(v, ...apply(m.mat, 0, 0));
@@ -1953,6 +2302,7 @@ function syncHiddenComments() {
   for (const [k, pd] of pdfDocs) {
     const ids = [];
     for (const [key, list] of Object.entries(doc.marks)) if (key.startsWith(k + ':')) for (const m of list) if (m.type === 'ae' && m.deleted) ids.push(m.ref);
+    if (FEATURE.hiddenAnnots) ids.push(...FEATURE.hiddenAnnots(k)); // all of them while comments are hidden
     const sig = ids.sort().join(',');
     if (hiddenNow.get(pd) === sig) continue;
     const first = !hiddenNow.has(pd); hiddenNow.set(pd, sig);
@@ -1964,6 +2314,44 @@ function rerenderView(v) { v.rendered = false; v.token = (v.token || 0) + 1; v.e
 
 // The Edit tool.
 let selContent = null; // { v, kind: 'image' | 'annot', im?, a?, mark? }
+// The first click on a page can take a moment while its text is read. Meanwhile the cursor shows it is busy, and
+// keys typed are kept and given to the editor once it opens (nothing typed goes to the ribbon or is lost).
+let editKeys = null;
+async function editDownBusy(e, v) {
+  if (editKeys) editReady();
+  const keys = editKeys = [];
+  const kh = (ev) => {
+    if (editKeys !== keys || ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
+    if (typingIn(ev.target) || (ev.target.closest && ev.target.closest('dialog'))) return;
+    if (ev.key.length === 1 || /^(Backspace|Delete|Enter|Escape|Home|End|ArrowLeft|ArrowRight)$/.test(ev.key)) { keys.push(ev.key); ev.preventDefault(); ev.stopPropagation(); }
+  };
+  keys.off = () => window.removeEventListener('keydown', kh, true);
+  window.addEventListener('keydown', kh, true);
+  app.dataset.busy = '';
+  try { await onEditDown(e, v); } finally { if (editKeys === keys) editReady(); }
+}
+// The editor is open (or nothing will open): hand it the keys typed while waiting.
+function editReady() {
+  const keys = editKeys; if (!keys) return;
+  editKeys = null; keys.off(); delete app.dataset.busy;
+  const el = document.activeElement;
+  if (!keys.length || !el || !el.matches('.line-editor, .txt-editor')) return;
+  const field = el.tagName === 'TEXTAREA', sel = getSelection();
+  for (const k of keys) {
+    if (!el.isConnected || document.activeElement !== el) break;
+    if (k.length === 1) document.execCommand('insertText', false, k);
+    else if (k === 'Backspace') document.execCommand('delete');
+    else if (k === 'Delete') document.execCommand('forwardDelete');
+    else if (k === 'Enter' || k === 'Escape') el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    else if (field) {
+      const n = el.value.length, a = el.selectionStart, b = el.selectionEnd;
+      const to = k === 'End' ? n : k === 'Home' ? 0 : k === 'ArrowRight' ? (a !== b ? b : Math.min(n, b + 1)) : (a !== b ? a : Math.max(0, a - 1));
+      el.setSelectionRange(to, to);
+    } else if (k === 'End' || k === 'Home') { sel.selectAllChildren(el); k === 'End' ? sel.collapseToEnd() : sel.collapseToStart(); }
+    else if (!sel.isCollapsed) k === 'ArrowRight' ? sel.collapseToEnd() : sel.collapseToStart();
+    else sel.modify('move', k === 'ArrowRight' ? 'forward' : 'backward', 'character');
+  }
+}
 async function onEditDown(e, v) {
   e.preventDefault();
   closeLineEditor(true);
@@ -1986,7 +2374,7 @@ async function onEditDown(e, v) {
   if (hit.kind === 'text') { selectContent(null); return editLine(v, hit.L, hit.mark); }
   selectContent({ v, ...hit });
   if (hit.kind === 'image') return startImageDrag(e, v, selContent, 'move');
-  if (hit.kind === 'annot' && e.detail === 2) return editComment(v, hit.a, hit.mark);
+  if (hit.kind === 'annot' && e.detail === 2) { editReady(); return editComment(v, hit.a, hit.mark); }
 }
 function selectContent(s) {
   selContent = s;
@@ -2101,7 +2489,77 @@ async function editLine(v, L, mark) {
     const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
     m = { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : fg, codes, ocr, type3: !!fo.isType3Font };
   }
+  await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
   openLineEditor(v, m, !mark);
+}
+// The line editor types in the PDF's own font. pdf.js loads each font with its letters moved to other code points,
+// so a copy of the font is made whose character map gives each letter (as typed) the glyph pdf.js drew it with.
+// Until that copy is ready, or for bold or italic the font isn't, the editor uses the closest standard font.
+const ownFaces = new Map(); // page font name + page -> Promise<family | null>
+function ownFace(page, name, map) {
+  const key = name + '@' + (page._pageIndex ?? page.pageNumber);
+  if (!ownFaces.has(key)) ownFaces.set(key, (async () => {
+    const fo = await fontObj(page, name);
+    const data = fo && fo.data; if (!data || !data.length || fo.isType3Font) return null;
+    const out = remapCmap(data instanceof Uint8Array ? data : new Uint8Array(data), [...map].filter(([, g]) => g.inFont && g.fc).map(([u, g]) => [u.codePointAt(0), g.fc.codePointAt(0)]));
+    if (!out) return null;
+    const family = 'cpdf-own-' + ownFaces.size;
+    const face = new FontFace(family, out); await face.load(); document.fonts.add(face);
+    return family;
+  })().catch(() => null));
+  return ownFaces.get(key);
+}
+// A font file (TrueType or OpenType) with its character map replaced: each [code point, old code point] pair takes
+// the glyph the old code point had. Returns null when the file can't be read.
+function remapCmap(buf, pairs) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength), n = dv.getUint16(4);
+  let rec = -1;
+  for (let i = 0; i < n; i++) if (String.fromCharCode(buf[12 + 16 * i], buf[13 + 16 * i], buf[14 + 16 * i], buf[15 + 16 * i]) === 'cmap') rec = 12 + 16 * i;
+  if (rec < 0) return null;
+  const off = dv.getUint32(rec + 8), old = new Map(), put = (c, g) => { if (g && !old.has(c)) old.set(c, g); };
+  for (let k = 0, subs = dv.getUint16(off + 2); k < subs; k++) {
+    const so = off + dv.getUint32(off + 8 + 8 * k), fmt = dv.getUint16(so);
+    if (fmt === 4) {
+      const sx2 = dv.getUint16(so + 6), ends = so + 14, starts = ends + sx2 + 2, deltas = starts + sx2, ranges = deltas + sx2;
+      for (let i = 0; i < sx2 / 2; i++) {
+        const e = dv.getUint16(ends + 2 * i), st = dv.getUint16(starts + 2 * i), d = dv.getUint16(deltas + 2 * i), ro = dv.getUint16(ranges + 2 * i);
+        for (let c = st; c <= e && c !== 0xFFFF; c++) { if (!ro) put(c, (c + d) & 0xFFFF); else { const g = dv.getUint16(ranges + 2 * i + ro + 2 * (c - st)); put(c, g ? (g + d) & 0xFFFF : 0); } }
+      }
+    } else if (fmt === 12) {
+      for (let i = 0, ng = dv.getUint32(so + 12); i < ng; i++) { const a = dv.getUint32(so + 16 + 12 * i), b = dv.getUint32(so + 20 + 12 * i), g = dv.getUint32(so + 24 + 12 * i); for (let c = a; c <= b && c - a < 65536; c++) put(c, g + c - a); }
+    } else if (fmt === 0) { for (let c = 0; c < 256; c++) put(c, buf[so + 6 + c]); }
+    else if (fmt === 6) { const first = dv.getUint16(so + 6); for (let i = 0, cnt = dv.getUint16(so + 8); i < cnt; i++) put(first + i, dv.getUint16(so + 10 + 2 * i)); }
+  }
+  const nm = new Map(); for (const [u, fc] of pairs) if (u < 0xFFFF && old.has(fc) && !nm.has(u)) nm.set(u, old.get(fc));
+  if (!nm.size) return null;
+  // A format 4 map: one segment per letter, then the closing segment.
+  const codes = [...nm.keys()].sort((a, b) => a - b), seg = codes.length + 1, len = 16 + 8 * seg;
+  const t = new DataView(new ArrayBuffer(12 + len));
+  t.setUint16(2, 1); t.setUint16(4, 3); t.setUint16(6, 1); t.setUint32(8, 12);
+  const es = Math.floor(Math.log2(seg)), sr = 2 * 2 ** es;
+  t.setUint16(12, 4); t.setUint16(14, len); t.setUint16(18, seg * 2); t.setUint16(20, sr); t.setUint16(22, es); t.setUint16(24, seg * 2 - sr);
+  const E = 26, S = E + 2 * seg + 2, D = S + 2 * seg;
+  codes.forEach((c, i) => { t.setUint16(E + 2 * i, c); t.setUint16(S + 2 * i, c); t.setUint16(D + 2 * i, (nm.get(c) - c) & 0xFFFF); });
+  t.setUint16(E + 2 * codes.length, 0xFFFF); t.setUint16(S + 2 * codes.length, 0xFFFF); t.setUint16(D + 2 * codes.length, 1);
+  // The new table goes at the end of the file; the table directory points to it.
+  const at = (buf.length + 3) & ~3, outB = new Uint8Array(at + ((t.byteLength + 3) & ~3));
+  outB.set(buf); outB.set(new Uint8Array(t.buffer), at);
+  const ov = new DataView(outB.buffer); let sum = 0;
+  for (let i = 0; i < outB.length - at; i += 4) sum = (sum + ov.getUint32(at + i)) >>> 0;
+  ov.setUint32(rec + 4, sum); ov.setUint32(rec + 8, at); ov.setUint32(rec + 12, t.byteLength);
+  return outB;
+}
+function lineFont(v, m, px, bold = !!m.bold, italic = !!m.italic) {
+  const std = `${bold ? 'bold ' : ''}${italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`;
+  if (m.ocr || m.type3 || bold !== !!m.bold || italic !== !!m.italic) return std;
+  const fam = v.page._ownFace && v.page._ownFace[m.id];
+  return fam ? `${px}px "${fam}", ${cssFamily(m.fam)}` : std;
+}
+// Gets the page's font ready for the line editor; calls back once it is (if it wasn't already).
+function lineFace(v, m, ready) {
+  const cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm)), map = L && cm.glyphs.get(L.fontName);
+  if (!map || m.ocr || m.type3) return Promise.resolve(null);
+  return ownFace(v.page, L.fontName, map).then((fam) => { if (fam) { (v.page._ownFace ||= {})[m.id] = fam; ready && ready(); } return fam; });
 }
 function openLineEditor(v, m, isNew) {
   const { size, u } = lineFrame(m), px = size * scale;
@@ -2112,10 +2570,11 @@ function openLineEditor(v, m, isNew) {
   try { ed.contentEditable = 'plaintext-only'; } catch { ed.contentEditable = 'true'; }
   if (ed.contentEditable !== 'plaintext-only') ed.contentEditable = 'true';
   ed.textContent = m.text;
-  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale + 4) + 'px', font: `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`, color: m.color, background: m.bg, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` });
+  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale + 4) + 'px', font: lineFont(v, m, px), color: m.color, background: m.bg, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` });
   v.el.appendChild(ed);
   editingIds.add(m.id); drawMarks(v);
   lineEditor = { ed, v, m, isNew };
+  if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
   const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
   ed.addEventListener('keydown', (e) => {
@@ -2221,9 +2680,9 @@ function tokenizeContent(s) {
   return out;
 }
 // Walks a content stream with a text and graphics state, and calls back with each text-showing and image operator.
-function walkContent(s, fontWidth, onShow, onImage) {
+function walkContent(s, fontWidth, onShow, onImage, ctm0) {
   const toks = tokenizeContent(s);
-  let ctm = [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, tr = 0;
+  let ctm = ctm0 || [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, tr = 0;
   const gstack = [], ops = []; let operands = [], opStart = null, arrStack = [], bi = null;
   for (const t of toks) {
     if (t.t === 'op') {
@@ -2336,6 +2795,32 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   const cut = [], removed = new Set(), hidden = new Set();
   const xo = (() => { const res = node.Resources && node.Resources(); const x = res && res.lookup(PDFName.of('XObject')); return x instanceof PDFDict ? x : null; })();
   const isImage = (name) => { const o = xo && xo.lookup(PDFName.of(name)); return o && o.dict && String(o.dict.lookup(PDFName.of('Subtype'))) === '/Image'; };
+  const samePic = (q) => { const b = quadBox(q); return pics.find((m) => !removed.has(m.id) && quadBox(m.quad).every((n, k) => Math.abs(n - b[k]) < .75)); };
+  // A picture inside a form (a page background often is): the form is copied without it, and the page draws the copy.
+  let formN = 0;
+  const formCut = (dict, name, ctm, depth) => {
+    const st = dict && dict.lookup(PDFName.of(name));
+    if (!st || !st.dict || depth > 5 || String(st.dict.lookup(PDFName.of('Subtype'))) !== '/Form') return null;
+    const M = st.dict.lookup(PDFName.of('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = out.context.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
+    const R = st.dict.lookup(PDFName.of('Resources')), fx = (R instanceof PDFDict && R.lookup(PDFName.of('XObject'))) || dict;
+    const fxo = fx instanceof PDFDict ? fx : null;
+    let fsrc = text(st); const fcut = [], ids = [];
+    walkContent(fsrc, fontWidth, null, (im) => {
+      const o = !im.inline && fxo && fxo.lookup(PDFName.of(im.name)), sub = im.inline ? '/Image' : o && o.dict && String(o.dict.lookup(PDFName.of('Subtype')));
+      if (sub === '/Image') { const m = samePic([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); } }
+      else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
+    }, mul(fm, ctm));
+    if (!ids.length) return null;
+    fcut.sort((a, b) => b[0] - a[0]);
+    for (const [a, b, keep] of fcut) fsrc = fsrc.slice(0, a) + keep + fsrc.slice(b);
+    const entries = {}; for (const [k, val] of st.dict.entries()) { const n = k.asString().slice(1); if (!['Length', 'Filter', 'DecodeParms'].includes(n)) entries[n] = val; }
+    const bytes = new Uint8Array(fsrc.length); for (let i = 0; i < fsrc.length; i++) bytes[i] = fsrc.charCodeAt(i) & 255;
+    const ref = out.context.register(out.context.flateStream(bytes, entries));
+    let key;
+    if (depth === 0) key = node.newXObject('CPDFFm', ref).toString();
+    else { key = `/CPDFFm${++formN}x${Date.now() % 100000}`; fxo.set(PDFName.of(key.slice(1)), ref); }
+    return { key, ids };
+  };
   try {
     walkContent(src, fontWidth, (op) => {
       // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
@@ -2349,16 +2834,17 @@ async function saveContentEdits(L, out, p, marks, ctx) {
         cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id); break;
       }
     }, (im) => {
-      if (!im.inline && !isImage(im.name)) return;
-      const q = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)), b = quadBox(q);
-      for (const m of pics) { const mb = quadBox(m.quad); if (b.every((n, k) => Math.abs(n - mb[k]) < .75)) { cut.push([im.start, im.end, ' ']); removed.add(m.id); break; } }
+      if (!pics.length) return;
+      if (!im.inline && !isImage(im.name)) { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
+      const m = samePic([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
+      if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
     });
   } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); }
   if (cut.length) {
     cut.sort((a, b) => b[0] - a[0]);
     for (const [a, b, keep] of cut) src = src.slice(0, a) + (keep || ' ') + src.slice(b);
     const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
-    node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
+    node.set(PDFName.of('Contents'), out.context.obj([out.context.register(out.context.flateStream(bytes))])); // an array, as pdf-lib expects once the page has new resources
   }
   // 2. Anything not found there (text inside a form, an erased area) is clipped out.
   // Invisible OCR text was removed, but what shows is the scan under it: that is clipped and covered too.
@@ -2481,7 +2967,7 @@ async function signature() {
   let mode = 'draw', ink = SIG_INKS[0][0], font = 0, pick = null;
   const saved = sigSaved();
   const tab = (k, t) => `<button type="button" role="tab" data-sig-mode="${k}" aria-selected="${k === 'draw'}" tabindex="${k === 'draw' ? 0 : -1}">${t}</button>`;
-  const body = `<div class="sig-modes" role="tablist" aria-label="How to sign">${tab('draw', 'Draw')}${tab('type', 'Type')}${tab('upload', 'Picture')}</div>
+  const body = `<div class="sig-modes seg" role="tablist" aria-label="How to sign">${tab('draw', 'Draw')}${tab('type', 'Type')}${tab('upload', 'Picture')}</div>
     <div class="sig-row" data-sig-for="type" hidden><label class="field"><span>Your name</span><input id="sigName" type="text" autocomplete="name" maxlength="60"></label></div>
     <div class="sig-row" data-sig-for="upload" hidden><button type="button" class="btn" id="sigFileBtn">${ic('image-plus')}<span>Choose a picture…</span></button><input type="file" id="sigFile" accept="image/*" hidden><span class="sig-note">A white background becomes see-through.</span></div>
     <canvas class="sig-pad" id="sigPad" width="900" height="320" aria-label="Signature"></canvas>
@@ -3010,44 +3496,129 @@ async function textOf(entry) {
   if (!findState.texts.has(k)) findState.texts.set(k, await (await pageOf(entry)).getTextContent());
   return findState.texts.get(k);
 }
+// A page's text as one string, each letter mapped back to its piece of text ([item, letter]; null for a space or line
+// break put between pieces), so a phrase split across pieces ('U' + 'ser Guide') is found too.
+function findIndexOf(tc) {
+  if (tc.findIndex) return tc.findIndex;
+  let s = ''; const map = []; let prev = null;
+  tc.items.forEach((it, idx) => {
+    if (!it.str || !it.transform) { if (it.hasEOL) { s += '\n'; map.push(null); prev = null; } return; }
+    if (prev && !/\s$/.test(s) && !/^\s/.test(it.str)) {
+      const f = lineFrame({ tm: prev.transform }), dx = it.transform[4] - f.o[0], dy = it.transform[5] - f.o[1];
+      const along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+      if (Math.abs(perp) > f.size * .3 || along - prev.width > f.size * .25 || along < prev.width - f.size) { s += ' '; map.push(null); }
+    }
+    for (let j = 0; j < it.str.length; j++) map.push([idx, j]);
+    s += it.str; prev = it;
+    if (it.hasEOL) { s += '\n'; map.push(null); prev = null; }
+  });
+  return (tc.findIndex = { s, map });
+}
+const findOpts = { matchCase: false, words: false };
+function findRegex(q) {
+  const body = q.trim().split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
+  return new RegExp(findOpts.words ? `(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])` : body, 'gu' + (findOpts.matchCase ? '' : 'i'));
+}
+let findGen = 0;
 async function runFind(q) {
+  const gen = ++findGen;
   findState.q = q; findState.hits = []; findState.now = -1;
   $$('.find-hit').forEach((h) => h.remove());
-  if (!q || !doc) { $('#findCount').textContent = ''; return; }
-  const needle = q.toLowerCase();
+  if (!q || !doc) { $('#findCount').textContent = ''; findListDraw(); return; }
+  const rx = findRegex(q), hits = [];
   for (let n = 0; n < doc.pages.length; n++) {
     const tc = await textOf(doc.pages[n]);
-    tc.items.forEach((it, idx) => { let p = it.str.toLowerCase().indexOf(needle); while (p >= 0) { findState.hits.push({ n, idx, p }); p = it.str.toLowerCase().indexOf(needle, p + 1); } });
+    if (gen !== findGen) return;
+    const { s: text, map } = findIndexOf(tc);
+    rx.lastIndex = 0;
+    for (let m; (m = rx.exec(text));) {
+      if (!m[0].length) { rx.lastIndex++; continue; }
+      // The match's letters, in runs on the same piece of text: one box each.
+      const parts = [];
+      for (let k = m.index; k < m.index + m[0].length; k++) {
+        const c = map[k]; if (!c) continue;
+        const last = parts[parts.length - 1];
+        if (last && last[0] === c[0] && last[1] + last[2] === c[1]) last[2]++; else parts.push([c[0], c[1], 1]);
+      }
+      if (parts.length) hits.push({ n, at: m.index, len: m[0].length, parts });
+    }
   }
-  $('#findCount').textContent = findState.hits.length ? `0 of ${findState.hits.length}` : 'No matches';
+  findState.hits = hits;
+  $('#findCount').textContent = hits.length ? `0 of ${hits.length}` : 'No matches';
   views.forEach((v) => v.rendered && paintFind(v));
-  if (findState.hits.length) stepFind(1);
+  findListDraw();
+  // From the page in view onwards
+  if (hits.length) { const k = hits.findIndex((h) => h.n >= current); findState.now = (k < 0 ? 0 : k) - 1; stepFind(1); }
+}
+// A box for each run of a match on its piece of text, in the page's coordinates as shown.
+function findBoxes(v, h) {
+  const tc = findState.texts.get(pageKey(v.entry)); if (!tc) return [];
+  return h.parts.map(([idx, p, len]) => {
+    const it = tc.items[idx];
+    const t = pdfjs.Util.transform(v.viewport.transform, it.transform);
+    const fh = Math.hypot(t[2], t[3]), w = it.width * v.viewport.scale, per = it.str.length ? w / it.str.length : 0;
+    return { x: t[4] + per * p, y: t[5] - fh, w: Math.max(4, per * len), h: fh * 1.15 };
+  });
 }
 function paintFind(v) {
   $$('.find-hit', v.el).forEach((h) => h.remove());
-  const n = views.indexOf(v), tc = findState.texts.get(pageKey(v.entry));
-  if (!tc) return;
+  const n = views.indexOf(v);
   findState.hits.forEach((h, k) => {
     if (h.n !== n) return;
-    const it = tc.items[h.idx];
-    const t = pdfjs.Util.transform(v.viewport.transform, it.transform);
-    const fh = Math.hypot(t[2], t[3]), w = it.width * scale, per = it.str.length ? w / it.str.length : 0;
-    const el = document.createElement('div'); el.className = 'find-hit' + (k === findState.now ? ' now' : '');
-    el.style.left = (t[4] + per * h.p) + 'px'; el.style.top = (t[5] - fh) + 'px';
-    el.style.width = Math.max(4, per * findState.q.length) + 'px'; el.style.height = fh * 1.15 + 'px';
-    v.el.appendChild(el);
+    for (const b of findBoxes(v, h)) {
+      const el = document.createElement('div'); el.className = 'find-hit' + (k === findState.now ? ' now' : '');
+      el.style.left = b.x + 'px'; el.style.top = b.y + 'px'; el.style.width = b.w + 'px'; el.style.height = b.h + 'px';
+      v.el.appendChild(el);
+    }
   });
 }
-function stepFind(d) {
+function stepFind(d, to) {
   if (!findState.hits.length) return;
-  findState.now = (findState.now + d + findState.hits.length) % findState.hits.length;
-  const h = findState.hits[findState.now];
+  findState.now = to ?? (findState.now + d + findState.hits.length) % findState.hits.length;
+  const h = findState.hits[findState.now], v = views[h.n];
   $('#findCount').textContent = `${findState.now + 1} of ${findState.hits.length}`;
   goPage(h.n, true);
-  renderView(views[h.n]).then(() => views.forEach((v) => v.rendered && paintFind(v)));
+  // The match in the middle of the view (not just its page's top, where it may be out of sight).
+  const b = findBoxes(v, h)[0];
+  if (b) {
+    const top = v.el.offsetTop + b.y + b.h / 2 - viewer.clientHeight / 2, left = v.el.offsetLeft + b.x + b.w / 2 - viewer.clientWidth / 2;
+    viewer.scrollTo({ top: Math.max(0, top), left: viewer.scrollWidth > viewer.clientWidth ? Math.max(0, left) : 0, behavior: 'instant' });
+  }
+  $$('#findList [data-hit]').forEach((x) => { const on = +x.dataset.hit === findState.now; x.setAttribute('aria-current', on ? 'true' : 'false'); if (on) x.scrollIntoView({ block: 'nearest' }); });
+  renderView(v).then(() => views.forEach((x) => x.rendered && paintFind(x)));
 }
+// All results: each match with its page and the words around it; choosing one goes to it.
+const FIND_LIST_MAX = 500;
+function findListDraw() {
+  const list = $('#findList'); if (!list || list.hidden) return;
+  const hits = findState.hits;
+  if (!findState.q) { list.innerHTML = '<p class="find-none">Type to search.</p>'; return; }
+  if (!hits.length) { list.innerHTML = '<p class="find-none">No matches</p>'; return; }
+  const row = (h, k) => {
+    const tc = findState.texts.get(pageKey(doc.pages[h.n])), s = tc ? findIndexOf(tc).s : '';
+    const flat = (x) => esc(x.replace(/\s+/g, ' '));
+    const a = Math.max(0, h.at - 40), b = Math.min(s.length, h.at + h.len + 40);
+    const before = s.slice(a, h.at).replace(/^\S*\s/, a ? '' : '$&'), after = s.slice(h.at + h.len, b).replace(/\s\S*$/, b < s.length ? '' : '$&');
+    return `<li><button type="button" data-hit="${k}" aria-current="${k === findState.now}"><b>Page ${h.n + 1}</b><span>${a ? '…' : ''}${flat(before)}<mark>${flat(s.slice(h.at, h.at + h.len))}</mark>${flat(after)}${b < s.length ? '…' : ''}</span></button></li>`;
+  };
+  list.innerHTML = `<p class="find-head">${hits.length === 1 ? '1 result' : `${hits.length} results`}${hits.length > FIND_LIST_MAX ? `, first ${FIND_LIST_MAX} shown` : ''}</p><ol>${hits.slice(0, FIND_LIST_MAX).map(row).join('')}</ol>`;
+}
+function findListShow(on) {
+  const list = $('#findList'), btn = $('#findAll');
+  list.hidden = !on; btn.setAttribute('aria-pressed', on); btn.setAttribute('aria-expanded', on);
+  findListDraw();
+}
+$('#findList').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) stepFind(0, +b.dataset.hit); });
+$('#findList').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); findListShow(false); $('#findAll').focus(); return; }
+  const bs = $$('#findList [data-hit]'), k = bs.indexOf(document.activeElement); if (k < 0) return;
+  const n = { ArrowDown: k + 1, ArrowUp: k - 1, Home: 0, End: bs.length - 1 }[e.key]; if (n === undefined) return;
+  e.preventDefault(); e.stopPropagation(); bs[Math.max(0, Math.min(bs.length - 1, n))].focus();
+});
+$('#findAll').onclick = () => findListShow($('#findList').hidden);
+for (const [id, k] of [['#findCase', 'matchCase'], ['#findWord', 'words']]) $(id).onclick = () => { findOpts[k] = !findOpts[k]; $(id).setAttribute('aria-pressed', findOpts[k]); runFind($('#findInput').value.trim()); };
 function openFind() { $('#findbar').hidden = false; $('#findInput').focus(); $('#findInput').select(); }
-function closeFind() { $('#findbar').hidden = true; runFind(''); }
+function closeFind() { $('#findbar').hidden = true; findListShow(false); runFind(''); }
 let findTimer;
 $('#findInput').addEventListener('input', (e) => { clearTimeout(findTimer); findTimer = setTimeout(() => runFind(e.target.value.trim()), 200); });
 $('#findInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') closeFind(); });
@@ -3081,7 +3652,10 @@ async function renderSide() {
     $$('[data-o]', panel).forEach((b, k) => { b.onclick = () => goToDest(flat[k].dest); });
     return;
   }
-  panel.innerHTML = `<div class="thumbs">${doc.pages.map((e, n) => `<button type="button" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}"><canvas width="1" height="1"></canvas><span>${n + 1}</span></button>`).join('')}</div>`;
+  // A list box: one Tab stop (the page in view), arrows move, Shift+arrows choose several, Enter goes to the page.
+  const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
+  const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
+  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
   thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
@@ -3098,17 +3672,109 @@ async function renderSide() {
     };
   });
   markThumb();
+  if (refocus >= 0) { const t = $(`.thumb[data-n="${refocus}"]`, panel) || $(`.thumb[data-n="${current}"]`, panel); if (t) { t.focus({ preventScroll: true }); markThumb(); } }
+  const t0 = $(`.thumb[data-n="${current}"]`, panel); if (t0) t0.scrollIntoView({ block: 'nearest' });
 }
+// A thumbnail shows what will be saved: the page, with its page design (watermark, header, background), redactions
+// and mark-up drawn over it the way the page shows them. `data-size` on the element sets its longer side.
+const thumbToken = new WeakMap();
+// What a thumbnail depends on: when this changes (an edit, undo, redo), it is drawn again.
+function thumbSig(e, n, extra) { return JSON.stringify([e.src, e.i, e.rot, e.crop || 0, n, doc.pages.length, doc.marks[pageKey(e)] || [], extra]); }
 async function drawThumb(t) {
-  const e = doc.pages[+t.dataset.n]; if (!e) return;
-  const page = await pageOf(e);
-  const vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
-  const s = 140 / Math.max(vp.width, vp.height) * 1.3;
-  const v2 = page.getViewport({ scale: s, rotation: (page.rotate + e.rot) % 360 });
-  const c = $('canvas', t); c.width = v2.width; c.height = v2.height;
-  try { await page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: v2 }).promise; } catch {}
+  const n = +t.dataset.n, e = doc && doc.pages[n]; if (!e) return;
+  const tok = (thumbToken.get(t) || 0) + 1; thumbToken.set(t, tok);
+  const sig = thumbSig(e, n, JSON.stringify(doc.marks.__doc || []));
+  const page = await pageOf(e), rot = (page.rotate + e.rot) % 360;
+  const vp = page.getViewport({ scale: 1, rotation: rot });
+  const v2 = page.getViewport({ scale: (+t.dataset.size || 182) / Math.max(vp.width, vp.height), rotation: rot });
+  const off = document.createElement('canvas'); off.width = v2.width; off.height = v2.height;
+  const g = off.getContext('2d');
+  try { await page.render({ canvas: off, canvasContext: g, viewport: v2 }).promise; } catch {}
+  if (thumbToken.get(t) !== tok) return;
+  try { await thumbOverlays(e, n, page, v2, g); } catch (err) { console.warn('thumbnail', err); }
+  if (thumbToken.get(t) !== tok || !t.isConnected) return;
+  const c = $('canvas', t); c.width = off.width; c.height = off.height; c.getContext('2d').drawImage(off, 0, 0);
+  off.width = off.height = 0;
+  t.dataset.sig = sig;
 }
-function markThumb() { $$('.thumb').forEach((t) => t.setAttribute('aria-current', +t.dataset.n === current)); }
+// Draws the page's layers (made by the same code as on the big page, at the thumbnail's scale) onto `g`.
+async function thumbOverlays(e, n, page, vp, g) {
+  const marks = doc.marks[pageKey(e)] || [];
+  if (!marks.length && !(doc.marks.__doc || []).length) return;
+  if (marks.some((m) => m.type === 'te') && !page._cmapValue) { try { page._cmapValue = await contentMap(page); } catch {} }
+  const el = document.createElement('div');
+  el.dataset.n = n; el.setAttribute('aria-hidden', 'true');
+  el.style.cssText = `position:fixed;left:-100000px;top:0;width:${vp.width}px;height:${vp.height}px;visibility:hidden;pointer-events:none`;
+  document.body.appendChild(el);
+  try {
+    const v = { el, entry: e, viewport: vp, page, rendered: true, thumb: true };
+    // Drawn at the thumbnail's scale. What is selected stays so (features keep their own state, a crop under way…);
+    // a selection's outline is a page style, which a picture of the layer does not have.
+    const keep = scale; scale = vp.scale;
+    try { drawMarks(v); for (const f of FEATURE.thumbLayers) { try { f(v); } catch (err) { console.warn(err); } } }
+    finally { scale = keep; }
+    // In the page's order: what goes under the text (blended with it), the mark-up, then what goes over everything.
+    const layers = [...el.querySelectorAll(':scope > svg')].sort((a, b) => thumbZ(a) - thumbZ(b));
+    for (const svg of layers) {
+      if (!svg.childElementCount) continue;
+      const copy = svg.cloneNode(true);
+      copy.setAttribute('xmlns', NS); copy.setAttribute('width', g.canvas.width); copy.setAttribute('height', g.canvas.height);
+      copy.setAttribute('viewBox', `0 0 ${vp.width} ${vp.height}`);
+      const img = new Image();
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+      try { await img.decode(); } catch { continue; }
+      g.globalCompositeOperation = svg.classList.contains('pd-under') ? 'multiply' : 'source-over';
+      g.drawImage(img, 0, 0, g.canvas.width, g.canvas.height);
+    }
+    g.globalCompositeOperation = 'source-over';
+  } finally { el.remove(); }
+}
+const thumbZ = (svg) => (svg.classList.contains('pd-under') ? 1 : svg.classList.contains('marks') ? 4 : 5);
+// After a change, undo or redo, the thumbnails whose page changed are drawn again (a moment later, once).
+let thumbTimer;
+function thumbsLater() { clearTimeout(thumbTimer); thumbTimer = setTimeout(thumbsRefresh, 300); }
+function thumbsRefresh() {
+  if (!doc) return;
+  const dm = JSON.stringify(doc.marks.__doc || []);
+  for (const t of $$('.thumb[data-sig], .pg60-cell[data-sig]')) {
+    const e = doc.pages[+t.dataset.n];
+    if (e && t.dataset.sig !== thumbSig(e, +t.dataset.n, dm)) drawThumb(t);
+  }
+}
+// The chosen pages: those picked in the sidebar when there are several, else the page in view.
+function thumbChosen() { const l = typeof pg60Valid === 'function' ? pg60Valid() : []; return new Set(l.length > 1 ? l : [current]); }
+function markThumb() {
+  const sel = thumbChosen(), a = document.activeElement, focused = a && a.closest && a.closest('#sidePanel .thumb');
+  $$('#sidePanel .thumb').forEach((t) => {
+    const n = +t.dataset.n;
+    t.setAttribute('aria-selected', sel.has(n));
+    if (n === current) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+    t.tabIndex = (focused ? t === focused : n === current) ? 0 : -1;
+  });
+}
+$('#sidePanel').addEventListener('keydown', (e) => {
+  const t = e.target.closest && e.target.closest('#sidePanel .thumb'); if (!t || !doc || e.ctrlKey || e.metaKey) return;
+  const list = $$('#sidePanel .thumb'), k = list.indexOf(t), last = list.length - 1;
+  if (e.altKey) {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault(); e.stopPropagation();
+    if (!thumbChosen().has(k)) { current = k; if (FEATURE.thumbPick) FEATURE.thumbPick(k); }
+    run(e.key === 'ArrowUp' ? 'up' : 'down'); return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault(); e.stopPropagation();
+    goPage(k); if (isPhone()) toggleSidebar(false); else viewer.focus({ preventScroll: true });
+    return;
+  }
+  const to = { ArrowUp: k - 1, ArrowLeft: k - 1, ArrowDown: k + 1, ArrowRight: k + 1, Home: 0, End: last }[e.key];
+  if (to === undefined) return;
+  e.preventDefault(); e.stopPropagation();
+  const n = Math.max(0, Math.min(last, to)), nt = list[n];
+  nt.focus(); nt.scrollIntoView({ block: 'nearest' });
+  if (e.shiftKey && FEATURE.thumbExtend) FEATURE.thumbExtend(n);
+  else { if (FEATURE.thumbPick) FEATURE.thumbPick(n); goPage(n, true); }
+  markThumb();
+});
 let sideOpener = null; // what had focus when the phone sidebar opened; it gets it back on closing
 function toggleSidebar(on) {
   const phone = isPhone();
@@ -3129,7 +3795,7 @@ function toggleSidebar(on) {
 function sideInert(on) { $$('.titlebar, .ribbon, #viewer, .statusbar').forEach((el) => { el.inert = on; }); }
 $('#sidebar').addEventListener('keydown', (e) => {
   if (e.key !== 'Tab' || app.dataset.sidebar !== 'open') return;
-  const fs = $$('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])', $('#sidebar')).filter((el) => !el.disabled && el.getClientRects().length);
+  const fs = $$('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])', $('#sidebar')).filter((el) => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
   if (!fs.length) return;
   const first = fs[0], last = fs[fs.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -3170,7 +3836,7 @@ async function renderDocs() {
   const panel = $('#sidePanel');
   const all = (await listDocs()).sort((a, b) => b.updated - a.updated);
   if (S.side !== 'docs') return;
-  panel.innerHTML = all.length ? `<ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from this device">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
+  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
   icons();
   $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
@@ -3336,11 +4002,12 @@ cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, r
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
-cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
+cmd('exportImage', { rlabel: 'Page as picture', label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
-cmd('undo', { label: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
-cmd('redo', { label: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
+cmd('undo', { get label() { return undoStack.length ? 'Undo ' + undoName() : 'Undo'; }, rlabel: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
+cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Redo'; }, rlabel: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
+TEST_HOOKS.cmdLabel = (id) => C[id].label;
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
@@ -3367,7 +4034,7 @@ cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-0', enab
 cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => setZoom(100) });
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
-cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', run: shortcutsDialog });
+cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, run: shortcutsDialog }); // not without a keyboard
 function shortcutsDialog() {
   const byKey = new Map();
   for (const c of Object.values(C)) if (c.key) { const l = c.label.replace(/…$/, ''); (byKey.get(c.key) || byKey.set(c.key, []).get(c.key)).push(c.key === 'Mod-d' && l === 'Duplicate' ? 'Duplicate selection' : l); }
@@ -3393,6 +4060,9 @@ const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
 // A toggle (Sidebar, Dark pages…) is a checkbox item and a choice of one (Appearance) a radio item, each with its
 // checked state; the three Appearance items are one group. The shortcut is announced as a key, not as part of the name.
 const ariaKey = (k) => k.split(/-(?=.)/).map((p) => ({ Mod: isMac ? 'Meta' : 'Control', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join('+');
+// A menu item: its icon, name and shortcut, then its check mark (drawn in a first column, shown only in a menu with a
+// toggle in it).
+const menuIcon = (icon) => icon ? ic(icon) : '<span></span>', menuChk = (on) => `<span class="mchk" aria-hidden="true">${on ? ic('check') : ''}</span>`;
 function menuHtml(ids) {
   let html = '', group = false;
   for (const id of ids.filter(shown)) {
@@ -3401,7 +4071,7 @@ function menuHtml(ids) {
     if (id === '-') { html += '<div class="msep"></div>'; continue; }
     const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
     const role = on === null ? 'role="menuitem"' : `role="${radio ? 'menuitemradio' : 'menuitemcheckbox'}" aria-checked="${on}"`;
-    html += `<button type="button" class="mi" ${role} data-cmd="${id}"${c.key ? ` aria-keyshortcuts="${ariaKey(c.key)}"` : ''}${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k" aria-hidden="true">${fmtKey(c.key)}</span></button>`;
+    html += `<button type="button" class="mi" ${role} data-cmd="${id}"${on === null ? '' : ' data-chk'}${c.key ? ` aria-keyshortcuts="${ariaKey(c.key)}"` : ''}${dis ? ' disabled' : ''}>${menuIcon(c.icon)}<span>${esc(c.label)}</span><span class="k" aria-hidden="true">${fmtKey(c.key)}</span>${menuChk(on)}</button>`;
   }
   return html + (group ? '</div>' : '');
 }
@@ -3410,7 +4080,7 @@ let popAnchor = null; // the button that opened the popover; Escape gives it foc
 // `at`: { x, y, label } opens it at a spot (a right-click menu), above the spot if there is no room below.
 function openPopover(anchor, html, at) {
   popAnchor = anchor;
-  pop.innerHTML = html; pop.hidden = false; icons();
+  pop.innerHTML = html; pop.hidden = false; pop.classList.toggle('has-chk', !!$('[data-chk]', pop)); icons();
   if (!at && anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
   if (at && at.label) pop.setAttribute('aria-label', at.label); else pop.removeAttribute('aria-label');
   if (at) {
@@ -3423,13 +4093,13 @@ function openPopover(anchor, html, at) {
     pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
     pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
   }
-  const f = $('.mi:not([disabled])', pop); f && f.focus();
+  const f = $('.pop-sw button[aria-checked="true"], .mi:not([disabled])', pop); f && f.focus();
 }
 function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
-  const items = $$('.mi:not([disabled])', pop), i = items.indexOf(document.activeElement);
+  const items = $$('.mi:not([disabled]), .pop-sw button, .pop-sw input', pop), i = items.indexOf(document.activeElement);
   const go = (n) => { e.preventDefault(); if (items.length) items[(n + items.length) % items.length].focus(); };
   if (e.key === 'ArrowDown') go(i + 1);
   else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
@@ -3447,8 +4117,11 @@ pop.addEventListener('keydown', (e) => {
 pop.addEventListener('click', (e) => {
   const x = e.target.closest('[data-ctx]');
   if (x) { const it = ctxItems[+x.dataset.ctx], back = popAnchor; closePopover(); if (back && back.isConnected) back.focus({ preventScroll: true }); if (it && !it.disabled) it.run(); return; }
+  const sw = e.target.closest('[data-color]');
+  if (sw) { pickColor(sw.dataset.color); const now = swatchNow(); $$('[data-color]', pop).forEach((x) => x.setAttribute('aria-checked', x.dataset.color === now)); return; }
   const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
 });
+pop.addEventListener('change', (e) => { if (e.target.matches('[data-colorpick]')) { pickColor(e.target.value.toUpperCase()); closePopover(); } });
 document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
@@ -3493,7 +4166,7 @@ function openCtx(list, at, anchor, label) {
   for (const it of list) if (it && !(it === '-' && (!items.length || items[items.length - 1] === '-'))) items.push(it);
   while (items[items.length - 1] === '-') items.pop();
   ctxItems = items;
-  const html = items.map((it, k) => it === '-' ? '<div class="msep"></div>' : `<button type="button" class="mi" role="menuitem" data-ctx="${k}"${it.disabled ? ' disabled' : ''}>${it.on ? ic('check') : it.on === false ? '<span></span>' : ic(it.icon)}<span>${esc(it.label)}</span><span class="k">${fmtKey(it.key)}</span></button>`).join('');
+  const html = items.map((it, k) => it === '-' ? '<div class="msep"></div>' : `<button type="button" class="mi" role="menuitem" data-ctx="${k}"${it.on === undefined ? '' : ' data-chk'}${it.disabled ? ' disabled' : ''}>${menuIcon(it.icon)}<span>${esc(it.label)}</span><span class="k">${fmtKey(it.key)}</span>${menuChk(it.on)}</button>`).join('');
   closePopover(); openPopover(anchor, html, { x: at.x, y: at.y, label });
   return true;
 }
@@ -3503,7 +4176,7 @@ function thumbMenu(t, at) {
   if (typeof pg60Valid === 'function' && !pg60Valid().includes(n)) pg60SetSel([]);
   const on = (id, o) => ctxCmd(id, { ...o, run: () => { current = n; markThumb(); run(id); } });
   const was = current; current = n; // what can be done to this page
-  const items = [on('rotL'), on('rotR'), '-', on('dup'), on('blank', { label: 'Insert blank page after' }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
+  const items = [on('rotL'), on('rotR'), '-', on('dup'), ctxCmd('blank', { label: 'Insert blank page after', run: () => { current = n; markThumb(); insertBlank(); } }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
   current = was;
   openCtx(items, at, t, `Page ${n + 1}`); t.classList.add('ctx-for'); // shows which page the menu is for
   return true;
@@ -3539,7 +4212,7 @@ const typingIn = (el) => !!el && (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el
 // The menu for whatever is at (x, y) on screen; false when there is none (the browser's own menu shows).
 function ctxFor(el, x, y) {
   if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
-  const t = el.closest('#sidePanel .thumb'); if (t) return thumbMenu(t, { x, y });
+  const t = el.closest('#sidePanel .thumb, .pg60-cell'); if (t) return thumbMenu(t, { x, y });
   const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
   const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
   return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
@@ -3610,6 +4283,23 @@ function menuAdd(title, ids) {
   if (m[1].length && m[1][m[1].length - 1] !== '-') m[1].push('-');
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
+// One colour picker for the app: named round swatches, then + (the system picker) for any other colour. `attrs(c)`
+// gives each swatch the attributes its code looks for; `pick` those of the colour input (null: no + swatch); `menu`
+// makes the swatches menu items (in a popover).
+const INK_COLORS = ['#111111', '#5F5F5F', '#E03131', '#2448C9', '#2F9E44', '#E8590C'];
+const PALE_COLORS = ['#FFFFFF', '#FFF3BF', '#D3F9D8', '#D0EBFF', '#FFDEEB', '#E9ECEF'];
+const colorName = (c) => ({ '#5F5F5F': 'Grey', '#2F9E44': 'Green', '#E8590C': 'Orange', '#000000': 'Black', '#FFFFFF': 'White', '#FFF3BF': 'Pale yellow', '#D3F9D8': 'Pale green', '#D0EBFF': 'Pale blue', '#FFDEEB': 'Pale pink', '#E9ECEF': 'Pale grey' })[String(c).toUpperCase()] || COLOR_NAMES[String(c).toUpperCase()] || c;
+function swatchesHtml(colors, { now, attrs = () => '', pick = '', menu = false } = {}) {
+  const on = String(now || '').toUpperCase();
+  return colors.map((c) => `<button type="button" class="swatch" ${attrs(c)} style="background:${c}" title="${esc(colorName(c))}" aria-label="${esc(colorName(c))}" ${menu ? `role="menuitemradio" aria-checked="${on === c.toUpperCase()}"` : `aria-pressed="${on === c.toUpperCase()}"`}></button>`).join('')
+    + (pick === null ? '' : `<label class="swatch sw-more" title="Custom colour…"><input type="color" ${pick} aria-label="Custom colour…">${ic('plus')}</label>`);
+}
+// Puts a menu's items in this order (by related jobs, as on the ribbon); items it does not name follow, after a separator.
+function menuOrder(title, ids) {
+  const m = MENUS.find(([t]) => t === title); if (!m) return;
+  const rest = m[1].filter((id) => id !== '-' && !ids.includes(id));
+  m[1] = [...ids, ...(rest.length ? ['-', ...rest] : [])];
+}
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
 const COLOR_NAMES = { '#FFD43B': 'Yellow', '#69DB7C': 'Green', '#74C0FC': 'Light blue', '#F783AC': 'Pink', '#E03131': 'Red', '#2448C9': 'Blue', '#111111': 'Black' };
 // Each drawing tool keeps its own colour (the last one picked for it, else its default here): the pressed swatch is
@@ -3652,21 +4342,62 @@ function renderRibbon() {
   $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => chooseTab(b.dataset.rt));
   if (focused) { const t = $(`#ribbonTabs [data-rt="${S.ribbon}"]`); t && t.focus({ preventScroll: true }); }
   $('#ribbonBody').setAttribute('aria-labelledby', 'rt-' + (RIBBON[S.ribbon] ? S.ribbon : 'home'));
-  const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
+  // Groups for a selection (Picture…) come last, so showing one never moves the tools people already know.
+  const [, all] = RIBBON[S.ribbon] || RIBBON.home, onSel = ([, ids]) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => C[id] && C[id].contextual);
+  const groups = phoneFold([...all.filter((g) => !onSel(g)), ...all.filter(onSel)]);
   $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
-    ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${swatchNow() === c}"></button>`).join('')
+    ? swatchesHtml(COLORS, { now: swatchNow(), attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${swatchNow().toLowerCase()}"` })
     : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => pickColor(b.dataset.color));
+  $$('#ribbonBody [data-colorpick]').forEach((i) => i.onchange = () => pickColor(i.value.toUpperCase()));
   icons(); refreshRibbon();
   const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
   if (tab) scrollIntoRow(tabs, tab);
   const on = $('#ribbonBody [aria-pressed="true"]'); if (on) scrollIntoRow($('#ribbonBody'), on); else $('#ribbonBody').scrollLeft = 0;
   ribbonEdges();
 }
+const foldFaces = () => Object.fromEntries(Object.entries(C).filter(([id, c]) => id.startsWith('fold:') && c.run && $(`#ribbonBody [data-cmd="${id}"]`)).map(([id, c]) => [id.slice(5), c.menu]));
+// Phones: a compact group (several small tools) is one button that lists them, and the colours fold into the Style
+// button, so a tab like Comment is about one and a half screens wide. A group of 'icons' (Shapes) keeps a face: the
+// shape in use, or the one used last, on a split button. Made as commands (fold:<group>) the ribbon draws as usual.
+const foldLast = {};
+function phoneFold(groups) {
+  if (!isPhone()) return groups;
+  const out = [], members = (ids) => ids.filter(shown), on = (id) => !!(C[id].pressed && C[id].pressed());
+  for (let k = 0; k < groups.length; k++) {
+    const [label, ids, look] = groups[k];
+    if (look === 'swatches') {
+      const next = groups[k + 1], style = next && next[0] === 'Style' && Array.isArray(next[1]) ? members(next[1]) : [];
+      if (style.length) k++;
+      cmd('fold:Style', { label: 'Style', icon: 'palette', menu: style.length ? style : ['tool_select'], menuHtml: () => foldStyleHtml(style) });
+      out.push(['Style', ['fold:Style']]); continue;
+    }
+    let list = Array.isArray(ids) ? members(ids) : [], name = label;
+    // groups of small buttons side by side (Text box, Add) are one button, named after the last of them
+    while (look === 'rows' && groups[k + 1] && groups[k + 1][2] === 'rows' && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
+    if (!look || list.length < 2) { out.push(groups[k]); continue; }
+    const label2 = name, face = () => list.find(on) || (list.includes(foldLast[label2]) ? foldLast[label2] : list[0]);
+    cmd('fold:' + name, look === 'icons'
+      ? { get label() { return C[face()].label; }, get icon() { return C[face()].icon; }, get rlabel() { return C[face()].rlabel; }, menu: list, pressed: () => on(face()), enabled: () => !C[face()].enabled || C[face()].enabled(), run: () => run(face()) }
+      : { label: name, get icon() { return C[list.find(on) || list[0]].icon; }, menu: list, pressed: () => list.some(on) });
+    out.push([name, ['fold:' + name]]);
+  }
+  return out;
+}
+// The Style button's list: the colours (as on the Comment tab), then the group's own commands; one with `sub` (a list
+// of command ids) shows them under its name.
+matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
+Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+function foldStyleHtml(ids) {
+  const now = swatchNow();
+  let html = `<div class="pop-sw" role="group" aria-label="Colour">${swatchesHtml(COLORS, { now, attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${now.toLowerCase()}"`, menu: true })}</div>`;
+  for (const id of ids) html += '<div class="msep"></div>' + (C[id].sub ? `<div role="group" aria-label="${esc(C[id].subLabel || C[id].label)}"><div class="mh" aria-hidden="true">${esc(C[id].subLabel || C[id].label)}</div>${menuHtml(C[id].sub)}</div>` : menuHtml([id]));
+  return html;
+}
 // A ribbon button. A command with `menu` (a list of command ids) gets a small arrow beside it that opens them.
 function ribbonButton(id) {
   const c = C[id], label = c.rlabel || c.label.replace(/…$/, '').replace(/^Appearance: /, '');
-  const b = `<button type="button" class="rb" data-cmd="${id}" title="${esc(c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''))}">${ic(c.icon)}<span>${esc(label)}</span></button>`;
+  const b = `<button type="button" class="rb" data-cmd="${id}" title="${esc((c.tip || c.label) + (c.key ? ' (' + fmtKey(c.key) + ')' : ''))}">${ic(c.icon)}<span>${esc(label)}</span></button>`;
   if (!c.menu) return b;
   if (!c.run) return `<button type="button" class="rb" data-rmenu="${id}" aria-haspopup="menu" aria-expanded="false" title="${esc(c.label)}">${ic(c.icon)}<span>${esc(label)}${ic('chevron-down')}</span></button>`;
   const more = `More ${label.toLowerCase()} options`;
@@ -3674,7 +4405,7 @@ function ribbonButton(id) {
 }
 function openRibbonMenu(id) {
   const b = $(`#ribbonBody [data-rmenu="${id}"]`); if (!b || !C[id] || !C[id].menu) return;
-  b.setAttribute('aria-expanded', 'true'); openPopover(b.closest('.rb-split') || b, menuHtml(C[id].menu)); popAnchor = b;
+  b.setAttribute('aria-expanded', 'true'); openPopover(b.closest('.rb-split') || b, C[id].menuHtml ? C[id].menuHtml() : menuHtml(C[id].menu)); popAnchor = b;
 }
 $('#ribbonBody').addEventListener('click', (e) => {
   const b = e.target.closest('[data-rmenu]'); if (!b) return;
@@ -3687,21 +4418,40 @@ function scrollIntoRow(row, el) {
   if (b.left < r.left + pad) row.scrollLeft -= r.left + pad - b.left;
   else if (b.right > r.right - pad) row.scrollLeft += b.right - (r.right - pad);
 }
-// A row with more to see past an edge fades at that edge.
+// A row with more to see past an edge fades at that edge; the ribbon also shows a small arrow there (for a mouse).
 function ribbonEdges() {
   for (const row of [$('#ribbonBody'), $('#ribbonTabs')]) {
     row.classList.toggle('more-l', row.scrollLeft > 1);
     row.classList.toggle('more-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
   }
+  const b = $('#ribbonBody'), r = b.parentElement;
+  r.classList.toggle('more-l', b.classList.contains('more-l')); r.classList.toggle('more-r', b.classList.contains('more-r'));
 }
 $('#ribbonBody').addEventListener('scroll', ribbonEdges, { passive: true });
+// A mouse wheel that only scrolls up and down moves a wide ribbon sideways.
+$('#ribbonBody').addEventListener('wheel', (e) => {
+  const b = e.currentTarget; if (e.ctrlKey || b.scrollWidth <= b.clientWidth + 1 || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  e.preventDefault(); b.scrollLeft += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; ribbonEdges();
+}, { passive: false });
+$$('.r-scroll').forEach((a) => {
+  a.addEventListener('mousedown', (e) => e.preventDefault()); // keeps the focus where it is
+  a.addEventListener('click', () => { const b = $('#ribbonBody'); b.scrollBy({ left: +a.dataset.dir * Math.max(120, b.clientWidth * .7), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+});
 $('#ribbonTabs').addEventListener('scroll', ribbonEdges, { passive: true });
 window.addEventListener('resize', ribbonEdges);
 // Keyboard focus that lands on a button out of view brings it into view.
 $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
-  $$('#ribbonBody [data-rmenu]').forEach((b) => { b.disabled = !C[b.dataset.rmenu].menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled())); });
+  $$('#ribbonBody [data-rmenu]').forEach((b) => {
+    const c = C[b.dataset.rmenu]; b.disabled = !c.menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled()));
+    if (!c.run && c.pressed) b.toggleAttribute('data-on', !!c.pressed());
+  });
+  for (const [g, list] of Object.entries(foldFaces())) {
+    const now = list.find((id) => C[id].pressed && C[id].pressed()); if (now) foldLast[g] = now;
+    const b = $(`#ribbonBody [data-cmd="fold:${g}"]`), c = C['fold:' + g];
+    if (b && b.dataset.face !== (c.rlabel || c.label)) { b.dataset.face = c.rlabel || c.label; b.title = c.label; b.innerHTML = `${ic(c.icon)}<span>${esc(c.rlabel || c.label.replace(/…$/, ''))}</span>`; icons(); }
+  }
   const sw = $('#ribbonBody [data-color]') && swatchNow(); $$('#ribbonBody [data-color]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.color === sw));
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
   let shift = false;
@@ -3712,6 +4462,7 @@ function refreshRibbon() {
   if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
   $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });
+  $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
   scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
@@ -3746,8 +4497,15 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
   // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
   if (/^Arrow/.test(e.key) && !e.altKey && selMark) { e.preventDefault(); nudgeMark(e.key, e.shiftKey); return; }
-  if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
-  if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
+  // The arrows turn the page only from the page itself: on a button, swatch, tab or menu they stay with it.
+  const a = document.activeElement;
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && a && a.matches && a.matches('[data-color]')) { // colour swatches: move along the row
+    const bs = $$('[data-color]', a.parentElement), n = bs[(bs.indexOf(a) + (e.key === 'ArrowRight' ? 1 : -1) + bs.length) % bs.length];
+    e.preventDefault(); if (n) n.focus(); return;
+  }
+  const onPage = !a || a === document.body || a === viewer || (viewer.contains(a) && !a.closest('button, a, [role], [tabindex]:not(#viewer)'));
+  if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
+  if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
 
 /* ---------------- theme ---------------- */
@@ -3777,7 +4535,7 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
    that has the phrase as a te mark (or the text of a tpara), all in one undo step.
    The module wraps a few core functions (onEditDown, onEditHover, openLineEditor, closeLineEditor, addText,
    editText): each wrapper calls the core one for everything it doesn't handle. */
-const TXT_SWATCHES = ['#111111', '#5F5F5F', '#E03131', '#2448C9', '#2F9E44', '#E8590C'];
+const TXT_SWATCHES = INK_COLORS;
 const TXT_FAMS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ['page', 'Same as the page']];
 const txtStdName = (fam, bold, italic) => ({ sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[fam] || 'Helvetica') + (bold && italic ? (fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : bold ? 'Bold' : italic ? (fam === 'serif' ? 'Italic' : 'Oblique') : '');
 const txtRound = (n) => Math.round(n * 10) / 10;
@@ -4031,7 +4789,8 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   bar.innerHTML = [
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
-    `<span class="txt-grp">${TXT_SWATCHES.map((c) => `<button type="button" class="swatch txt-sw" data-tf="color" data-c="${c}" style="background:${c}" title="Colour" aria-label="Colour ${c}"></button>`).join('')}<input type="color" data-tf="pick" title="More colours" aria-label="More colours"></span>`,
+    `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
+    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"`, pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
   ].join('');
@@ -4039,6 +4798,7 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     $('.txt-size', bar).textContent = txtRound(fmt.size);
     $$('[data-tf="color"]', bar).forEach((b) => b.setAttribute('aria-pressed', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
     $('[data-tf="pick"]', bar).value = /^#[0-9a-f]{6}$/i.test(fmt.color) ? fmt.color : '#111111';
+    $('.txt-dot', bar).style.background = fmt.color;
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
     for (const k of ['left', 'center', 'right']) { const b = $(`[data-tf="${k}"]`, bar); if (b) b.setAttribute('aria-pressed', (fmt.align || 'left') === k); }
     const s = $('[data-tf="fam"]', bar); if (s) s.value = fmt.famPick || fmt.fam || 'sans';
@@ -4052,7 +4812,8 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     const k = b.dataset.tf, step = fmt.size < 12 ? .5 : 1;
     if (k === 'smaller') fmt.size = Math.max(4, txtRound(fmt.size - step));
     else if (k === 'bigger') fmt.size = Math.min(200, txtRound(fmt.size + step));
-    else if (k === 'color') fmt.color = b.dataset.c;
+    else if (k === 'colors') { const o = bar.classList.toggle('txt-show-cols'); b.setAttribute('aria-expanded', o); refocus && refocus(); return; }
+    else if (k === 'color') { fmt.color = b.dataset.c; bar.classList.remove('txt-show-cols'); $('.txt-colbtn', bar).setAttribute('aria-expanded', 'false'); }
     else if (k === 'bold' || k === 'italic' || k === 'underline') fmt[k] = !fmt[k];
     else if (k === 'left' || k === 'center' || k === 'right') fmt.align = k;
     sync(); onChange(fmt); refocus && refocus();
@@ -4078,7 +4839,8 @@ function txtPlaceBar(v, target) {
   const bar = txtBar; if (!bar || !target.isConnected) return;
   const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
   const left = Math.max(4, Math.min(er.left - pr.left, pr.width - bw - 4));
-  let top = er.top - pr.top - bh - 10; if (top < 4) top = er.bottom - pr.top + 10;
+  const vt = viewer.getBoundingClientRect().top;
+  let top = er.top - pr.top - bh - 10; if (top < 4 || pr.top + top < vt + 4) top = er.bottom - pr.top + 10;
   bar.style.left = left + 'px'; bar.style.top = top + 'px';
 }
 function txtHideBar() { if (txtBar) { txtBar.remove(); txtBar = null; } }
@@ -4216,6 +4978,11 @@ async function txtStartPara(v, L) {
     tes.push(te || await txtTeFor(v, l, cm));
   }
   const m = txtNewPara(tes, B.wrap, B.lead);
+  // The block is as wide as its widest line measured the way it is drawn again (kerning and spacing make that a
+  // little wider than in the PDF at times), so each line that fitted still fits and only real overflow re-wraps.
+  const meas = txtMeasurer(v.page, m), f0 = lineFrame(m.src[0]);
+  const left = (s) => (s.tm[4] - f0.o[0]) * f0.u[0] + (s.tm[5] - f0.o[1]) * f0.u[1];
+  m.wrap = Math.max(m.wrap, ...m.src.map((s) => left(s) + meas(s.orig))) + Math.max(1, f0.size * .1);
   m.text = txtJoin(tes.map((t) => t.text));
   txtRelayout(v.page, m);
   txtEditPara(v, m, true, absorb);
@@ -4255,7 +5022,7 @@ openLineEditor = function (v, m, isNew) {
   txtLine = { le, base, fmt: { ...base } };
   txtShowBar(v, le.ed, txtLine.fmt, { align: false }, (f) => {
     const px = f.size * scale, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, [, oy] = toView(v, m.tm[4], m.tm[5]);
-    Object.assign(le.ed.style, { font: txtCss(m.fam, f, px), color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
+    Object.assign(le.ed.style, { font: lineFont(v, m, px, f.bold, f.italic), color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
   }, () => le.ed.focus({ preventScroll: true }));
 };
 const txtCoreCloseLine = closeLineEditor;
@@ -4497,6 +5264,19 @@ addStyle(`
 .txt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 6px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; font: 13px/1 var(--font-ui); color-scheme: normal; }
 .txt-bar.floating { position: absolute; z-index: 8; box-shadow: 0 8px 28px rgba(0,0,0,.22); max-width: calc(100% - 8px); }
 .txt-slot .txt-bar { margin: 4px 0 2px; }
+.txt-bar .txt-colgrp { display: none; }
+.txt-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), 0 0 0 2px var(--surface), 0 0 0 3px var(--line); }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  /* Phones: one row; the colours open from one button */
+  .txt-bar.floating { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
+  .txt-bar.floating::-webkit-scrollbar { display: none; }
+  .txt-bar.floating .txt-grp { flex: none; }
+  .txt-bar.floating .txt-colgrp { display: inline-flex; }
+  .txt-bar.floating .txt-cols { display: none; }
+  .txt-bar.floating.txt-show-cols .txt-cols { display: inline-flex; }
+  .txt-bar.floating.txt-show-cols .txt-grp:not(.txt-cols):not(.txt-colgrp) { display: none; }
+  .txt-bar.floating .txt-cols .swatch { width: 26px; height: 26px; }
+}
 .txt-grp { display: inline-flex; align-items: center; gap: 2px; padding-right: 6px; border-right: 1px solid var(--line); }
 .txt-grp:last-child { border-right: 0; padding-right: 0; }
 .txt-b { border: 0; background: none; color: var(--ink); width: 30px; height: 30px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
@@ -4504,8 +5284,8 @@ addStyle(`
 .txt-b[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .txt-b [data-lucide], .txt-b svg { width: 16px; height: 16px; }
 .txt-size { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink); }
-.txt-sw { width: 20px; height: 20px; margin: 0 1px; }
-.txt-bar input[type="color"] { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+.txt-bar .sw-row { gap: 4px; }
+@media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
 .txt-bar select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; height: 30px; padding: 0 6px; }
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }
@@ -5042,7 +5822,7 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
 FEATURE.outlinePanel = (panel) => bmRender(panel);
 FEATURE.onDocShown.push(() => { BM.sel = null; BM.renaming = null; BM.cache = null; });
 cmd('bmAdd', { label: 'Add bookmark', icon: 'bookmark-plus', key: 'Mod-b', enabled: has, run: () => bmAdd(false) });
-menuAdd('Pages', ['bmAdd']);
+{ const vm = MENUS.find(([t]) => t === 'View'), i = vm ? vm[1].indexOf('sidebar') : -1; if (i >= 0) vm[1].splice(i + 1, 0, 'bmAdd'); else menuAdd('View', ['bmAdd']); }
 setTimeout(() => { try { ACCEL['Mod-b'] = 'CmdOrCtrl+B'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;
@@ -5970,6 +6750,7 @@ FEATURE.afterRender.push((v) => {
   const marksSvg = v.el.querySelector('svg.marks');
   if (marksSvg && !marksSvg.pdWatch) { marksSvg.pdWatch = new MutationObserver(() => pdDrawView(v)); marksSvg.pdWatch.observe(marksSvg, { childList: true }); }
 });
+FEATURE.thumbLayers.push((v) => { v.pdSig = null; pdDrawView(v); }); // thumbnails show it too
 addStyle(`
 .pd-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
 .pd-layer text { white-space: pre; user-select: none; }
@@ -5989,12 +6770,9 @@ addStyle(`
 .pd-form .field input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 36px; }
 .pd-form .pd-check { flex-direction: row; align-items: center; gap: 8px; align-self: end; height: 36px; margin: 6px 0; color: var(--ink); }
 .pd-form .pd-check input { width: auto; accent-color: var(--accent); }
-.pd-seg { justify-self: start; display: inline-flex; border: 1px solid var(--line); border-radius: 17px; padding: 2px; gap: 2px; margin: 4px 0 6px; }
-.pd-seg label { position: relative; }
-.pd-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.pd-seg span { display: block; padding: 5px 14px; border-radius: 15px; color: var(--ink-2); font-weight: 500; }
-.pd-seg input:checked + span { background: var(--accent-soft); color: var(--ink); }
-.pd-seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pd-seg { justify-self: start; margin: 4px 0 6px; }
+.pd-form .sw-row input[type="color"] { padding: 0; border: 0; height: 100%; }
+.pd-form .sw-row { min-height: 36px; }
 .pd-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; }
 .pd-tokens { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 6px; font-size: 12px; color: var(--ink-3); }
 .pd-tokens .btn { height: 26px; padding: 0 10px; font-size: 12px; }
@@ -6159,10 +6937,10 @@ const pdField = {
   text: (k, label, val, o = {}) => `<label class="field${o.wide ? ' pd-wide' : ''}"><span>${label}</span><input data-k="${k}" type="text" value="${esc(val ?? '')}" placeholder="${esc(o.ph || '')}" autocomplete="off"></label>`,
   num: (k, label, val, min, max, step = 1) => `<label class="field"><span>${label}</span><input data-k="${k}" type="number" inputmode="decimal" value="${esc(val)}" min="${min}" max="${max}" step="${step}"></label>`,
   sel: (k, label, val, opts) => `<label class="field"><span>${label}</span><select data-k="${k}">${opts.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(val) ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`,
-  color: (k, label, val) => `<label class="field"><span>${label}</span><input data-k="${k}" type="color" value="${esc(val)}"></label>`,
+  color: (k, label, val, colors = INK_COLORS) => `<div class="field"><span id="pd-${k}-l">${label}</span><span class="sw-row" role="group" aria-labelledby="pd-${k}-l">${swatchesHtml(colors, { now: val, attrs: (c) => `data-pdc="${k}" data-c="${c}"`, pick: `data-k="${k}" value="${esc(val)}"` })}</span></div>`,
   check: (k, label, val) => `<label class="field pd-check"><input data-k="${k}" type="checkbox"${val ? ' checked' : ''}><span>${label}</span></label>`,
   slider: (k, label, val) => `<label class="field"><span>${label} <b data-out="${k}">${val}%</b></span><input data-k="${k}" type="range" min="0" max="100" step="5" value="${esc(val)}"></label>`,
-  seg: (k, val, opts) => `<div class="pd-seg pd-wide" role="radiogroup">${opts.map(([v, t]) => `<label><input type="radio" name="pd-${k}" data-k="${k}" value="${v}"${v === val ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`,
+  seg: (k, val, opts) => `<div class="seg pd-seg pd-wide" role="radiogroup">${opts.map(([v, t]) => `<label><input type="radio" name="pd-${k}" data-k="${k}" value="${v}"${v === val ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`,
   range: (val) => pdField.text('range', 'Pages', val, { ph: 'All pages, or e.g. 1-3, 5' }),
   font: (m) => pdField.sel('font', 'Font', m.font, PD_FONTS) + pdField.num('size', 'Size (pt)', m.size, 4, 400) + pdField.color('color', 'Colour', m.color) + pdField.check('bold', 'Bold', m.bold),
   margins: (m) => pdField.num('mTop', 'Top margin (mm)', m.mTop, 0, 200, .5) + pdField.num('mBottom', 'Bottom margin (mm)', m.mBottom, 0, 200, .5) + pdField.num('mSide', 'Side margins (mm)', m.mSide, 0, 200, .5),
@@ -6176,6 +6954,7 @@ function pdRead(dlg, m) {
     else m[k] = el.value;
   }
   for (const o of $$('[data-out]', dlg)) o.textContent = m[o.dataset.out] + '%';
+  for (const b of $$('[data-pdc]', dlg)) b.setAttribute('aria-pressed', b.dataset.c.toLowerCase() === String(m[b.dataset.pdc]).toLowerCase());
   for (const el of $$('[data-show]', dlg)) { const [k, v] = el.dataset.show.split('='); el.hidden = m[k] !== v; }
   return m;
 }
@@ -6199,7 +6978,7 @@ function pdBody(type, m) {
     ${F.sel('front', 'Layer', m.front, [['front', 'In front of the page'], ['behind', 'Behind the page']])}
     ${F.range(m.range)}</div>`;
   if (type === 'pd_background') return `<div class="pd-form">${F.seg('kind', m.kind, [['color', 'Colour'], ['image', 'Picture']])}
-    <div class="pd-form pd-wide" data-show="kind=color"${m.kind !== 'color' ? ' hidden' : ''}>${F.color('color', 'Colour', m.color)}</div>
+    <div class="pd-form pd-wide" data-show="kind=color"${m.kind !== 'color' ? ' hidden' : ''}>${F.color('color', 'Colour', m.color, PALE_COLORS)}</div>
     <div class="pd-form pd-wide" data-show="kind=image"${m.kind !== 'image' ? ' hidden' : ''}>${pdPicField(m, 'Picture')}${F.sel('fit', 'Size', m.fit, [['stretch', 'Fill the page'], ['fit', 'Fit inside the page']])}</div>
     ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range)}</div>
     <p class="pd-note">The background goes behind everything on the page.</p>`;
@@ -6279,6 +7058,7 @@ async function pdEdit(type, existing) {
         preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
+      body.addEventListener('click', (e) => { const s = e.target.closest('[data-pdc]'); if (!s) return; const i = $(`input[data-k="${s.dataset.pdc}"]`, body); i.value = s.dataset.c.toLowerCase(); i.dispatchEvent(new Event('input', { bubbles: true })); });
       body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
       for (const b of $$('[data-token]', dlg)) b.onclick = () => {
         const el = focusSlot || $('[data-k="bc"]', dlg), at = el.selectionStart ?? el.value.length;
@@ -6628,11 +7408,10 @@ const CM_MARKUP = { underline: ['Underline', 'underline'], strike: ['Strikethrou
 function cmMarkupSelection(kind) {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return false;
-  const text = sel.toString().replace(/\s+/g, ' ').trim();
+  const text = selectionText(sel);
   const byView = new Map();
-  for (let r = 0; r < sel.rangeCount; r++) {
-    for (const rect of sel.getRangeAt(r).getClientRects()) {
-      if (rect.width < 1 || rect.height < 1) continue;
+  {
+    for (const rect of selectionRects(sel)) {
       const v = views.find((vv) => { const b = vv.el.getBoundingClientRect(); return rect.top >= b.top - 2 && rect.bottom <= b.bottom + 2 && rect.left >= b.left - 2 && rect.right <= b.right + 2; });
       if (!v) continue;
       const b = v.el.getBoundingClientRect(), P = (x, y) => toPdf(v, x - b.left, y - b.top);
@@ -6833,7 +7612,7 @@ function cmSetWidth(w) {
   renderRibbon(); toast(`Line width ${w} pt`);
 }
 cmd('cm_width', {
-  get label() { return `Width ${S.width} pt`; }, icon: 'baseline', enabled: has,
+  get label() { return `Width ${S.width} pt`; }, icon: 'baseline', enabled: has, sub: CM_WIDTHS.map((w) => 'cm_w' + w), subLabel: 'Line width',
   run: () => {
     const b = $('#ribbonBody [data-cmd="cm_width"]');
     if (!b) { cmSetWidth(CM_WIDTHS[(CM_WIDTHS.indexOf(S.width) + 1) % CM_WIDTHS.length]); return; }
@@ -6859,7 +7638,7 @@ ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
 ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
 ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
-menuAdd('Comment', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
+menuOrder('Comment', ['tool_select', '-', 'tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'tool_note', 'cm_typewriter', 'cm_callout', '-', 'tool_pen', 'tool_rect', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_stamp', 'sign', '-', 'cm_fill', 'cm_list']);
 
 /* ---- the Comments panel: every comment on every page, yours and the PDF's own ---- */
 const CM_SUBTYPES = { Text: 'Note', FreeText: 'Text box', Line: 'Line', Square: 'Rectangle', Circle: 'Oval', Polygon: 'Polygon', PolyLine: 'Polyline', Highlight: 'Highlight', Underline: 'Underline', Squiggly: 'Squiggly', StrikeOut: 'Strikethrough', Stamp: 'Stamp', Caret: 'Caret', Ink: 'Drawing', FileAttachment: 'Attachment', Sound: 'Sound', Redact: 'Redaction' };
@@ -6880,6 +7659,7 @@ function cmDescribe(m) {
   }
   return null;
 }
+FEATURE.markLabels.push((m) => m.type === 'cmReply' ? null : cmDescribe(m));
 const cmTop = (m) => {
   if (m.rects) return Math.max(...m.rects.flatMap((r) => [r[1], r[3]]));
   if (m.quads) return Math.max(...m.quads.flatMap((q) => [q[1], q[3], q[5], q[7]]));
@@ -7020,7 +7800,8 @@ async function cmRenderPanel() {
     <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
     <label><span>Sort</span><select data-cm-f="sort">${CM_SORTS.map(([v, t]) => opt(v, t, f.sort === v)).join('')}</select></label></div>` : '';
   const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
-  panel.innerHTML = you + (!all.length
+  const tools = `<div class="cm-tools" role="group" aria-label="All comments"><button type="button" class="btn" data-cmd="cm_hide" aria-pressed="${CM.hidden}" title="${CM.hidden ? 'Show the comments on the page' : 'Hide the comments on the page (they stay in the PDF)'}">${ic(CM.hidden ? 'eye' : 'eye-off')}<span>${CM.hidden ? 'Show' : 'Hide'}</span></button><button type="button" class="btn" data-cmd="cm_export" title="Save the comments as an XFDF file">${ic('file-up')}<span>Export</span></button><button type="button" class="btn" data-cmd="cm_import" title="Add comments from an XFDF file">${ic('file-down')}<span>Import</span></button></div>`;
+  panel.innerHTML = you + tools + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
     : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span>${it.status ? `<span class="cm-status" data-status="${esc(it.status)}">${esc(it.status)}</span>` : ''}</span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button>${cmThreadHtml(it, k)}</li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
@@ -7086,10 +7867,223 @@ selectMark = function (s) {
   if (s && CM.open !== 'm:' + s.id && CM.items && CM.items.some((it) => it.key === 'm:' + s.id)) { CM.open = 'm:' + s.id; cmPanelSoon(); }
 };
 
+/* ---- hide all comments (on screen only), and export or import them as XFDF ----
+   Hiding is a view setting: it changes nothing in the document or in what is saved. XFDF (the XML form of a PDF's
+   comments) carries your comments and the PDF's own, so another reviewer can merge them into their copy; import
+   reads every comment type made here and the common ones from other apps. */
+CM.hidden = false;
+CM.hideIds = new Map(); // source index -> ids of the PDF's own comments, while hidden
+FEATURE.hiddenAnnots = (src) => (CM.hidden && CM.hideIds.get(src)) || [];
+async function cmSetHidden(on) {
+  CM.hidden = on; app.dataset.hideMarks = on ? '1' : '';
+  CM.hideIds = new Map();
+  if (on && doc) {
+    const A = pdfjs.AnnotationType;
+    for (const [src, pd] of pdfDocs) {
+      const ids = [];
+      for (let i = 0; i < pd.numPages; i++) {
+        try { for (const a of await (await pd.getPage(i + 1)).getAnnotations({ intent: 'display' })) if (a.id && ![A.WIDGET, A.LINK].includes(a.annotationType)) ids.push(a.id); } catch {}
+      }
+      CM.hideIds.set(src, ids);
+    }
+  }
+  syncHiddenComments(); refreshRibbon(); cmPanelSoon();
+  toast(on ? 'Comments hidden. They are still in the PDF.' : 'Comments shown');
+}
+FEATURE.onDocShown.push(() => { if (CM.hidden) cmSetHidden(false); });
+// Choosing a tool to add comments shows them again.
+new MutationObserver(() => { if (CM.hidden && app.dataset.tool !== 'select') cmSetHidden(false); }).observe(app, { attributes: true, attributeFilter: ['data-tool'] });
+cmd('cm_hide', { label: 'Hide comments', icon: 'eye-off', enabled: has, pressed: () => CM.hidden, run: () => cmSetHidden(!CM.hidden) });
+
+const CM_XFDF_NS = 'http://ns.adobe.com/xfdf/';
+const cmX = (n) => cmNum(n);
+const cmHex = (c) => { const s = String(c || ''); if (/^#[0-9a-f]{6}$/i.test(s)) return s.toUpperCase(); const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(s); return m ? '#' + m.slice(1).map((n) => (+n).toString(16).padStart(2, '0')).join('').toUpperCase() : '#E03131'; };
+const cmPdfDateOf = (t) => { const d = new Date(t || Date.now()), p = (n) => String(n).padStart(2, '0'); return `D:${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`; };
+const cmBBox = (pts) => { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+// The box of a frame turned by rot (as the marks keep it): its corner x, y and size, from a box in PDF space.
+function cmFrameFromBox([a, b, c, d], rot) {
+  const r = ((rot % 360) + 360) % 360;
+  if (r === 90) return { x: a, y: b, bw: d - b, bh: c - a };
+  if (r === 180) return { x: c, y: b, bw: c - a, bh: d - b };
+  if (r === 270) return { x: c, y: d, bw: d - b, bh: c - a };
+  return { x: a, y: d, bw: c - a, bh: d - b };
+}
+const cmFrameBox = (x, y, rot, bw, bh) => { const P = cmFrame(x, y, rot); return cmBBox([P(0, 0), P(bw, 0), P(bw, bh), P(0, bh)]); };
+// One comment as an XFDF element: [tag, attributes, inner XML].
+function cmXfdfOf(m) {
+  const box = (r) => r.map(cmX).join(','), pts = (l) => l.map((p) => cmX(p[0]) + ',' + cmX(p[1])).join(';');
+  const quadsOfRects = (rects) => rects.flatMap((r) => { const [a, b, c, d] = cmBBox([[r[0], r[1]], [r[2], r[3]]]); return [a, d, c, d, a, b, c, b]; });
+  const w = m.w || 1, out = (r, k) => [r[0] - k, r[1] - k, r[2] + k, r[3] + k];
+  switch (m.type) {
+    case 'hl': {
+      if (m.area) { const r = cmBBox([[m.rects[0][0], m.rects[0][1]], [m.rects[0][2], m.rects[0][3]]]); return ['highlight', { rect: box(r), coords: quadsOfRects(m.rects).map(cmX).join(','), opacity: '0.4' }, m.text]; }
+      const q = quadsOfRects(m.rects); return ['highlight', { rect: box(cmBBox(m.rects.flatMap((r) => [[r[0], r[1]], [r[2], r[3]]]))), coords: q.map(cmX).join(','), opacity: '0.4' }, m.text];
+    }
+    case 'cmMarkup': return [{ underline: 'underline', strike: 'strikeout', squiggly: 'squiggly' }[m.kind], { rect: box(cmBBox(m.quads.flatMap((q) => [[q[0], q[1]], [q[2], q[3]], [q[4], q[5]], [q[6], q[7]]]))), coords: m.quads.flat().map(cmX).join(',') }, m.text];
+    case 'rect': return ['square', { rect: box(out(cmBBox([[m.x1, m.y1], [m.x2, m.y2]]), w / 2)), width: cmX(w), ...(m.fill ? { 'interior-color': cmHex(m.color) } : {}) }];
+    case 'ink': return ['ink', { rect: box(out(cmBBox(m.pts), w / 2)), width: cmX(w) }, null, `<inklist><gesture>${pts(m.pts)}</gesture></inklist>`];
+    case 'note': return ['text', { rect: box([m.x, m.y - 22, m.x + 22, m.y]), icon: 'Comment' }, m.text];
+    case 'cmShape': {
+      const ic = m.fill ? { 'interior-color': cmHex(m.color) } : {};
+      if (m.kind === 'oval' || m.kind === 'cloud') return [m.kind === 'oval' ? 'circle' : 'square', { rect: box(out(cmBBox([[m.x1, m.y1], [m.x2, m.y2]]), w / 2)), width: cmX(w), ...ic, ...(m.kind === 'cloud' ? { style: 'cloudy', intensity: '1' } : {}) }];
+      if (m.kind === 'line' || m.kind === 'arrow') return ['line', { rect: box(out(cmBBox(m.pts), w / 2 + 4)), width: cmX(w), start: pts([m.pts[0]]), end: pts([m.pts[1]]), head: 'None', tail: m.kind === 'arrow' ? 'OpenArrow' : 'None' }];
+      return [m.kind, { rect: box(out(cmBBox(m.pts), w / 2)), width: cmX(w), ...ic }, null, `<vertices>${pts(m.pts)}</vertices>`];
+    }
+    case 'cmType': {
+      const lines = m.text.split('\n'), bw = Math.max(10, ...lines.map((l) => cmMeasure(l, m.size))), bh = m.size * (1.2 * (lines.length - 1) + 1.1);
+      return ['freetext', { rect: box(cmFrameBox(m.x, m.y, m.rot, bw, bh)), intent: 'FreeTextTypewriter', rotation: String(m.rot || 0), width: '0' }, m.text, `<defaultappearance>/Helv ${cmX(m.size)} Tf ${cmRgb(m.color).map(cmX).join(' ')} rg</defaultappearance>`];
+    }
+    case 'cmCallout': {
+      const inner = cmFrameBox(m.x, m.y, m.rot, m.bw, m.bh), P = cmFrame(m.x, m.y, m.rot), [tu, td] = P.local(m.tx, m.ty), knee = P(Math.max(0, Math.min(m.bw, tu)), Math.max(0, Math.min(m.bh, td)));
+      const r = cmBBox([[inner[0], inner[1]], [inner[2], inner[3]], [m.tx, m.ty]]);
+      return ['freetext', { rect: box(r), fringe: [inner[0] - r[0], inner[1] - r[1], r[2] - inner[2], r[3] - inner[3]].map(cmX).join(','), intent: 'FreeTextCallout', callout: [m.tx, m.ty, ...knee].map(cmX).join(','), head: 'OpenArrow', rotation: String(m.rot || 0), width: cmX(m.lw) }, m.text, `<defaultappearance>/Helv ${cmX(m.size)} Tf ${cmRgb(m.color).map(cmX).join(' ')} rg</defaultappearance>`];
+    }
+    case 'cmStamp': return ['stamp', { rect: box(cmFrameBox(m.x, m.y, m.rot, 0, 0).map((n, k) => n + (k < 2 ? -1 : 1) * Math.max(m.bw, m.bh) / 2)), icon: m.name || 'Draft', rotation: String(m.rot || 0) }, m.sub ? `${m.label} ${m.sub}` : m.label];
+  }
+  return null;
+}
+// The PDF's own comments, as pdf.js reads them.
+function cmXfdfOfAnnot(a) {
+  const box = (r) => [...r].map(cmX).join(','), color = a.color && a.color.length === 3 ? '#' + [...a.color].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase() : null;
+  const tag = { Text: 'text', FreeText: 'freetext', Line: 'line', Square: 'square', Circle: 'circle', Polygon: 'polygon', PolyLine: 'polyline', Highlight: 'highlight', Underline: 'underline', Squiggly: 'squiggly', StrikeOut: 'strikeout', Stamp: 'stamp', Ink: 'ink' }[a.subtype];
+  if (!tag || !a.rect) return null;
+  const at = { rect: box(a.rect) }, flat = (q) => q ? (Array.isArray(q) && Array.isArray(q[0]) ? q.flatMap((p) => p.x != null ? [p.x, p.y] : p) : [...q]) : null;
+  if (color) at.color = color;
+  if (a.borderStyle && a.borderStyle.width != null) at.width = cmX(a.borderStyle.width);
+  let inner = '';
+  const qp = flat(a.quadPoints); if (qp && qp.length) at.coords = qp.map(cmX).join(',');
+  if (a.lineCoordinates) { const l = [...a.lineCoordinates]; at.start = `${cmX(l[0])},${cmX(l[1])}`; at.end = `${cmX(l[2])},${cmX(l[3])}`; if (a.lineEndings) { at.head = a.lineEndings[0]; at.tail = a.lineEndings[1]; } }
+  if (a.vertices) { const v = flat(a.vertices); inner = `<vertices>${v.reduce((s, n, k) => s + (k % 2 ? ',' : k ? ';' : '') + cmX(n), '')}</vertices>`; }
+  if (a.inkLists) inner = `<inklist>${a.inkLists.map((g) => { const v = flat(g); return `<gesture>${v.reduce((s, n, k) => s + (k % 2 ? ',' : k ? ';' : '') + cmX(n), '')}</gesture>`; }).join('')}</inklist>`;
+  if (a.subtype === 'Text') at.icon = a.name || 'Comment';
+  if (a.subtype === 'Stamp' && a.name) at.icon = a.name;
+  return [tag, at, (a.contentsObj && a.contentsObj.str) || '', inner];
+}
+async function cmExportXfdf() {
+  const items = await cmItems(), rows = [];
+  const attr = (o) => Object.entries(o).filter(([, v]) => v != null && v !== '').map(([k, v]) => ` ${k}="${esc(v)}"`).join('');
+  const el = ([tag, at, text, inner], base) => {
+    const { color, ...rest } = at, c = color || base.color;
+    return `<${tag}${attr({ page: base.page, name: base.name, title: base.title, date: base.date, ...(c ? { color: c } : {}), ...rest })}>${text ? `<contents>${esc(text)}</contents>` : ''}${inner || ''}</${tag}>`;
+  };
+  for (const it of items) {
+    const x = it.m ? cmXfdfOf(it.m) : cmXfdfOfAnnot(it.a); if (!x) continue;
+    const name = it.m ? 'cpdf-' + it.m.id : it.a.id;
+    rows.push(el(x, { page: it.n, name, title: it.by, date: it.at ? cmPdfDateOf(it.at) : '', color: it.m ? cmHex(it.m.color || (it.m.type === 'note' ? '#FFD43B' : '')) : null }));
+    // replies and review states, in reply to it
+    const rect = (x[1].rect || '0,0,0,0');
+    for (const r of it.thread) rows.push(el(['text', { rect, icon: 'Comment', inreplyto: name, ...(r.state ? { state: r.state, statemodel: 'Review' } : {}) }, r.state ? `${r.state} set by ${r.by || 'No name'}` : r.text], { page: it.n, name: r.r ? 'cpdf-' + r.r.id : '', title: r.by, date: r.at ? cmPdfDateOf(r.at) : '' }));
+  }
+  if (!rows.length) { toast('There are no comments to export'); return; }
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<xfdf xmlns="${CM_XFDF_NS}" xml:space="preserve">\n<annots>\n${rows.join('\n')}\n</annots>\n<f href="${esc(doc.name)}.pdf"/>\n</xfdf>\n`;
+  CM.lastXfdf = xml;
+  const done = await saveFile(xml, `${doc.name} comments.xfdf`, 'application/vnd.adobe.xfdf');
+  if (done && !MAC_APP) toast(`${rows.length} comment${rows.length === 1 ? '' : 's'} exported`);
+}
+// XFDF to marks. Returns the number of comments added.
+async function cmImportXfdf(xml) {
+  const d = new DOMParser().parseFromString(xml, 'application/xml');
+  if (d.querySelector('parsererror') || !d.documentElement || d.documentElement.localName !== 'xfdf') return -1;
+  const nums = (s) => String(s || '').split(/[\s,;]+/).filter(Boolean).map(Number).filter((n) => isFinite(n));
+  const pairs = (s) => { const n = nums(s), o = []; for (let k = 0; k + 1 < n.length; k += 2) o.push([n[k], n[k + 1]]); return o; };
+  const kid = (e, name) => [...e.children].find((c) => c.localName === name);
+  const textOf = (e) => { const c = kid(e, 'contents'); return c ? c.textContent : (kid(e, 'contents-richtext') ? kid(e, 'contents-richtext').textContent.trim() : ''); };
+  const hex = (e, k = 'color') => /^#[0-9a-f]{6}$/i.test(e.getAttribute(k) || '') ? e.getAttribute(k).toUpperCase() : null;
+  const before = snapshot(), taken = new Set(Object.values(doc.marks).flat().filter((m) => m && m.id).map((m) => m.id)), byName = new Map();
+  let n = 0;
+  const els = [...(kid(d.documentElement, 'annots') || d.documentElement).children];
+  // A comment the PDF already has (an export of this same file, imported back) or one imported before is skipped.
+  const own = new Map(); for (const entry of doc.pages) own.set(entry, await cmPageAnnots(entry));
+  const near = (a, b) => a && b && a.length === 4 && [...b].every((x, k) => Math.abs(x - a[k]) < 1);
+  const seen = new Set(Object.values(doc.marks).flat().filter((m) => m && m.xfdf).map((m) => m.xfdf));
+  const replies = [];
+  for (const e of els) {
+    const tag = e.localName, page = +e.getAttribute('page'), entry = doc.pages[page]; if (!entry) continue;
+    const name = e.getAttribute('name') || '', rect = nums(e.getAttribute('rect')), w = +e.getAttribute('width') || 1, color = hex(e), fill = !!hex(e, 'interior-color');
+    if (e.getAttribute('inreplyto')) { replies.push({ e, entry }); continue; }
+    const id = /^cpdf-/.test(name) ? name.slice(5) : uid(); if (taken.has(id)) continue;
+    if (!/^cpdf-/.test(name) && name && (seen.has(name) || own.get(entry).some((a) => a.id === name && near(rect, a.rect)))) { byName.set(name, null); continue; }
+    const inset = (r, k) => [r[0] + k, r[1] + k, r[2] - k, r[3] - k], rot = +e.getAttribute('rotation') || 0;
+    let m = null;
+    if (['highlight', 'underline', 'strikeout', 'squiggly'].includes(tag)) {
+      const c = nums(e.getAttribute('coords')), quads = []; for (let k = 0; k + 7 < c.length; k += 8) quads.push(c.slice(k, k + 8));
+      if (!quads.length && rect.length === 4) quads.push([rect[0], rect[3], rect[2], rect[3], rect[0], rect[1], rect[2], rect[1]]);
+      if (!quads.length) continue;
+      if (tag === 'highlight') m = { type: 'hl', rects: quads.map((q) => { const b = cmBBox([[q[0], q[1]], [q[2], q[3]], [q[4], q[5]], [q[6], q[7]]]); return [b[0], b[3], b[2], b[1]]; }), color: color || '#FFD43B', text: textOf(e) };
+      else m = { type: 'cmMarkup', kind: { underline: 'underline', strikeout: 'strike', squiggly: 'squiggly' }[tag], quads, color: color || '#E03131', text: textOf(e) };
+    } else if ((tag === 'square' || tag === 'circle') && rect.length === 4) {
+      const [x1, y1, x2, y2] = inset(rect, w / 2), cloud = e.getAttribute('style') === 'cloudy';
+      m = tag === 'square' && !cloud ? { type: 'rect', x1, y1: y2, x2, y2: y1, color: color || '#E03131', w, ...(fill ? { fill: true } : {}) } : { type: 'cmShape', kind: cloud ? 'cloud' : 'oval', x1, y1: y2, x2, y2: y1, color: color || '#E03131', w, fill };
+    } else if (tag === 'line') {
+      const a = pairs(e.getAttribute('start')), b = pairs(e.getAttribute('end')); if (!a.length || !b.length) continue;
+      const arrow = /Arrow/.test(e.getAttribute('tail') || '') || /Arrow/.test(e.getAttribute('head') || '');
+      m = { type: 'cmShape', kind: arrow ? 'arrow' : 'line', pts: /Arrow/.test(e.getAttribute('head') || '') && !/Arrow/.test(e.getAttribute('tail') || '') ? [b[0], a[0]] : [a[0], b[0]], color: color || '#E03131', w };
+    } else if (tag === 'polygon' || tag === 'polyline') {
+      const v = kid(e, 'vertices'), pts = pairs(v && v.textContent); if (pts.length < 2) continue;
+      m = { type: 'cmShape', kind: tag, pts, color: color || '#E03131', w, ...(tag === 'polygon' ? { fill } : {}) };
+    } else if (tag === 'ink') {
+      const gs = [...((kid(e, 'inklist') || e).children)].filter((g) => g.localName === 'gesture').map((g) => pairs(g.textContent)).filter((p) => p.length);
+      gs.forEach((pts, k) => { const mm = { id: k ? uid() : id, type: 'ink', pts: pts.length > 1 ? pts : [pts[0], pts[0]], color: color || '#2448C9', w }; cmAddImported(mm, e, entry); n++; });
+      byName.set(name, id); continue;
+    } else if (tag === 'text' && rect.length === 4) {
+      m = { type: 'note', x: rect[0], y: rect[3], text: textOf(e) };
+    } else if (tag === 'freetext' && rect.length === 4) {
+      const da = kid(e, 'defaultappearance'), dam = /([\d.]+)\s+Tf/.exec(da ? da.textContent : ''), rg = /([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/.exec(da ? da.textContent : '');
+      const size = dam ? +dam[1] || 12 : 12, c = color || (rg ? '#' + rg.slice(1).map((x) => Math.round(+x * 255).toString(16).padStart(2, '0')).join('').toUpperCase() : '#111111'), text = textOf(e) || ' ';
+      if (/Callout/i.test(e.getAttribute('intent') || '') || e.getAttribute('callout')) {
+        const fr = nums(e.getAttribute('fringe')), inner = fr.length === 4 ? [rect[0] + fr[0], rect[1] + fr[1], rect[2] - fr[2], rect[3] - fr[3]] : rect, cl = nums(e.getAttribute('callout'));
+        const f = cmFrameFromBox(inner, rot);
+        m = { type: 'cmCallout', x: f.x, y: f.y, rot, tx: cl.length >= 2 ? cl[0] : inner[0] - 20, ty: cl.length >= 2 ? cl[1] : inner[1] - 20, text, size, color: c, lw: Math.max(1, Math.min(w, 3)), ...cmBoxSize(text, size) };
+      } else { const f = cmFrameFromBox(rect, rot); m = { type: 'cmType', x: f.x, y: f.y, rot, text, size, color: c }; }
+    } else if (tag === 'stamp' && rect.length === 4) {
+      const icon = e.getAttribute('icon') || 'Draft', known = CM_STAMPS.find((s) => s[3] === icon), t = textOf(e).trim();
+      const label = known ? known[1] : t || icon, sub = known && t.toLowerCase().startsWith(known[1].toLowerCase()) ? t.slice(known[1].length).trim() : '';
+      m = { type: 'cmStamp', x: (rect[0] + rect[2]) / 2, y: (rect[1] + rect[3]) / 2, rot, tilt: CM_TILT, stamp: known ? known[0] : 'custom', label, sub, name: known ? icon : 'Custom', color: color || (known ? known[2] : '#2448C9'), text: label, ...cmStampSize(label, sub) };
+    }
+    if (!m) continue;
+    m.id = id; if (!/^cpdf-/.test(name) && name) m.xfdf = name;
+    cmAddImported(m, e, entry); byName.set(name, id); n++;
+  }
+  for (const { e, entry } of replies) {
+    const to = byName.get(e.getAttribute('inreplyto')) || (/^cpdf-/.test(e.getAttribute('inreplyto')) ? e.getAttribute('inreplyto').slice(5) : null);
+    if (!to || !marksOf(entry).some((m) => m.id === to)) continue;
+    const name = e.getAttribute('name') || '', rid = /^cpdf-/.test(name) ? name.slice(5) : uid(); if (taken.has(rid)) continue;
+    const state = e.getAttribute('statemodel') === 'Review' ? e.getAttribute('state') : null;
+    marksOf(entry).push({ id: rid, type: 'cmReply', to, ...(state ? { state } : { text: textOf(e) }), by: e.getAttribute('title') || '', at: cmPdfDate(e.getAttribute('date')) || Date.now() });
+  }
+  if (!n) return 0;
+  views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
+  return n;
+}
+function cmAddImported(m, e, entry) {
+  m.author = e.getAttribute('title') || ''; m.at = cmPdfDate(e.getAttribute('date')) || Date.now();
+  marksOf(entry).push(m);
+}
+const cmXfdfInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.xfdf,.xml,application/vnd.adobe.xfdf', hidden: true, id: 'cmXfdfFile' });
+document.body.appendChild(cmXfdfInput);
+cmXfdfInput.addEventListener('change', async () => {
+  const f = cmXfdfInput.files[0]; cmXfdfInput.value = ''; if (!f || !doc) return;
+  const n = await cmImportXfdf(await f.text());
+  toast(n < 0 ? `${f.name} is not a comments file (XFDF)` : n ? `${n} comment${n === 1 ? '' : 's'} imported` : 'No new comments to import');
+});
+cmd('cm_export', { label: 'Export comments…', rlabel: 'Export', icon: 'file-up', enabled: has, run: cmExportXfdf });
+cmd('cm_import', { label: 'Import comments…', rlabel: 'Import', icon: 'file-down', enabled: has, run: () => cmXfdfInput.click() });
+C.cm_list.menu = ['cm_list', 'cm_hide', 'cm_export', 'cm_import']; // on the Comments list button's arrow, so the tab still fits a laptop screen
+menuAdd('Comment', ['cm_hide', 'cm_export', 'cm_import']);
+TEST_HOOKS.cmImportXfdf = (xml) => cmImportXfdf(xml);
+TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;
+TEST_HOOKS.cmExportXfdf = async () => { await cmExportXfdf(); return CM.lastXfdf; };
+
 addStyle(`
 .sidebar .side-tabs { grid-template-columns: repeat(2, 1fr); } /* four tabs: two rows of two */
 .app[data-tool="cmunderline"] .marks, .app[data-tool="cmstrike"] .marks, .app[data-tool="cmsquiggly"] .marks { pointer-events: none !important; }
 .app[data-tool="cmtype"] .marks { cursor: text; }
+.app[data-hide-marks="1"] .page .marks :is([data-type="hl"], [data-type="ink"], [data-type="rect"], [data-type="note"], [data-type^="cm"], .mk-selbox-g),
+.app[data-hide-marks="1"] .page .annotationLayer :is(section:not(.linkAnnotation):not([class*="WidgetAnnotation"]), .popup) { display: none !important; }
+.cm-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
+.cm-tools .btn { height: 28px; padding: 0 7px; font-size: 12px; gap: 4px; white-space: nowrap; }
+.cm-tools .btn svg { width: 14px; height: 14px; }
+.cm-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .app[data-tool="cmstamp"] .marks { cursor: copy; }
 .marks .cm-draft { pointer-events: none; }
 .cm-head { font-size: 12px; color: var(--ink-3); padding: 4px 8px 6px; }
@@ -7490,6 +8484,12 @@ pg60Panel.addEventListener('click', (e) => {
   }
   pg60Sel = new Set([n]); pg60Anchor = n; pg60Paint(); // the sidebar's own click goes to the page
 }, true);
+// The keys in the sidebar's page list: an arrow picks one page, Shift+arrow picks a run from where it started.
+FEATURE.thumbPick = (n) => { pg60Sel = new Set([n]); pg60Anchor = n; pg60Paint(); };
+FEATURE.thumbExtend = (n) => {
+  const a = pg60Anchor ?? current, lo = Math.min(a, n), hi = Math.max(a, n);
+  pg60Anchor = a; pg60SetSel(Array.from({ length: hi - lo + 1 }, (_, k) => lo + k));
+};
 // Dragging one of several chosen pages moves them all.
 pg60Panel.addEventListener('drop', (e) => {
   const t = e.target.closest('.thumb'); if (!t || !pg60Many()) return;
@@ -7517,6 +8517,7 @@ document.addEventListener('keydown', (e) => {
 function pg60Paint() {
   const many = pg60Many(), sel = new Set(pg60Valid());
   for (const t of $$('.thumb', pg60Panel)) t.classList.toggle('pg60-sel', many && sel.has(+t.dataset.n));
+  markThumb(); if (typeof pg60OrgPaint === 'function') pg60OrgPaint();
   const list = $('.thumbs', pg60Panel); if (!list) return;
   let bar = $('.pg60-selbar', pg60Panel);
   if (!many) { if (bar) bar.remove(); return; }
@@ -7681,9 +8682,198 @@ ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_ins'], 'Remove');
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
 ribbonAdd('pages', 'Remove', ['pg60_split']);
-menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
+menuOrder('Pages', ['pg60_selAll', '-', 'rotL', 'rotR', 'rotAll', 'pg60_rotate', '-', 'up', 'down', 'pg60_reverse', 'dup', '-', 'blank', 'pg60_insert', 'pg60_replace', 'merge', '-', 'extract', 'pg60_split', '-', 'delPage', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
+
+/* ---- insert blank pages: size, orientation, how many and where ---- */
+const PG60_SIZES = { a4: [595.28, 841.89, 'A4 (210 × 297 mm)'], letter: [612, 792, 'Letter (8.5 × 11 in)'], legal: [612, 1008, 'Legal (8.5 × 14 in)'] };
+async function pg60BlankAsk() {
+  if (!has()) return;
+  const e = doc.pages[current], page = await pageOf(e), vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
+  const W = vp.width, H = vp.height, here = current + 1, mm = (pt) => Math.round(pt / PG60_MM);
+  const r = await pg60Ask('Insert blank pages', `
+    <div class="pg60-grid">
+      <label class="field"><span>Size</span><select name="size"><option value="same">Same as this page (${mm(W)} × ${mm(H)} mm)</option>${Object.entries(PG60_SIZES).map(([k, x]) => `<option value="${k}">${x[2]}</option>`).join('')}</select></label>
+      <label class="field"><span>Pages</span><input name="count" type="number" inputmode="numeric" min="1" max="100" value="1"></label>
+    </div>
+    <div class="pg60-label">Orientation</div>
+    <div class="pg60-row">${pg60Opt('orient', 'portrait', 'Portrait', H >= W)}${pg60Opt('orient', 'landscape', 'Landscape', W > H)}</div>
+    <div class="pg60-label">Where</div>
+    ${pg60Opt('where', 'after', `After this page (${here})`, true)}
+    ${pg60Opt('where', 'before', `Before this page (${here})`)}
+    ${pg60Opt('where', 'end', 'At the end')}`,
+  [{ label: 'Cancel' }, { label: 'Insert', value: 'ok', primary: true }]);
+  if (!r) return;
+  const v = r.vals, count = Math.max(1, Math.min(100, parseInt(v.count, 10) || 1));
+  const [a, b] = v.size in PG60_SIZES ? PG60_SIZES[v.size] : [W, H];
+  const size = v.orient === 'landscape' ? [Math.max(a, b), Math.min(a, b)] : [Math.min(a, b), Math.max(a, b)];
+  await pg60Blank(count, size, { after: current + 1, before: current, end: doc.pages.length }[v.where] ?? current + 1);
+}
+// Inserts `count` blank pages of `size` ([w, h] in points) before index `at`, as one step to undo.
+async function pg60Blank(count, size, at) {
+  const L = await loadPdfLib();
+  const pdf = await L.PDFDocument.create();
+  for (let k = 0; k < count; k++) pdf.addPage(size);
+  const bytes = await pdf.save();
+  let pd; try { pd = await loadProtected(bytes, 'Blank pages'); } catch (e) { console.error(e); }
+  if (!pd || !doc) return;
+  pg60WithSource({ bytes, pd }, (k) => { doc.pages.splice(at, 0, ...Array.from({ length: count }, (_, i) => ({ src: k, i, rot: 0 }))); if (at <= current) current += count; });
+  pg60SetSel([]);
+  toast(count === 1 ? 'Inserted a blank page' : `Inserted ${count} blank pages`);
+}
+if (C.blank) { C.blank.label = 'Insert blank pages…'; C.blank.run = pg60BlankAsk; }
+
+/* ---- Organize: every page in a grid that fills the window. Click, Shift- and Cmd/Ctrl-click choose pages, drag
+   moves them, and the bar's commands (rotate, insert, duplicate, extract, delete) work on the chosen pages. ---- */
+const pg60Org = document.createElement('section');
+pg60Org.className = 'pg60-org'; pg60Org.id = 'pg60Org'; pg60Org.hidden = true; pg60Org.setAttribute('aria-label', 'Organize pages');
+pg60Org.innerHTML = `<div class="pg60-org-bar">
+  <span class="pg60-org-count" aria-live="polite"></span>
+  <span class="pg60-org-tools">${[['pg60_selAll', 'Select all'], ['rotL', 'Rotate left'], ['rotR', 'Rotate right'], ['blank', 'Insert'], ['dup', 'Duplicate'], ['extract', 'Extract'], ['delPage', 'Delete']].map(([id, l]) => `<button type="button" class="btn" data-org="${id}" title="${esc(C[id] ? C[id].label : l)}">${ic(C[id] ? C[id].icon : 'circle')}<span>${l}</span></button>`).join('')}</span>
+  <button type="button" class="btn primary" data-org-done>${ic('x')}<span>Close</span></button>
+</div>
+<div class="pg60-org-grid" role="listbox" aria-label="Pages" aria-multiselectable="true"></div>`;
+$('.workspace').appendChild(pg60Org);
+const pg60Grid = $('.pg60-org-grid', pg60Org);
+const pg60OrgOn = () => app.dataset.organize === '1';
+let pg60OrgIO, pg60OrgTimer;
+function pg60Organize(on) {
+  if (on && !has()) return;
+  const was = pg60OrgOn();
+  app.dataset.organize = on ? '1' : '';
+  pg60Org.hidden = !on; viewer.inert = !!on;
+  if (on) { if (isPhone() && app.dataset.sidebar === 'open') toggleSidebar(false); pg60OrgRender(true); }
+  else if (was) { pg60Grid.innerHTML = ''; if (doc) goPage(current, true); viewer.focus({ preventScroll: true }); }
+  refreshRibbon();
+}
+function pg60OrgRender(focus) {
+  if (!pg60OrgOn() || !doc) return;
+  const refocus = focus || pg60Grid.contains(document.activeElement);
+  const size = Math.round(240 * Math.min(window.devicePixelRatio || 1, 2));
+  pg60Grid.innerHTML = doc.pages.map((e, n) => `<button type="button" role="option" class="pg60-cell" draggable="true" data-n="${n}" data-size="${size}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><span class="pg60-cell-pic"><canvas width="1" height="1"></canvas></span><span aria-hidden="true">${n + 1}</span></button>`).join('');
+  pg60OrgIO && pg60OrgIO.disconnect();
+  pg60OrgIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { pg60OrgIO.unobserve(en.target); drawThumb(en.target).then(() => pg60ThumbCrop(en.target)); } }), { root: pg60Org, rootMargin: '400px' });
+  $$('.pg60-cell', pg60Grid).forEach((c) => pg60OrgIO.observe(c));
+  pg60OrgPaint();
+  const c = $(`.pg60-cell[data-n="${current}"]`, pg60Grid);
+  if (c) { if (refocus) c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest' }); }
+}
+function pg60OrgPaint() {
+  if (!pg60OrgOn() || !doc) return;
+  const sel = thumbChosen(), a = document.activeElement, focused = a && a.closest && a.closest('.pg60-cell');
+  for (const c of $$('.pg60-cell', pg60Grid)) {
+    const n = +c.dataset.n;
+    c.setAttribute('aria-selected', sel.has(n));
+    if (n === current) c.setAttribute('aria-current', 'page'); else c.removeAttribute('aria-current');
+    c.tabIndex = (focused && pg60Grid.contains(focused) ? c === focused : n === current) ? 0 : -1;
+  }
+  const many = pg60Many();
+  $('.pg60-org-count', pg60Org).textContent = many ? `${sel.size} of ${pg60Plural(doc.pages.length, 'page')} selected` : `Page ${current + 1} of ${doc.pages.length}`;
+  for (const b of $$('[data-org]', pg60Org)) { const c = C[b.dataset.org]; b.disabled = !c || !!(c.enabled && !c.enabled()); }
+}
+// Page changes lay the pages out again: so is the grid.
+new MutationObserver(() => { if (pg60OrgOn()) { clearTimeout(pg60OrgTimer); pg60OrgTimer = setTimeout(() => pg60OrgRender(false), 30); } }).observe(pagesEl, { childList: true });
+// Choosing pages works as in the sidebar.
+function pg60OrgPick(n, e) {
+  const add = isMac ? e.metaKey : e.ctrlKey || e.metaKey;
+  if (e.shiftKey) {
+    const a = pg60Anchor ?? current, lo = Math.min(a, n), hi = Math.max(a, n);
+    pg60Sel = new Set([...(add ? pg60Valid() : []), ...Array.from({ length: hi - lo + 1 }, (_, k) => lo + k)]); pg60Anchor = a;
+  } else if (add) {
+    pg60Sel = new Set(pg60Valid().length ? pg60Valid() : [current]); pg60Sel.has(n) ? pg60Sel.delete(n) : pg60Sel.add(n); pg60Anchor = n;
+  } else { pg60Sel = new Set([n]); pg60Anchor = n; current = n; }
+  pg60Paint(); updateStatus(); pg60OrgPaint();
+}
+pg60Grid.addEventListener('click', (e) => { const c = e.target.closest('.pg60-cell'); if (c) pg60OrgPick(+c.dataset.n, e); });
+pg60Grid.addEventListener('dblclick', (e) => { const c = e.target.closest('.pg60-cell'); if (c) { current = +c.dataset.n; pg60Organize(false); } });
+pg60Org.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-org]'); if (b) { run(b.dataset.org); return; }
+  if (e.target.closest('[data-org-done]')) pg60Organize(false);
+});
+const pg60Cols = () => Math.max(1, getComputedStyle(pg60Grid).gridTemplateColumns.split(' ').filter(Boolean).length);
+pg60Org.addEventListener('keydown', (e) => {
+  if ($('#dialog').open) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pg60Organize(false); return; }
+  const c = e.target.closest && e.target.closest('.pg60-cell'); if (!c) return;
+  const n = +c.dataset.n, last = doc.pages.length - 1, mod = isMac ? e.metaKey : e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); e.stopPropagation(); run('pg60_selAll'); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); pg60DeleteAsk(pg60Many() ? pg60Valid() : [n]); return; }
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); current = n; pg60Organize(false); return; }
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); e.stopPropagation(); if (!thumbChosen().has(n)) pg60OrgPick(n, {}); run(e.key === 'ArrowLeft' ? 'up' : 'down'); return; }
+  const cols = pg60Cols();
+  const to = { ArrowLeft: n - 1, ArrowRight: n + 1, ArrowUp: n - cols, ArrowDown: n + cols, Home: 0, End: last }[e.key];
+  if (to === undefined || e.altKey || mod) return;
+  e.preventDefault(); e.stopPropagation();
+  const k = Math.max(0, Math.min(last, to)), t = $(`.pg60-cell[data-n="${k}"]`, pg60Grid);
+  if (e.shiftKey) { const a = pg60Anchor ?? n; pg60Anchor = a; pg60Sel = new Set(Array.from({ length: Math.abs(k - a) + 1 }, (_, j) => Math.min(a, k) + j)); pg60Paint(); refreshRibbon(); }
+  else pg60OrgPick(k, {});
+  if (t) { t.focus(); t.scrollIntoView({ block: 'nearest' }); }
+  pg60OrgPaint();
+});
+// Escape anywhere (not in a dialog or menu) leaves the grid.
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pg60OrgOn() && !$('#dialog').open && pop.hidden) { e.preventDefault(); e.stopPropagation(); pg60Organize(false); } }, true);
+// Dragging: the pages go before or after the page dropped on, whichever half of it the pointer is over.
+let pg60OrgFrom = null;
+pg60Grid.addEventListener('dragstart', (e) => { const c = e.target.closest('.pg60-cell'); if (!c) return; pg60OrgFrom = +c.dataset.n; e.dataTransfer.setData('text/plain', c.dataset.n); e.dataTransfer.effectAllowed = 'move'; });
+const pg60OrgClear = () => $$('.pg60-drop-before, .pg60-drop-after', pg60Grid).forEach((x) => x.classList.remove('pg60-drop-before', 'pg60-drop-after'));
+const pg60OrgSide = (c, e) => { const r = c.getBoundingClientRect(); return e.clientX > r.left + r.width / 2 ? 'after' : 'before'; };
+pg60Grid.addEventListener('dragover', (e) => { const c = e.target.closest('.pg60-cell'); if (!c) return; e.preventDefault(); pg60OrgClear(); c.classList.add('pg60-drop-' + pg60OrgSide(c, e)); });
+pg60Grid.addEventListener('dragleave', (e) => { if (!pg60Grid.contains(e.relatedTarget)) pg60OrgClear(); });
+pg60Grid.addEventListener('dragend', () => { pg60OrgClear(); pg60OrgFrom = null; });
+pg60Grid.addEventListener('drop', (e) => {
+  const c = e.target.closest('.pg60-cell'); pg60OrgClear(); if (!c) return;
+  e.preventDefault();
+  const from = Number.isInteger(pg60OrgFrom) ? pg60OrgFrom : parseInt(e.dataTransfer.getData('text/plain'), 10); pg60OrgFrom = null;
+  if (Number.isNaN(from)) return;
+  pg60OrgMove(from, +c.dataset.n + (pg60OrgSide(c, e) === 'after' ? 1 : 0));
+});
+// Moves page `from` (and the other chosen pages, when it is one of them) to stand before index `to`.
+function pg60OrgMove(from, to) {
+  const idx = pg60Many() && pg60Valid().includes(from) ? pg60Valid() : [from];
+  const order = doc.pages.map((_, n) => n), set = new Set(idx);
+  const moved = order.slice(0, to).filter((n) => !set.has(n)).concat(idx, order.slice(to).filter((n) => !set.has(n)));
+  if (moved.every((x, k) => x === k)) return;
+  pg60MoveTo(idx, to);
+}
+cmd('pg60_organize', { label: 'Organize pages', rlabel: 'Organize', icon: 'layout-grid', enabled: has, pressed: pg60OrgOn, run: () => pg60Organize(!pg60OrgOn()) });
+FEATURE.onDocShown.push(() => { if (pg60OrgOn()) pg60Organize(false); });
+ribbonAdd('pages', 'View', ['pg60_organize'], 'Rotate');
+menuAdd('View', ['pg60_organize']);
+TEST_HOOKS.pg60Org = { on: pg60OrgOn, move: pg60OrgMove };
 
 addStyle(`
+.workspace > .viewer { grid-row: 1; grid-column: -2 / -1; }
+.pg60-org { grid-row: 1; grid-column: -2 / -1; z-index: 3; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--canvas); }
+.pg60-org[hidden] { display: none; }
+.app[data-organize="1"] .viewer { visibility: hidden; }
+.pg60-org-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.pg60-org-count { color: var(--ink-2); font-size: 13px; white-space: nowrap; margin-right: auto; }
+.pg60-org-tools { display: flex; gap: 4px; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.pg60-org-bar .btn { height: 32px; padding: 0 10px; white-space: nowrap; flex: none; }
+.pg60-org-bar .btn:disabled { opacity: .45; cursor: default; }
+.pg60-org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 20px 24px 64px; }
+.pg60-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; padding: 10px; border-radius: 10px; color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; }
+.pg60-cell-pic { display: flex; align-items: center; justify-content: center; height: 240px; max-width: 100%; }
+.pg60-cell canvas { display: block; max-width: 100%; max-height: 240px; box-shadow: var(--page-shadow); background: #fff; }
+.pg60-cell[aria-current="page"] { color: var(--accent); font-weight: 600; }
+.pg60-cell[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); outline: 2px solid var(--accent); outline-offset: -2px; }
+.pg60-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pg60-cell.ctx-for { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pg60-drop-before::before, .pg60-drop-after::after { content: ""; position: absolute; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: var(--accent); }
+.pg60-drop-before::before { left: -10px; }
+.pg60-drop-after::after { right: -10px; }
+.pg60-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.pg60-dlg .field select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .pg60-org-bar { padding: 4px 8px; gap: 4px; }
+  .pg60-org-bar .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .pg60-org-bar .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pg60-org-count { display: none; }
+  .pg60-org-tools { margin-right: auto; }
+  .pg60-org-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; padding: 12px 12px 48px; }
+  .pg60-cell { padding: 6px; }
+  .pg60-cell-pic { height: 170px; }
+  .pg60-cell canvas { max-height: 170px; }
+}
 .app[data-tool="crop"] .marks { cursor: crosshair; }
 .page svg.pg60-ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 .pg60-dim { fill: rgba(17, 12, 15, .55); }
@@ -7782,21 +8972,24 @@ async function ffLoadKnown() {
 FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLastRadio = null; ffLoadKnown(); });
 
 /* ---- form design and filling in ----
-   On the Forms tab new fields are designed: moved, resized, given properties. Anywhere else (or with Preview on)
-   they can be filled in at once, like the fields already in the PDF; what is typed is the field's value. */
-let ffPreviewOn = false;
-const ffDesign = () => S.ribbon === 'forms' && !ffPreviewOn;
+   New fields are designed (moved, resized, given properties) while a form tool or Edit fields is chosen on the Forms
+   tab. Otherwise (Select, Esc, another tab, or Fill in) they can be filled in at once, like the fields already in
+   the PDF; what is typed is the field's value. */
+const ffDesign = () => S.ribbon === 'forms' && ffIsTool();
 const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list']);
 function ffRedrawAll() { selectMark(null); views.forEach((v) => { if (v.rendered) { drawMarks(v); ffLayer(v); } }); }
-(FEATURE.onTab ||= []).push((k) => { if (k !== 'forms') ffPreviewOn = false; ffRedrawAll(); });
-// Choosing a form tool goes back to designing.
-function ffEndPreview() { if (ffPreviewOn) { ffPreviewOn = false; ffRedrawAll(); } }
+(FEATURE.onTab ||= []).push(() => { ffRedrawAll(); });
+// Choosing a form tool designs the form; Select (or Esc) fills it in.
+let ffWasDesign = false;
+new MutationObserver(() => { const d = ffDesign(); if (d !== ffWasDesign) { ffWasDesign = d; if (!d) ffSelectX(null); ffRedrawAll(); } }).observe(app, { attributes: true, attributeFilter: ['data-tool'] });
+function ffEndPreview() {}
+// Fill in: leave form design to try the fields; pressed again, back to Edit fields.
 function ffPreview() {
-  ffPreviewOn = !ffPreviewOn;
-  if (ffPreviewOn && ffIsTool()) setTool('select');
-  ffSelectX(null); ffRedrawAll(); refreshRibbon();
-  toast(ffPreviewOn ? 'Fill in the new fields to try them' : 'Back to designing the form');
+  if (ffIsTool()) { setTool('select'); toast('Fill in the fields to try them'); }
+  else { setTool('ff_edit'); ffLoadKnown(); }
 }
+Object.assign(TOOL_HINTS, { ff_edit: 'Click a field to select it; double-click for its properties' });
+for (const k of Object.keys(FF_KINDS)) TOOL_HINTS['ff_' + k] = 'Drag on the page';
 // An HTML control over a new field, to fill it in. A change is kept like any other (undo takes it back).
 function ffFillControl(m, fs) {
   let el;
@@ -8012,7 +9205,7 @@ function ffToolDown(kind) {
 for (const [kind, K] of Object.entries(FF_KINDS)) {
   const t = 'ff_' + kind;
   FEATURE.tools[t] = { down: ffToolDown(kind) };
-  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { const was = app.dataset.tool; ffEndPreview(); setTool(t); ffLoadKnown(); if (was !== t) toast(`Drag on the page to add a ${K.label.toLowerCase()}`); } });
+  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { setTool(t); ffLoadKnown(); } });
 }
 FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (the fields already in the PDF have their own layer)
   const hit = e.target.closest && e.target.closest('.ff-mk');
@@ -8022,7 +9215,7 @@ FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (th
   selectMark({ key: pageKey(v.entry), id: hit.dataset.id, entry: v.entry });
   if (m) startMove(e, v, m);
 } };
-cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { const was = app.dataset.tool; ffEndPreview(); setTool('ff_edit'); ffLoadKnown(); if (was !== 'ff_edit') toast('Click a field to select it; double-click it for its properties'); } });
+cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { setTool('ff_edit'); ffLoadKnown(); } });
 
 /* ---- fields already in the PDF: outlined while a form tool is chosen ---- */
 async function ffWidgets(v) {
@@ -8480,8 +9673,8 @@ FEATURE.markTypes.ff.menu = ['ffProps']; // in the mark's right-click menu
 cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffDeleteSelected });
 cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-search', enabled: has, run: ffRecognize });
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });
-cmd('ffFlatten', { label: 'Flatten form', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
-cmd('ffPreview', { label: 'Preview', icon: 'eye', enabled: () => has() && !ffFlat(), pressed: () => ffPreviewOn, run: ffPreview });
+cmd('ffFlatten', { label: 'Flatten form', tip: 'Flatten form: make the form fields part of the page when you save. Comments stay comments.', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
+cmd('ffPreview', { label: 'Fill in', icon: 'text-cursor-input', enabled: () => has() && !ffFlat(), pressed: () => S.ribbon === 'forms' && !ffIsTool(), run: ffPreview });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
 ribbonAdd('forms', 'Form', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);
@@ -9438,7 +10631,7 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
 /* ----- dialogs for the document-wide settings ----- */
 async function protFlatten() {
   const cur = protDM('protflatten');
-  const r = await protAsk('Flatten', `<p>Comments and form fields become part of the page when you save, so they look the same everywhere and can no longer be changed.</p>
+  const r = await protAsk('Flatten pages', `<p>Comments and form fields become part of the page when you save, so they look the same everywhere and can no longer be changed.</p>
     <div class="prot-checks">
       <label class="prot-check"><input type="checkbox" name="comments"${!cur || cur.comments ? ' checked' : ''}> Comments and notes</label>
       <label class="prot-check"><input type="checkbox" name="forms"${!cur || cur.forms ? ' checked' : ''}> Form fields</label>
@@ -9529,7 +10722,7 @@ cmd('protRedSearch', { label: 'Search and redact…', icon: 'search-check', enab
 cmd('protRedApply', { label: 'Apply redactions…', icon: 'file-check-2', enabled: () => has() && protHasPending(), run: protApply });
 cmd('protPassword', { label: 'Set password…', icon: 'lock', enabled: has, pressed: () => !!(protSec() && protSec().mode === 'set'), run: protPassword });
 cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: has, run: protRemoveSecurity });
-cmd('protFlatten', { label: 'Flatten…', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
+cmd('protFlatten', { label: 'Flatten pages…', tip: 'Flatten pages: make comments and form fields part of the page content when you save, so they can no longer be changed', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
 cmd('protCompress', { label: 'Compress…', icon: 'shrink', enabled: has, pressed: () => !!protDM('protcompress'), run: protCompressDlg });
 cmd('protClean', { label: 'Remove hidden info…', icon: 'eye-off', enabled: has, pressed: () => !!protDM('protclean'), run: protClean_ });
 ribbonAdd('protect', 'Redact', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
@@ -9977,11 +11170,7 @@ addStyle(`
 .crd-form { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; margin: 8px 0 4px; }
 .crd-form label { color: var(--ink-2); }
 .crd-form select, .crd-form input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; width: 100%; box-sizing: border-box; }
-.crd-seg { justify-self: start; display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); }
-.crd-seg label { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 7px; cursor: pointer; color: var(--ink-2); }
-.crd-seg input { position: absolute; opacity: 0; pointer-events: none; width: 1px; }
-.crd-seg label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
-.crd-seg label:has(input:focus-visible) { outline: 2px solid var(--accent); }
+.crd-seg { justify-self: start; }
 .crd-note { font-size: 12px; color: var(--ink-3); margin: 4px 0 0; }
 .crd-paste { border: 1.5px dashed var(--line); border-radius: 12px; padding: 22px 16px; text-align: center; color: var(--ink-2); background: var(--chrome); margin: 8px 0; outline: none; caret-color: transparent; }
 .crd-paste:focus { border-color: var(--accent); }
@@ -9996,6 +11185,7 @@ addStyle(`
 .crd-bar select { font: inherit; font-size: 13px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; min-width: 0; }
 .crd-bar .crd-voice { max-width: 190px; }
 .crd-bar .crd-where { font-size: 13px; color: var(--ink-3); padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crd-bar [data-crd="stop"] svg { fill: currentColor; width: 14px; height: 14px; } /* a filled square: the media Stop, not a checkbox */
 .crd-say { position: absolute; z-index: 1; pointer-events: none; background: color-mix(in srgb, var(--accent) 26%, transparent); border-radius: 2px; mix-blend-mode: multiply; }
 :root[data-theme="dark"] .crd-say { mix-blend-mode: normal; background: rgba(240, 136, 159, .30); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .crd-say { mix-blend-mode: normal; background: rgba(240, 136, 159, .30); } }
@@ -10074,7 +11264,7 @@ async function crdNewBlank() {
   const size = S.crdBlankSize || 'letter', land = !!S.crdBlankLandscape;
   const res = await dialog('New blank PDF', `<div class="crd-form">
     <label for="crdSize">Page size</label><select id="crdSize">${Object.entries(CRD_SIZES).map(([k, v]) => crdOpt(k, v[2], k === size)).join('')}</select>
-    <span id="crdOriL">Orientation</span><div class="crd-seg" role="radiogroup" aria-labelledby="crdOriL"><label><input type="radio" name="crdOri" value="p"${land ? '' : ' checked'}>Portrait</label><label><input type="radio" name="crdOri" value="l"${land ? ' checked' : ''}>Landscape</label></div>
+    <span id="crdOriL">Orientation</span><div class="seg crd-seg" role="radiogroup" aria-labelledby="crdOriL"><label><input type="radio" name="crdOri" value="p"${land ? '' : ' checked'}>Portrait</label><label><input type="radio" name="crdOri" value="l"${land ? ' checked' : ''}>Landscape</label></div>
     <label for="dlgInput">Pages</label><input id="dlgInput" type="number" min="1" max="500" value="1" inputmode="numeric">
   </div>`, [{ label: 'Cancel' }, { label: 'Create', value: 'ok', primary: true }]);
   if (res == null) return;
@@ -10223,7 +11413,7 @@ function crdSayBar() {
 function crdFillVoices() {
   const sel = $('#crdSayVoice'); if (!sel) return;
   const vs = crdVoices().slice().sort((a, b) => (b.default - a.default) || String(a.lang).localeCompare(b.lang) || String(a.name).localeCompare(b.name));
-  sel.innerHTML = crdOpt('', 'Default voice', !S.crdVoice) + vs.map((v) => crdOpt(v.voiceURI, `${v.name}${v.lang ? ' (' + v.lang + ')' : ''}`, v.voiceURI === S.crdVoice)).join('');
+  sel.innerHTML = crdOpt('', 'Voice', !S.crdVoice) + vs.map((v) => crdOpt(v.voiceURI, `${v.name}${v.lang ? ' (' + v.lang + ')' : ''}`, v.voiceURI === S.crdVoice)).join('');
 }
 try { if (window.speechSynthesis && speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', crdFillVoices); } catch {}
 function crdSayUi() {
@@ -10450,7 +11640,7 @@ cmd('crdPictures', { label: 'From pictures…', icon: 'images', run: () => crdPi
 cmd('crdClip', { label: 'From clipboard…', icon: 'clipboard-paste', run: crdFromClipboard });
 cmd('crdReadAloud', { label: 'Read aloud', icon: 'volume-2', enabled: has, pressed: () => crdSay.on, hidden: !('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function', run: () => (crdSay.on ? crdSayStop() : crdSayStart()) });
 cmd('crdReadMode', { label: 'Read mode', icon: 'book-open-text', key: 'Mod-Shift-r', enabled: () => has() || crdReading(), pressed: crdReading, run: () => crdReadMode() });
-cmd('crdExportPages', { label: 'Export all pages as pictures…', icon: 'image-down', enabled: has, run: crdExportPages });
+cmd('crdExportPages', { rlabel: 'All pages as pictures', label: 'Export all pages as pictures…', icon: 'gallery-vertical-end', enabled: has, run: crdExportPages });
 MENUS.find(([t]) => t === 'File')[1].unshift('crdNewBlank', 'crdNewPictures', 'crdNewClip', '-');
 { const f = MENUS.find(([t]) => t === 'File')[1]; f.splice(f.indexOf('exportImage') + 1, 0, 'crdExportPages'); }
 menuAdd('View', ['crdReadMode', 'crdReadAloud']);
@@ -10463,7 +11653,7 @@ ribbonAdd('export', 'Export', ['crdExportPages']);
     const row = document.createElement('div'); row.className = 'crd-drop-new';
     row.innerHTML = `<button class="btn link" type="button" data-cmd="crdNewBlank">${ic('file-plus')}<span>New blank PDF</span></button><button class="btn link" type="button" data-cmd="crdNewPictures">${ic('images')}<span>PDF from pictures</span></button>`;
     card.appendChild(row);
-    const p = $('p', card); if (p) p.textContent = 'Drop a PDF or pictures here, or open one from your device. It stays on this device.';
+    const p = $('p', card); if (p) p.textContent = coarse() ? 'Open a PDF from Files, or start a new one. It stays on this device.' : 'Drop a PDF or pictures here, or open one from your device. It stays on this device.';
   }
 }
 
@@ -10544,7 +11734,7 @@ async function beforeQuit() {
   clearTimeout(persistTimer);
   try { await persistNow(); } catch {}
   if (ask) {
-    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Documents on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Recent on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
     quitAsked = false;
     if (!a || (a === 'save' && !(await savePdf(false)))) { await NATIVE.core.invoke('hold_quit', { hold: false }).catch(() => {}); return; }
   }

@@ -11,7 +11,7 @@
    that has the phrase as a te mark (or the text of a tpara), all in one undo step.
    The module wraps a few core functions (onEditDown, onEditHover, openLineEditor, closeLineEditor, addText,
    editText): each wrapper calls the core one for everything it doesn't handle. */
-const TXT_SWATCHES = ['#111111', '#5F5F5F', '#E03131', '#2448C9', '#2F9E44', '#E8590C'];
+const TXT_SWATCHES = INK_COLORS;
 const TXT_FAMS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ['page', 'Same as the page']];
 const txtStdName = (fam, bold, italic) => ({ sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[fam] || 'Helvetica') + (bold && italic ? (fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : bold ? 'Bold' : italic ? (fam === 'serif' ? 'Italic' : 'Oblique') : '');
 const txtRound = (n) => Math.round(n * 10) / 10;
@@ -266,7 +266,7 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
-    `<span class="txt-grp txt-cols">${TXT_SWATCHES.map((c) => `<button type="button" class="swatch txt-sw" data-tf="color" data-c="${c}" style="background:${c}" title="Colour" aria-label="Colour ${c}"></button>`).join('')}<input type="color" data-tf="pick" title="More colours" aria-label="More colours"></span>`,
+    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"`, pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
   ].join('');
@@ -751,7 +751,7 @@ addStyle(`
   .txt-bar.floating .txt-cols { display: none; }
   .txt-bar.floating.txt-show-cols .txt-cols { display: inline-flex; }
   .txt-bar.floating.txt-show-cols .txt-grp:not(.txt-cols):not(.txt-colgrp) { display: none; }
-  .txt-bar.floating .txt-sw { width: 26px; height: 26px; }
+  .txt-bar.floating .txt-cols .swatch { width: 26px; height: 26px; }
 }
 .txt-grp { display: inline-flex; align-items: center; gap: 2px; padding-right: 6px; border-right: 1px solid var(--line); }
 .txt-grp:last-child { border-right: 0; padding-right: 0; }
@@ -760,8 +760,8 @@ addStyle(`
 .txt-b[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .txt-b [data-lucide], .txt-b svg { width: 16px; height: 16px; }
 .txt-size { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink); }
-.txt-sw { width: 20px; height: 20px; margin: 0 1px; }
-.txt-bar input[type="color"] { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+.txt-bar .sw-row { gap: 4px; }
+@media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
 .txt-bar select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; height: 30px; padding: 0 6px; }
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }

@@ -179,9 +179,10 @@ export default async (h) => {
     }
     await p.click('#moreBtn'); await p.waitForTimeout(100);
     const ids = await p.$$eval('#popover [data-cmd]', (e) => e.map((x) => x.dataset.cmd));
-    for (const id of ['shortcuts', 'legal', 'about', 'zoom100', 'sample']) ok(ids.includes(id), id + ' in More: ' + ids);
+    for (const id of ['legal', 'about', 'zoom100', 'sample']) ok(ids.includes(id), id + ' in More: ' + ids);
+    ok(!ids.includes('shortcuts'), 'no Keyboard shortcuts on a touch-only phone');
     const pb = await p.locator('#popover').boundingBox(); ok(pb.y + pb.height <= 844 && pb.x >= 0 && pb.x + pb.width <= 390, 'menu fits ' + JSON.stringify(pb));
-    await p.click('#popover [data-cmd="shortcuts"]'); await p.waitForSelector('#dialog[open]');
+    await p.keyboard.press('Escape'); await p.evaluate(() => window.__cowdreyPdf.run('shortcuts')); await p.waitForSelector('#dialog[open]');
     ok((await p.textContent('#dialog')).includes('Duplicate'), 'shortcuts list Duplicate');
     await p.keyboard.press('Escape'); await p.waitForTimeout(100);
     await run(p, 'pd_headfoot'); await p.waitForSelector('#dialog[open]');

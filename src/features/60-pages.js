@@ -548,7 +548,7 @@ ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_ins'], 'Remove');
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
 ribbonAdd('pages', 'Remove', ['pg60_split']);
-menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
+menuOrder('Pages', ['pg60_selAll', '-', 'rotL', 'rotR', 'rotAll', 'pg60_rotate', '-', 'up', 'down', 'pg60_reverse', 'dup', '-', 'blank', 'pg60_insert', 'pg60_replace', 'merge', '-', 'extract', 'pg60_split', '-', 'delPage', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
 /* ---- insert blank pages: size, orientation, how many and where ---- */
 const PG60_SIZES = { a4: [595.28, 841.89, 'A4 (210 × 297 mm)'], letter: [612, 792, 'Letter (8.5 × 11 in)'], legal: [612, 1008, 'Legal (8.5 × 14 in)'] };
