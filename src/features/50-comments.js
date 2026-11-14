@@ -244,8 +244,8 @@ async function cmSave({ L, out, p, m, ctx }) {
     AP: { N: out.context.register(ap) },
   });
   annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
-  annot.set(PDFName.of('T'), PDFHexString.fromText('Cowdrey.PDF'));
-  annot.set(PDFName.of('M'), PDFString.fromDate(new Date()));
+  const who = cmAuthorOf(m); if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
+  annot.set(PDFName.of('M'), PDFString.fromDate(m.at ? new Date(m.at) : new Date()));
   if (contents) annot.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
   const ref = out.context.register(annot);
   let annots = p.node.lookup(PDFName.of('Annots'));
@@ -527,33 +527,85 @@ async function cmItems() {
   const A = pdfjs.AnnotationType, items = [];
   for (let n = 0; n < doc.pages.length; n++) {
     const entry = doc.pages[n], own = doc.marks[pageKey(entry)] || [];
-    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m) }); }
+    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m), by: cmAuthorOf(m), at: m.at || 0 }); }
     const gone = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
     for (const a of await cmPageAnnots(entry)) {
       if (!a.rect || !a.id || [A.WIDGET, A.LINK, A.POPUP].includes(a.annotationType) || gone.has(a.id) || (a.parentId && gone.has(a.parentId))) continue;
       const ed = own.find((m) => m.type === 'ae' && m.ref === a.id && m.contents != null);
       const text = ed ? ed.contents : (a.contentsObj && a.contentsObj.str) || (Array.isArray(a.textContent) ? a.textContent.join(' ') : '') || '';
       const c = a.color && a.color.length === 3 ? `rgb(${a.color[0]},${a.color[1]},${a.color[2]})` : '#888888';
-      items.push({ n, entry, a, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: a.titleObj && a.titleObj.str });
+      items.push({ n, entry, a, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate) });
     }
   }
   items.sort((p, q) => p.n - q.n || q.y - p.y);
   return items;
 }
+/* ---- who wrote a comment, and when ---- */
+// S.author: the name written as the author of your comments. undefined: not asked yet; '': asked, left blank.
+const cmAuthorOf = (m) => m.author || S.author || '';
+// A PDF date (D:YYYYMMDDHHmmSS…) as milliseconds, or 0.
+function cmPdfDate(s) {
+  const m = /^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(String(s || '')); if (!m) return 0;
+  const t = Date.UTC(+m[1], (+m[2] || 1) - 1, +m[3] || 1, +m[4] || 0, +m[5] || 0, +m[6] || 0); return isFinite(t) ? t : 0;
+}
+const cmWhen = (t) => t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+async function cmAskName(first) {
+  const name = await dialog('Your name', `<p>${first ? 'Your comments show this name as their author. You can change it in the Comments panel.' : 'Shown as the author of your new comments.'}</p><label class="field"><span>Name</span><input id="dlgInput" type="text" value="${esc(S.author || '')}" autocomplete="name" maxlength="80"></label>`,
+    [{ label: first ? 'Skip' : 'Cancel' }, { label: 'Save', primary: true, input: true }]);
+  if (name == null) { if (first && S.author == null) { S.author = ''; saveSettings(); } return; }
+  S.author = name.trim(); saveSettings();
+  // The comment that brought the question up is yours too.
+  if (first && S.author && doc) for (const [key, list] of Object.entries(doc.marks)) if (key !== '__doc' && Array.isArray(list)) for (const m of list) if (m && m.at && !m.author) m.author = S.author;
+  cmPanelSoon();
+}
+// New comments get their date, and your name once you have given it; the first one asks for the name.
+const cmChanged0 = changed;
+changed = function (before) {
+  cmChanged0(before);
+  if (!doc) return;
+  let fresh = false;
+  for (const [key, list] of Object.entries(doc.marks)) {
+    if (key === '__doc' || !Array.isArray(list)) continue;
+    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
+  }
+  if (fresh && S.author == null && !CM.askingName) { CM.askingName = true; cmAskName(true).finally(() => { CM.askingName = false; }); }
+};
+const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
+const CM_EVERYONE = '*everyone*';
 async function cmRenderPanel() {
   const panel = $('#sidePanel');
   if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its comments.</p>'; return; }
   const token = ++CM.panelToken;
   await loadPdfjs();
-  const items = await cmItems();
+  const all = await cmItems();
   if (token !== CM.panelToken || S.side !== 'comments') return;
+  const types = [...new Set(all.map((it) => it.label))].sort(), authors = [...new Set(all.map((it) => it.by || ''))].sort();
+  const f = CM.filter || (CM.filter = { type: '', by: CM_EVERYONE, sort: S.cmSort || 'page' });
+  if (f.type && !types.includes(f.type)) f.type = '';
+  if (f.by !== CM_EVERYONE && !authors.includes(f.by)) f.by = CM_EVERYONE;
+  const items = all.filter((it) => (!f.type || it.label === f.type) && (f.by === CM_EVERYONE || (it.by || '') === f.by));
+  // Newest or oldest first; comments without a date go last.
+  if (f.sort !== 'page') items.sort((p, q) => (!p.at - !q.at) || (f.sort === 'new' ? q.at - p.at : p.at - q.at) || p.n - q.n || q.y - p.y);
   CM.items = items;
-  panel.innerHTML = !items.length
+  const opt = (v, t, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(t)}</option>`;
+  const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'not set'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
+  const bar = all.length ? `<div class="cm-filters">
+    <label><span>Type</span><select data-cm-f="type">${opt('', 'All types', !f.type)}${types.map((t) => opt(t, t, f.type === t)).join('')}</select></label>
+    <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
+    <label><span>Sort</span><select data-cm-f="sort">${CM_SORTS.map(([v, t]) => opt(v, t, f.sort === v)).join('')}</select></label></div>` : '';
+  const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
+  panel.innerHTML = you + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
-    : `<div class="cm-head">${items.length} comment${items.length === 1 ? '' : 's'}</div><ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span></span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by ? `<span class="cm-by">${esc(it.by)}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button></li>`).join('')}</ul>`;
+    : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span></span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
   $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => cmGoTo(items[+b.dataset.cmGo]));
   $$('[data-cm-del]', panel).forEach((b) => b.onclick = () => cmDelete(items[+b.dataset.cmDel]));
+  $$('[data-cm-f]', panel).forEach((el) => el.onchange = () => {
+    const k = el.dataset.cmF; f[k] = el.value;
+    if (k === 'sort') { S.cmSort = el.value; saveSettings(); }
+    cmRenderPanel().then(() => { const again = $(`#sidePanel [data-cm-f="${k}"]`); if (again) again.focus(); });
+  });
+  const nb = $('[data-cm-name]', panel); if (nb) nb.onclick = () => cmAskName(false);
 }
 function cmGoTo(it) {
   goPage(it.n);
@@ -589,6 +641,12 @@ addStyle(`
 .app[data-tool="cmstamp"] .marks { cursor: copy; }
 .marks .cm-draft { pointer-events: none; }
 .cm-head { font-size: 12px; color: var(--ink-3); padding: 4px 8px 6px; }
+.cm-you { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-3); padding: 2px 8px 8px; }
+.cm-you b { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.cm-you .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
+.cm-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 8px 6px; }
+.cm-filters label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 11px; color: var(--ink-3); }
+.cm-filters select { font: inherit; font-size: 12px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; min-width: 0; width: 100%; height: 30px; }
 .cm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .cm-item { display: flex; align-items: flex-start; border-radius: 8px; }
 .cm-item:hover { background: var(--hover); }
@@ -610,3 +668,4 @@ addStyle(`
 .cm-stamp-face small { font-weight: 400; font-size: 9px; }
 `);
 TEST_HOOKS.cmItems = async () => (await cmItems()).map((it) => [it.label, it.n + 1, it.text, !!it.m]);
+TEST_HOOKS.setAuthor = (name) => { S.author = name; saveSettings(); };
