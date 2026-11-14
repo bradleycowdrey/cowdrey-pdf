@@ -133,7 +133,7 @@ async function showDoc(d, loaded) {
   pds.forEach((pd, k) => pdfDocs.set(k, pd));
   syncHiddenComments(); // before any page is drawn
   $('#drop').hidden = true;
-  setTitle(); setSaved(true);
+  setTitle(); setSaved(true, true);
   await layoutPages();
   renderSide();
   store.set('current', d.id);
@@ -141,9 +141,12 @@ async function showDoc(d, loaded) {
   return true;
 }
 function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
-function setSaved(saved) {
+// `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
+// Documents with changes says they are kept there.
+function setSaved(saved, opened) {
   if (doc) doc.dirty = !saved;
-  $('#saveState').innerHTML = !doc ? '' : saved ? `${ic('check')} ${doc.path ? 'Saved' : 'Saved on this device'}` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
+  const kept = opened && doc && Object.values(doc.marks).some((l) => l && l.length);
+  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Documents' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -250,11 +253,12 @@ async function goToDest(dest) {
     if (n >= 0) goPage(n);
   } catch {}
 }
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 function goPage(n, instant) {
   if (!views.length) return;
   n = Math.max(0, Math.min(views.length - 1, n));
   current = n;
-  viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant ? 'instant' : 'smooth' });
+  viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant || reduceMotion.matches ? 'instant' : 'smooth' });
   updateStatus();
 }
 viewer.addEventListener('scroll', () => {
@@ -404,6 +408,42 @@ function deleteSelected() {
   if (k < 0) return;
   list.splice(k, 1); const entry = selMark.entry; selMark = null; redrawPage(entry); changed(before);
 }
+// Moves mark m to its original o moved by dx, dy points (dragging, arrow keys, pasting).
+function offsetMark(m, o, dx, dy) {
+  if (o.rects) m.rects = o.rects.map((r) => [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy]);
+  if (o.pts) m.pts = o.pts.map((p) => [p[0] + dx, p[1] + dy]);
+  if ('x1' in o) { m.x1 = o.x1 + dx; m.x2 = o.x2 + dx; m.y1 = o.y1 + dy; m.y2 = o.y2 + dy; }
+  if ('x' in o) { m.x = o.x + dx; m.y = o.y + dy; }
+  if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
+}
+const selectedMark = () => selMark && (doc.marks[selMark.key] || []).find((m) => m.id === selMark.id);
+// Arrow keys: 1 pt a press (10 with Shift), along the page as it is shown.
+function nudgeMark(key, big) {
+  const m = selectedMark(); if (!m) return false;
+  const d = big ? 10 : 1, v = views.find((x) => x.entry === selMark.entry);
+  let [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[key];
+  if (v) { const [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, dx * scale, dy * scale); [dx, dy] = [x1 - x0, y1 - y0]; }
+  const before = snapshot();
+  offsetMark(m, JSON.parse(JSON.stringify(m)), dx, dy);
+  redrawPage(selMark.entry); changed(before);
+  return true;
+}
+// Copy, paste and duplicate the selected mark. A paste lands on the page in view, 10 pt down and right of the
+// original (or of the last paste), and is selected.
+let markClip = null;
+function copyMark() { const m = selectedMark(); if (!m) return false; markClip = { m: JSON.stringify(m), n: 0 }; toast('Copied'); return true; }
+function pasteMark(src) {
+  const clip = src || markClip; if (!clip || !has()) return false;
+  const entry = src ? selMark.entry : doc.pages[current];
+  const m = JSON.parse(clip.m), k = ++clip.n * 10;
+  m.id = uid(); delete m.pending;
+  const before = snapshot();
+  offsetMark(m, JSON.parse(clip.m), k, -k);
+  marksOf(entry).push(m); changed(before);
+  selectMark({ key: pageKey(entry), id: m.id, entry });
+  return true;
+}
+const duplicateMark = () => { const m = selectedMark(); return !!m && pasteMark({ m: JSON.stringify(m), n: 0 }); };
 function startMove(e, v, m) {
   if (!m) return;
   e.preventDefault();
@@ -413,13 +453,7 @@ function startMove(e, v, m) {
   let moved = false;
   const move = (ev) => {
     const [cx, cy] = toPdf(v, ...localPoint(ev, v));
-    const dx = cx - sx, dy = cy - sy;
-    const o = JSON.parse(orig);
-    if (o.rects) m.rects = o.rects.map((r) => [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy]);
-    if (o.pts) m.pts = o.pts.map((p) => [p[0] + dx, p[1] + dy]);
-    if ('x1' in o) { m.x1 = o.x1 + dx; m.x2 = o.x2 + dx; m.y1 = o.y1 + dy; m.y2 = o.y2 + dy; }
-    if ('x' in o) { m.x = o.x + dx; m.y = o.y + dy; }
-    if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
+    offsetMark(m, JSON.parse(orig), cx - sx, cy - sy);
     moved = true; drawMarks(v);
   };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (moved) changed(before); };
@@ -510,7 +544,7 @@ function setTool(t) {
   app.dataset.tool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
-  if (t === 'edit' && was !== 'edit') toast('Click text to change it, or a picture or comment to move or delete it');
+  if (t === 'edit' && was !== 'edit') toast(`${matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click'} text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
   if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
   refreshRibbon();
 }
@@ -894,13 +928,17 @@ function openLineEditor(v, m, isNew) {
   const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
-    if (e.key === 'Escape') { e.preventDefault(); closeLineEditor(false); }
+    if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
   ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed) closeLineEditor(true); }, 0));
 }
+// Escape, like clicking away, keeps what was typed; Undo takes it back. Says so once a session.
+let keptHinted = false;
+function keptHint(changedSomething) { if (changedSomething && !keptHinted) { keptHinted = true; toast(`Change kept. ${fmtKey('Mod-z')} undoes it.`); } }
+// Returns true if the edit changed the page.
 function closeLineEditor(commit) {
-  if (!lineEditor) return;
+  if (!lineEditor) return false;
   const { ed, v, m, isNew } = lineEditor; lineEditor = null;
   editingIds.delete(m.id);
   const text = ed.textContent.replace(/[\r\n]+/g, ' ');
@@ -910,8 +948,9 @@ function closeLineEditor(commit) {
     if (text === m.orig && !isNew) list.splice(list.indexOf(m), 1); // back to the original: no edit left
     else { m.text = text; if (isNew) list.push(m); }
     changed(before);
+    drawMarks(v); return true;
   }
-  drawMarks(v);
+  drawMarks(v); return false;
 }
 
 // Erase area: drag a rectangle; everything in it is cleared to the colour around it.
@@ -1738,8 +1777,19 @@ $('#findInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.
 $('#findNext').onclick = () => stepFind(1); $('#findPrev').onclick = () => stepFind(-1); $('#findClose').onclick = closeFind;
 
 /* ---------------- sidebar: pages, outline, documents ---------------- */
-function setSide(t) { S.side = t; saveSettings(); $$('.side-tabs [data-side]').forEach((b) => b.setAttribute('aria-selected', b.dataset.side === t)); renderSide(); }
+function syncSideTabs() { $$('.side-tabs [data-side]').forEach((b) => { const on = b.dataset.side === S.side; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; b.id ||= 'side-' + b.dataset.side; if (on) $('#sidePanel').setAttribute('aria-labelledby', b.id); }); }
+function setSide(t) { S.side = t; saveSettings(); syncSideTabs(); renderSide(); }
 $$('.side-tabs [data-side]').forEach((b) => b.addEventListener('click', () => setSide(b.dataset.side)));
+// Arrow keys, Home and End move between tabs (and choose them), as in any tab list.
+function tabKeys(e, list, choose) {
+  const k = list.indexOf(document.activeElement); if (k < 0) return;
+  const n = { ArrowRight: k + 1, ArrowLeft: k - 1, ArrowDown: k + 1, ArrowUp: k - 1, Home: 0, End: list.length - 1 }[e.key];
+  if (n === undefined) return;
+  e.preventDefault(); e.stopPropagation();
+  choose(list[(n + list.length) % list.length]);
+}
+$('.side-tabs').addEventListener('keydown', (e) => tabKeys(e, $$('.side-tabs [data-side]'), (b) => { setSide(b.dataset.side); b.focus(); }));
+$('#sideClose').onclick = () => toggleSidebar(false);
 let thumbIO;
 async function renderSide() {
   const panel = $('#sidePanel');
@@ -1781,12 +1831,28 @@ async function drawThumb(t) {
   try { await page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: v2 }).promise; } catch {}
 }
 function markThumb() { $$('.thumb').forEach((t) => t.setAttribute('aria-current', +t.dataset.n === current)); }
+const isPhone = () => matchMedia('(max-width: 760px)').matches;
+let sideOpener = null; // what had focus when the phone sidebar opened; it gets it back on closing
 function toggleSidebar(on) {
-  const phone = matchMedia('(max-width: 760px)').matches;
-  if (phone) { app.dataset.sidebar = on ?? app.dataset.sidebar !== 'open' ? 'open' : 'on'; if (on === false) app.dataset.sidebar = 'on'; return; }
+  const phone = isPhone();
+  if (phone) {
+    const was = app.dataset.sidebar === 'open', open = on ?? !was;
+    app.dataset.sidebar = open ? 'open' : 'on';
+    if (open && !was) { sideOpener = document.activeElement; const t = $('.side-tabs [aria-selected="true"]'); setTimeout(() => t && t.focus({ preventScroll: true }), 0); }
+    if (!open && was) { const f = sideOpener; sideOpener = null; if (f && f.isConnected && f !== document.body) f.focus({ preventScroll: true }); }
+    refreshRibbon(); return;
+  }
   S.sidebar = on ?? !S.sidebar; saveSettings(); app.dataset.sidebar = S.sidebar ? 'on' : 'off';
   if (doc && S.zoom === 'fit') setTimeout(() => layoutPages(true), 50);
 }
+
+// Phone: the sidebar is an overlay over a scrim; a tap outside it closes it (and does nothing else).
+document.addEventListener('pointerdown', (e) => {
+  if (app.dataset.sidebar !== 'open' || !isPhone() || e.target.closest('#sidebar')) return;
+  e.preventDefault(); e.stopPropagation(); toggleSidebar(false);
+  const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); }; // the click that follows the tap
+  window.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => window.removeEventListener('click', eat, true), 500);
+}, true);
 
 /* ---------------- library (IndexedDB): every PDF you open, kept on this device ---------------- */
 let dbp;
@@ -1858,7 +1924,7 @@ async function makeSample() {
   y = para(p, 'A free PDF viewer and editor by Bradley Cowdrey. Your PDFs stay on your device.', y, { size: 14, color: grey, after: 22 });
   y = para(p, 'Try it on this page', y, { size: 16, font: bold, color: maroon, after: 2 });
   for (const t of [
-    'Highlight: select these words with the mouse, then choose Highlight on the Mark up tab.',
+    'Highlight: select these words with the mouse, then choose Highlight on the Comment tab.',
     'Draw, add a box, type text or leave a note anywhere on the page.',
     'Sign: draw your signature once and place it wherever you need it.',
     'Find: press Cmd+F (Ctrl+F on Windows) and search for the word pelican.',
@@ -1927,7 +1993,7 @@ let dialogChain = Promise.resolve();
 function dialog(...args) { const p = dialogChain.then(() => showDialog(...args)); dialogChain = p.catch(() => {}); return p; }
 function showDialog(title, body, actions, setup) {
   const dlg = $('#dialog');
-  dlg.innerHTML = `<div class="dlg-head"><h2>${esc(title)}</h2><button class="icon-btn" type="button" data-x aria-label="Close">${ic('x')}</button></div><div class="dlg-body">${body}</div><div class="dlg-foot">${actions.map((a, k) => `<button type="button" class="btn${a.primary ? ' primary' : ''}${a.danger ? ' danger' : ''}" data-a="${k}">${esc(a.label)}</button>`).join('')}</div>`;
+  dlg.innerHTML = `<div class="dlg-head"><h2 id="dlgTitle">${esc(title)}</h2><button class="icon-btn" type="button" data-x aria-label="Close">${ic('x')}</button></div><div class="dlg-body">${body}</div><div class="dlg-foot">${actions.map((a, k) => `<button type="button" class="btn${a.primary ? ' primary' : ''}${a.danger ? ' danger' : ''}" data-a="${k}">${esc(a.label)}</button>`).join('')}</div>`;
   icons();
   if (setup) setup(dlg);
   return new Promise((res) => {
@@ -1942,12 +2008,15 @@ function showDialog(title, body, actions, setup) {
     });
     dlg.oncancel = (e) => { e.preventDefault(); done(null); };
     dlg.showModal();
+    // Start on the first field, or else on the main button, never on the close button.
+    const first = $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    if (first && document.activeElement === $('[data-x]', dlg)) first.focus();
     const inp = $('#dlgInput', dlg); if (inp) { inp.focus(); inp.select && inp.select(); inp.onkeydown = (e) => { if (e.key === 'Enter' && (inp.tagName !== 'TEXTAREA' || e.metaKey || e.ctrlKey)) { e.preventDefault(); done(inp.value); } }; }
   });
 }
 function askText(title, note, value, ok, password, multiline) {
   const field = multiline ? `<textarea id="dlgInput" rows="4">${esc(value)}</textarea>` : `<input id="dlgInput" type="${password ? 'password' : 'text'}" value="${esc(value)}" autocomplete="off">`;
-  return dialog(title, `${note ? `<p>${esc(note)}</p>` : ''}<label class="field">${field}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
+  return dialog(title, `${note ? `<p id="dlgNote">${esc(note)}</p>` : ''}<label class="field">${field.replace('id="dlgInput"', `id="dlgInput" aria-labelledby="dlgTitle"${note ? ' aria-describedby="dlgNote"' : ''}`)}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
 }
 // Links open in the browser. The apps' web views ignore target=_blank and window.open, so they hand links to the system.
 const openExternal = (url) => { if (NATIVE && NATIVE.opener) NATIVE.opener.openUrl(url).catch(() => {}); else window.open(url, '_blank', 'noopener'); };
@@ -1975,28 +2044,31 @@ cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFile
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
-cmd('merge', { label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
-cmd('exportImage', { label: 'Export this page as an image', icon: 'image-down', enabled: has, run: exportImage });
+cmd('merge', { rlabel: 'Add PDFs', label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
+cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
 cmd('undo', { label: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
 cmd('redo', { label: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
-const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
+cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
+cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
+cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
+const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
 for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
 cmd('rotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: has, run: () => rotatePage(-90) });
 cmd('rotR', { label: 'Rotate right', icon: 'rotate-cw', key: 'Mod-r', enabled: has, run: () => rotatePage(90) });
-cmd('rotAll', { label: 'Rotate all pages', icon: 'refresh-cw', enabled: has, run: () => rotateAll(90) });
-cmd('up', { label: 'Move page up', icon: 'arrow-up', enabled: () => has() && current > 0, run: () => movePage(-1) });
-cmd('down', { label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
+cmd('rotAll', { rlabel: 'Rotate all', label: 'Rotate all pages', icon: 'refresh-cw', enabled: has, run: () => rotateAll(90) });
+cmd('up', { rlabel: 'Move up', label: 'Move page up', icon: 'arrow-up', enabled: () => has() && current > 0, run: () => movePage(-1) });
+cmd('down', { rlabel: 'Move down', label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
 cmd('dup', { label: 'Duplicate page', icon: 'copy-plus', enabled: has, run: duplicatePage });
-cmd('blank', { label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
+cmd('blank', { rlabel: 'Blank page', label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
 cmd('delPage', { label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage });
 cmd('extract', { label: 'Extract pages…', icon: 'file-output', enabled: has, run: extractPages });
-cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => S.sidebar, run: () => toggleSidebar() });
+cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => isPhone() ? app.dataset.sidebar === 'open' : S.sidebar, run: () => toggleSidebar() });
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
 cmd('zoomIn', { label: 'Zoom in', icon: 'zoom-in', key: 'Mod-=', enabled: has, run: () => setZoom(Math.min(400, Math.round(scale * 100) + 10)) });
 cmd('zoomOut', { label: 'Zoom out', icon: 'zoom-out', key: 'Mod--', enabled: has, run: () => setZoom(Math.max(25, Math.round(scale * 100) - 10)) });
@@ -2012,9 +2084,9 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
   ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
-  ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find']],
+  ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image', '-', 'tool_edit', 'tool_erase']],
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -2023,18 +2095,40 @@ function menuHtml(ids) {
   return ids.filter(shown).map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
 }
 const pop = $('#popover');
+let popAnchor = null; // the button that opened the popover; Escape gives it focus back
 function openPopover(anchor, html) {
+  popAnchor = anchor;
   pop.innerHTML = html; pop.hidden = false; icons();
+  if (anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
   const r = anchor.getBoundingClientRect();
-  pop.style.left = Math.min(r.left, innerWidth - pop.offsetWidth - 8) + 'px'; pop.style.top = r.bottom + 4 + 'px';
+  pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
   const f = $('.mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; $$('.menubar > button').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.menubar > button, #moreBtn').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+// Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
+// goes back to the menu's button, Tab closes.
+pop.addEventListener('keydown', (e) => {
+  const items = $$('.mi:not([disabled])', pop), i = items.indexOf(document.activeElement);
+  const go = (n) => { e.preventDefault(); if (items.length) items[(n + items.length) % items.length].focus(); };
+  if (e.key === 'ArrowDown') go(i + 1);
+  else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
+  else if (e.key === 'Home') go(0);
+  else if (e.key === 'End') go(-1);
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const a = popAnchor; closePopover(); if (a && a.isConnected) a.focus(); }
+  else if (e.key === 'Tab') closePopover();
+  else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && popAnchor && popAnchor.closest('.menubar')) {
+    e.preventDefault();
+    const bs = $$('.menubar > button'), k = bs.indexOf(popAnchor), n = bs[(k + (e.key === 'ArrowRight' ? 1 : -1) + bs.length) % bs.length];
+    closePopover(); n.focus(); n.click();
+  } else return;
+  e.stopPropagation();
+});
 pop.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd); });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
-  $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" data-menu="${k}" aria-haspopup="menu" aria-expanded="false">${t}</button>`).join('');
+  $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
   $$('#menubar > button').forEach((b) => b.addEventListener('click', () => {
     const open = b.getAttribute('aria-expanded') === 'true';
     closePopover(); if (open) return;
@@ -2042,11 +2136,33 @@ function renderMenubar() {
   }));
 }
 renderMenubar();
+// On the menu bar: Left and Right move between menus, Down (or Enter, Space) opens one.
+$('#menubar').addEventListener('keydown', (e) => {
+  const bs = $$('#menubar > button'), k = bs.indexOf(document.activeElement); if (k < 0) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Home' || e.key === 'End') {
+    e.preventDefault(); e.stopPropagation();
+    const n = bs[e.key === 'Home' ? 0 : e.key === 'End' ? bs.length - 1 : (k + (e.key === 'ArrowRight' ? 1 : -1) + bs.length) % bs.length];
+    bs.forEach((b) => { b.tabIndex = b === n ? 0 : -1; }); n.focus();
+  } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (bs[k].getAttribute('aria-expanded') !== 'true') bs[k].click(); }
+});
+// Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
+function moreMenuHtml() {
+  const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids : [])));
+  return MENUS.map(([t, ids], k) => {
+    const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
+    return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
+  }).join('');
+}
+$('#moreBtn').addEventListener('click', () => {
+  const b = $('#moreBtn'), open = b.getAttribute('aria-expanded') === 'true';
+  closePopover(); if (open) return;
+  b.setAttribute('aria-expanded', 'true'); openPopover(b, moreMenuHtml());
+});
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], ['Colour', 'COLORS'], ['Add', ['sign']]]],
   pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
@@ -2067,18 +2183,66 @@ function menuAdd(title, ids) {
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
+// The commands on a tab that are pressed for the tool in use now (the tool's own buttons, not other toggles).
+function toolOnTab(tab) {
+  const t = app.dataset.tool, ids = (RIBBON[tab] ? RIBBON[tab][1] : []).flatMap(([, x]) => Array.isArray(x) ? x : []);
+  if (t === 'select') return true;
+  const probe = () => ids.filter((id) => C[id] && C[id].pressed && C[id].pressed());
+  const now = probe(); app.dataset.tool = '__probe'; const other = probe(); app.dataset.tool = t;
+  return now.some((id) => !other.includes(id));
+}
+function chooseTab(k) {
+  S.ribbon = k; saveSettings();
+  // A tool from another tab would stay on unseen (and, say, keep a form from being filled): go back to Select.
+  if (!toolOnTab(k)) { setTool('select'); pendingImage = null; }
+  renderRibbon();
+}
+// The ribbon tabs are a tab list: one Tab stop, arrow keys move between tabs, focus stays on the tab chosen.
+$('#ribbonTabs').addEventListener('keydown', (e) => tabKeys(e, $$('#ribbonTabs [data-rt]'), (b) => { chooseTab(b.dataset.rt); $(`#ribbonTabs [data-rt="${b.dataset.rt}"]`).focus(); }));
 function renderRibbon() {
-  $('#ribbonTabs').innerHTML = Object.entries(RIBBON).filter(([, [, groups]]) => groups.length).map(([k, [t]]) => `<button type="button" role="tab" data-rt="${k}" aria-selected="${S.ribbon === k}">${t}</button>`).join('');
-  $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => { S.ribbon = b.dataset.rt; saveSettings(); renderRibbon(); });
+  const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest('#ribbonTabs');
+  $('#ribbonTabs').innerHTML = Object.entries(RIBBON).filter(([, [, groups]]) => groups.length).map(([k, [t]]) => `<button type="button" role="tab" id="rt-${k}" data-rt="${k}" aria-controls="ribbonBody" aria-selected="${S.ribbon === k}" tabindex="${S.ribbon === k ? 0 : -1}">${t}</button>`).join('');
+  $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => chooseTab(b.dataset.rt));
+  if (focused) { const t = $(`#ribbonTabs [data-rt="${S.ribbon}"]`); t && t.focus({ preventScroll: true }); }
+  $('#ribbonBody').setAttribute('aria-labelledby', 'rt-' + (RIBBON[S.ribbon] ? S.ribbon : 'home'));
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
-  $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group"><div class="r-items">${ids === 'COLORS'
+  $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
     ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
-    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
+    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].rlabel || C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
   icons(); refreshRibbon();
+  const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
+  if (tab) scrollIntoRow(tabs, tab);
+  const on = $('#ribbonBody [aria-pressed="true"]'); if (on) scrollIntoRow($('#ribbonBody'), on); else $('#ribbonBody').scrollLeft = 0;
+  ribbonEdges();
 }
+// Scrolls a row sideways just enough to show el (never the page up or down).
+function scrollIntoRow(row, el) {
+  const r = row.getBoundingClientRect(), b = el.getBoundingClientRect(), pad = 48;
+  if (b.left < r.left + pad) row.scrollLeft -= r.left + pad - b.left;
+  else if (b.right > r.right - pad) row.scrollLeft += b.right - (r.right - pad);
+}
+// A row with more to see past an edge fades at that edge.
+function ribbonEdges() {
+  for (const row of [$('#ribbonBody'), $('#ribbonTabs')]) {
+    row.classList.toggle('more-l', row.scrollLeft > 1);
+    row.classList.toggle('more-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
+  }
+}
+$('#ribbonBody').addEventListener('scroll', ribbonEdges, { passive: true });
+$('#ribbonTabs').addEventListener('scroll', ribbonEdges, { passive: true });
+window.addEventListener('resize', ribbonEdges);
+// Keyboard focus that lands on a button out of view brings it into view.
+$('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
+  // A group of commands that only work on a selection (a picture…) shows only while they can be used.
+  let shift = false;
+  $$('#ribbonBody .r-group').forEach((g) => {
+    const bs = $$('[data-cmd]', g); if (!bs.length || !bs.every((b) => C[b.dataset.cmd].contextual)) return;
+    const hide = bs.every((b) => b.disabled); if (g.hidden !== hide) { g.hidden = hide; shift = true; }
+  });
+  if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
   scheduleMacMenu();
 }
@@ -2087,8 +2251,16 @@ document.addEventListener('click', (e) => { const b = e.target.closest('[data-cm
 /* ---------------- keys ---------------- */
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open) return;
+  if (!pop.hidden && pop.contains(document.activeElement)) return; // the menu's own keys
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
   const mod = isMac ? e.metaKey : e.ctrlKey;
+  // A selected mark: copy, paste and duplicate it (text being selected or typed keeps the usual keys).
+  if (mod && !typing && !e.shiftKey && !e.altKey && ['c', 'v', 'd'].includes(e.key.toLowerCase())) {
+    const k = e.key.toLowerCase(), noText = !String(getSelection() || '').length;
+    const done = k === 'c' ? noText && copyMark() : k === 'v' ? pasteMark() : duplicateMark();
+    if (done) e.preventDefault();
+    return;
+  }
   if (mod) {
     const key = (e.shiftKey ? 'Shift-' : '') + (e.altKey ? 'Alt-' : '') + e.key.toLowerCase();
     const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
@@ -2098,7 +2270,9 @@ document.addEventListener('keydown', (e) => {
   }
   if (typing) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && (selMark || selContent)) { e.preventDefault(); deleteSelected(); }
-  if (e.key === 'Escape') { if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
+  if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
+  // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
+  if (/^Arrow/.test(e.key) && !e.altKey && selMark) { e.preventDefault(); nudgeMark(e.key, e.shiftKey); return; }
   if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
   if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
@@ -2235,7 +2409,7 @@ if (NATIVE) {
 /* ---------------- start ---------------- */
 applyTheme();
 app.dataset.sidebar = S.sidebar ? 'on' : 'off';
-$$('.side-tabs [data-side]').forEach((b) => b.setAttribute('aria-selected', b.dataset.side === S.side));
+syncSideTabs();
 renderRibbon(); renderSide(); updateStatus(); icons();
 // A file the app was opened with (Finder, Files, Open with) comes first; otherwise the last document comes back.
 serial(async () => {

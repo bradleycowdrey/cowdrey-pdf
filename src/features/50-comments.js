@@ -482,11 +482,11 @@ cmd('cm_fill', {
 cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (matchMedia('(max-width: 760px)').matches) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
 ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Add');
 ribbonAdd('markup', 'Shapes', ['cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud'], 'Add');
-ribbonAdd('markup', 'Text', ['cm_callout', 'cm_typewriter'], 'Add');
-ribbonAdd('markup', 'Stamp', ['cm_stamp'], 'Add');
-ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Edit');
-ribbonAdd('markup', 'Edit', ['cm_list']);
-menuAdd('Mark up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
+ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add');
+ribbonAdd('markup', 'Add', ['cm_stamp']);
+ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up'); // right after Colour
+ribbonAdd('markup', 'Comments', ['cm_list']);
+menuAdd('Comment', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
 // A colour picked while a comment is selected changes that comment's colour.
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#ribbonBody [data-color]'); if (!b) return;

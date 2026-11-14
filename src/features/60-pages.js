@@ -415,8 +415,8 @@ FEATURE.savePage.push(({ p, entry }) => {
 /* ---- commands, ribbon, menu ---- */
 cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app.dataset.tool === 'crop', run: () => { if (app.dataset.tool === 'crop') return setTool('select'); setTool('crop'); toast('Drag a box on the page to keep just that part'); } });
 cmd('pg60_crop', { label: 'Crop margins…', icon: 'scan', enabled: has, run: () => pg60CropDialog() });
-cmd('pg60_split', { label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
-cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
+cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
+cmd('pg60_insert', { rlabel: 'Insert PDF', label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });

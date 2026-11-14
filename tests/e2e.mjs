@@ -41,9 +41,9 @@ await test('mark up: highlight selected text, draw, box, text, note; undo and re
   await p.mouse.move(g.x + 100, g.y + 500); await p.mouse.down(); await p.mouse.move(g.x + 300, g.y + 540, { steps: 8 }); await p.mouse.up();
   await p.click('[data-cmd="tool_rect"]');
   await p.mouse.move(g.x + 90, g.y + 480); await p.mouse.down(); await p.mouse.move(g.x + 320, g.y + 560, { steps: 4 }); await p.mouse.up();
-  await p.click('[data-cmd="tool_text"]'); await p.mouse.click(g.x + 100, g.y + 620);
+  await p.click('[data-rt="edit"]'); await p.click('[data-cmd="tool_text"]'); await p.mouse.click(g.x + 100, g.y + 620);
   await p.fill('#dlgInput', 'Approved'); await p.click('#dialog .btn.primary');
-  await p.click('[data-cmd="tool_note"]'); await p.mouse.click(g.x + 400, g.y + 620);
+  await p.click('[data-rt="markup"]'); await p.click('[data-cmd="tool_note"]'); await p.mouse.click(g.x + 400, g.y + 620);
   await p.fill('#dlgInput', 'Check the numbers'); await p.click('#dialog .btn.primary');
   eq(await marks(p), ['hl', 'ink', 'rect', 'text', 'note']);
   await p.keyboard.press('Control+z'); eq((await marks(p)).length, 4, 'undo');
@@ -147,7 +147,7 @@ await test('Mac app: opens a PDF from Finder, saves back to the same file, menu 
   eq(w, [['/Users/me/Report.pdf', true]], 'saved in place');
   const menus = await p.evaluate(() => (window.__calls.find(([c]) => c === 'set_menu') || [])[1]);
   const titles = menus.menus.map((m) => m.title);
-  eq([titles.slice(0, 5), titles[titles.length - 1]], [['File', 'Edit', 'View', 'Mark up', 'Pages'], 'Help']);
+  eq([titles.slice(0, 5), titles[titles.length - 1]], [['File', 'Edit', 'View', 'Comment', 'Pages'], 'Help']);
   // Every entry must be one the Mac side understands, or the whole menu bar is refused.
   const bad = menus.menus.flatMap((m) => m.items).filter((x) => !x || typeof x !== 'object' || !['item', 'sep', 'native'].includes(x.kind) || (x.kind === 'item' && !(x.id && x.label)));
   eq(bad, [], 'menu items'); ok(menus.menus[0].items.some((x) => x.id === 'cmd:save'), 'File has Save');
@@ -357,13 +357,16 @@ await test('Edit PDF: a line is rewritten in its own font and colour; the saved 
   ok(t.includes('Budget: 45,500 dollars, on track.') && !t.includes('42,000'), t);
   eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
 });
-await test('Edit PDF: Escape cancels; typing the original back removes the edit; undo brings it back', async () => {
+await test('Edit PDF: Escape keeps the edit and Undo takes it back; typing the original back removes the edit; undo brings it back', async () => {
   const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
   await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
   const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Prepared' }).first().boundingBox();
   await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
-  await p.keyboard.type('Nothing kept'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
-  eq(await marks(p), [], 'Escape keeps nothing');
+  await p.keyboard.type('Kept by Escape'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+  eq(await marks(p), ['te'], 'Escape keeps the edit');
+  ok(/undoes it/.test(await p.textContent('#toast')), 'says how to undo');
+  await p.keyboard.press('Control+z'); await p.waitForTimeout(200);
+  eq(await marks(p), [], 'Undo cancels it');
   await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor');
   await p.keyboard.type('Prepared by Alex on 4 March.'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
   eq(await marks(p), ['te']);

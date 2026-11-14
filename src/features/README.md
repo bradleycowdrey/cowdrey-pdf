@@ -9,9 +9,13 @@ every core function and value (`doc`, `views`, `scale`, `marksOf`, `toView`, `to
 
 Plug in through:
 
-- `cmd(id, { label, icon, key?, enabled?, pressed?, hidden?, run })` — a command (Lucide icon names).
+- `cmd(id, { label, icon, key?, enabled?, pressed?, hidden?, rlabel?, contextual?, run })` — a command (Lucide
+  icon names). `rlabel` is a shorter label for the ribbon (two lines at most). A ribbon group whose commands are
+  all `contextual` (they work on a selection) shows only while one of them is enabled. Switching ribbon tabs goes
+  back to the Select tool unless the tab has a button pressed for the tool in use (`pressed` must depend on
+  `app.dataset.tool`).
 - `ribbonAdd(tab, group, ids, before?)` — tabs: `home`, `edit`, `markup` (shown as Comment), `pages`, `forms`,
-  `protect`, `export`. `menuAdd(menuTitle, ids)` — menus: File, Edit, View, Mark up, Pages, Help (others are made
+  `protect`, `export`. `menuAdd(menuTitle, ids)` — menus: File, Edit, View, Comment, Pages, Help (others are made
   before Help).
 - Tools: add `cmd('tool_x', { label, icon, enabled: has, pressed: () => app.dataset.tool === 'x', run: () => setTool('x') })`
   and `FEATURE.tools.x = { down(e, v), move?(e, v) }`. The marks layer takes pointer events for any tool other

@@ -367,5 +367,5 @@ cmd('pd_headfoot', { label: 'Header & footer…', icon: 'panel-top', enabled: ha
 cmd('pd_bates', { label: 'Bates numbering…', icon: 'hash', enabled: has, run: () => pdEdit('pd_bates') });
 cmd('pd_manage', { label: 'Manage page design…', icon: 'layers', enabled: has, run: pdManage });
 ribbonAdd('edit', 'Page design', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
-menuAdd('Tools', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
+menuAdd('Edit', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 TEST_HOOKS.pdItems = () => pdItems();
