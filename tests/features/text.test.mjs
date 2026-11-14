@@ -31,6 +31,8 @@ async function makeDoc(h) {
   h.fs.writeFileSync(file, await pdf.save());
   return file;
 }
+// A paragraph that grew past its lines asks what to do: these tests let it run.
+const letRun = async (p) => { await p.waitForSelector('#dialog[open] h2:has-text("This paragraph is now longer than the space it had")'); await p.click('#dialog .dlg-foot button:has-text("Let it run")'); await p.waitForTimeout(300); };
 const allMarks = (p) => p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat());
 const items = (p, n) => p.evaluate(async (n) => { const tc = await window.__cowdreyPdf.views()[n].page.getTextContent(); return tc.items.filter((i) => i.str.trim()).map((i) => ({ s: i.str, x: i.transform[4], y: i.transform[5], h: Math.hypot(i.transform[2], i.transform[3]), w: i.width })); }, n);
 const fontNames = (h, d, n = 0) => { const L = h.require(h.path.join(h.root, 'desktop/node_modules/pdf-lib')); const fd = d.getPage(n).node.Resources().lookup(L.PDFName.of('Font')); return fd.entries().map(([, r]) => String(d.context.lookup(r).get(L.PDFName.of('BaseFont')))); };
@@ -54,6 +56,7 @@ export default async (h) => {
     await p.keyboard.press('Control+a'); await p.keyboard.type(NEW);
     await shot(p, 'paragraph-editing.png');
     await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
+    ok(!(await p.$('#dialog[open]')), 'not asked: it fits the four lines');
     const [m] = await allMarks(p);
     eq([m.type, m.src.length, m.text], ['tpara', 4, NEW]);
     ok(m.lines.length >= 4 && m.lines.join(' ') === NEW, 'wrapped: ' + JSON.stringify(m.lines));
@@ -204,7 +207,7 @@ export default async (h) => {
     await p.click('.txt-bar [data-tf="center"]');
     await p.keyboard.press('End'); await p.keyboard.type(' Added at the end of the paragraph, which wraps again.');
     await shot(p, 'rotated-editing.png');
-    await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
+    await p.keyboard.press('Control+Enter'); await letRun(p);
     const [m] = await allMarks(p);
     eq([m.type, m.align], ['tpara', 'center']);
     ok(m.lines.length >= 5, 'wrapped again: ' + JSON.stringify(m.lines));
@@ -216,6 +219,44 @@ export default async (h) => {
     ok(text.includes('wraps again') && !/June\.$/.test(text.trim()), text);
     ok(it.every((i) => Math.abs(i.x + i.w / 2 - (72 + m.wrap / 2)) < 2), 'centred in the block: ' + JSON.stringify(it));
     await shot(p, 'rotated-saved.png');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('text: a paragraph that grows past its lines warns, and shrinks to fit or runs on only when asked', async () => {
+    const p = await open(); await openPdf(p, file, 'Notes.pdf');
+    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
+    ok(!(await p.$('.txt-over')), 'no warning while it fits');
+    await p.keyboard.press('End'); await p.keyboard.type(' A last short sentence was added here.');
+    await p.waitForSelector('.txt-over'); ok((await p.textContent('.txt-over')).includes('This paragraph is now longer than the space it had'), 'warned while typing');
+    await shot(p, 'paragraph-longer.png');
+    // committing asks; Keep editing goes back to the text as typed
+    await p.keyboard.press('Control+Enter'); await p.waitForSelector('#dialog[open] .dlg-foot');
+    eq(await p.$$eval('#dialog .dlg-foot button', (b) => b.map((x) => x.textContent)), ['Keep editing', 'Let it run', 'Shrink to fit']);
+    ok((await p.textContent('#dialog .dlg-body')).includes('it had 4'), await p.textContent('#dialog .dlg-body'));
+    await shot(p, 'paragraph-longer-ask.png');
+    await p.click('#dialog .dlg-foot button:has-text("Keep editing")'); await p.waitForSelector('.txt-editor');
+    ok((await p.inputValue('.txt-editor')).endsWith('A last short sentence was added here.'), 'still editing what was typed');
+    eq(await allMarks(p), [], 'nothing changed yet');
+    // Shrink to fit in the editor: the warning goes, and it commits without asking
+    await p.click('.txt-over [data-shrink]'); await p.waitForTimeout(200);
+    ok(!(await p.$('.txt-over')), 'fits now');
+    await p.keyboard.press('Control+Enter'); await p.waitForTimeout(400);
+    ok(!(await p.$('#dialog[open]')), 'not asked when it fits');
+    let [m] = await allMarks(p);
+    ok(m.size < 12 && m.size >= 12 * .7, 'smaller: ' + m.size);
+    ok((m.lines.length - 1) * m.lead0 * m.size / m.size0 <= 3 * m.lead0 + .5, 'inside the four lines: ' + JSON.stringify(m.lines));
+    const out = await savedOf(p); await reopen(p, out);
+    const low = Math.min(...(await items(p, 0)).filter((i) => i.y > 600 && i.y < 690).map((i) => i.y));
+    ok(low >= 632 - .5, 'the last line is no lower than the old last line: ' + low);
+    // Asked on commit, Shrink to fit there too
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit')); await p.waitForTimeout(300);
+    const [x2, y2] = await at(p, 120, 667); await p.mouse.click(x2, y2); await p.waitForSelector('.txt-editor');
+    await p.keyboard.press('End'); await p.keyboard.type(' One more line of words to push it down again.');
+    await p.keyboard.press('Control+Enter'); await p.waitForSelector('#dialog[open] .dlg-foot');
+    await p.click('#dialog .dlg-foot button:has-text("Shrink to fit")'); await p.waitForTimeout(400);
+    [m] = (await allMarks(p)).filter((x) => x.type === 'tpara');
+    ok(m && m.size < 12 && (m.lines.length - 1) * m.lead0 * m.size / m.size0 <= 3 * m.lead0 + .5, 'shrunk to fit: ' + (m && m.size));
     eq(p.errors, []); await p.ctx.close();
   });
 
