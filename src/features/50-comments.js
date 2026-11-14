@@ -471,7 +471,7 @@ function cmSetWidth(w) {
   renderRibbon(); toast(`Line width ${w} pt`);
 }
 cmd('cm_width', {
-  get label() { return `Width ${S.width} pt`; }, icon: 'baseline', enabled: has,
+  get label() { return `Width ${S.width} pt`; }, icon: 'baseline', enabled: has, sub: CM_WIDTHS.map((w) => 'cm_w' + w), subLabel: 'Line width',
   run: () => {
     const b = $('#ribbonBody [data-cmd="cm_width"]');
     if (!b) { cmSetWidth(CM_WIDTHS[(CM_WIDTHS.indexOf(S.width) + 1) % CM_WIDTHS.length]); return; }
@@ -497,7 +497,7 @@ ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
 ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
 ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
-menuAdd('Comment', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
+menuOrder('Comment', ['tool_select', '-', 'tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'tool_note', 'cm_typewriter', 'cm_callout', '-', 'tool_pen', 'tool_rect', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_stamp', 'sign', '-', 'cm_fill', 'cm_list']);
 
 /* ---- the Comments panel: every comment on every page, yours and the PDF's own ---- */
 const CM_SUBTYPES = { Text: 'Note', FreeText: 'Text box', Line: 'Line', Square: 'Rectangle', Circle: 'Oval', Polygon: 'Polygon', PolyLine: 'Polyline', Highlight: 'Highlight', Underline: 'Underline', Squiggly: 'Squiggly', StrikeOut: 'Strikethrough', Stamp: 'Stamp', Caret: 'Caret', Ink: 'Drawing', FileAttachment: 'Attachment', Sound: 'Sound', Redact: 'Redaction' };

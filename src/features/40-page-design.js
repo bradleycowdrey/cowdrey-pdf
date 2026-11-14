@@ -155,12 +155,9 @@ addStyle(`
 .pd-form .field input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 36px; }
 .pd-form .pd-check { flex-direction: row; align-items: center; gap: 8px; align-self: end; height: 36px; margin: 6px 0; color: var(--ink); }
 .pd-form .pd-check input { width: auto; accent-color: var(--accent); }
-.pd-seg { justify-self: start; display: inline-flex; border: 1px solid var(--line); border-radius: 17px; padding: 2px; gap: 2px; margin: 4px 0 6px; }
-.pd-seg label { position: relative; }
-.pd-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.pd-seg span { display: block; padding: 5px 14px; border-radius: 15px; color: var(--ink-2); font-weight: 500; }
-.pd-seg input:checked + span { background: var(--accent-soft); color: var(--ink); }
-.pd-seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pd-seg { justify-self: start; margin: 4px 0 6px; }
+.pd-form .sw-row input[type="color"] { padding: 0; border: 0; height: 100%; }
+.pd-form .sw-row { min-height: 36px; }
 .pd-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; }
 .pd-tokens { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 6px; font-size: 12px; color: var(--ink-3); }
 .pd-tokens .btn { height: 26px; padding: 0 10px; font-size: 12px; }
@@ -325,10 +322,10 @@ const pdField = {
   text: (k, label, val, o = {}) => `<label class="field${o.wide ? ' pd-wide' : ''}"><span>${label}</span><input data-k="${k}" type="text" value="${esc(val ?? '')}" placeholder="${esc(o.ph || '')}" autocomplete="off"></label>`,
   num: (k, label, val, min, max, step = 1) => `<label class="field"><span>${label}</span><input data-k="${k}" type="number" inputmode="decimal" value="${esc(val)}" min="${min}" max="${max}" step="${step}"></label>`,
   sel: (k, label, val, opts) => `<label class="field"><span>${label}</span><select data-k="${k}">${opts.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(val) ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`,
-  color: (k, label, val) => `<label class="field"><span>${label}</span><input data-k="${k}" type="color" value="${esc(val)}"></label>`,
+  color: (k, label, val, colors = INK_COLORS) => `<div class="field"><span id="pd-${k}-l">${label}</span><span class="sw-row" role="group" aria-labelledby="pd-${k}-l">${swatchesHtml(colors, { now: val, attrs: (c) => `data-pdc="${k}" data-c="${c}"`, pick: `data-k="${k}" value="${esc(val)}"` })}</span></div>`,
   check: (k, label, val) => `<label class="field pd-check"><input data-k="${k}" type="checkbox"${val ? ' checked' : ''}><span>${label}</span></label>`,
   slider: (k, label, val) => `<label class="field"><span>${label} <b data-out="${k}">${val}%</b></span><input data-k="${k}" type="range" min="0" max="100" step="5" value="${esc(val)}"></label>`,
-  seg: (k, val, opts) => `<div class="pd-seg pd-wide" role="radiogroup">${opts.map(([v, t]) => `<label><input type="radio" name="pd-${k}" data-k="${k}" value="${v}"${v === val ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`,
+  seg: (k, val, opts) => `<div class="seg pd-seg pd-wide" role="radiogroup">${opts.map(([v, t]) => `<label><input type="radio" name="pd-${k}" data-k="${k}" value="${v}"${v === val ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`,
   range: (val) => pdField.text('range', 'Pages', val, { ph: 'All pages, or e.g. 1-3, 5' }),
   font: (m) => pdField.sel('font', 'Font', m.font, PD_FONTS) + pdField.num('size', 'Size (pt)', m.size, 4, 400) + pdField.color('color', 'Colour', m.color) + pdField.check('bold', 'Bold', m.bold),
   margins: (m) => pdField.num('mTop', 'Top margin (mm)', m.mTop, 0, 200, .5) + pdField.num('mBottom', 'Bottom margin (mm)', m.mBottom, 0, 200, .5) + pdField.num('mSide', 'Side margins (mm)', m.mSide, 0, 200, .5),
@@ -342,6 +339,7 @@ function pdRead(dlg, m) {
     else m[k] = el.value;
   }
   for (const o of $$('[data-out]', dlg)) o.textContent = m[o.dataset.out] + '%';
+  for (const b of $$('[data-pdc]', dlg)) b.setAttribute('aria-pressed', b.dataset.c.toLowerCase() === String(m[b.dataset.pdc]).toLowerCase());
   for (const el of $$('[data-show]', dlg)) { const [k, v] = el.dataset.show.split('='); el.hidden = m[k] !== v; }
   return m;
 }
@@ -365,7 +363,7 @@ function pdBody(type, m) {
     ${F.sel('front', 'Layer', m.front, [['front', 'In front of the page'], ['behind', 'Behind the page']])}
     ${F.range(m.range)}</div>`;
   if (type === 'pd_background') return `<div class="pd-form">${F.seg('kind', m.kind, [['color', 'Colour'], ['image', 'Picture']])}
-    <div class="pd-form pd-wide" data-show="kind=color"${m.kind !== 'color' ? ' hidden' : ''}>${F.color('color', 'Colour', m.color)}</div>
+    <div class="pd-form pd-wide" data-show="kind=color"${m.kind !== 'color' ? ' hidden' : ''}>${F.color('color', 'Colour', m.color, PALE_COLORS)}</div>
     <div class="pd-form pd-wide" data-show="kind=image"${m.kind !== 'image' ? ' hidden' : ''}>${pdPicField(m, 'Picture')}${F.sel('fit', 'Size', m.fit, [['stretch', 'Fill the page'], ['fit', 'Fit inside the page']])}</div>
     ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range)}</div>
     <p class="pd-note">The background goes behind everything on the page.</p>`;
@@ -445,6 +443,7 @@ async function pdEdit(type, existing) {
         preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
+      body.addEventListener('click', (e) => { const s = e.target.closest('[data-pdc]'); if (!s) return; const i = $(`input[data-k="${s.dataset.pdc}"]`, body); i.value = s.dataset.c.toLowerCase(); i.dispatchEvent(new Event('input', { bubbles: true })); });
       body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
       for (const b of $$('[data-token]', dlg)) b.onclick = () => {
         const el = focusSlot || $('[data-k="bc"]', dlg), at = el.selectionStart ?? el.value.length;

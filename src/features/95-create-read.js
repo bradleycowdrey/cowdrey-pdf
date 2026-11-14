@@ -16,11 +16,7 @@ addStyle(`
 .crd-form { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; margin: 8px 0 4px; }
 .crd-form label { color: var(--ink-2); }
 .crd-form select, .crd-form input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; width: 100%; box-sizing: border-box; }
-.crd-seg { justify-self: start; display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); }
-.crd-seg label { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 7px; cursor: pointer; color: var(--ink-2); }
-.crd-seg input { position: absolute; opacity: 0; pointer-events: none; width: 1px; }
-.crd-seg label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
-.crd-seg label:has(input:focus-visible) { outline: 2px solid var(--accent); }
+.crd-seg { justify-self: start; }
 .crd-note { font-size: 12px; color: var(--ink-3); margin: 4px 0 0; }
 .crd-paste { border: 1.5px dashed var(--line); border-radius: 12px; padding: 22px 16px; text-align: center; color: var(--ink-2); background: var(--chrome); margin: 8px 0; outline: none; caret-color: transparent; }
 .crd-paste:focus { border-color: var(--accent); }
@@ -35,6 +31,7 @@ addStyle(`
 .crd-bar select { font: inherit; font-size: 13px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; min-width: 0; }
 .crd-bar .crd-voice { max-width: 190px; }
 .crd-bar .crd-where { font-size: 13px; color: var(--ink-3); padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crd-bar [data-crd="stop"] svg { fill: currentColor; width: 14px; height: 14px; } /* a filled square: the media Stop, not a checkbox */
 .crd-say { position: absolute; z-index: 1; pointer-events: none; background: color-mix(in srgb, var(--accent) 26%, transparent); border-radius: 2px; mix-blend-mode: multiply; }
 :root[data-theme="dark"] .crd-say { mix-blend-mode: normal; background: rgba(240, 136, 159, .30); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .crd-say { mix-blend-mode: normal; background: rgba(240, 136, 159, .30); } }
@@ -113,7 +110,7 @@ async function crdNewBlank() {
   const size = S.crdBlankSize || 'letter', land = !!S.crdBlankLandscape;
   const res = await dialog('New blank PDF', `<div class="crd-form">
     <label for="crdSize">Page size</label><select id="crdSize">${Object.entries(CRD_SIZES).map(([k, v]) => crdOpt(k, v[2], k === size)).join('')}</select>
-    <span id="crdOriL">Orientation</span><div class="crd-seg" role="radiogroup" aria-labelledby="crdOriL"><label><input type="radio" name="crdOri" value="p"${land ? '' : ' checked'}>Portrait</label><label><input type="radio" name="crdOri" value="l"${land ? ' checked' : ''}>Landscape</label></div>
+    <span id="crdOriL">Orientation</span><div class="seg crd-seg" role="radiogroup" aria-labelledby="crdOriL"><label><input type="radio" name="crdOri" value="p"${land ? '' : ' checked'}>Portrait</label><label><input type="radio" name="crdOri" value="l"${land ? ' checked' : ''}>Landscape</label></div>
     <label for="dlgInput">Pages</label><input id="dlgInput" type="number" min="1" max="500" value="1" inputmode="numeric">
   </div>`, [{ label: 'Cancel' }, { label: 'Create', value: 'ok', primary: true }]);
   if (res == null) return;
@@ -262,7 +259,7 @@ function crdSayBar() {
 function crdFillVoices() {
   const sel = $('#crdSayVoice'); if (!sel) return;
   const vs = crdVoices().slice().sort((a, b) => (b.default - a.default) || String(a.lang).localeCompare(b.lang) || String(a.name).localeCompare(b.name));
-  sel.innerHTML = crdOpt('', 'Default voice', !S.crdVoice) + vs.map((v) => crdOpt(v.voiceURI, `${v.name}${v.lang ? ' (' + v.lang + ')' : ''}`, v.voiceURI === S.crdVoice)).join('');
+  sel.innerHTML = crdOpt('', 'Voice', !S.crdVoice) + vs.map((v) => crdOpt(v.voiceURI, `${v.name}${v.lang ? ' (' + v.lang + ')' : ''}`, v.voiceURI === S.crdVoice)).join('');
 }
 try { if (window.speechSynthesis && speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', crdFillVoices); } catch {}
 function crdSayUi() {
@@ -489,7 +486,7 @@ cmd('crdPictures', { label: 'From pictures…', icon: 'images', run: () => crdPi
 cmd('crdClip', { label: 'From clipboard…', icon: 'clipboard-paste', run: crdFromClipboard });
 cmd('crdReadAloud', { label: 'Read aloud', icon: 'volume-2', enabled: has, pressed: () => crdSay.on, hidden: !('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function', run: () => (crdSay.on ? crdSayStop() : crdSayStart()) });
 cmd('crdReadMode', { label: 'Read mode', icon: 'book-open-text', key: 'Mod-Shift-r', enabled: () => has() || crdReading(), pressed: crdReading, run: () => crdReadMode() });
-cmd('crdExportPages', { label: 'Export all pages as pictures…', icon: 'image-down', enabled: has, run: crdExportPages });
+cmd('crdExportPages', { rlabel: 'All pages as pictures', label: 'Export all pages as pictures…', icon: 'gallery-vertical-end', enabled: has, run: crdExportPages });
 MENUS.find(([t]) => t === 'File')[1].unshift('crdNewBlank', 'crdNewPictures', 'crdNewClip', '-');
 { const f = MENUS.find(([t]) => t === 'File')[1]; f.splice(f.indexOf('exportImage') + 1, 0, 'crdExportPages'); }
 menuAdd('View', ['crdReadMode', 'crdReadAloud']);
@@ -502,7 +499,7 @@ ribbonAdd('export', 'Export', ['crdExportPages']);
     const row = document.createElement('div'); row.className = 'crd-drop-new';
     row.innerHTML = `<button class="btn link" type="button" data-cmd="crdNewBlank">${ic('file-plus')}<span>New blank PDF</span></button><button class="btn link" type="button" data-cmd="crdNewPictures">${ic('images')}<span>PDF from pictures</span></button>`;
     card.appendChild(row);
-    const p = $('p', card); if (p) p.textContent = 'Drop a PDF or pictures here, or open one from your device. It stays on this device.';
+    const p = $('p', card); if (p) p.textContent = coarse() ? 'Open a PDF from Files, or start a new one. It stays on this device.' : 'Drop a PDF or pictures here, or open one from your device. It stays on this device.';
   }
 }
 

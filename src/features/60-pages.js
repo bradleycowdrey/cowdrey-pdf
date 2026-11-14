@@ -541,7 +541,7 @@ ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_ins'], 'Remove');
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
 ribbonAdd('pages', 'Remove', ['pg60_split']);
-menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
+menuOrder('Pages', ['pg60_selAll', '-', 'rotL', 'rotR', 'rotAll', 'pg60_rotate', '-', 'up', 'down', 'pg60_reverse', 'dup', '-', 'blank', 'pg60_insert', 'pg60_replace', 'merge', '-', 'extract', 'pg60_split', '-', 'delPage', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
 addStyle(`
 .app[data-tool="crop"] .marks { cursor: crosshair; }

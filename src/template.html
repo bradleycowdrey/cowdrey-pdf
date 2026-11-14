@@ -64,7 +64,13 @@ button { font: inherit; color: inherit; }
 .more-btn { display: none; }
 
 /* ribbon */
-.ribbon { border-bottom: 1px solid var(--line); }
+.ribbon { border-bottom: 1px solid var(--line); position: relative; }
+/* Scroll arrows at a wide ribbon's faded edges, for a mouse (a finger swipes; the keyboard scrolls to what has focus) */
+.r-scroll { display: none; position: absolute; bottom: 20px; z-index: 2; width: 24px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2); box-shadow: 0 2px 8px rgba(0,0,0,.12); cursor: pointer; place-items: center; }
+.r-scroll:hover { color: var(--ink); background: var(--hover); }
+.r-scroll svg { width: 16px; height: 16px; }
+.r-scroll-l { left: 4px; } .r-scroll-r { right: 4px; }
+@media (hover: hover) and (pointer: fine) { .ribbon.more-l .r-scroll-l, .ribbon.more-r .r-scroll-r { display: grid; } }
 .ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; }
 .ribbon-tabs::-webkit-scrollbar { display: none; }
 .ribbon-tabs button { flex: none; }
@@ -99,6 +105,9 @@ button { font: inherit; color: inherit; }
 @media (pointer: coarse) { .rb-more { width: 28px; } }
 .rb[data-rmenu] > span svg { width: 12px; height: 12px; vertical-align: -2px; margin-left: 1px; }
 .rb[data-rmenu][aria-expanded="true"] { background: var(--hover); }
+.rb[data-on] { background: var(--accent-soft); color: var(--accent); }
+.pop-sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 8px; }
+.r-swatches .sw-more svg { width: 10px; height: 10px; }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
 /* compact ribbon groups (wide screens): small buttons in two rows, with names (r-rows) or as icons (r-icons) */
@@ -120,11 +129,9 @@ button { font: inherit; color: inherit; }
 .side-top { display: flex; align-items: center; }
 .side-top .side-tabs { flex: 1; min-width: 0; }
 .side-close { display: none; }
-.side-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
-.side-tabs button { border: 0; background: none; border-radius: 7px; padding: 5px 4px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
-.side-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-:root[data-theme="dark"] .side-tabs button[aria-selected="true"] { background: var(--press); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side-tabs button[aria-selected="true"] { background: var(--press); } }
+.side-tabs { grid-template-columns: repeat(3, 1fr); }
+.side-tabs.seg { display: grid; grid-auto-flow: row; margin: 10px; }
+.side-tabs.seg > button { padding: 5px 4px; }
 .side-panel { flex: 1; overflow: auto; padding: 0 10px 16px; }
 .thumbs { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 4px; }
 .thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--ink-3); font-size: 12px; }
@@ -197,6 +204,10 @@ button { font: inherit; color: inherit; }
 .popover { position: fixed; z-index: 50; min-width: 220px; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
 .popover[hidden] { display: none; }
 .mi { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; cursor: pointer; color: var(--ink); }
+.mi > .mchk { display: none; }
+.popover.has-chk .mi { grid-template-columns: 16px 22px 1fr auto; gap: 6px; }
+.popover.has-chk .mi > .mchk { display: grid; grid-row: 1; grid-column: 1; place-items: center; color: var(--accent); }
+.mi > .mchk svg { width: 16px; height: 16px; stroke-width: 2.25; }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: none; }
 .mi:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .mh { font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 6px 8px 2px; }
@@ -219,10 +230,24 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .field input, .field textarea { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .sig-pad { width: 100%; height: 160px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; touch-action: none; display: block; }
 .sig-pad.typed { cursor: default; }
-.sig-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 0 0 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
-.sig-modes button { border: 0; background: none; border-radius: 7px; padding: 6px 4px; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; min-height: 32px; }
-.sig-modes button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-.sig-modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sig-modes.seg { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0 0 10px; }
+/* One segmented control for a choice of a few (tabs, or radio buttons in labels): a grey track, the chosen one raised. */
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); }
+.seg > button, .seg > label { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; border: 0; background: none; border-radius: 7px; padding: 5px 12px; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; text-align: center; }
+.seg > label > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.seg > button:hover, .seg > label:hover { color: var(--ink); }
+.seg > [aria-selected="true"], .seg > label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+:root[data-theme="dark"] .seg > :is([aria-selected="true"], label:has(input:checked)) { background: var(--press); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg > :is([aria-selected="true"], label:has(input:checked)) { background: var(--press); } }
+.seg > button:focus-visible, .seg > label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* One colour picker: named round swatches, then + for any other colour (the system picker). */
+.sw-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sw-row .swatch, .pop-sw .swatch { width: 24px; height: 24px; }
+.sw-more { position: relative; display: inline-grid; place-items: center; background: conic-gradient(#E03131, #FFD43B, #69DB7C, #74C0FC, #2448C9, #F783AC, #E03131); color: #fff; }
+.sw-more svg { width: 14px; height: 14px; stroke-width: 3; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
+.sw-more input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.sw-more:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.swatch[data-color="#111111"], .swatch[data-c="#111111"] { box-shadow: 0 0 0 1px var(--ink-3); } /* black stays visible on the dark theme */
 .sig-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0; }
 .sig-row[hidden], .sig-row [hidden] { display: none; }
 .sig-row .field { flex: 1; margin: 0; }
@@ -264,6 +289,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 6px; }
   .side-tabs button { min-height: 40px; }
   .r-label { display: none; }
+  .r-group { padding: 0 4px; }
   .ribbon-body { height: 72px; }
   .ribbon-tabs button { min-height: 40px; }
   .rb { min-width: 44px; min-height: 44px; max-width: 76px; font-size: 11px; }
@@ -286,6 +312,33 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .rb { justify-content: center; align-self: center; position: relative; }
   .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .statusbar { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px)); }
+}
+/* Touch: iOS zooms the whole app into any field with text under 16px, so fields are 16px there (not the text
+   editors on the page, which follow the page's size). Without a keyboard, menus show no shortcuts. */
+@media (max-width: 760px), (pointer: coarse) {
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"]), select, textarea):not(.page *, .txt-editor) { font-size: max(16px, 1em) !important; }
+}
+@media (hover: none) and (pointer: coarse) { .mi .k { display: none; } }
+/* A finger needs bigger swatches (one row of them on the ribbon of a touch screen). */
+@media (pointer: coarse) {
+  .swatch, .sw-row .swatch, .pop-sw .swatch { width: 32px; height: 32px; }
+  .sw-more svg, .r-swatches .sw-more svg { width: 16px; height: 16px; }
+  .r-swatches .r-items { gap: 4px; }
+}
+@media (pointer: coarse) and (min-width: 761px) { .r-swatches .r-items { grid-template-columns: repeat(8, 32px); grid-template-rows: 32px; } }
+/* Forced colours (Windows High Contrast): colours stay on swatches and on the page itself; what is pressed, chosen
+   or selected gets a Highlight outline, since backgrounds and shadows are replaced there. */
+@media (forced-colors: active) {
+  .page, .swatch, .sig-use, .sig-font { forced-color-adjust: none; }
+  .swatch { border-color: Canvas; box-shadow: 0 0 0 1px CanvasText; }
+  .swatch[aria-pressed="true"], .swatch[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 2px; }
+  .rb[aria-pressed="true"], .rb[data-on], .txt-b[aria-pressed="true"], .ribbon-tabs [aria-selected="true"], .side-tabs [aria-selected="true"], .seg > [aria-selected="true"], .seg > label:has(input:checked),
+  .thumb[aria-current="true"], .doc-item[aria-current="true"] .doc-open, .sig-font[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ribbon-tabs button[aria-selected="true"]::after { forced-color-adjust: none; background: Highlight; }
+  .mi:hover, .mi:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
+  .mi > .mchk { color: Highlight; }
+  .marks .mk.sel { filter: drop-shadow(0 0 2px Highlight) drop-shadow(0 0 1px Highlight); }
+  .r-scroll { border-color: ButtonText; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media print {
@@ -316,14 +369,16 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   <div class="ribbon">
     <div class="ribbon-tabs" role="tablist" aria-label="Ribbon" id="ribbonTabs"></div>
     <div class="ribbon-body" id="ribbonBody" role="tabpanel"></div>
+    <button class="r-scroll r-scroll-l" type="button" data-dir="-1" tabindex="-1" aria-hidden="true" title="Scroll left"><i data-lucide="chevron-left"></i></button>
+    <button class="r-scroll r-scroll-r" type="button" data-dir="1" tabindex="-1" aria-hidden="true" title="Scroll right"><i data-lucide="chevron-right"></i></button>
   </div>
   <div class="workspace">
     <aside class="sidebar" id="sidebar" aria-label="Sidebar">
       <div class="side-top">
-        <div class="side-tabs" role="tablist" aria-label="Sidebar">
+        <div class="side-tabs seg" role="tablist" aria-label="Sidebar">
           <button type="button" role="tab" data-side="thumbs" aria-selected="true" aria-controls="sidePanel">Pages</button>
           <button type="button" role="tab" data-side="outline" aria-selected="false" aria-controls="sidePanel">Outline</button>
-          <button type="button" role="tab" data-side="docs" aria-selected="false" aria-controls="sidePanel">Documents</button>
+          <button type="button" role="tab" data-side="docs" aria-selected="false" aria-controls="sidePanel">Recent</button>
         </div>
         <button class="icon-btn side-close" id="sideClose" type="button" title="Close sidebar" aria-label="Close sidebar"><i data-lucide="x"></i></button>
       </div>

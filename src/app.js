@@ -172,7 +172,7 @@ function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF
 function setSaved(saved, opened) {
   if (doc) doc.dirty = !saved;
   const kept = opened && doc && Object.values(doc.marks).some((l) => l && l.length);
-  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Documents' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
+  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Recent' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -1495,7 +1495,7 @@ async function signature() {
   let mode = 'draw', ink = SIG_INKS[0][0], font = 0, pick = null;
   const saved = sigSaved();
   const tab = (k, t) => `<button type="button" role="tab" data-sig-mode="${k}" aria-selected="${k === 'draw'}" tabindex="${k === 'draw' ? 0 : -1}">${t}</button>`;
-  const body = `<div class="sig-modes" role="tablist" aria-label="How to sign">${tab('draw', 'Draw')}${tab('type', 'Type')}${tab('upload', 'Picture')}</div>
+  const body = `<div class="sig-modes seg" role="tablist" aria-label="How to sign">${tab('draw', 'Draw')}${tab('type', 'Type')}${tab('upload', 'Picture')}</div>
     <div class="sig-row" data-sig-for="type" hidden><label class="field"><span>Your name</span><input id="sigName" type="text" autocomplete="name" maxlength="60"></label></div>
     <div class="sig-row" data-sig-for="upload" hidden><button type="button" class="btn" id="sigFileBtn">${ic('image-plus')}<span>Choose a picture…</span></button><input type="file" id="sigFile" accept="image/*" hidden><span class="sig-note">A white background becomes see-through.</span></div>
     <canvas class="sig-pad" id="sigPad" width="900" height="320" aria-label="Signature"></canvas>
@@ -2184,7 +2184,7 @@ async function renderDocs() {
   const panel = $('#sidePanel');
   const all = (await listDocs()).sort((a, b) => b.updated - a.updated);
   if (S.side !== 'docs') return;
-  panel.innerHTML = all.length ? `<ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from this device">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
+  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
   icons();
   $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
@@ -2350,7 +2350,7 @@ cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, r
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
-cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
+cmd('exportImage', { rlabel: 'Page as picture', label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
 cmd('undo', { label: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
@@ -2381,7 +2381,7 @@ cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-0', enab
 cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => setZoom(100) });
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
-cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', run: shortcutsDialog });
+cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, run: shortcutsDialog }); // not without a keyboard
 function shortcutsDialog() {
   const byKey = new Map();
   for (const c of Object.values(C)) if (c.key) { const l = c.label.replace(/…$/, ''); (byKey.get(c.key) || byKey.set(c.key, []).get(c.key)).push(c.key === 'Mod-d' && l === 'Duplicate' ? 'Duplicate selection' : l); }
@@ -2407,6 +2407,9 @@ const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
 // A toggle (Sidebar, Dark pages…) is a checkbox item and a choice of one (Appearance) a radio item, each with its
 // checked state; the three Appearance items are one group. The shortcut is announced as a key, not as part of the name.
 const ariaKey = (k) => k.split(/-(?=.)/).map((p) => ({ Mod: isMac ? 'Meta' : 'Control', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join('+');
+// A menu item: its icon, name and shortcut, then its check mark (drawn in a first column, shown only in a menu with a
+// toggle in it).
+const menuIcon = (icon) => icon ? ic(icon) : '<span></span>', menuChk = (on) => `<span class="mchk" aria-hidden="true">${on ? ic('check') : ''}</span>`;
 function menuHtml(ids) {
   let html = '', group = false;
   for (const id of ids.filter(shown)) {
@@ -2415,7 +2418,7 @@ function menuHtml(ids) {
     if (id === '-') { html += '<div class="msep"></div>'; continue; }
     const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
     const role = on === null ? 'role="menuitem"' : `role="${radio ? 'menuitemradio' : 'menuitemcheckbox'}" aria-checked="${on}"`;
-    html += `<button type="button" class="mi" ${role} data-cmd="${id}"${c.key ? ` aria-keyshortcuts="${ariaKey(c.key)}"` : ''}${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k" aria-hidden="true">${fmtKey(c.key)}</span></button>`;
+    html += `<button type="button" class="mi" ${role} data-cmd="${id}"${on === null ? '' : ' data-chk'}${c.key ? ` aria-keyshortcuts="${ariaKey(c.key)}"` : ''}${dis ? ' disabled' : ''}>${menuIcon(c.icon)}<span>${esc(c.label)}</span><span class="k" aria-hidden="true">${fmtKey(c.key)}</span>${menuChk(on)}</button>`;
   }
   return html + (group ? '</div>' : '');
 }
@@ -2424,7 +2427,7 @@ let popAnchor = null; // the button that opened the popover; Escape gives it foc
 // `at`: { x, y, label } opens it at a spot (a right-click menu), above the spot if there is no room below.
 function openPopover(anchor, html, at) {
   popAnchor = anchor;
-  pop.innerHTML = html; pop.hidden = false; icons();
+  pop.innerHTML = html; pop.hidden = false; pop.classList.toggle('has-chk', !!$('[data-chk]', pop)); icons();
   if (!at && anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
   if (at && at.label) pop.setAttribute('aria-label', at.label); else pop.removeAttribute('aria-label');
   if (at) {
@@ -2437,13 +2440,13 @@ function openPopover(anchor, html, at) {
     pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
     pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
   }
-  const f = $('.mi:not([disabled])', pop); f && f.focus();
+  const f = $('.pop-sw button[aria-checked="true"], .mi:not([disabled])', pop); f && f.focus();
 }
 function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
-  const items = $$('.mi:not([disabled])', pop), i = items.indexOf(document.activeElement);
+  const items = $$('.mi:not([disabled]), .pop-sw button, .pop-sw input', pop), i = items.indexOf(document.activeElement);
   const go = (n) => { e.preventDefault(); if (items.length) items[(n + items.length) % items.length].focus(); };
   if (e.key === 'ArrowDown') go(i + 1);
   else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
@@ -2461,8 +2464,11 @@ pop.addEventListener('keydown', (e) => {
 pop.addEventListener('click', (e) => {
   const x = e.target.closest('[data-ctx]');
   if (x) { const it = ctxItems[+x.dataset.ctx], back = popAnchor; closePopover(); if (back && back.isConnected) back.focus({ preventScroll: true }); if (it && !it.disabled) it.run(); return; }
+  const sw = e.target.closest('[data-color]');
+  if (sw) { pickColor(sw.dataset.color); const now = swatchNow(); $$('[data-color]', pop).forEach((x) => x.setAttribute('aria-checked', x.dataset.color === now)); return; }
   const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
 });
+pop.addEventListener('change', (e) => { if (e.target.matches('[data-colorpick]')) { pickColor(e.target.value.toUpperCase()); closePopover(); } });
 document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
@@ -2507,7 +2513,7 @@ function openCtx(list, at, anchor, label) {
   for (const it of list) if (it && !(it === '-' && (!items.length || items[items.length - 1] === '-'))) items.push(it);
   while (items[items.length - 1] === '-') items.pop();
   ctxItems = items;
-  const html = items.map((it, k) => it === '-' ? '<div class="msep"></div>' : `<button type="button" class="mi" role="menuitem" data-ctx="${k}"${it.disabled ? ' disabled' : ''}>${it.on ? ic('check') : it.on === false ? '<span></span>' : ic(it.icon)}<span>${esc(it.label)}</span><span class="k">${fmtKey(it.key)}</span></button>`).join('');
+  const html = items.map((it, k) => it === '-' ? '<div class="msep"></div>' : `<button type="button" class="mi" role="menuitem" data-ctx="${k}"${it.on === undefined ? '' : ' data-chk'}${it.disabled ? ' disabled' : ''}>${menuIcon(it.icon)}<span>${esc(it.label)}</span><span class="k">${fmtKey(it.key)}</span>${menuChk(it.on)}</button>`).join('');
   closePopover(); openPopover(anchor, html, { x: at.x, y: at.y, label });
   return true;
 }
@@ -2624,6 +2630,23 @@ function menuAdd(title, ids) {
   if (m[1].length && m[1][m[1].length - 1] !== '-') m[1].push('-');
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
+// One colour picker for the app: named round swatches, then + (the system picker) for any other colour. `attrs(c)`
+// gives each swatch the attributes its code looks for; `pick` those of the colour input (null: no + swatch); `menu`
+// makes the swatches menu items (in a popover).
+const INK_COLORS = ['#111111', '#5F5F5F', '#E03131', '#2448C9', '#2F9E44', '#E8590C'];
+const PALE_COLORS = ['#FFFFFF', '#FFF3BF', '#D3F9D8', '#D0EBFF', '#FFDEEB', '#E9ECEF'];
+const colorName = (c) => ({ '#5F5F5F': 'Grey', '#2F9E44': 'Green', '#E8590C': 'Orange', '#000000': 'Black', '#FFFFFF': 'White', '#FFF3BF': 'Pale yellow', '#D3F9D8': 'Pale green', '#D0EBFF': 'Pale blue', '#FFDEEB': 'Pale pink', '#E9ECEF': 'Pale grey' })[String(c).toUpperCase()] || COLOR_NAMES[String(c).toUpperCase()] || c;
+function swatchesHtml(colors, { now, attrs = () => '', pick = '', menu = false } = {}) {
+  const on = String(now || '').toUpperCase();
+  return colors.map((c) => `<button type="button" class="swatch" ${attrs(c)} style="background:${c}" title="${esc(colorName(c))}" aria-label="${esc(colorName(c))}" ${menu ? `role="menuitemradio" aria-checked="${on === c.toUpperCase()}"` : `aria-pressed="${on === c.toUpperCase()}"`}></button>`).join('')
+    + (pick === null ? '' : `<label class="swatch sw-more" title="Custom colour…"><input type="color" ${pick} aria-label="Custom colour…">${ic('plus')}</label>`);
+}
+// Puts a menu's items in this order (by related jobs, as on the ribbon); items it does not name follow, after a separator.
+function menuOrder(title, ids) {
+  const m = MENUS.find(([t]) => t === title); if (!m) return;
+  const rest = m[1].filter((id) => id !== '-' && !ids.includes(id));
+  m[1] = [...ids, ...(rest.length ? ['-', ...rest] : [])];
+}
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
 const COLOR_NAMES = { '#FFD43B': 'Yellow', '#69DB7C': 'Green', '#74C0FC': 'Light blue', '#F783AC': 'Pink', '#E03131': 'Red', '#2448C9': 'Blue', '#111111': 'Black' };
 // Each drawing tool keeps its own colour (the last one picked for it, else its default here): the pressed swatch is
@@ -2666,16 +2689,57 @@ function renderRibbon() {
   $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => chooseTab(b.dataset.rt));
   if (focused) { const t = $(`#ribbonTabs [data-rt="${S.ribbon}"]`); t && t.focus({ preventScroll: true }); }
   $('#ribbonBody').setAttribute('aria-labelledby', 'rt-' + (RIBBON[S.ribbon] ? S.ribbon : 'home'));
-  const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
+  // Groups for a selection (Picture…) come last, so showing one never moves the tools people already know.
+  const [, all] = RIBBON[S.ribbon] || RIBBON.home, onSel = ([, ids]) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => C[id] && C[id].contextual);
+  const groups = phoneFold([...all.filter((g) => !onSel(g)), ...all.filter(onSel)]);
   $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
-    ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${swatchNow() === c}"></button>`).join('')
+    ? swatchesHtml(COLORS, { now: swatchNow(), attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${swatchNow().toLowerCase()}"` })
     : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => pickColor(b.dataset.color));
+  $$('#ribbonBody [data-colorpick]').forEach((i) => i.onchange = () => pickColor(i.value.toUpperCase()));
   icons(); refreshRibbon();
   const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
   if (tab) scrollIntoRow(tabs, tab);
   const on = $('#ribbonBody [aria-pressed="true"]'); if (on) scrollIntoRow($('#ribbonBody'), on); else $('#ribbonBody').scrollLeft = 0;
   ribbonEdges();
+}
+const foldFaces = () => Object.fromEntries(Object.entries(C).filter(([id, c]) => id.startsWith('fold:') && c.run && $(`#ribbonBody [data-cmd="${id}"]`)).map(([id, c]) => [id.slice(5), c.menu]));
+// Phones: a compact group (several small tools) is one button that lists them, and the colours fold into the Style
+// button, so a tab like Comment is about one and a half screens wide. A group of 'icons' (Shapes) keeps a face: the
+// shape in use, or the one used last, on a split button. Made as commands (fold:<group>) the ribbon draws as usual.
+const foldLast = {};
+function phoneFold(groups) {
+  if (!isPhone()) return groups;
+  const out = [], members = (ids) => ids.filter(shown), on = (id) => !!(C[id].pressed && C[id].pressed());
+  for (let k = 0; k < groups.length; k++) {
+    const [label, ids, look] = groups[k];
+    if (look === 'swatches') {
+      const next = groups[k + 1], style = next && next[0] === 'Style' && Array.isArray(next[1]) ? members(next[1]) : [];
+      if (style.length) k++;
+      cmd('fold:Style', { label: 'Style', icon: 'palette', menu: style.length ? style : ['tool_select'], menuHtml: () => foldStyleHtml(style) });
+      out.push(['Style', ['fold:Style']]); continue;
+    }
+    let list = Array.isArray(ids) ? members(ids) : [], name = label;
+    // groups of small buttons side by side (Text box, Add) are one button, named after the last of them
+    while (look === 'rows' && groups[k + 1] && groups[k + 1][2] === 'rows' && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
+    if (!look || list.length < 2) { out.push(groups[k]); continue; }
+    const label2 = name, face = () => list.find(on) || (list.includes(foldLast[label2]) ? foldLast[label2] : list[0]);
+    cmd('fold:' + name, look === 'icons'
+      ? { get label() { return C[face()].label; }, get icon() { return C[face()].icon; }, get rlabel() { return C[face()].rlabel; }, menu: list, pressed: () => on(face()), enabled: () => !C[face()].enabled || C[face()].enabled(), run: () => run(face()) }
+      : { label: name, get icon() { return C[list.find(on) || list[0]].icon; }, menu: list, pressed: () => list.some(on) });
+    out.push([name, ['fold:' + name]]);
+  }
+  return out;
+}
+// The Style button's list: the colours (as on the Comment tab), then the group's own commands; one with `sub` (a list
+// of command ids) shows them under its name.
+matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
+Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+function foldStyleHtml(ids) {
+  const now = swatchNow();
+  let html = `<div class="pop-sw" role="group" aria-label="Colour">${swatchesHtml(COLORS, { now, attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${now.toLowerCase()}"`, menu: true })}</div>`;
+  for (const id of ids) html += '<div class="msep"></div>' + (C[id].sub ? `<div role="group" aria-label="${esc(C[id].subLabel || C[id].label)}"><div class="mh" aria-hidden="true">${esc(C[id].subLabel || C[id].label)}</div>${menuHtml(C[id].sub)}</div>` : menuHtml([id]));
+  return html;
 }
 // A ribbon button. A command with `menu` (a list of command ids) gets a small arrow beside it that opens them.
 function ribbonButton(id) {
@@ -2688,7 +2752,7 @@ function ribbonButton(id) {
 }
 function openRibbonMenu(id) {
   const b = $(`#ribbonBody [data-rmenu="${id}"]`); if (!b || !C[id] || !C[id].menu) return;
-  b.setAttribute('aria-expanded', 'true'); openPopover(b.closest('.rb-split') || b, menuHtml(C[id].menu)); popAnchor = b;
+  b.setAttribute('aria-expanded', 'true'); openPopover(b.closest('.rb-split') || b, C[id].menuHtml ? C[id].menuHtml() : menuHtml(C[id].menu)); popAnchor = b;
 }
 $('#ribbonBody').addEventListener('click', (e) => {
   const b = e.target.closest('[data-rmenu]'); if (!b) return;
@@ -2701,21 +2765,40 @@ function scrollIntoRow(row, el) {
   if (b.left < r.left + pad) row.scrollLeft -= r.left + pad - b.left;
   else if (b.right > r.right - pad) row.scrollLeft += b.right - (r.right - pad);
 }
-// A row with more to see past an edge fades at that edge.
+// A row with more to see past an edge fades at that edge; the ribbon also shows a small arrow there (for a mouse).
 function ribbonEdges() {
   for (const row of [$('#ribbonBody'), $('#ribbonTabs')]) {
     row.classList.toggle('more-l', row.scrollLeft > 1);
     row.classList.toggle('more-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
   }
+  const b = $('#ribbonBody'), r = b.parentElement;
+  r.classList.toggle('more-l', b.classList.contains('more-l')); r.classList.toggle('more-r', b.classList.contains('more-r'));
 }
 $('#ribbonBody').addEventListener('scroll', ribbonEdges, { passive: true });
+// A mouse wheel that only scrolls up and down moves a wide ribbon sideways.
+$('#ribbonBody').addEventListener('wheel', (e) => {
+  const b = e.currentTarget; if (e.ctrlKey || b.scrollWidth <= b.clientWidth + 1 || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  e.preventDefault(); b.scrollLeft += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; ribbonEdges();
+}, { passive: false });
+$$('.r-scroll').forEach((a) => {
+  a.addEventListener('mousedown', (e) => e.preventDefault()); // keeps the focus where it is
+  a.addEventListener('click', () => { const b = $('#ribbonBody'); b.scrollBy({ left: +a.dataset.dir * Math.max(120, b.clientWidth * .7), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+});
 $('#ribbonTabs').addEventListener('scroll', ribbonEdges, { passive: true });
 window.addEventListener('resize', ribbonEdges);
 // Keyboard focus that lands on a button out of view brings it into view.
 $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
-  $$('#ribbonBody [data-rmenu]').forEach((b) => { b.disabled = !C[b.dataset.rmenu].menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled())); });
+  $$('#ribbonBody [data-rmenu]').forEach((b) => {
+    const c = C[b.dataset.rmenu]; b.disabled = !c.menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled()));
+    if (!c.run && c.pressed) b.toggleAttribute('data-on', !!c.pressed());
+  });
+  for (const [g, list] of Object.entries(foldFaces())) {
+    const now = list.find((id) => C[id].pressed && C[id].pressed()); if (now) foldLast[g] = now;
+    const b = $(`#ribbonBody [data-cmd="fold:${g}"]`), c = C['fold:' + g];
+    if (b && b.dataset.face !== (c.rlabel || c.label)) { b.dataset.face = c.rlabel || c.label; b.title = c.label; b.innerHTML = `${ic(c.icon)}<span>${esc(c.rlabel || c.label.replace(/…$/, ''))}</span>`; icons(); }
+  }
   const sw = $('#ribbonBody [data-color]') && swatchNow(); $$('#ribbonBody [data-color]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.color === sw));
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
   let shift = false;
@@ -2850,7 +2933,7 @@ async function beforeQuit() {
   clearTimeout(persistTimer);
   try { await persistNow(); } catch {}
   if (ask) {
-    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Documents on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Recent on this Mac either way. Saving also updates the file.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
     quitAsked = false;
     if (!a || (a === 'save' && !(await savePdf(false)))) { await NATIVE.core.invoke('hold_quit', { hold: false }).catch(() => {}); return; }
   }
