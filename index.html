@@ -5927,6 +5927,10 @@ function txtPlaceBar(v, target) {
   if (roomAbove >= bh + 4) top = er.top - bh - gap(roomAbove);
   else if (roomBelow >= bh + 4) top = er.bottom + gap(roomBelow);
   else top = er.bottom + 6; // no room either side: over the next line, never the one before
+  // ...unless that is out of view (a line at the bottom of the viewer): then over the line before, as the bar must
+  // never cover what is being edited (a second press there selects a word). Only when neither side fits is it kept
+  // in view over the text (a phone's keyboard).
+  if (top + bh > vBot && er.top - bh - 6 >= vTop) top = er.top - bh - 6;
   top = Math.max(vTop, Math.min(top, vBot - bh)); // a phone: in view
   bar.style.left = left + 'px'; bar.style.top = (top - pr.top) + 'px';
 }

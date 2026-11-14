@@ -83,10 +83,20 @@ export default async (h) => {
     const rows = await p.$eval('#dialog', (d) => d.textContent);
     ok(/Fit pageCtrl\+0/.test(rows) && /Actual sizeCtrl\+1/.test(rows) && /Fit widthCtrl\+2/.test(rows) && /HandH/.test(rows), rows);
     await p.keyboard.press('Escape');
-    await p.click('#menubar button:has-text("View")');
-    const items = await p.$$eval('#popover .mi', (b) => b.map((x) => x.children[1].textContent));
-    for (const l of ['Fit width', 'Fit page', 'Actual size', 'Hand', 'Continuous', 'Single page', 'Two pages', 'Two pages with cover', 'Attachments']) ok(items.includes(l), l + ' in ' + items);
+    // in the View menu (the Mac app's menu bar)...
+    const view = await p.evaluate(() => window.__cowdreyPdf.menus().find(([t]) => t === 'View')[1]);
+    for (const id of ['zoomFit', 'zoomPage', 'zoom100', 'tool_hand', 'vw_lay_scroll', 'vw_lay_single', 'vw_lay_two', 'vw_lay_cover', 'vw_files']) ok(view.includes(id), id + ' in ' + view);
+    // ...and on the web, where the ribbon is the menu row: Home has the zoom, Hand and Layout; File has the rest of View
+    await p.click('[data-rt="home"]');
+    const items = await p.$$eval('#ribbonBody [data-cmd]', (b) => b.map((x) => x.getAttribute('aria-label') || x.textContent.trim()));
+    await p.click('#ribbonBody [data-rmenu="vw_layout"]'); await p.waitForSelector('#popover:not([hidden])');
+    items.push(...await p.$$eval('#popover .mi', (b) => b.map((x) => x.children[1].textContent)));
     eq(await p.$$eval('#popover [role="group"][aria-label="Page layout"] [role="menuitemradio"]', (b) => b.map((x) => x.getAttribute('aria-checked'))), ['true', 'false', 'false', 'false']);
+    await p.keyboard.press('Escape');
+    await p.click('#fileBtn'); await p.waitForSelector('#popover:not([hidden])');
+    items.push(...await p.$$eval('#popover .mi', (b) => b.map((x) => x.children[1].textContent)));
+    await p.keyboard.press('Escape');
+    for (const l of ['Fit width', 'Fit page', 'Actual size', 'Hand', 'Continuous', 'Single page', 'Two pages', 'Two pages with cover', 'Attachments']) ok(items.includes(l), l + ' in ' + items);
     eq(p.errors, []); await p.ctx.close();
   });
 
@@ -192,7 +202,7 @@ export default async (h) => {
 
   await test('view: Attach file adds a file that is kept in the saved PDF; undo takes it back', async () => {
     const p = await open(); await reopen(p, await attachedPdf());
-    await p.click('#menubar button:has-text("Edit")');
+    await p.click('#fileBtn'); // on the web, Edit's Attach file is in the File button's list (it has no ribbon button)
     const chooser = p.waitForEvent('filechooser');
     await p.click('#popover [data-cmd="vw_attach"]');
     await (await chooser).setFiles([{ name: 'hello.txt', mimeType: 'text/plain', buffer: Buffer.from('Another hello') }, { name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('# Plan') }]);

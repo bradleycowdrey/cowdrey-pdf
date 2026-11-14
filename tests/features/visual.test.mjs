@@ -54,9 +54,15 @@ export default async (h) => {
     const [chk, icon] = await p.$eval('#popover [data-cmd="tool_highlight"]', (b) => [b.querySelector('.mchk').getBoundingClientRect().left, b.querySelector(':scope > svg').getBoundingClientRect().left]);
     ok(chk < icon, 'the check comes before the icon');
     await p.keyboard.press('Escape');
-    // a menu with no toggle has no empty check column
+    // File (on the web it also lists View's Actual size and Attachments, which are toggles): every row has its icon
     await p.click('#fileBtn'); await p.waitForTimeout(100);
-    ok(!(await p.$eval('#popover', (x) => x.classList.contains('has-chk'))), 'no check column in File');
+    eq((await menuRows(p)).filter(([, icon]) => !icon).map(([id]) => id), []);
+    eq(await p.$eval('#popover', (x) => x.classList.contains('has-chk')), !!(await p.$('#popover [data-chk]')), 'File: a check column only with a toggle in it');
+    await p.keyboard.press('Escape');
+    // a menu with no toggle (? for Help) has no empty check column
+    await p.click('#helpBtn'); await p.waitForTimeout(100);
+    ok(!(await p.$('#popover [data-chk]')), 'no toggle in Help');
+    ok(!(await p.$eval('#popover', (x) => x.classList.contains('has-chk'))), 'no check column in Help');
     eq((await menuRows(p)).filter(([, icon]) => !icon).map(([id]) => id), []);
     // menu order: Pages groups its jobs, Bookmarks is in View
     await p.keyboard.press('Escape');

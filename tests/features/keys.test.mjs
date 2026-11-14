@@ -36,7 +36,7 @@ export default async (h) => {
   await test('Edit PDF: Tab and Shift+Tab go between the text and the format bar; Ctrl+B, I and U format the line', async () => {
     const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
     await editLine(p);
-    await p.keyboard.press('Tab'); eq(await p.evaluate(() => document.activeElement.dataset.tf), 'smaller', 'Tab into the bar');
+    await p.keyboard.press('Tab'); eq(await p.evaluate(() => document.activeElement.dataset.tf), 'face', 'Tab into the bar: its first control, the Font list');
     await p.keyboard.press('Shift+Tab'); eq(await active(p), 'line-editor', 'Shift+Tab back to the text');
     ok(await p.$('.line-editor'), 'still editing');
     await p.keyboard.press('Shift+Tab'); ok(await p.evaluate(() => !!document.activeElement.closest('.txt-bar')), 'Shift+Tab from the text goes to the bar');
