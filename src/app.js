@@ -3722,7 +3722,7 @@ function shortcutsDialog() {
   const byKey = new Map();
   for (const c of Object.values(C)) if (c.key) { const l = c.label.replace(/…$/, ''); (byKey.get(c.key) || byKey.set(c.key, []).get(c.key)).push(c.key === 'Mod-d' && l === 'Duplicate' ? 'Duplicate selection' : l); }
   const rows = [...byKey].map(([k, ls]) => [ls.length > 1 ? `${ls[0]}, or ${ls.slice(1).join(', or ').replace(/^./, (x) => x.toLowerCase())} when nothing is selected` : ls[0], fmtKey(k) + (k === 'Mod-Shift-z' ? ' or ' + fmtKey('Mod-y') : '')]);
-  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Finish or cancel a tool', 'Esc']);
+  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Edit PDF: go to the next line or picture', 'Tab or arrows'], ['Edit PDF: edit that line or select that picture', 'Enter'], ['Finish or cancel a tool', 'Esc']);
   const row = ([l, k]) => `<span>${esc(l)}</span><span style="color:var(--ink-3);text-align:right">${esc(k)}</span>`;
   return dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${rows.map(row).join('')}</div>`, [{ label: 'Close', primary: true }]);
 }
@@ -4229,6 +4229,85 @@ function refreshRibbon() {
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
+/* ---------------- Edit PDF from the keyboard ---------------- */
+// With Edit PDF on and the page focused, Tab (or Enter, F2) shows an outline on the first line or picture in view;
+// Tab and the arrow keys move it through the page's lines and pictures in reading order, Enter opens the line (caret
+// at its end, as a click there would) or selects the picture, Escape leaves. Tab past the last goes on as usual.
+let kbEdit = null, kbEditLast = null; // { v, blocks, i, el } while the outline shows; { entry, i } of the last one
+async function kbEditBlocks(v) {
+  const cm = await contentMap(v.page); v.page._cmapValue = cm;
+  const own = marksOf(v.entry), out = [];
+  for (const L of cm.lines) if (L.str.trim()) out.push({ kind: 'line', L, quad: L.quad, label: 'Line: ' + L.str.trim() });
+  for (const im of cm.images) {
+    const mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+    if (!(mark && mark.deleted)) out.push({ kind: 'image', im, mark, quad: mark ? matQuad(mark.mat) : im.quad, label: 'Picture' });
+  }
+  for (const b of out) { const pts = b.quad.map(([x, y]) => toView(v, x, y)), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]); b.box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }
+  // reading order: top to bottom, then left to right along a row
+  return out.sort((a, b) => { const ha = a.box[3] - a.box[1], hb = b.box[3] - b.box[1], mid = (b.box[1] + b.box[3]) / 2; return (mid > a.box[1] && mid < a.box[3]) || ((a.box[1] + a.box[3]) / 2 > b.box[1] && (a.box[1] + a.box[3]) / 2 < b.box[3]) ? a.box[0] - b.box[0] : (a.box[1] + ha / 2) - (b.box[1] + hb / 2); });
+}
+function kbEditShow(i) {
+  const k = kbEdit; if (!k) return;
+  k.i = i; kbEditLast = { entry: k.v.entry, i };
+  const b = k.blocks[i], el = k.el || (k.el = document.createElement('div'));
+  el.className = 'kb-block'; el.setAttribute('aria-hidden', 'true');
+  Object.assign(el.style, { left: b.box[0] - 3 + 'px', top: b.box[1] - 3 + 'px', width: b.box[2] - b.box[0] + 6 + 'px', height: b.box[3] - b.box[1] + 6 + 'px' });
+  if (el.parentNode !== k.v.el) k.v.el.appendChild(el);
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  announce(b.label);
+}
+function kbEditEnd() { if (kbEdit && kbEdit.el) kbEdit.el.remove(); kbEdit = null; }
+async function kbEditStart(v) {
+  const k = kbEdit = { v, blocks: [], i: -1, el: null, loading: true };
+  const blocks = await kbEditBlocks(v);
+  if (kbEdit !== k) return;
+  k.blocks = blocks; k.loading = false;
+  if (!blocks.length) { announce('No text or pictures to edit on this page'); return; }
+  // the one edited last, else the first in view
+  const vr = viewer.getBoundingClientRect(), pr = v.el.getBoundingClientRect();
+  let i = kbEditLast && kbEditLast.entry === v.entry && kbEditLast.i < blocks.length ? kbEditLast.i : blocks.findIndex((b) => pr.top + b.box[3] > vr.top && pr.top + b.box[1] < vr.bottom);
+  kbEditShow(Math.max(0, i));
+}
+// Opens the block as a click on it would: a line at its end (the caret goes there), a picture in its middle.
+function kbEditOpen() {
+  const k = kbEdit; if (!k || k.i < 0) return;
+  const b = k.blocks[k.i], v = k.v; kbEditEnd();
+  let x, y;
+  if (b.kind === 'line') { const t = b.L.tm, { u, size } = lineFrame(b.L), w = b.L.width - .5, up = size * .3; [x, y] = toView(v, t[4] + u[0] * w - u[1] * up, t[5] + u[1] * w + u[0] * up); }
+  else { x = (b.box[0] + b.box[2]) / 2; y = (b.box[1] + b.box[3]) / 2; }
+  const r = v.el.getBoundingClientRect(), cx = r.left + x, cy = r.top + y;
+  const hit = document.elementFromPoint(cx, cy), target = hit && v.el.contains(hit) && hit.closest('svg.marks') ? hit : v.el.querySelector('svg.marks');
+  if (!target) return;
+  const o = { clientX: cx, clientY: cy, bubbles: true, cancelable: true, pointerId: 78, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
+  target.dispatchEvent(new PointerEvent('pointerdown', o));
+  window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+}
+// The keys; true when the key was used.
+function kbEditKey(e) {
+  const a = document.activeElement;
+  if (!doc || app.dataset.tool !== 'edit' || lineEditor || a !== viewer || e.altKey || e.ctrlKey || e.metaKey) { if (kbEdit && (!doc || app.dataset.tool !== 'edit')) kbEditEnd(); return false; }
+  const k = kbEdit;
+  if (!k) {
+    if (e.key === 'Tab' && e.shiftKey) return false;
+    if (!['Tab', 'Enter', 'F2'].includes(e.key)) return false;
+    const v = views[current]; if (!v || !v.rendered) return false;
+    e.preventDefault(); kbEditStart(v); return true;
+  }
+  if (k.loading) { if (e.key === 'Tab' || e.key === 'Enter' || /^Arrow/.test(e.key)) { e.preventDefault(); return true; } return false; }
+  const n = k.blocks.length;
+  if (e.key === 'Escape') { e.preventDefault(); kbEditEnd(); announce('Left the page'); return true; }
+  if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); if (n) kbEditOpen(); return true; }
+  const step = e.key === 'Tab' ? (e.shiftKey ? -1 : 1) : { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+  if (e.key === 'Home' || e.key === 'End') { if (!n) return false; e.preventDefault(); kbEditShow(e.key === 'Home' ? 0 : n - 1); return true; }
+  if (!step) return false;
+  const i = k.i + step;
+  if (i < 0 || i >= n) { if (e.key === 'Tab') { kbEditEnd(); return false; } e.preventDefault(); return true; } // Tab goes on; arrows stop
+  e.preventDefault(); kbEditShow(i); return true;
+}
+// A click, a scroll of another page or a new tool takes the outline away.
+document.addEventListener('pointerdown', (e) => { if (kbEdit && e.isTrusted) kbEditEnd(); }, true);
+viewer.addEventListener('focusout', () => setTimeout(() => { if (kbEdit && document.activeElement !== viewer) kbEditEnd(); }, 0));
+
 /* ---------------- keys ---------------- */
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open) return;
@@ -4250,6 +4329,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
+  if (kbEditKey(e)) return;
   if (e.key === 'Enter' && doc && keyPlaces(app.dataset.tool)) {
     // on the page, or still on the button that chose the tool (Enter there would only choose it again)
     const a = document.activeElement, c = a && a.dataset && C[a.dataset.cmd];

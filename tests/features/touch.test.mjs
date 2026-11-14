@@ -57,4 +57,55 @@ export default async (h) => {
     for (const r of rects) ok(r[0] >= -4 && r[2] <= W + 4 && r[1] >= -4 && r[3] <= Hh + 4, `saved Rect ${r.map(Math.round)} inside ${W}x${Hh}`);
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Edit PDF from the keyboard: Tab and arrows go through the lines and pictures, Enter edits or selects, Escape leaves', async () => {
+    const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+    await run(p, 'tool_edit'); await p.waitForTimeout(300);
+    await p.focus('#viewer');
+    const said = () => p.waitForTimeout(120).then(() => p.textContent('#announce'));
+    const outline = () => p.$eval('.kb-block', (e) => { const r = e.getBoundingClientRect(); return [r.width > 4, getComputedStyle(e).outlineStyle]; }).catch(() => null);
+    await p.keyboard.press('Tab'); await p.waitForTimeout(300);
+    eq(await outline(), [true, 'solid'], 'a visible outline');
+    const first = await said(); ok(/^Line: /.test(first), 'announced: ' + first);
+    eq(await p.evaluate(() => document.activeElement.id), 'viewer', 'the focus stays on the page');
+    await p.keyboard.press('ArrowDown'); const second = await said(); ok(second !== first && /^(Line: |Picture)/.test(second), 'next block: ' + second);
+    await p.keyboard.press('ArrowUp'); eq(await said(), first, 'and back');
+    // the blocks include the page's pictures
+    const labels = [first]; for (let i = 0; i < 40; i++) { await p.keyboard.press('ArrowDown'); const l = await said(); if (labels.at(-1) === l) break; labels.push(l); }
+    ok(labels.includes('Picture'), 'a picture: ' + labels.join(' | '));
+    // Enter on a line opens it, caret at its end
+    await p.keyboard.press('Home'); await p.waitForTimeout(100);
+    await p.keyboard.press('Enter'); await p.waitForSelector('.line-editor'); await p.waitForTimeout(200);
+    const [c0, c1, text] = await p.evaluate(() => { const s = getSelection(), r = s.getRangeAt(0); return [r.startOffset, r.endOffset, document.activeElement.textContent]; });
+    eq([c0, c1], [text.length, text.length], 'caret at the end of "' + text + '"');
+    ok(first.endsWith(text.trim()) || first.includes(text.trim().slice(0, 8)), `the line announced was opened: ${first} / ${text}`);
+    await p.keyboard.type(' Done'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    eq(await p.evaluate(() => document.activeElement.id), 'viewer');
+    ok((await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().map((m) => m.text))).some((t) => t && t.endsWith(' Done')), 'typed at the end');
+    // Tab again goes on from the line edited; on to the picture, Enter selects it, Delete removes it
+    await p.keyboard.press('Tab'); await p.waitForTimeout(300);
+    for (let i = 0; i < 40 && (await said()) !== 'Picture'; i++) await p.keyboard.press('ArrowDown');
+    eq(await said(), 'Picture');
+    await shot(p, 'kb-edit-picture-dark-1440.png');
+    await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    ok(await p.$('.page svg.marks .content-sel'), 'the picture is selected');
+    eq(await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'ie').length), 0, 'not moved');
+    await p.keyboard.press('Delete'); await p.waitForTimeout(200);
+    eq(await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'ie' && m.deleted).length), 1, 'deleted');
+    // Escape leaves the outline; Tab past the last block goes on to the rest of the app
+    await p.focus('#viewer'); await p.keyboard.press('Tab'); await p.waitForTimeout(300); ok(await outline(), 'outline back');
+    await p.keyboard.press('Escape'); ok(!(await p.$('.kb-block')), 'gone after Escape');
+    await p.keyboard.press('Tab'); await p.waitForTimeout(300); await p.keyboard.press('End');
+    await p.keyboard.press('Tab'); await p.waitForTimeout(100);
+    ok(await p.evaluate(() => document.activeElement.id !== 'viewer'), 'Tab from the last block leaves the page'); ok(!(await p.$('.kb-block')), 'outline gone');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Keyboard shortcuts lists the Edit PDF keys', async () => {
+    const p = await open(); await openPdf(p);
+    await run(p, 'shortcuts');
+    const t = await p.textContent('#dialog');
+    ok(/Edit PDF: go to the next line or picture/.test(t) && /Edit PDF: edit that line or select that picture/.test(t), t.slice(0, 200));
+    await p.ctx.close();
+  });
 };
