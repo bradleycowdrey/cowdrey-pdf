@@ -668,19 +668,33 @@ button { font: inherit; color: inherit; }
 .btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
 .icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
+.btn:disabled, .btn:disabled:hover { opacity: .45; cursor: default; background: var(--surface); }
+.btn.primary:disabled, .btn.primary:disabled:hover { background: var(--brand); }
+.more-btn { display: none; }
 
 /* ribbon */
 .ribbon { border-bottom: 1px solid var(--line); }
-.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); }
-.ribbon-tabs button { border: 0; background: none; padding: 6px 10px 8px; color: var(--ink-2); font-weight: 500; cursor: pointer; position: relative; }
+.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; }
+.ribbon-tabs::-webkit-scrollbar { display: none; }
+.ribbon-tabs button { flex: none; }
+.ribbon-tabs button { border: 0; background: none; padding: 5px 10px 6px; color: var(--ink-2); font-weight: 500; cursor: pointer; position: relative; }
 .ribbon-tabs button[aria-selected="true"] { color: var(--accent); }
 .ribbon-tabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
-.ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 6px max(12px, env(safe-area-inset-left, 0px)) 6px; overflow-x: auto; scrollbar-width: thin; min-height: 64px; }
-.r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); }
+/* One height on every tab: labels take two lines at most and buttons never shrink; a wide tab scrolls, with a fade
+   at the edge that has more (.more-l / .more-r). */
+.ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 4px max(12px, env(safe-area-inset-left, 0px)) 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; height: 76px; }
+.ribbon-body.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); }
+.ribbon-body.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px); mask-image: linear-gradient(90deg, transparent, #000 48px); }
+.ribbon-body.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+.ribbon-tabs.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); flex: none; }
+.r-group[hidden] { display: none; }
 .r-group:last-child { border-right: 0; }
 .r-items { display: flex; gap: 2px; align-items: center; flex: 1; }
-.r-label { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
-.rb { border: 0; background: none; border-radius: 6px; padding: 4px 8px; display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 52px; cursor: pointer; color: var(--ink); font-size: 12px; }
+.r-label { font-size: 11px; line-height: 1.3; color: var(--ink-3); margin-top: 1px; white-space: nowrap; }
+.rb { border: 0; background: none; border-radius: 6px; padding: 3px 6px; display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; align-self: stretch; gap: 2px; min-width: 52px; max-width: 92px; flex: none; cursor: pointer; color: var(--ink); font-size: 12px; }
+.rb > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: center; line-height: 1.15; overflow-wrap: normal; }
+.rb:focus-visible, .ribbon-tabs button:focus-visible, .side-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rb:hover { background: var(--hover); }
 .rb[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .rb:disabled { opacity: .4; cursor: default; background: none; }
@@ -692,6 +706,9 @@ button { font: inherit; color: inherit; }
 .app[data-sidebar="off"] .workspace { grid-template-columns: 0 1fr; }
 .app[data-sidebar="off"] .sidebar { visibility: hidden; }
 .sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.side-top { display: flex; align-items: center; }
+.side-top .side-tabs { flex: 1; min-width: 0; }
+.side-close { display: none; }
 .side-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
 .side-tabs button { border: 0; background: none; border-radius: 7px; padding: 5px 4px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
 .side-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
@@ -755,17 +772,23 @@ button { font: inherit; color: inherit; }
 .sb-zoom { display: flex; align-items: center; gap: 6px; }
 .sb-zoom input[type="range"] { width: 110px; accent-color: var(--accent); }
 .sb-zoom .icon-btn { width: 28px; height: 28px; }
+#zoomLabel { height: 26px; padding: 0 10px; }
 .page-jump { width: 44px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--ink); font: inherit; padding: 1px 2px; }
 
 /* popovers, dialogs, toast */
-.popover { position: fixed; z-index: 50; min-width: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
+.popover { position: fixed; z-index: 50; min-width: 220px; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
 .popover[hidden] { display: none; }
 .mi { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; cursor: pointer; color: var(--ink); }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: none; }
+.mi:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mh { font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 6px 8px 2px; }
 .mi:disabled { opacity: .45; cursor: default; background: none; }
 .mi .k { color: var(--ink-3); font-size: 12px; }
 .msep { height: 1px; background: var(--line); margin: 5px 6px; }
 dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(480px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 24px); }
+dialog > .dlg-head, dialog > .dlg-foot { flex: none; }
+dialog > .dlg-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
 dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 @media (prefers-reduced-transparency: reduce) { dialog::backdrop { backdrop-filter: none; background: rgba(18, 12, 15, .55); } }
 .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 6px; }
@@ -788,14 +811,27 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 /* phones: the ribbon becomes a scrolling tool row; the sidebar becomes an overlay */
 @media (max-width: 760px) {
   .menubar, .sb-brand, .tb-actions .btn span, .save-state { display: none; }
+  .more-btn { display: grid; }
+  .tb-actions .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .tb-actions .icon-btn { width: 40px; height: 40px; }
   .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
   .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
   .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+  .app[data-sidebar="open"]::after { content: ""; position: fixed; inset: 0; z-index: 29; background: rgba(18, 12, 15, .35); }
+  .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 6px; }
+  .side-tabs button { min-height: 40px; }
   .r-label { display: none; }
-  .rb { min-width: 44px; min-height: 44px; }
+  .ribbon-body { height: 72px; }
+  .ribbon-tabs button { min-height: 40px; }
+  .rb { min-width: 44px; min-height: 44px; max-width: 76px; font-size: 11px; }
   .sb-zoom input[type="range"] { display: none; }
+  .statusbar { gap: 8px; }
+  .sb-zoom { gap: 2px; }
+  .sb-zoom .icon-btn, #zoomLabel { width: auto; min-width: 40px; height: 40px; }
+  .page-jump { height: 40px; width: 48px; }
+  .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
 }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media print {
   .titlebar, .ribbon, .sidebar, .statusbar, .findbar, .popover, .toast, dialog { display: none !important; }
   body, .app, .workspace, .viewer { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
@@ -813,23 +849,27 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <nav class="menubar" id="menubar" aria-label="Menus"></nav>
     </div>
     <div class="tb-actions">
-      <button class="icon-btn" id="themeBtn" type="button" title="Theme"><i data-lucide="sun-moon"></i></button>
-      <button class="btn" type="button" data-cmd="open"><i data-lucide="folder-open"></i><span>Open</span></button>
-      <button class="btn primary" type="button" data-cmd="save" id="saveBtn"><i data-lucide="download"></i><span>Save PDF</span></button>
+      <button class="icon-btn" id="themeBtn" type="button" title="Theme" aria-label="Theme"><i data-lucide="sun-moon"></i></button>
+      <button class="btn" type="button" data-cmd="open" aria-label="Open"><i data-lucide="folder-open"></i><span>Open</span></button>
+      <button class="btn primary" type="button" data-cmd="save" id="saveBtn" aria-label="Save PDF"><i data-lucide="download"></i><span>Save PDF</span></button>
+      <button class="icon-btn more-btn" id="moreBtn" type="button" title="More" aria-label="More" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
     </div>
   </header>
   <div class="ribbon">
-    <div class="ribbon-tabs" role="tablist" id="ribbonTabs"></div>
-    <div class="ribbon-body" id="ribbonBody"></div>
+    <div class="ribbon-tabs" role="tablist" aria-label="Ribbon" id="ribbonTabs"></div>
+    <div class="ribbon-body" id="ribbonBody" role="tabpanel"></div>
   </div>
   <div class="workspace">
     <aside class="sidebar" id="sidebar" aria-label="Sidebar">
-      <div class="side-tabs" role="tablist">
-        <button type="button" role="tab" data-side="thumbs" aria-selected="true">Pages</button>
-        <button type="button" role="tab" data-side="outline" aria-selected="false">Outline</button>
-        <button type="button" role="tab" data-side="docs" aria-selected="false">Documents</button>
+      <div class="side-top">
+        <div class="side-tabs" role="tablist" aria-label="Sidebar">
+          <button type="button" role="tab" data-side="thumbs" aria-selected="true" aria-controls="sidePanel">Pages</button>
+          <button type="button" role="tab" data-side="outline" aria-selected="false" aria-controls="sidePanel">Outline</button>
+          <button type="button" role="tab" data-side="docs" aria-selected="false" aria-controls="sidePanel">Documents</button>
+        </div>
+        <button class="icon-btn side-close" id="sideClose" type="button" title="Close sidebar" aria-label="Close sidebar"><i data-lucide="x"></i></button>
       </div>
-      <div class="side-panel" id="sidePanel"></div>
+      <div class="side-panel" id="sidePanel" role="tabpanel"></div>
     </aside>
     <main class="viewer" id="viewer" tabindex="-1">
       <div class="findbar" id="findbar" hidden>
@@ -859,12 +899,12 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <button class="icon-btn" type="button" data-cmd="zoomOut" title="Zoom out"><i data-lucide="minus"></i></button>
       <input type="range" id="zoomRange" min="25" max="400" step="5" value="100" aria-label="Zoom">
       <button class="icon-btn" type="button" data-cmd="zoomIn" title="Zoom in"><i data-lucide="plus"></i></button>
-      <button class="btn" type="button" data-cmd="zoomFit" id="zoomLabel" style="height:26px;padding:0 10px">Fit</button>
+      <button class="btn" type="button" data-cmd="zoomFit" id="zoomLabel">Fit</button>
     </span>
   </footer>
 </div>
 <div class="popover" id="popover" hidden role="menu"></div>
-<dialog id="dialog"></dialog>
+<dialog id="dialog" aria-modal="true" aria-labelledby="dlgTitle"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="mergeInput" accept="application/pdf,.pdf" multiple hidden>
@@ -919,6 +959,7 @@ const FEATURE = {
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
+  outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
 };
 function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
 const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
@@ -1006,7 +1047,7 @@ async function showDoc(d, loaded) {
   pds.forEach((pd, k) => pdfDocs.set(k, pd));
   syncHiddenComments(); // before any page is drawn
   $('#drop').hidden = true;
-  setTitle(); setSaved(true);
+  setTitle(); setSaved(true, true);
   await layoutPages();
   renderSide();
   store.set('current', d.id);
@@ -1014,9 +1055,12 @@ async function showDoc(d, loaded) {
   return true;
 }
 function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
-function setSaved(saved) {
+// `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
+// Documents with changes says they are kept there.
+function setSaved(saved, opened) {
   if (doc) doc.dirty = !saved;
-  $('#saveState').innerHTML = !doc ? '' : saved ? `${ic('check')} ${doc.path ? 'Saved' : 'Saved on this device'}` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
+  const kept = opened && doc && Object.values(doc.marks).some((l) => l && l.length);
+  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Documents' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -1123,11 +1167,12 @@ async function goToDest(dest) {
     if (n >= 0) goPage(n);
   } catch {}
 }
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 function goPage(n, instant) {
   if (!views.length) return;
   n = Math.max(0, Math.min(views.length - 1, n));
   current = n;
-  viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant ? 'instant' : 'smooth' });
+  viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant || reduceMotion.matches ? 'instant' : 'smooth' });
   updateStatus();
 }
 viewer.addEventListener('scroll', () => {
@@ -1226,6 +1271,7 @@ function restore(s, layout) {
   const o = JSON.parse(s); doc.pages = o.pages; doc.marks = o.marks; selMark = null; selContent = null;
   syncHiddenComments();
   layout ? layoutPages(true).then(renderSide) : views.forEach((v) => v.rendered && drawMarks(v));
+  if (!layout && S.side === 'outline') renderSide(); // bookmarks are kept with the marks
   setSaved(false); persist(); refreshRibbon();
 }
 function undo() { if (!undoStack.length) return; const now = snapshot(); const prev = undoStack.pop(); redoStack.push(now); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); }
@@ -1277,6 +1323,42 @@ function deleteSelected() {
   if (k < 0) return;
   list.splice(k, 1); const entry = selMark.entry; selMark = null; redrawPage(entry); changed(before);
 }
+// Moves mark m to its original o moved by dx, dy points (dragging, arrow keys, pasting).
+function offsetMark(m, o, dx, dy) {
+  if (o.rects) m.rects = o.rects.map((r) => [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy]);
+  if (o.pts) m.pts = o.pts.map((p) => [p[0] + dx, p[1] + dy]);
+  if ('x1' in o) { m.x1 = o.x1 + dx; m.x2 = o.x2 + dx; m.y1 = o.y1 + dy; m.y2 = o.y2 + dy; }
+  if ('x' in o) { m.x = o.x + dx; m.y = o.y + dy; }
+  if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
+}
+const selectedMark = () => selMark && (doc.marks[selMark.key] || []).find((m) => m.id === selMark.id);
+// Arrow keys: 1 pt a press (10 with Shift), along the page as it is shown.
+function nudgeMark(key, big) {
+  const m = selectedMark(); if (!m) return false;
+  const d = big ? 10 : 1, v = views.find((x) => x.entry === selMark.entry);
+  let [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[key];
+  if (v) { const [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, dx * scale, dy * scale); [dx, dy] = [x1 - x0, y1 - y0]; }
+  const before = snapshot();
+  offsetMark(m, JSON.parse(JSON.stringify(m)), dx, dy);
+  redrawPage(selMark.entry); changed(before);
+  return true;
+}
+// Copy, paste and duplicate the selected mark. A paste lands on the page in view, 10 pt down and right of the
+// original (or of the last paste), and is selected.
+let markClip = null;
+function copyMark() { const m = selectedMark(); if (!m) return false; markClip = { m: JSON.stringify(m), n: 0 }; toast('Copied'); return true; }
+function pasteMark(src) {
+  const clip = src || markClip; if (!clip || !has()) return false;
+  const entry = src ? selMark.entry : doc.pages[current];
+  const m = JSON.parse(clip.m), k = ++clip.n * 10;
+  m.id = uid(); delete m.pending;
+  const before = snapshot();
+  offsetMark(m, JSON.parse(clip.m), k, -k);
+  marksOf(entry).push(m); changed(before);
+  selectMark({ key: pageKey(entry), id: m.id, entry });
+  return true;
+}
+const duplicateMark = () => { const m = selectedMark(); return !!m && pasteMark({ m: JSON.stringify(m), n: 0 }); };
 function startMove(e, v, m) {
   if (!m) return;
   e.preventDefault();
@@ -1286,13 +1368,7 @@ function startMove(e, v, m) {
   let moved = false;
   const move = (ev) => {
     const [cx, cy] = toPdf(v, ...localPoint(ev, v));
-    const dx = cx - sx, dy = cy - sy;
-    const o = JSON.parse(orig);
-    if (o.rects) m.rects = o.rects.map((r) => [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy]);
-    if (o.pts) m.pts = o.pts.map((p) => [p[0] + dx, p[1] + dy]);
-    if ('x1' in o) { m.x1 = o.x1 + dx; m.x2 = o.x2 + dx; m.y1 = o.y1 + dy; m.y2 = o.y2 + dy; }
-    if ('x' in o) { m.x = o.x + dx; m.y = o.y + dy; }
-    if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
+    offsetMark(m, JSON.parse(orig), cx - sx, cy - sy);
     moved = true; drawMarks(v);
   };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (moved) changed(before); };
@@ -1383,7 +1459,7 @@ function setTool(t) {
   app.dataset.tool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
-  if (t === 'edit' && was !== 'edit') toast('Click text to change it, or a picture or comment to move or delete it');
+  if (t === 'edit' && was !== 'edit') toast(`${matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click'} text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
   if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
   refreshRibbon();
 }
@@ -1767,13 +1843,17 @@ function openLineEditor(v, m, isNew) {
   const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
-    if (e.key === 'Escape') { e.preventDefault(); closeLineEditor(false); }
+    if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
   ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed) closeLineEditor(true); }, 0));
 }
+// Escape, like clicking away, keeps what was typed; Undo takes it back. Says so once a session.
+let keptHinted = false;
+function keptHint(changedSomething) { if (changedSomething && !keptHinted) { keptHinted = true; toast(`Change kept. ${fmtKey('Mod-z')} undoes it.`); } }
+// Returns true if the edit changed the page.
 function closeLineEditor(commit) {
-  if (!lineEditor) return;
+  if (!lineEditor) return false;
   const { ed, v, m, isNew } = lineEditor; lineEditor = null;
   editingIds.delete(m.id);
   const text = ed.textContent.replace(/[\r\n]+/g, ' ');
@@ -1783,8 +1863,9 @@ function closeLineEditor(commit) {
     if (text === m.orig && !isNew) list.splice(list.indexOf(m), 1); // back to the original: no edit left
     else { m.text = text; if (isNew) list.push(m); }
     changed(before);
+    drawMarks(v); return true;
   }
-  drawMarks(v);
+  drawMarks(v); return false;
 }
 
 // Erase area: drag a rectangle; everything in it is cleared to the colour around it.
@@ -2201,9 +2282,137 @@ function parseRange(s, max) {
 }
 
 /* ---------------- saving ----------------
-   With the pages unchanged, the original PDF is kept (bookmarks, forms, links, metadata) and the mark-up is added
-   to it. Otherwise a new PDF is assembled from the pages in their new order. Highlights, drawings, boxes, text and
+   The original PDF is kept (bookmarks, forms, links, metadata) and the mark-up is added to it. When pages were
+   deleted, moved or added, its pages are put in the new order and pages from other PDFs are copied in. Highlights, drawings, boxes, text and
    signatures are drawn into the page so every reader shows them; notes are real PDF comments. */
+// The page for each entry, in order. Pages of `base` (a loaded source used as the saved PDF) are its own pages; others
+// are copied with one copyPages call per source, so the copies share fonts and pictures. A page used twice is copied
+// again in a later call, so each use is a page of its own.
+async function savePagesFor(out, loaded, entries, base) {
+  const bySrc = new Map(), got = new Map();
+  for (const e of entries) { const m = bySrc.get(e.src) || new Map(); m.set(e.i, (m.get(e.i) || 0) + 1); bySrc.set(e.src, m); }
+  for (const [k, counts] of bySrc) {
+    const own = k === base ? out.getPages() : null;
+    for (let r = 0; ; r++) {
+      const idx = [...counts].filter(([, n]) => n > r).map(([i]) => i); if (!idx.length) break;
+      const pgs = r === 0 && own ? idx.map((i) => own[i]) : await out.copyPages(loaded[k], idx);
+      idx.forEach((i, j) => { const key = k + ':' + i; if (!got.has(key)) got.set(key, []); got.get(key).push(pgs[j]); });
+    }
+  }
+  return entries.map((e) => got.get(e.src + ':' + e.i).shift());
+}
+// Makes `list` the document's pages, in that order, directly under the page tree's root. What a page took from the
+// tree above it (resources, size, rotation) is written on the page first. Pages left out are deleted.
+function saveSetPageTree(L, out, list) {
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFNumber } = L, c = out.context, N = (k) => PDFName.of(k);
+  for (const p of list) for (const k of ['Resources', 'MediaBox', 'CropBox', 'Rotate']) {
+    if (p.node.get(N(k))) continue;
+    const v = p.node.getInheritableAttribute(N(k)); if (v) p.node.set(N(k), v);
+  }
+  const rootRef = out.catalog.get(N('Pages')), root = out.catalog.Pages(), keep = new Set(list.map((p) => p.ref.tag)), seen = new Set();
+  const walk = (node) => {
+    const kids = node.lookup(N('Kids')); if (!(kids instanceof PDFArray)) return;
+    for (const r of kids.asArray()) {
+      if (!(r instanceof PDFRef) || seen.has(r.tag)) continue; seen.add(r.tag);
+      const d = c.lookup(r); if (!(d instanceof PDFDict)) continue;
+      if (d.get(N('Kids'))) { walk(d); c.delete(r); } else if (!keep.has(r.tag)) c.delete(r);
+    }
+  };
+  walk(root);
+  root.set(N('Kids'), c.obj(list.map((p) => p.ref))); root.set(N('Count'), PDFNumber.of(list.length));
+  for (const p of list) p.node.set(N('Parent'), rootRef);
+  out.pageCount = undefined; out.pageCache.invalidate();
+}
+// Bookmarks and named destinations that go to a page no longer in the PDF are removed (a bookmark with bookmarks
+// under it stays, without a target). `keep` holds the tags of the saved pages.
+function saveDropDeadDests(L, out, keep) {
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFNumber, PDFString, PDFHexString } = L, c = out.context, N = (k) => PDFName.of(k);
+  const look = (o) => o instanceof PDFRef ? c.lookup(o) : o;
+  const keyOf = (o) => o instanceof PDFName ? o.decodeText() : o instanceof PDFString || o instanceof PDFHexString ? o.decodeText() : null;
+  const gone = (d) => {
+    d = look(d); if (d instanceof PDFDict) d = look(d.get(N('D')));
+    if (!(d instanceof PDFArray) || !d.size()) return false;
+    const pg = d.get(0); return pg instanceof PDFRef && !keep.has(pg.tag);
+  };
+  // Named destinations, read before any is removed so bookmarks that use them can be checked.
+  const named = new Map(), cat = out.catalog;
+  const old = look(cat.get(N('Dests')));
+  if (old instanceof PDFDict) for (const [k, v] of old.entries()) named.set(k.decodeText(), v);
+  const names = look(cat.get(N('Names'))), tree = names instanceof PDFDict ? look(names.get(N('Dests'))) : null;
+  const leaves = (node, fn, seen = new Set()) => {
+    if (!(node instanceof PDFDict) || seen.has(node)) return; seen.add(node);
+    const arr = look(node.get(N('Names'))); if (arr instanceof PDFArray) fn(arr);
+    const kids = look(node.get(N('Kids'))); if (kids instanceof PDFArray) for (const r of kids.asArray()) leaves(look(r), fn, seen);
+  };
+  leaves(tree, (arr) => { for (let k = 0; k + 1 < arr.size(); k += 2) { const n = keyOf(look(arr.get(k))); if (n != null) named.set(n, arr.get(k + 1)); } });
+  const target = (d) => { d = look(d); const n = keyOf(d); return n != null ? named.get(n) : d; };
+  // Bookmarks
+  const outlines = look(cat.get(N('Outlines')));
+  const seen = new Set();
+  const prune = (parent) => { // returns how many bookmarks show under `parent` when it is open
+    const kids = []; let r = parent.get(N('First'));
+    while (r instanceof PDFRef && !seen.has(r.tag)) { seen.add(r.tag); const it = c.lookup(r); if (!(it instanceof PDFDict)) break; kids.push([r, it]); r = it.get(N('Next')); }
+    const kept = []; let shown = 0;
+    for (const [ref, it] of kids) {
+      const was = it.lookup(N('Count')), open = !(was instanceof PDFNumber) || was.asNumber() > 0;
+      const under = prune(it);
+      const a = look(it.get(N('A')));
+      const d = it.get(N('Dest')) || (a instanceof PDFDict && String(a.get(N('S'))) === '/GoTo' ? a.get(N('D')) : null);
+      if (d && gone(target(d))) {
+        if (!it.get(N('First'))) { c.delete(ref); continue; }
+        it.delete(N('Dest')); if (a) it.delete(N('A'));
+      }
+      if (it.get(N('First'))) it.set(N('Count'), PDFNumber.of(open ? under : -under)); else it.delete(N('Count'));
+      kept.push([ref, it]); shown += 1 + (open ? under : 0);
+    }
+    kept.forEach(([, it], j) => {
+      if (j) it.set(N('Prev'), kept[j - 1][0]); else it.delete(N('Prev'));
+      if (j < kept.length - 1) it.set(N('Next'), kept[j + 1][0]); else it.delete(N('Next'));
+    });
+    if (kept.length) { parent.set(N('First'), kept[0][0]); parent.set(N('Last'), kept[kept.length - 1][0]); }
+    else { parent.delete(N('First')); parent.delete(N('Last')); }
+    return shown;
+  };
+  if (outlines instanceof PDFDict) {
+    const shown = prune(outlines);
+    if (outlines.get(N('First'))) outlines.set(N('Count'), PDFNumber.of(shown)); else cat.delete(N('Outlines'));
+  }
+  // Named destinations themselves
+  if (old instanceof PDFDict) for (const [k, v] of old.entries()) if (gone(v)) old.delete(k);
+  const fixTree = (node, seen = new Set()) => { // returns [first, last] name of what is left under node, or null
+    if (!(node instanceof PDFDict) || seen.has(node)) return null; seen.add(node);
+    let lo = null, hi = null;
+    const arr = look(node.get(N('Names')));
+    if (arr instanceof PDFArray) {
+      for (let k = arr.size() - 2; k >= 0; k -= 2) if (gone(arr.get(k + 1))) { arr.remove(k + 1); arr.remove(k); }
+      if (arr.size()) { lo = arr.get(0); hi = arr.get(arr.size() - 2); }
+    }
+    const kids = look(node.get(N('Kids')));
+    if (kids instanceof PDFArray) for (let k = kids.size() - 1; k >= 0; k--) {
+      const got = fixTree(look(kids.get(k)), seen);
+      if (!got) { kids.remove(k); continue; }
+      if (!hi) hi = got[1]; lo = got[0];
+    }
+    if (!lo) return null;
+    if (node.get(N('Limits'))) node.set(N('Limits'), c.obj([lo, hi]));
+    return [lo, hi];
+  };
+  if (tree instanceof PDFDict && !fixTree(tree)) { tree.delete(N('Kids')); tree.set(N('Names'), c.obj([])); }
+}
+// Objects nothing in the saved PDF refers to any more (deleted pages and what only they used) are dropped.
+function saveDropUnused(L, out) {
+  const { PDFRef, PDFDict, PDFArray } = L, seen = new Set(), stack = [];
+  const visit = (o) => {
+    if (!o) return;
+    if (o instanceof PDFRef) { if (seen.has(o.tag)) return; seen.add(o.tag); const t = out.context.lookup(o); if (t) stack.push(t); return; }
+    if (o instanceof PDFDict) { for (const [, v] of o.entries()) visit(v); return; }
+    if (o instanceof PDFArray) { for (const v of o.asArray()) visit(v); return; }
+    if (o.dict instanceof PDFDict) visit(o.dict);
+  };
+  const t = out.context.trailerInfo; visit(t.Root); visit(t.Info); visit(t.Encrypt);
+  while (stack.length) visit(stack.pop());
+  for (const [ref] of out.context.enumerateIndirectObjects()) if (!seen.has(ref.tag)) out.context.delete(ref);
+}
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
   const L = await loadPdfLib();
@@ -2239,10 +2448,22 @@ async function buildPdf(only) {
   const same = !only && entries.length === loaded[s0].getPageCount() && entries.every((e, n) => e.src === s0 && e.i === n);
   let out, pages;
   if (same) { out = loaded[s0]; pages = out.getPages(); }
-  else {
+  else if (only || !entries.length) {
+    // Extract: a new PDF with copies of the pages (one copy per source, so pages share their fonts and pictures).
     out = await PDFDocument.create();
-    pages = [];
-    for (const e of entries) { const [p] = await out.copyPages(loaded[e.src], [e.i]); out.addPage(p); pages.push(p); }
+    pages = await savePagesFor(out, loaded, entries, -1);
+    for (const p of pages) out.addPage(p);
+  } else {
+    // Pages deleted, moved, added or merged: the opened file is kept (bookmarks, form, metadata, attachments) and its
+    // pages are put in the new order. Pages from other PDFs are copied in, one copy per source.
+    const n0 = entries.filter((e) => e.src === 0).length, count = new Map();
+    for (const e of entries) count.set(e.src, (count.get(e.src) || 0) + 1);
+    const base = n0 ? 0 : [...count].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+    out = loaded[base];
+    const list = await savePagesFor(out, loaded, entries, base);
+    saveSetPageTree(L, out, list);
+    pages = out.getPages();
+    saveDropDeadDests(L, out, new Set(pages.map((p) => p.ref.tag)));
   }
   const font = await out.embedFont(StandardFonts.Helvetica);
   const col = (hex) => { const n = parseInt(hex.slice(1), 16); return rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); };
@@ -2279,7 +2500,7 @@ async function buildPdf(only) {
         p.drawImage(im, { x: m.x + down[0] * m.h, y: m.y + down[1] * m.h, width: m.w, height: m.h, rotate: degrees(m.rot) });
       }
       if (m.type === 'note') {
-        const annot = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], T: PDFHexString.fromText('Cowdrey.PDF'), F: 4, Open: false });
+        const annot = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], ...((m.author || S.author) ? { T: PDFHexString.fromText(m.author || S.author) } : {}), F: 4, Open: false });
         const ref = out.context.register(annot);
         let annots = p.node.lookup(PDFName.of('Annots'));
         if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
@@ -2289,7 +2510,9 @@ async function buildPdf(only) {
     for (const h of FEATURE.savePage) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
-  out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
+  if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written
+  if (out.getTitle() === undefined) out.setTitle(doc.name); // keep the PDF's own title (or the one set in Document properties)
+  out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
   const ownerOnlyKey = doc.sources.findIndex((s0) => s0.ownerOnly);
   if (!(pw && doc.keepPassword) && ownerOnlyKey >= 0 && out.encrypt) {
@@ -2470,14 +2693,26 @@ $('#findInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.
 $('#findNext').onclick = () => stepFind(1); $('#findPrev').onclick = () => stepFind(-1); $('#findClose').onclick = closeFind;
 
 /* ---------------- sidebar: pages, outline, documents ---------------- */
-function setSide(t) { S.side = t; saveSettings(); $$('.side-tabs [data-side]').forEach((b) => b.setAttribute('aria-selected', b.dataset.side === t)); renderSide(); }
+function syncSideTabs() { $$('.side-tabs [data-side]').forEach((b) => { const on = b.dataset.side === S.side; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; b.id ||= 'side-' + b.dataset.side; if (on) $('#sidePanel').setAttribute('aria-labelledby', b.id); }); }
+function setSide(t) { S.side = t; saveSettings(); syncSideTabs(); renderSide(); }
 $$('.side-tabs [data-side]').forEach((b) => b.addEventListener('click', () => setSide(b.dataset.side)));
+// Arrow keys, Home and End move between tabs (and choose them), as in any tab list.
+function tabKeys(e, list, choose) {
+  const k = list.indexOf(document.activeElement); if (k < 0) return;
+  const n = { ArrowRight: k + 1, ArrowLeft: k - 1, ArrowDown: k + 1, ArrowUp: k - 1, Home: 0, End: list.length - 1 }[e.key];
+  if (n === undefined) return;
+  e.preventDefault(); e.stopPropagation();
+  choose(list[(n + list.length) % list.length]);
+}
+$('.side-tabs').addEventListener('keydown', (e) => tabKeys(e, $$('.side-tabs [data-side]'), (b) => { setSide(b.dataset.side); b.focus(); }));
+$('#sideClose').onclick = () => toggleSidebar(false);
 let thumbIO;
 async function renderSide() {
   const panel = $('#sidePanel');
   if (S.side === 'docs') return renderDocs();
   if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its pages.</p>'; return; }
   if (S.side === 'outline') {
+    if (FEATURE.outlinePanel) return FEATURE.outlinePanel(panel);
     const outline = await pdfDocs.get(0).getOutline().catch(() => null);
     const list = (items) => `<ul class="outline-list">${items.map((o, k) => `<li><button type="button" data-o="${esc(k)}" style="padding-left:${8}px">${esc(o.title)}</button>${o.items && o.items.length ? `<div style="padding-left:12px">${list(o.items)}</div>` : ''}</li>`).join('')}</ul>`;
     panel.innerHTML = outline && outline.length ? list(outline) : '<p class="empty-note">This PDF has no outline.</p>';
@@ -2513,12 +2748,28 @@ async function drawThumb(t) {
   try { await page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: v2 }).promise; } catch {}
 }
 function markThumb() { $$('.thumb').forEach((t) => t.setAttribute('aria-current', +t.dataset.n === current)); }
+const isPhone = () => matchMedia('(max-width: 760px)').matches;
+let sideOpener = null; // what had focus when the phone sidebar opened; it gets it back on closing
 function toggleSidebar(on) {
-  const phone = matchMedia('(max-width: 760px)').matches;
-  if (phone) { app.dataset.sidebar = on ?? app.dataset.sidebar !== 'open' ? 'open' : 'on'; if (on === false) app.dataset.sidebar = 'on'; return; }
+  const phone = isPhone();
+  if (phone) {
+    const was = app.dataset.sidebar === 'open', open = on ?? !was;
+    app.dataset.sidebar = open ? 'open' : 'on';
+    if (open && !was) { sideOpener = document.activeElement; const t = $('.side-tabs [aria-selected="true"]'); setTimeout(() => t && t.focus({ preventScroll: true }), 0); }
+    if (!open && was) { const f = sideOpener; sideOpener = null; if (f && f.isConnected && f !== document.body) f.focus({ preventScroll: true }); }
+    refreshRibbon(); return;
+  }
   S.sidebar = on ?? !S.sidebar; saveSettings(); app.dataset.sidebar = S.sidebar ? 'on' : 'off';
   if (doc && S.zoom === 'fit') setTimeout(() => layoutPages(true), 50);
 }
+
+// Phone: the sidebar is an overlay over a scrim; a tap outside it closes it (and does nothing else).
+document.addEventListener('pointerdown', (e) => {
+  if (app.dataset.sidebar !== 'open' || !isPhone() || e.target.closest('#sidebar')) return;
+  e.preventDefault(); e.stopPropagation(); toggleSidebar(false);
+  const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); }; // the click that follows the tap
+  window.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => window.removeEventListener('click', eat, true), 500);
+}, true);
 
 /* ---------------- library (IndexedDB): every PDF you open, kept on this device ---------------- */
 let dbp;
@@ -2590,7 +2841,7 @@ async function makeSample() {
   y = para(p, 'A free PDF viewer and editor by Bradley Cowdrey. Your PDFs stay on your device.', y, { size: 14, color: grey, after: 22 });
   y = para(p, 'Try it on this page', y, { size: 16, font: bold, color: maroon, after: 2 });
   for (const t of [
-    'Highlight: select these words with the mouse, then choose Highlight on the Mark up tab.',
+    'Highlight: select these words with the mouse, then choose Highlight on the Comment tab.',
     'Draw, add a box, type text or leave a note anywhere on the page.',
     'Sign: draw your signature once and place it wherever you need it.',
     'Find: press Cmd+F (Ctrl+F on Windows) and search for the word pelican.',
@@ -2659,7 +2910,7 @@ let dialogChain = Promise.resolve();
 function dialog(...args) { const p = dialogChain.then(() => showDialog(...args)); dialogChain = p.catch(() => {}); return p; }
 function showDialog(title, body, actions, setup) {
   const dlg = $('#dialog');
-  dlg.innerHTML = `<div class="dlg-head"><h2>${esc(title)}</h2><button class="icon-btn" type="button" data-x aria-label="Close">${ic('x')}</button></div><div class="dlg-body">${body}</div><div class="dlg-foot">${actions.map((a, k) => `<button type="button" class="btn${a.primary ? ' primary' : ''}${a.danger ? ' danger' : ''}" data-a="${k}">${esc(a.label)}</button>`).join('')}</div>`;
+  dlg.innerHTML = `<div class="dlg-head"><h2 id="dlgTitle">${esc(title)}</h2><button class="icon-btn" type="button" data-x aria-label="Close">${ic('x')}</button></div><div class="dlg-body">${body}</div><div class="dlg-foot">${actions.map((a, k) => `<button type="button" class="btn${a.primary ? ' primary' : ''}${a.danger ? ' danger' : ''}" data-a="${k}">${esc(a.label)}</button>`).join('')}</div>`;
   icons();
   if (setup) setup(dlg);
   return new Promise((res) => {
@@ -2674,12 +2925,15 @@ function showDialog(title, body, actions, setup) {
     });
     dlg.oncancel = (e) => { e.preventDefault(); done(null); };
     dlg.showModal();
+    // Start on the first field, or else on the main button, never on the close button.
+    const first = $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    if (first && document.activeElement === $('[data-x]', dlg)) first.focus();
     const inp = $('#dlgInput', dlg); if (inp) { inp.focus(); inp.select && inp.select(); inp.onkeydown = (e) => { if (e.key === 'Enter' && (inp.tagName !== 'TEXTAREA' || e.metaKey || e.ctrlKey)) { e.preventDefault(); done(inp.value); } }; }
   });
 }
 function askText(title, note, value, ok, password, multiline) {
   const field = multiline ? `<textarea id="dlgInput" rows="4">${esc(value)}</textarea>` : `<input id="dlgInput" type="${password ? 'password' : 'text'}" value="${esc(value)}" autocomplete="off">`;
-  return dialog(title, `${note ? `<p>${esc(note)}</p>` : ''}<label class="field">${field}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
+  return dialog(title, `${note ? `<p id="dlgNote">${esc(note)}</p>` : ''}<label class="field">${field.replace('id="dlgInput"', `id="dlgInput" aria-labelledby="dlgTitle"${note ? ' aria-describedby="dlgNote"' : ''}`)}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
 }
 // Links open in the browser. The apps' web views ignore target=_blank and window.open, so they hand links to the system.
 const openExternal = (url) => { if (NATIVE && NATIVE.opener) NATIVE.opener.openUrl(url).catch(() => {}); else window.open(url, '_blank', 'noopener'); };
@@ -2707,28 +2961,31 @@ cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFile
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
-cmd('merge', { label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
-cmd('exportImage', { label: 'Export this page as an image', icon: 'image-down', enabled: has, run: exportImage });
+cmd('merge', { rlabel: 'Add PDFs', label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
+cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
 cmd('undo', { label: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
 cmd('redo', { label: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
-const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
+cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
+cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
+cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
+const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
 for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
 cmd('rotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: has, run: () => rotatePage(-90) });
 cmd('rotR', { label: 'Rotate right', icon: 'rotate-cw', key: 'Mod-r', enabled: has, run: () => rotatePage(90) });
-cmd('rotAll', { label: 'Rotate all pages', icon: 'refresh-cw', enabled: has, run: () => rotateAll(90) });
-cmd('up', { label: 'Move page up', icon: 'arrow-up', enabled: () => has() && current > 0, run: () => movePage(-1) });
-cmd('down', { label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
+cmd('rotAll', { rlabel: 'Rotate all', label: 'Rotate all pages', icon: 'refresh-cw', enabled: has, run: () => rotateAll(90) });
+cmd('up', { rlabel: 'Move up', label: 'Move page up', icon: 'arrow-up', enabled: () => has() && current > 0, run: () => movePage(-1) });
+cmd('down', { rlabel: 'Move down', label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
 cmd('dup', { label: 'Duplicate page', icon: 'copy-plus', enabled: has, run: duplicatePage });
-cmd('blank', { label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
+cmd('blank', { rlabel: 'Blank page', label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
 cmd('delPage', { label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage });
 cmd('extract', { label: 'Extract pages…', icon: 'file-output', enabled: has, run: extractPages });
-cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => S.sidebar, run: () => toggleSidebar() });
+cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => isPhone() ? app.dataset.sidebar === 'open' : S.sidebar, run: () => toggleSidebar() });
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
 cmd('zoomIn', { label: 'Zoom in', icon: 'zoom-in', key: 'Mod-=', enabled: has, run: () => setZoom(Math.min(400, Math.round(scale * 100) + 10)) });
 cmd('zoomOut', { label: 'Zoom out', icon: 'zoom-out', key: 'Mod--', enabled: has, run: () => setZoom(Math.max(25, Math.round(scale * 100) - 10)) });
@@ -2744,9 +3001,9 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
   ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
-  ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find']],
+  ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Mark up', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note', '-', 'sign', 'image', '-', 'tool_edit', 'tool_erase']],
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -2755,18 +3012,40 @@ function menuHtml(ids) {
   return ids.filter(shown).map((id) => id === '-' ? '<div class="msep"></div>' : (() => { const c = C[id]; const on = c.pressed ? c.pressed() : null; const dis = c.enabled && !c.enabled(); return `<button type="button" class="mi" role="menuitem" data-cmd="${id}"${dis ? ' disabled' : ''}>${on === null ? ic(c.icon) : on ? ic('check') : '<span></span>'}<span>${esc(c.label)}</span><span class="k">${fmtKey(c.key)}</span></button>`; })()).join('');
 }
 const pop = $('#popover');
+let popAnchor = null; // the button that opened the popover; Escape gives it focus back
 function openPopover(anchor, html) {
+  popAnchor = anchor;
   pop.innerHTML = html; pop.hidden = false; icons();
+  if (anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
   const r = anchor.getBoundingClientRect();
-  pop.style.left = Math.min(r.left, innerWidth - pop.offsetWidth - 8) + 'px'; pop.style.top = r.bottom + 4 + 'px';
+  pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
   const f = $('.mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; $$('.menubar > button').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.menubar > button, #moreBtn').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+// Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
+// goes back to the menu's button, Tab closes.
+pop.addEventListener('keydown', (e) => {
+  const items = $$('.mi:not([disabled])', pop), i = items.indexOf(document.activeElement);
+  const go = (n) => { e.preventDefault(); if (items.length) items[(n + items.length) % items.length].focus(); };
+  if (e.key === 'ArrowDown') go(i + 1);
+  else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
+  else if (e.key === 'Home') go(0);
+  else if (e.key === 'End') go(-1);
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const a = popAnchor; closePopover(); if (a && a.isConnected) a.focus(); }
+  else if (e.key === 'Tab') closePopover();
+  else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && popAnchor && popAnchor.closest('.menubar')) {
+    e.preventDefault();
+    const bs = $$('.menubar > button'), k = bs.indexOf(popAnchor), n = bs[(k + (e.key === 'ArrowRight' ? 1 : -1) + bs.length) % bs.length];
+    closePopover(); n.focus(); n.click();
+  } else return;
+  e.stopPropagation();
+});
 pop.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd); });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
-  $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" data-menu="${k}" aria-haspopup="menu" aria-expanded="false">${t}</button>`).join('');
+  $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
   $$('#menubar > button').forEach((b) => b.addEventListener('click', () => {
     const open = b.getAttribute('aria-expanded') === 'true';
     closePopover(); if (open) return;
@@ -2774,11 +3053,33 @@ function renderMenubar() {
   }));
 }
 renderMenubar();
+// On the menu bar: Left and Right move between menus, Down (or Enter, Space) opens one.
+$('#menubar').addEventListener('keydown', (e) => {
+  const bs = $$('#menubar > button'), k = bs.indexOf(document.activeElement); if (k < 0) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Home' || e.key === 'End') {
+    e.preventDefault(); e.stopPropagation();
+    const n = bs[e.key === 'Home' ? 0 : e.key === 'End' ? bs.length - 1 : (k + (e.key === 'ArrowRight' ? 1 : -1) + bs.length) % bs.length];
+    bs.forEach((b) => { b.tabIndex = b === n ? 0 : -1; }); n.focus();
+  } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (bs[k].getAttribute('aria-expanded') !== 'true') bs[k].click(); }
+});
+// Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
+function moreMenuHtml() {
+  const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids : [])));
+  return MENUS.map(([t, ids], k) => {
+    const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
+    return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
+  }).join('');
+}
+$('#moreBtn').addEventListener('click', () => {
+  const b = $('#moreBtn'), open = b.getAttribute('aria-expanded') === 'true';
+  closePopover(); if (open) return;
+  b.setAttribute('aria-expanded', 'true'); openPopover(b, moreMenuHtml());
+});
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_text', 'tool_note']], ['Add', ['sign', 'image']], ['Colour', 'COLORS'], ['Edit', ['deleteMark', 'undo']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], ['Colour', 'COLORS'], ['Add', ['sign']]]],
   pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
@@ -2799,18 +3100,66 @@ function menuAdd(title, ids) {
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
+// The commands on a tab that are pressed for the tool in use now (the tool's own buttons, not other toggles).
+function toolOnTab(tab) {
+  const t = app.dataset.tool, ids = (RIBBON[tab] ? RIBBON[tab][1] : []).flatMap(([, x]) => Array.isArray(x) ? x : []);
+  if (t === 'select') return true;
+  const probe = () => ids.filter((id) => C[id] && C[id].pressed && C[id].pressed());
+  const now = probe(); app.dataset.tool = '__probe'; const other = probe(); app.dataset.tool = t;
+  return now.some((id) => !other.includes(id));
+}
+function chooseTab(k) {
+  S.ribbon = k; saveSettings();
+  // A tool from another tab would stay on unseen (and, say, keep a form from being filled): go back to Select.
+  if (!toolOnTab(k)) { setTool('select'); pendingImage = null; }
+  renderRibbon();
+}
+// The ribbon tabs are a tab list: one Tab stop, arrow keys move between tabs, focus stays on the tab chosen.
+$('#ribbonTabs').addEventListener('keydown', (e) => tabKeys(e, $$('#ribbonTabs [data-rt]'), (b) => { chooseTab(b.dataset.rt); $(`#ribbonTabs [data-rt="${b.dataset.rt}"]`).focus(); }));
 function renderRibbon() {
-  $('#ribbonTabs').innerHTML = Object.entries(RIBBON).filter(([, [, groups]]) => groups.length).map(([k, [t]]) => `<button type="button" role="tab" data-rt="${k}" aria-selected="${S.ribbon === k}">${t}</button>`).join('');
-  $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => { S.ribbon = b.dataset.rt; saveSettings(); renderRibbon(); });
+  const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest('#ribbonTabs');
+  $('#ribbonTabs').innerHTML = Object.entries(RIBBON).filter(([, [, groups]]) => groups.length).map(([k, [t]]) => `<button type="button" role="tab" id="rt-${k}" data-rt="${k}" aria-controls="ribbonBody" aria-selected="${S.ribbon === k}" tabindex="${S.ribbon === k ? 0 : -1}">${t}</button>`).join('');
+  $$('#ribbonTabs [data-rt]').forEach((b) => b.onclick = () => chooseTab(b.dataset.rt));
+  if (focused) { const t = $(`#ribbonTabs [data-rt="${S.ribbon}"]`); t && t.focus({ preventScroll: true }); }
+  $('#ribbonBody').setAttribute('aria-labelledby', 'rt-' + (RIBBON[S.ribbon] ? S.ribbon : 'home'));
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
-  $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group"><div class="r-items">${ids === 'COLORS'
+  $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
     ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
-    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
+    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].rlabel || C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
   icons(); refreshRibbon();
+  const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
+  if (tab) scrollIntoRow(tabs, tab);
+  const on = $('#ribbonBody [aria-pressed="true"]'); if (on) scrollIntoRow($('#ribbonBody'), on); else $('#ribbonBody').scrollLeft = 0;
+  ribbonEdges();
 }
+// Scrolls a row sideways just enough to show el (never the page up or down).
+function scrollIntoRow(row, el) {
+  const r = row.getBoundingClientRect(), b = el.getBoundingClientRect(), pad = 48;
+  if (b.left < r.left + pad) row.scrollLeft -= r.left + pad - b.left;
+  else if (b.right > r.right - pad) row.scrollLeft += b.right - (r.right - pad);
+}
+// A row with more to see past an edge fades at that edge.
+function ribbonEdges() {
+  for (const row of [$('#ribbonBody'), $('#ribbonTabs')]) {
+    row.classList.toggle('more-l', row.scrollLeft > 1);
+    row.classList.toggle('more-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
+  }
+}
+$('#ribbonBody').addEventListener('scroll', ribbonEdges, { passive: true });
+$('#ribbonTabs').addEventListener('scroll', ribbonEdges, { passive: true });
+window.addEventListener('resize', ribbonEdges);
+// Keyboard focus that lands on a button out of view brings it into view.
+$('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
+  // A group of commands that only work on a selection (a picture…) shows only while they can be used.
+  let shift = false;
+  $$('#ribbonBody .r-group').forEach((g) => {
+    const bs = $$('[data-cmd]', g); if (!bs.length || !bs.every((b) => C[b.dataset.cmd].contextual)) return;
+    const hide = bs.every((b) => b.disabled); if (g.hidden !== hide) { g.hidden = hide; shift = true; }
+  });
+  if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
   scheduleMacMenu();
 }
@@ -2819,8 +3168,16 @@ document.addEventListener('click', (e) => { const b = e.target.closest('[data-cm
 /* ---------------- keys ---------------- */
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open) return;
+  if (!pop.hidden && pop.contains(document.activeElement)) return; // the menu's own keys
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
   const mod = isMac ? e.metaKey : e.ctrlKey;
+  // A selected mark: copy, paste and duplicate it (text being selected or typed keeps the usual keys).
+  if (mod && !typing && !e.shiftKey && !e.altKey && ['c', 'v', 'd'].includes(e.key.toLowerCase())) {
+    const k = e.key.toLowerCase(), noText = !String(getSelection() || '').length;
+    const done = k === 'c' ? noText && copyMark() : k === 'v' ? pasteMark() : duplicateMark();
+    if (done) e.preventDefault();
+    return;
+  }
   if (mod) {
     const key = (e.shiftKey ? 'Shift-' : '') + (e.altKey ? 'Alt-' : '') + e.key.toLowerCase();
     const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
@@ -2830,7 +3187,9 @@ document.addEventListener('keydown', (e) => {
   }
   if (typing) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && (selMark || selContent)) { e.preventDefault(); deleteSelected(); }
-  if (e.key === 'Escape') { if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
+  if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
+  // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
+  if (/^Arrow/.test(e.key) && !e.altKey && selMark) { e.preventDefault(); nudgeMark(e.key, e.shiftKey); return; }
   if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
   if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
@@ -3181,11 +3540,11 @@ function txtOpenEditor(v, o) {
   v.el.appendChild(ta);
   const E = txtEd = { v, ta, ...o };
   txtEditing.add(o.m.id); drawMarks(v);
-  const fit = () => { o.place(ta, E.fmt); ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; if (o.single || !o.width) { ta.style.width = '0'; ta.style.width = Math.max(o.minWidth || 20, ta.scrollWidth + 2) + 'px'; } };
+  const fit = () => { o.place(ta, E.fmt); ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; if (o.single || !o.width) { ta.style.width = '0'; ta.style.width = Math.max(o.minWidth || 20, ta.scrollWidth + 2) + 'px'; } if (o.after) o.after(ta, E.fmt, fit); };
   fit();
   ta.addEventListener('input', () => { fit(); txtPlaceBar(v, ta); });
   ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); txtCloseEditor(false); return; }
+    if (e.key === 'Escape') { e.preventDefault(); const was = ta.value; txtCloseEditor(true); keptHint(was !== o.text); return; } // keeps, like clicking away; Undo takes it back
     if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); txtCloseEditor(true); return; }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
@@ -3196,6 +3555,7 @@ function txtOpenEditor(v, o) {
 function txtCloseEditor(commit) {
   const E = txtEd; if (!E) return;
   txtEd = null; txtHideBar(); txtEditing.delete(E.m.id);
+  if (E.cleanup) E.cleanup();
   const text = E.ta.value.replace(/\r/g, '');
   E.ta.remove();
   if (commit) Promise.resolve(E.done(text, E.fmt)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
@@ -3211,11 +3571,51 @@ function txtParaFont(v, m, f, px) {
   const own = L && !m.ocr && !m.type3 && f.bold === m.base.bold && f.italic === m.base.italic && document.fonts.check(`${px}px "${L.fontName}"`);
   return own ? `${px}px "${L.fontName}", ${cssFamily(m.fam)}` : txtCss(m.fam, f, px);
 }
+// How a paragraph's text fits the room its original lines had, at a format: { n (lines), over (runs past the last
+// original line) }. A paragraph never grows downwards silently: the editor warns, and committing asks.
+function txtParaFit(page, m, text, f) {
+  if (!m.wrap) return { n: 1, over: false };
+  const t = { ...m, size: f.size, bold: f.bold, italic: f.italic, std: !!(f.bold !== m.base.bold || f.italic !== m.base.italic) };
+  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = m.lead0 * f.size / m.size0;
+  return { n, over: (n - 1) * lead > (m.src.length - 1) * m.lead0 + .5 };
+}
+// The largest size, in half points down to 70% of the original size, at which it fits. null when none does.
+function txtParaFitSize(page, m, text, f) {
+  const min = Math.max(4, m.size0 * .7);
+  for (let s = Math.min(f.size, Math.floor(f.size * 2) / 2); s >= min - 1e-6; s -= .5) if (!txtParaFit(page, m, text, { ...f, size: s }).over) return txtRound(s);
+  return null;
+}
+const TXT_LONGER = 'This paragraph is now longer than the space it had';
 // A paragraph (tpara) in the editor. isNew: the block isn't a mark yet; absorb: te marks it replaces.
-function txtEditPara(v, m, isNew, absorb = []) {
-  const fmt = txtFmtOf(m);
+// draft: { text, fmt } to carry on editing from (after "Keep editing").
+function txtEditPara(v, m, isNew, absorb = [], draft = null) {
+  const fmt = draft ? { ...draft.fmt } : txtFmtOf(m);
+  let note = null;
   txtOpenEditor(v, {
-    m, text: m.text, fmt, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
+    m, text: draft ? draft.text : m.text, fmt,
+    after(ta, f, refit) {
+      const fit = txtParaFit(v.page, m, ta.value.replace(/\r/g, ''), f);
+      ta.classList.toggle('txt-over-ed', fit.over);
+      if (!fit.over) { if (note) { note.remove(); note = null; } return; }
+      if (!note) {
+        note = document.createElement('div'); note.className = 'txt-over'; note.setAttribute('role', 'status');
+        note.innerHTML = `<span>${TXT_LONGER}.</span><button type="button" class="btn" data-shrink>Shrink to fit</button>`;
+        note.addEventListener('mousedown', (e) => e.preventDefault()); // the text keeps the focus
+        note.addEventListener('pointerdown', (e) => e.stopPropagation());
+        $('[data-shrink]', note).onclick = (e) => {
+          e.stopPropagation();
+          const s = txtParaFitSize(v.page, m, ta.value.replace(/\r/g, ''), f);
+          if (s == null) { toast('Even at 70% of its size it would not fit. Shorten the text, or let it run.'); return; }
+          f.size = s; if (txtBar) { const z = $('.txt-size', txtBar); if (z) z.textContent = txtRound(s); }
+          refit(); txtPlaceBar(v, ta);
+        };
+        v.el.appendChild(note);
+      }
+      // Under the text, or under the format bar when the bar sits below it (near the top of the page).
+      const place = () => { if (!note) return; const below = txtBar && txtBar.isConnected && txtBar.offsetTop > ta.offsetTop; note.style.left = Math.max(4, Math.min(ta.offsetLeft, v.el.clientWidth - note.offsetWidth - 4)) + 'px'; note.style.top = (below ? txtBar.offsetTop + txtBar.offsetHeight : ta.offsetTop + ta.offsetHeight) + 8 + 'px'; };
+      place(); requestAnimationFrame(place);
+    },
+    cleanup() { if (note) { note.remove(); note = null; } }, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
     opts: { align: !!m.wrap },
     place(ta, f) {
       const F = txtFrame({ ...m, size: f.size }), px = f.size * scale, lh = F.lead * scale;
@@ -3224,15 +3624,24 @@ function txtEditPara(v, m, isNew, absorb = []) {
       Object.assign(ta.style, { left: ox + 'px', top: (oy - base) + 'px', font: txtParaFont(v, m, f, px), lineHeight: (m.wrap ? lh : px * 1.25) + 'px', color: f.color, background: m.src[0].bg, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${base}px`, transform: `rotate(${ang}deg)` });
       if (m.wrap) ta.style.width = (m.wrap * scale + 3) + 'px';
     },
-    done(text, f) {
+    async done(text, f) {
       const list = marksOf(v.entry);
       const back = text === m.base.text && txtSameFmt(f, m.base) && !m.dx && !m.dy;
       if (isNew ? back && !absorb.length : text === m.text && txtSameFmt(f, m)) return;
+      const fit = back ? { over: false } : txtParaFit(v.page, m, text, f);
+      // Asked once per paragraph: after "Let it run", it isn't asked again (the editor still warns).
+      if (fit.over && !m.runOver) {
+        const s = txtParaFitSize(v.page, m, text, f);
+        const a = await dialog(TXT_LONGER, `<p>It now takes ${fit.n} lines; it had ${m.src.length}. Kept like this, it runs over what is below it on the page.</p>${s == null ? '<p>It does not fit even at 70% of its size. Shorten the text, or let it run.</p>' : `<p>Shrink to fit makes the text ${s} pt (it is ${txtRound(f.size)} pt).</p>`}`,
+          [{ label: 'Keep editing', value: 'edit' }, { label: 'Let it run', value: 'run' }, ...(s == null ? [] : [{ label: 'Shrink to fit', value: 'shrink', primary: true }])]);
+        if (a === 'shrink') { f = { ...f, size: s }; fit.over = false; }
+        else if (a !== 'run') { txtEditPara(v, m, isNew, absorb, { text, fmt: f }); return; }
+      }
       const before = snapshot();
       for (const t of absorb) { const k = list.indexOf(t); if (k >= 0) list.splice(k, 1); }
       if (back) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); }
       else {
-        Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left' });
+        Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', runOver: !!fit.over });
         txtRelayout(v.page, m);
         if (isNew) list.push(m);
       }
@@ -3520,7 +3929,7 @@ cmd('txtParaMode', { label: 'Edit as paragraphs', icon: 'pilcrow', enabled: has,
 cmd('txtReplace', { label: 'Replace text…', icon: 'replace', key: TXT_REPLACE_KEY, enabled: has, run: txtReplaceDialog });
 ribbonAdd('edit', 'Edit the PDF', ['txtParaMode', 'txtReplace']);
 { const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('find') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtReplace'); else menuAdd('Edit', ['txtReplace']); }
-{ const i = MENUS.findIndex(([t]) => t === 'Mark up'); if (i >= 0 && !MENUS[i][1].includes('txtParaMode')) MENUS[i][1].push('txtParaMode'); }
+{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('tool_erase') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtParaMode'); else menuAdd('Edit', ['txtParaMode']); }
 setTimeout(() => { try { ACCEL['Mod-Alt-f'] = 'CmdOrCtrl+Alt+F'; ACCEL['Mod-h'] = 'CmdOrCtrl+H'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey)) return;
@@ -3545,6 +3954,9 @@ addStyle(`
 .txt-bar select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; height: 30px; padding: 0 6px; }
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }
+.txt-editor.txt-over-ed { outline-color: var(--danger, #E03131); }
+.txt-over { position: absolute; z-index: 7; display: flex; align-items: center; gap: 8px; max-width: min(360px, calc(100% - 8px)); box-sizing: border-box; padding: 6px 6px 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--danger, #E03131); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); font: 12px/1.3 var(--font-ui); }
+.txt-over .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
 .field textarea.txt-paper { background: #fff; color-scheme: light; }
 .field.txt-wfield { flex-direction: row; align-items: center; gap: 10px; }
 .field.txt-wfield input { width: 130px; }
@@ -3554,6 +3966,555 @@ addStyle(`
 .txt-checks input { accent-color: var(--accent); }
 .marks .txt-guide { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-dasharray: 4 3; pointer-events: none; }
 .txt-status { min-height: 1.4em; margin: 6px 0 0; color: var(--ink); font-weight: 500; }
+`);
+
+// ---- src/features/12-docinfo.js
+/* ---------------- document properties (src/features/12-docinfo.js) ----------------
+   File > Document properties (Ctrl/Cmd+D), like PDFelement's: the file's name, size, page size, page count, PDF
+   version, producer and creator, dates, what its security allows, and the fonts it uses (read only), plus its Title,
+   Author, Subject and Keywords, which can be changed.
+   docMarks(): { id, type: 'docinfo', title?, author?, subject?, keywords? } — only the fields that were changed (a
+   cleared field is ''), so undo, Documents and saving keep them. Saving writes them into the PDF's Info dictionary.
+   On save, the Info fields of the opened file are kept too when the pages are copied into a new PDF; the core only
+   sets the title to the file name when the PDF has none. */
+
+const DI_FIELDS = [['title', 'Title'], ['author', 'Author'], ['subject', 'Subject'], ['keywords', 'Keywords']];
+const diMark = () => (doc ? docMarks().find((m) => m.type === 'docinfo') : null);
+const diPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+function diSize(b) {
+  if (b < 1024) return diPlural(b, 'byte');
+  const kb = b / 1024; if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  const mb = kb / 1024; return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+function diDate(raw) {
+  if (!raw) return '';
+  let d = null; try { d = pdfjs.PDFDateString.toDateObject(raw); } catch {}
+  return d && !Number.isNaN(+d) ? d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : String(raw);
+}
+// The page in view: "8.5 × 11 in (216 × 279 mm)"
+async function diPageSize() {
+  const e = doc.pages[current] || doc.pages[0]; if (!e) return '';
+  const pg = await pageOf(e); const vp = pg.getViewport({ scale: 1, rotation: (pg.rotate + e.rot) % 360 });
+  const r = (x, k) => Math.round(x * k) / k;
+  return `${r(vp.width / 72, 100)} × ${r(vp.height / 72, 100)} in (${Math.round(vp.width / 72 * 25.4)} × ${Math.round(vp.height / 72 * 25.4)} mm)`;
+}
+// What the opened file's security allows: [[label, allowed: true | false | 'low']]
+async function diSecurity() {
+  const pd = pdfDocs.get(0);
+  let flags = null; try { const f = await pd.getPermissions(); flags = f ? [...f] : null; } catch {}
+  const F = pdfjs.PermissionFlag || {}; const can = (f) => !flags || flags.includes(f);
+  return {
+    password: !!doc.sources[0].password,
+    restricted: !!flags,
+    rows: [
+      ['Printing', can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? true : 'low') : false],
+      ['Copying text and images', can(F.COPY)],
+      ['Changing the document', can(F.MODIFY_CONTENTS)],
+      ['Commenting', can(F.MODIFY_ANNOTATIONS)],
+      ['Filling in forms', can(F.FILL_INTERACTIVE_FORMS) || can(F.MODIFY_ANNOTATIONS)],
+      ['Page extraction', can(F.ASSEMBLE)],
+    ],
+  };
+}
+// The fonts the document's pages use: [{ name, type, embedded: 'Embedded' | 'Embedded subset' | 'Not embedded' }]
+async function diFonts() {
+  const L = await loadPdfLib(); const { PDFDocument, PDFName, PDFDict, PDFStream, PDFRef } = L; const N = PDFName.of;
+  const list = new Map();
+  for (const k of new Set(doc.pages.map((e) => e.src))) {
+    const src = doc.sources[k]; let d;
+    try { d = src.password ? await PDFDocument.load(src, { password: src.password, updateMetadata: false }) : await PDFDocument.load(src, { ignoreEncryption: true, updateMetadata: false }); }
+    catch { continue; }
+    if (d.isEncrypted && !src.password) { try { d = await PDFDocument.load(src, { password: '', updateMetadata: false }); } catch {} }
+    const pages = d.getPages(), seen = new Set();
+    const nameOf = (o) => (o ? String(o).replace(/^\//, '') : '');
+    const addFont = (ref, f) => {
+      const key = ref ? `${k}:${ref}` : null; if (key && seen.has(key)) return; if (key) seen.add(key);
+      if (!(f instanceof PDFDict)) return;
+      const sub = nameOf(f.get(N('Subtype')));
+      let base = nameOf(f.get(N('BaseFont'))) || (sub === 'Type3' ? '(Type 3 font)' : '(unnamed)');
+      let fd = f.lookup(N('FontDescriptor')), type = { Type1: 'Type 1', MMType1: 'Type 1 (multiple master)', TrueType: 'TrueType', Type3: 'Type 3' }[sub] || sub;
+      if (sub === 'Type0') {
+        const desc = f.lookup(N('DescendantFonts')); const cid = desc && desc.asArray().length ? d.context.lookup(desc.get(0)) : null;
+        if (cid instanceof PDFDict) { fd = cid.lookup(N('FontDescriptor')); type = nameOf(cid.get(N('Subtype'))) === 'CIDFontType2' ? 'TrueType (CID)' : 'Type 1 (CID)'; }
+      }
+      let file = null;
+      if (fd instanceof PDFDict) for (const ff of ['FontFile', 'FontFile2', 'FontFile3']) { const s = fd.lookup(N(ff)); if (s) { file = [ff, s]; break; } }
+      if (file && file[0] === 'FontFile3' && file[1] instanceof PDFStream) { const st = nameOf(file[1].dict.get(N('Subtype'))); if (st === 'OpenType') type = 'OpenType'; else if (st === 'Type1C' && sub === 'Type1') type = 'Type 1 (CFF)'; }
+      const subset = /^[A-Z]{6}\+/.test(base); base = base.replace(/^[A-Z]{6}\+/, '');
+      const embedded = sub === 'Type3' || file ? (subset ? 'Embedded subset' : 'Embedded') : 'Not embedded';
+      const id = `${base}|${type}|${embedded}`; if (!list.has(id)) list.set(id, { name: base, type, embedded });
+    };
+    const walkRes = (res, depth) => {
+      if (!(res instanceof PDFDict) || depth > 6 || seen.has(res)) return; seen.add(res);
+      const fonts = res.lookup(N('Font'));
+      if (fonts instanceof PDFDict) for (const [, v] of fonts.entries()) addFont(v instanceof PDFRef ? String(v) : null, d.context.lookup(v));
+      const xo = res.lookup(N('XObject'));
+      if (xo instanceof PDFDict) for (const [, v] of xo.entries()) {
+        const key = v instanceof PDFRef ? `x${v}` : null; if (key && seen.has(key)) continue; if (key) seen.add(key);
+        const s = d.context.lookup(v); if (s instanceof PDFStream && nameOf(s.dict.get(N('Subtype'))) === 'Form') walkRes(s.dict.lookup(N('Resources')), depth + 1);
+      }
+    };
+    for (const e of doc.pages) if (e.src === k && pages[e.i]) { try { walkRes(pages[e.i].node.Resources(), 0); } catch {} }
+  }
+  return [...list.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+// The opened file's Info dictionary, as pdf.js reads it.
+async function diInfo(k = 0) { try { const m = await pdfDocs.get(k).getMetadata(); return m.info || {}; } catch { return {}; } }
+// The values the saved PDF will have: changes first, then what the file had.
+function diValue(info, f) { const m = diMark(); return m && m[f] != null ? m[f] : String(info[f[0].toUpperCase() + f.slice(1)] ?? ''); }
+
+async function diShow() {
+  if (!has()) return;
+  const [info, size, sec, fonts] = await Promise.all([diInfo(), diPageSize(), diSecurity(), diFonts().catch(() => [])]);
+  const bytes = doc.sources.reduce((t, b) => t + (b.length || b.byteLength || 0), 0);
+  const row = (k, v) => (v ? `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>` : '');
+  const allow = (v) => (v === 'low' ? 'Allowed (low quality)' : v ? 'Allowed' : 'Not allowed');
+  const pending = docMarks().some((m) => m.type === 'protsec');
+  const body = `<div class="di">
+    <div class="di-fields">${DI_FIELDS.map(([f, label]) => `<label class="field"><span>${label}</span><input type="text" data-di="${f}" value="${esc(diValue(info, f))}" autocomplete="off" spellcheck="${f !== 'keywords'}"></label>`).join('')}</div>
+    <h3 class="di-h">File</h3>
+    <dl class="di-dl">${row('File name', doc.name + '.pdf')}${row('File size', diSize(bytes))}${row('Pages', String(doc.pages.length))}${row(`Page size (page ${Math.min(current, doc.pages.length - 1) + 1})`, size)}${row('PDF version', info.PDFFormatVersion ? 'PDF ' + info.PDFFormatVersion : '')}${row('Made with', info.Creator)}${row('Producer', info.Producer)}${row('Created', diDate(info.CreationDate))}${row('Modified', diDate(info.ModDate))}</dl>
+    <h3 class="di-h">Security</h3>
+    <dl class="di-dl">${row('Password to open', sec.password ? 'Yes' : 'No')}${sec.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="${v ? 'di-yes' : 'di-no'}">${allow(v)}</dd>`).join('')}</dl>
+    ${pending ? '<p class="di-note">The security you set in Protect is used when you save.</p>' : ''}
+    <h3 class="di-h">Fonts <span class="di-count">${fonts.length}</span></h3>
+    ${fonts.length ? `<ul class="di-fonts">${fonts.map((f) => `<li><span class="di-fn">${esc(f.name)}</span><span class="di-ft">${esc(f.type)} · ${esc(f.embedded)}</span></li>`).join('')}</ul>` : '<p class="di-note">No fonts. The pages may be scanned images.</p>'}
+  </div>`;
+  let vals = null;
+  const res = await dialog('Document properties', body, [{ label: 'Cancel' }, { label: 'Done', value: 'ok', primary: true }], (dlg) => {
+    dlg.classList.add('di-dlg');
+    const read = () => { vals = {}; $$('[data-di]', dlg).forEach((i) => { vals[i.dataset.di] = i.value; }); };
+    $$('[data-di]', dlg).forEach((i) => { i.addEventListener('input', read); i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); read(); $('.dlg-foot .btn.primary', dlg).click(); } }); });
+    read();
+    const first = $('[data-di]', dlg); if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => first && first.focus(), 0);
+    dlg.addEventListener('close', () => dlg.classList.remove('di-dlg'), { once: true });
+  });
+  if (res !== 'ok' || !vals || !doc) return;
+  diSet(vals, info);
+}
+// Keeps the fields that differ from the file's own values (or from earlier changes); one undo step.
+function diSet(vals, info) {
+  const old = diMark(), next = { id: old ? old.id : uid(), type: 'docinfo' };
+  for (const [f] of DI_FIELDS) {
+    const v = String(vals[f] ?? '').trim(), orig = String(info[f[0].toUpperCase() + f.slice(1)] ?? '');
+    if (v !== orig.trim()) next[f] = v;
+  }
+  const same = JSON.stringify(old || { id: next.id, type: 'docinfo' }) === JSON.stringify(next);
+  if (same) return;
+  const before = snapshot();
+  const list = docMarks(), k = list.findIndex((m) => m.type === 'docinfo');
+  if (Object.keys(next).length <= 2) { if (k >= 0) list.splice(k, 1); }
+  else if (k >= 0) list[k] = next; else list.push(next);
+  changed(before);
+  toast('Document properties changed');
+}
+
+// Saving: Title, Author, Subject and Keywords. When the pages were copied into a new PDF, the opened file's Info is
+// carried over (with its creator and creation date); changes made here replace it.
+FEATURE.saveDoc.push(async ({ L, out }) => {
+  const m = diMark(), info = await diInfo(doc.pages.length ? doc.pages[0].src : 0);
+  const setters = { title: 'setTitle', author: 'setAuthor', subject: 'setSubject', keywords: 'setKeywords' };
+  for (const [f] of DI_FIELDS) {
+    const v = m && m[f] != null ? m[f] : info[f[0].toUpperCase() + f.slice(1)];
+    if (v == null || (typeof v !== 'string')) continue;
+    if (f === 'keywords') out.setKeywords(v ? [v] : []);
+    else out[setters[f]](v);
+  }
+  if (info.Creator && typeof info.Creator === 'string' && out.getCreator() !== info.Creator) out.setCreator(info.Creator);
+  if (info.CreationDate) { let d = null; try { d = pdfjs.PDFDateString.toDateObject(info.CreationDate); } catch {} if (d && !Number.isNaN(+d)) out.setCreationDate(d); }
+  // Readers show the XMP title before the Info one; once the Info is changed here, the older XMP copy goes.
+  if (m) out.catalog.delete(L.PDFName.of('Metadata'));
+});
+
+cmd('docProps', { label: 'Document properties…', icon: 'file-text', key: 'Mod-d', enabled: has, run: diShow });
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('print') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'docProps'); else menuAdd('File', ['docProps']); }
+ribbonAdd('home', 'File', ['docProps']);
+setTimeout(() => { try { ACCEL['Mod-d'] = 'CmdOrCtrl+D'; scheduleMacMenu(); } catch {} }, 0);
+document.addEventListener('keydown', (e) => {
+  if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'd' || selMark) return; // with a mark selected, Ctrl+D duplicates it
+  e.preventDefault(); run('docProps');
+});
+TEST_HOOKS.diFonts = diFonts;
+TEST_HOOKS.diSecurity = diSecurity;
+
+addStyle(`
+.di-dlg { width: min(560px, calc(100vw - 32px)); }
+.di-dlg .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
+.di-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.di-fields .field { margin: 4px 0; }
+.di-fields .field span { color: var(--ink-2); font-size: 13px; }
+.di-h { margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.di-count { font-weight: 500; color: var(--ink-3); }
+.di-dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+.di-dl dt { color: var(--ink-3); }
+.di-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.di-dl dd.di-no { color: var(--danger, #c92a2a); }
+.di-note { font-size: 12px; color: var(--ink-3); margin: 6px 0; }
+.di-fonts { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.di-fonts li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+.di-fonts li:last-child { border-bottom: 0; }
+.di-fn { color: var(--ink); overflow-wrap: anywhere; }
+.di-ft { color: var(--ink-3); white-space: nowrap; }
+@media (max-width: 560px) { .di-fields { grid-template-columns: 1fr; } .di-dl { grid-template-columns: 130px 1fr; } .di-fonts li { flex-direction: column; gap: 0; } .di-ft { white-space: normal; } }
+`);
+
+// ---- src/features/16-bookmarks.js
+/* ---------------- bookmarks (src/features/16-bookmarks.js) ----------------
+   The sidebar's Outline tab, made editable like PDFelement's Bookmarks panel: add a bookmark for the page in view
+   (Ctrl/Cmd+B; named after the page's first heading, else "Page N"), rename it (double-click or F2), delete it, add a
+   child, drag to reorder or nest (drop on the top or bottom edge of a row to place it before or after, on the middle
+   to put it inside), point it at the page in view, and expand or collapse them all.
+   docMarks(): { id, type: 'bookmarks', items: [{ id, title, key: 'src:i' | null, top?, url?, open, items: [...] }] }.
+   A bookmark points at a page by its key, so it follows the page when pages move; a bookmark whose page was deleted
+   is kept, without a destination. The PDF's own bookmarks are read into this tree the first time one is changed, and
+   on saving the tree replaces the PDF's outline. Until then the outline is shown as it is and saved untouched. */
+
+const BM = { sel: null, cache: null, renaming: null, drag: null };
+const bmMark = () => (doc ? docMarks().find((m) => m.type === 'bookmarks') : null);
+const bmPhone = () => matchMedia('(max-width: 760px)').matches;
+const bmPageOf = (key) => (key == null || !doc ? -1 : doc.pages.findIndex((e) => pageKey(e) === key));
+
+// The PDF's own outline as a tree of bookmarks (read once per opened file).
+async function bmImported() {
+  const pd = pdfDocs.get(0);
+  if (!pd) return [];
+  if (BM.cache && BM.cache.pd === pd) return BM.cache.tree;
+  const outline = await pd.getOutline().catch(() => null);
+  const conv = async (items) => {
+    const out = [];
+    for (const o of items || []) {
+      let key = null, top;
+      try {
+        const explicit = typeof o.dest === 'string' ? await pd.getDestination(o.dest) : o.dest;
+        if (Array.isArray(explicit) && explicit[0] != null) {
+          const idx = typeof explicit[0] === 'number' ? explicit[0] : await pd.getPageIndex(explicit[0]);
+          key = `0:${idx}`;
+          if (explicit[1] && explicit[1].name === 'XYZ' && typeof explicit[3] === 'number') top = explicit[3];
+        }
+      } catch {}
+      const b = { id: uid(), title: String(o.title || '').trim() || 'Untitled', key, open: !(o.count < 0), items: await conv(o.items) };
+      if (top != null) b.top = top;
+      if (!key && o.url) b.url = o.url;
+      out.push(b);
+    }
+    return out;
+  };
+  const tree = await conv(outline);
+  BM.cache = { pd, tree };
+  return tree;
+}
+async function bmTree() { const m = bmMark(); return m ? m.items : bmImported(); }
+function bmFind(list, id, parent = null) {
+  for (let k = 0; k < list.length; k++) {
+    if (list[k].id === id) return { item: list[k], list, k, parent };
+    const r = bmFind(list[k].items || [], id, list[k]); if (r) return r;
+  }
+  return null;
+}
+const bmWalk = (list, fn, depth = 0) => list.forEach((b) => { fn(b, depth); bmWalk(b.items || [], fn, depth + 1); });
+// One undoable change to the tree. The PDF's own bookmarks become the editable tree on the first change.
+async function bmEdit(fn) {
+  if (!has()) return;
+  const imported = bmMark() ? null : await bmImported();
+  const before = snapshot(), fresh = !bmMark();
+  if (fresh) docMarks().push({ id: uid(), type: 'bookmarks', items: JSON.parse(JSON.stringify(imported)) });
+  const r = fn(bmMark().items);
+  if (r === false) { if (fresh) docMarks().splice(docMarks().indexOf(bmMark()), 1); return r; }
+  changed(before);
+  await bmRender();
+  return r;
+}
+
+// The first heading on a page: the first line set larger than most of its text.
+async function bmHeading(n) {
+  try {
+    const pg = await pageOf(doc.pages[n]); const tc = await pg.getTextContent();
+    const its = tc.items.filter((i) => i.str && i.str.trim() && i.transform);
+    if (!its.length) return null;
+    const size = (i) => Math.hypot(i.transform[2], i.transform[3]) || i.height || 0;
+    const weighted = its.flatMap((i) => Array(Math.min(200, i.str.length)).fill(size(i))).sort((a, b) => a - b);
+    const median = weighted[Math.floor(weighted.length / 2)];
+    const lines = [];
+    for (const i of its) {
+      const y = i.transform[5], s = size(i);
+      let line = lines.find((l) => Math.abs(l.y - y) < Math.max(2, s * .4));
+      if (!line) { line = { y, items: [], size: 0 }; lines.push(line); }
+      line.items.push(i); line.size = Math.max(line.size, s);
+    }
+    lines.sort((a, b) => b.y - a.y);
+    const head = lines.find((l) => l.size >= median * 1.15);
+    if (!head) return null;
+    head.items.sort((a, b) => a.transform[4] - b.transform[4]);
+    let text = '', end = null;
+    for (const i of head.items) { if (end != null && i.transform[4] > end + size(i) * .15 && !/\s$/.test(text)) text += ' '; text += i.str; end = i.transform[4] + (i.width || 0); }
+    text = text.replace(/\s+/g, ' ').trim();
+    return text ? (text.length > 80 ? text.slice(0, 79).trim() + '…' : text) : null;
+  } catch { return null; }
+}
+
+/* ---- commands ---- */
+async function bmAdd(child) {
+  if (!has()) return;
+  const n = current, key = pageKey(doc.pages[n]);
+  const b = { id: uid(), title: (await bmHeading(n)) || `Page ${n + 1}`, key, open: true, items: [] };
+  await bmEdit((items) => {
+    const at = BM.sel && bmFind(items, BM.sel);
+    if (child && at) { at.item.items = at.item.items || []; at.item.items.push(b); at.item.open = true; }
+    else if (at) at.list.splice(at.k + 1, 0, b);
+    else { const k = items.findIndex((x) => bmPageOf(x.key) > n); k < 0 ? items.push(b) : items.splice(k, 0, b); }
+  });
+  BM.sel = b.id;
+  if (!bmPhone() && !S.sidebar) toggleSidebar(true);
+  if (!bmPhone() && S.side !== 'outline') setSide('outline');
+  if (bmPhone() && app.dataset.sidebar !== 'open') { toast(`Bookmark added: ${b.title}`); return; }
+  await bmRender(); bmRename(b.id);
+}
+async function bmDelete() {
+  const id = BM.sel; if (!id) return;
+  await bmEdit((items) => {
+    const at = bmFind(items, id); if (!at) return false;
+    at.list.splice(at.k, 1);
+    const next = at.list[at.k] || at.list[at.k - 1] || at.parent;
+    BM.sel = next ? next.id : null;
+  });
+}
+async function bmSetDest() {
+  const id = BM.sel; if (!id || !has()) return;
+  const key = pageKey(doc.pages[current]);
+  await bmEdit((items) => { const at = bmFind(items, id); if (!at) return false; at.item.key = key; delete at.item.top; delete at.item.url; });
+  toast(`Bookmark goes to page ${current + 1}`);
+}
+async function bmSetTitle(id, title) {
+  title = String(title || '').replace(/\s+/g, ' ').trim();
+  const t = await bmTree(), cur = bmFind(t, id);
+  if (!title || !cur || cur.item.title === title) return;
+  await bmEdit((items) => { const at = bmFind(items, id); if (at) at.item.title = title; });
+}
+// Moves a bookmark before or after another, or inside it (as its last child).
+async function bmMove(id, targetId, where) {
+  if (id === targetId) return;
+  const t = await bmTree(), src = bmFind(t, id);
+  if (!src || (targetId && bmFind(src.item.items || [], targetId))) return; // not into itself
+  await bmEdit((items) => {
+    const a = bmFind(items, id); a.list.splice(a.k, 1);
+    if (!targetId) { items.push(a.item); return; }
+    const b = bmFind(items, targetId);
+    if (where === 'inside') { b.item.items = b.item.items || []; b.item.items.push(a.item); b.item.open = true; }
+    else b.list.splice(b.k + (where === 'after' ? 1 : 0), 0, a.item);
+  });
+}
+// Open or closed is how the tree is shown, not a change to the document: no undo step.
+async function bmSetOpen(ids, open) {
+  const t = await bmTree();
+  bmWalk(t, (b) => { if ((ids === 'all' || ids.includes(b.id)) && b.items && b.items.length) b.open = open; });
+  if (bmMark()) persist();
+  bmRender();
+}
+async function bmGo(id) {
+  const at = bmFind(await bmTree(), id); if (!at) return;
+  const n = bmPageOf(at.item.key);
+  if (n >= 0) goPage(n);
+  else if (at.item.url) openExternal(at.item.url);
+  else toast('This bookmark’s page was deleted');
+}
+
+/* ---- the panel ---- */
+async function bmRender(panel = $('#sidePanel')) {
+  if (!doc || S.side !== 'outline' || !panel) return;
+  const d = doc, tree = await bmTree();
+  if (doc !== d || S.side !== 'outline') return;
+  if (BM.sel && !bmFind(tree, BM.sel)) BM.sel = null;
+  let anyClosed = false, anyKids = false;
+  bmWalk(tree, (b) => { if (b.items && b.items.length) { anyKids = true; if (!b.open) anyClosed = true; } });
+  const row = (b, depth) => {
+    const kids = b.items && b.items.length, n = bmPageOf(b.key), sel = b.id === BM.sel;
+    return `<li role="treeitem" data-bm="${b.id}" aria-selected="${sel}"${kids ? ` aria-expanded="${!!b.open}"` : ''}>
+      <div class="bm-row${n < 0 && !b.url ? ' bm-gone' : ''}" draggable="true" tabindex="${sel || (!BM.sel && b === tree[0]) ? 0 : -1}" style="padding-left:${4 + depth * 14}px">
+        ${kids ? `<button type="button" class="bm-tw" tabindex="-1" aria-label="${b.open ? 'Collapse' : 'Expand'}">${ic(b.open ? 'chevron-down' : 'chevron-right')}</button>` : '<span class="bm-tw"></span>'}
+        <span class="bm-t" title="${esc(b.title)}">${esc(b.title)}</span>
+        <span class="bm-pg"${n < 0 ? ` title="${b.url ? esc(b.url) : 'Its page was deleted'}"` : ''}>${n >= 0 ? n + 1 : b.url ? ic('external-link') : '–'}</span>
+      </div>
+      ${kids && b.open ? `<ul role="group">${b.items.map((c) => row(c, depth + 1)).join('')}</ul>` : ''}
+    </li>`;
+  };
+  const tb = (act, icon, label, dis) => `<button type="button" class="icon-btn" data-bma="${act}" title="${esc(label)}" aria-label="${esc(label)}"${dis ? ' disabled' : ''}>${ic(icon)}</button>`;
+  const none = !BM.sel;
+  panel.innerHTML = `<div class="bm-bar" role="toolbar" aria-label="Bookmarks">
+      ${tb('add', 'bookmark-plus', `Add bookmark (${fmtKey('Mod-b')})`)}${tb('child', 'corner-down-right', 'Add child bookmark', none)}${tb('rename', 'pencil', 'Rename (F2)', none)}${tb('dest', 'locate-fixed', 'Set to page in view', none)}${tb('del', 'trash-2', 'Delete', none)}${tb('toggle', anyClosed ? 'chevrons-up-down' : 'chevrons-down-up', anyClosed ? 'Expand all' : 'Collapse all', !anyKids)}
+    </div>
+    ${tree.length ? `<ul class="bm-tree" role="tree" aria-label="Bookmarks">${tree.map((b) => row(b, 0)).join('')}</ul><div class="bm-end" data-bm-end></div>`
+    : `<p class="empty-note">No bookmarks yet. Choose ${ic('bookmark-plus')} to add one for the page in view.</p>`}`;
+  icons();
+  bmWire(panel);
+}
+function bmRows(panel) { return $$('.bm-row', panel); }
+function bmFocus(panel, id) { const li = $(`[data-bm="${id}"] > .bm-row`, panel); if (li) { bmRows(panel).forEach((r) => r.tabIndex = -1); li.tabIndex = 0; li.focus(); } }
+async function bmSelect(id, go) {
+  BM.sel = id; const panel = $('#sidePanel');
+  $$('[data-bm]', panel).forEach((li) => li.setAttribute('aria-selected', li.dataset.bm === id));
+  $$('.bm-bar [data-bma]', panel).forEach((b) => { if (!['add', 'toggle'].includes(b.dataset.bma)) b.disabled = !id; });
+  bmFocus(panel, id);
+  if (go) await bmGo(id);
+}
+function bmWire(panel) {
+  $$('[data-bma]', panel).forEach((b) => b.onclick = async () => {
+    const a = b.dataset.bma;
+    if (a === 'add') return bmAdd(false);
+    if (a === 'child') return bmAdd(true);
+    if (a === 'rename') return bmRename(BM.sel);
+    if (a === 'dest') return bmSetDest();
+    if (a === 'del') return bmDelete();
+    if (a === 'toggle') return bmSetOpen('all', b.getAttribute('aria-label') === 'Expand all');
+  });
+  $$('[data-bm]', panel).forEach((li) => {
+    const id = li.dataset.bm, r = $(':scope > .bm-row', li);
+    r.onclick = (e) => {
+      if (BM.renaming) return;
+      const tw = e.target.closest('.bm-tw');
+      if (tw && tw.tagName === 'BUTTON') { bmSetOpen([id], li.getAttribute('aria-expanded') !== 'true'); return; }
+      bmSelect(id, true);
+      if (bmPhone() && e.detail === 1) setTimeout(() => { if (!BM.renaming) toggleSidebar(false); }, 350);
+    };
+    r.ondblclick = (e) => { if (!e.target.closest('.bm-tw')) bmRename(id); };
+    r.ondragstart = (e) => { BM.drag = id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-bookmark', id); li.classList.add('bm-dragging'); };
+    r.ondragend = () => { BM.drag = null; li.classList.remove('bm-dragging'); $$('.bm-before, .bm-after, .bm-inside', panel).forEach((x) => x.classList.remove('bm-before', 'bm-after', 'bm-inside')); };
+    const zone = (e) => { const b = r.getBoundingClientRect(), f = (e.clientY - b.top) / b.height; return f < .3 ? 'before' : f > .7 ? 'after' : 'inside'; };
+    r.ondragover = (e) => {
+      if (!BM.drag || BM.drag === id) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      r.classList.remove('bm-before', 'bm-after', 'bm-inside'); r.classList.add('bm-' + zone(e));
+    };
+    r.ondragleave = () => r.classList.remove('bm-before', 'bm-after', 'bm-inside');
+    r.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); const from = BM.drag; r.classList.remove('bm-before', 'bm-after', 'bm-inside'); BM.drag = null; if (from) bmMove(from, id, zone(e)); };
+  });
+  const end = $('[data-bm-end]', panel);
+  if (end) {
+    end.ondragover = (e) => { if (BM.drag) { e.preventDefault(); end.classList.add('bm-after'); } };
+    end.ondragleave = () => end.classList.remove('bm-after');
+    end.ondrop = (e) => { e.preventDefault(); end.classList.remove('bm-after'); const from = BM.drag; BM.drag = null; if (from) bmMove(from, null); };
+  }
+  const tree = $('.bm-tree', panel);
+  if (tree) tree.onkeydown = (e) => {
+    if (BM.renaming || e.target.tagName === 'INPUT') return;
+    const rows = bmRows(panel), k = rows.indexOf(document.activeElement); if (k < 0) return;
+    const li = rows[k].parentElement, id = li.dataset.bm;
+    const keys = {
+      ArrowDown: () => rows[k + 1] && bmSelect(rows[k + 1].parentElement.dataset.bm),
+      ArrowUp: () => rows[k - 1] && bmSelect(rows[k - 1].parentElement.dataset.bm),
+      ArrowRight: () => li.getAttribute('aria-expanded') === 'false' ? bmSetOpen([id], true).then(() => bmFocus(panel, id)) : null,
+      ArrowLeft: () => li.getAttribute('aria-expanded') === 'true' ? bmSetOpen([id], false).then(() => bmFocus(panel, id)) : (li.parentElement.closest('[data-bm]') && bmSelect(li.parentElement.closest('[data-bm]').dataset.bm)),
+      Enter: () => bmSelect(id, true), ' ': () => bmSelect(id, true),
+      F2: () => bmRename(id),
+      Delete: () => { BM.sel = id; return bmDelete().then(() => BM.sel && bmFocus($('#sidePanel'), BM.sel)); },
+      Backspace: () => { BM.sel = id; return bmDelete().then(() => BM.sel && bmFocus($('#sidePanel'), BM.sel)); },
+    };
+    if (!keys[e.key] || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault(); e.stopPropagation(); keys[e.key]();
+  };
+}
+// Rename in place: Enter or leaving the field keeps the name, Esc leaves it as it was.
+function bmRename(id) {
+  const panel = $('#sidePanel'), li = id && $(`[data-bm="${id}"]`, panel); if (!li) return;
+  BM.sel = id;
+  const t = $(':scope > .bm-row .bm-t', li), old = t.textContent;
+  const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'bm-in'; inp.value = old; inp.setAttribute('aria-label', 'Bookmark name');
+  t.replaceWith(inp); BM.renaming = id;
+  $(':scope > .bm-row', li).draggable = false;
+  let done = false;
+  const finish = async (keep) => {
+    if (done) return; done = true; BM.renaming = null;
+    if (keep && inp.value.trim() && inp.value.trim() !== old) await bmSetTitle(id, inp.value);
+    else await bmRender();
+    bmFocus($('#sidePanel'), id);
+  };
+  inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } };
+  inp.onblur = () => finish(true);
+  inp.onclick = (e) => e.stopPropagation(); inp.ondblclick = (e) => e.stopPropagation();
+  inp.focus(); inp.select();
+}
+
+/* ---- saving: the tree replaces the PDF's outline, each bookmark going to its page in the saved file ---- */
+FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
+  const m = bmMark(); if (!m) return;
+  const { PDFName, PDFDict, PDFRef, PDFHexString, PDFString } = L, N = PDFName.of, ctx = out.context, cat = out.catalog;
+  // The old outline's items go, so they don't stay in the file unused.
+  const oldRef = cat.get(N('Outlines'));
+  const old = oldRef instanceof PDFRef ? ctx.lookup(oldRef) : oldRef;
+  if (old instanceof PDFDict) {
+    const seen = new Set();
+    const kill = (ref) => { while (ref instanceof PDFRef && !seen.has(String(ref))) { seen.add(String(ref)); const d = ctx.lookup(ref); if (!(d instanceof PDFDict)) break; kill(d.get(N('First'))); const next = d.get(N('Next')); ctx.delete(ref); ref = next; } };
+    kill(old.get(N('First')));
+    if (oldRef instanceof PDFRef) ctx.delete(oldRef);
+  }
+  cat.delete(N('Outlines'));
+  if (!m.items.length) return;
+  const pageFor = new Map();
+  entries.forEach((e, n) => { const k = pageKey(e); if (!pageFor.has(k)) pageFor.set(k, pages[n]); });
+  const build = (list, parentRef) => {
+    const refs = list.map(() => ctx.nextRef());
+    let visible = 0;
+    list.forEach((b, k) => {
+      const d = ctx.obj({});
+      d.set(N('Title'), PDFHexString.fromText(b.title || 'Untitled'));
+      d.set(N('Parent'), parentRef);
+      if (k > 0) d.set(N('Prev'), refs[k - 1]);
+      if (k < list.length - 1) d.set(N('Next'), refs[k + 1]);
+      const p = b.key != null && pageFor.get(b.key);
+      if (p) { let top = b.top; if (typeof top !== 'number') { const c = p.getCropBox(); top = c.y + c.height; } d.set(N('Dest'), ctx.obj([p.ref, N('XYZ'), null, top, null])); }
+      else if (b.url) d.set(N('A'), ctx.obj({ S: 'URI', URI: PDFString.of(b.url) }));
+      visible++;
+      if (b.items && b.items.length) {
+        const r = build(b.items, refs[k]);
+        d.set(N('First'), r.first); d.set(N('Last'), r.last); d.set(N('Count'), ctx.obj(b.open ? r.visible : -r.visible));
+        if (b.open) visible += r.visible;
+      }
+      ctx.assign(refs[k], d);
+    });
+    return { first: refs[0], last: refs[refs.length - 1], visible };
+  };
+  const rootRef = ctx.nextRef();
+  const r = build(m.items, rootRef);
+  ctx.assign(rootRef, ctx.obj({ Type: 'Outlines', First: r.first, Last: r.last, Count: r.visible }));
+  cat.set(N('Outlines'), rootRef);
+});
+
+FEATURE.outlinePanel = (panel) => bmRender(panel);
+FEATURE.onDocShown.push(() => { BM.sel = null; BM.renaming = null; BM.cache = null; });
+cmd('bmAdd', { label: 'Add bookmark', icon: 'bookmark-plus', key: 'Mod-b', enabled: has, run: () => bmAdd(false) });
+menuAdd('Pages', ['bmAdd']);
+setTimeout(() => { try { ACCEL['Mod-b'] = 'CmdOrCtrl+B'; scheduleMacMenu(); } catch {} }, 0);
+document.addEventListener('keydown', (e) => {
+  if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;
+  const a = document.activeElement; if (a && (/INPUT|TEXTAREA|SELECT/.test(a.tagName) || a.isContentEditable)) return;
+  e.preventDefault(); run('bmAdd');
+});
+TEST_HOOKS.bmTree = () => bmTree();
+TEST_HOOKS.bmMove = bmMove;
+
+addStyle(`
+.bm-bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 2px; padding: 0 0 6px; background: var(--chrome); }
+@media (max-width: 760px) { .bm-bar { background: var(--surface); } }
+.bm-bar .icon-btn { width: 32px; height: 32px; }
+.bm-bar .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.bm-bar .icon-btn:disabled { opacity: .35; cursor: default; }
+.bm-tree, .bm-tree ul { list-style: none; margin: 0; padding: 0; }
+.bm-row { display: flex; align-items: center; gap: 2px; min-height: 32px; padding-right: 6px; border-radius: 6px; cursor: pointer; color: var(--ink); font-size: 13px; position: relative; }
+.bm-row:hover { background: var(--hover); }
+.bm-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+[aria-selected="true"] > .bm-row { background: var(--accent-soft); color: var(--accent); }
+.bm-tw { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border: 0; background: none; padding: 0; color: var(--ink-3); cursor: pointer; border-radius: 4px; }
+.bm-tw svg { width: 15px; height: 15px; }
+.bm-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-pg { flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.bm-pg svg { width: 13px; height: 13px; }
+.bm-gone .bm-t { color: var(--ink-3); text-decoration: line-through; }
+.bm-in { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--accent); border-radius: 5px; padding: 3px 6px; }
+.bm-dragging { opacity: .5; }
+.bm-before { box-shadow: inset 0 2px 0 var(--accent); }
+.bm-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.bm-inside { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.bm-end { min-height: 24px; }
+.empty-note svg { width: 14px; height: 14px; vertical-align: -2px; }
 `);
 
 // ---- src/features/20-images.js
@@ -3914,15 +4875,15 @@ startImageDrag = function (e, v, s, mode) { if (!picPressed) { drawMarks(v); ret
 
 /* Commands */
 const picOn = () => !!picSel() && !picCrop;
-cmd('picRotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: picOn, run: () => picEdit(picRotate(-1)) });
-cmd('picRotR', { label: 'Rotate right', icon: 'rotate-cw', enabled: picOn, run: () => picEdit(picRotate(1)) });
-cmd('picFlipH', { label: 'Flip horizontal', icon: 'flip-horizontal-2', enabled: picOn, run: () => picEdit(picFlip(true)) });
-cmd('picFlipV', { label: 'Flip vertical', icon: 'flip-vertical-2', enabled: picOn, run: () => picEdit(picFlip(false)) });
-cmd('picCrop', { label: 'Crop', icon: 'crop', enabled: picOn, run: picCropStart });
+cmd('picRotL', { contextual: true, label: 'Rotate left', icon: 'rotate-ccw', enabled: picOn, run: () => picEdit(picRotate(-1)) });
+cmd('picRotR', { contextual: true, label: 'Rotate right', icon: 'rotate-cw', enabled: picOn, run: () => picEdit(picRotate(1)) });
+cmd('picFlipH', { contextual: true, label: 'Flip horizontal', icon: 'flip-horizontal-2', enabled: picOn, run: () => picEdit(picFlip(true)) });
+cmd('picFlipV', { contextual: true, label: 'Flip vertical', icon: 'flip-vertical-2', enabled: picOn, run: () => picEdit(picFlip(false)) });
+cmd('picCrop', { contextual: true, label: 'Crop', icon: 'crop', enabled: picOn, run: picCropStart });
 cmd('picCropApply', { label: 'Apply crop', icon: 'check', enabled: () => !!picCrop, run: () => picCropEnd(true) });
 cmd('picCropCancel', { label: 'Cancel crop', icon: 'x', enabled: () => !!picCrop, run: () => picCropEnd(false) });
-cmd('picReplace', { label: 'Replace…', icon: 'replace', enabled: picOn, run: () => picInput.click() });
-cmd('picExtract', { label: 'Save picture as PNG…', icon: 'image-down', enabled: picOn, run: picExtract });
+cmd('picReplace', { contextual: true, label: 'Replace…', icon: 'replace', enabled: picOn, run: () => picInput.click() });
+cmd('picExtract', { contextual: true, rlabel: 'Save as PNG', label: 'Save picture as PNG…', icon: 'image-down', enabled: picOn, run: picExtract });
 cmd('picDelete', { label: 'Delete picture', icon: 'trash-2', enabled: picOn, run: picDelete });
 ribbonAdd('edit', 'Picture', ['picRotL', 'picRotR', 'picFlipH', 'picFlipV', 'picCrop', 'picReplace', 'picExtract']);
 
@@ -3987,7 +4948,7 @@ cmd('tool_link', { label: 'Link', icon: 'link', enabled: has, pressed: () => app
   if (was !== 'link') toast('Drag a box to add a link, or click a link to change it');
 } });
 ribbonAdd('edit', 'Links', ['tool_link']);
-menuAdd('Mark up', ['tool_link']);
+{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('image') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'tool_link'); else menuAdd('Edit', ['tool_link']); }
 
 const lnkRect = (m) => [Math.min(m.x1, m.x2), Math.min(m.y1, m.y2), Math.max(m.x1, m.x2), Math.max(m.y1, m.y2)];
 // A rectangle in PDF coordinates, as a box on screen (any rotation).
@@ -4524,13 +5485,79 @@ FEATURE.savePage.push(async ({ L, out, p, n, entries, ctx }) => {
   if (under.length) {
     // Behind the content: drawn in a stream of its own, which then goes first in the page's list of streams.
     p.getContentStream(false);
-    await pdDrawItems(L, out, p, under, map, r, ctx);
+    pdTag(L, out, p, true); await pdDrawItems(L, out, p, under, map, r, ctx); pdTag(L, out, p, false);
     const contents = p.node.Contents(), ref = p.contentStreamRef, at = contents ? contents.indexOf(ref) : -1;
     if (at > 0) { contents.remove(at); contents.insert(0, ref); }
     p.getContentStream(false); // what's drawn next goes on top again
   }
-  if (over.length) await pdDrawItems(L, out, p, over, map, r, ctx);
+  if (over.length) { pdTag(L, out, p, true); await pdDrawItems(L, out, p, over, map, r, ctx); pdTag(L, out, p, false); }
 });
+/* Kept in the saved PDF, so it can be changed or removed when the file is opened again: what is drawn is marked as
+   an artifact tagged /CowdreyPdfPD, and the settings are a JSON string in the document's Info under the same key.
+   Opening such a file takes the tagged drawing out of the pages and puts the settings back in docMarks(). */
+const PD_KEY = 'CowdreyPdfPD';
+function pdTag(L, out, p, on) {
+  p.pushOperators(on ? L.PDFOperator.of('BDC', [L.PDFName.of('Artifact'), out.context.obj({ Type: 'Pagination', [PD_KEY]: 1 })]) : L.PDFOperator.of('EMC'));
+}
+// ASCII only (\uXXXX for the rest), with \ ( ) escaped for a PDF literal string.
+const pdPdfString = (L, json) => L.PDFString.of(json.replace(/[\u007f-\uffff]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/[\\()]/g, '\\$&'));
+FEATURE.saveDoc.push(async ({ L, out }) => {
+  const items = pdItems(), info = out.getInfoDict(), key = L.PDFName.of(PD_KEY);
+  if (items.length) info.set(key, pdPdfString(L, JSON.stringify(items))); else info.delete(key);
+});
+// Where tagged drawing starts and ends in a content stream: [start, end] of each BDC … EMC tagged /CowdreyPdfPD.
+function pdTaggedSpans(s) {
+  const spans = []; let operands = [], opStart = null, depth = 0, start = 0;
+  for (const t of tokenizeContent(s)) {
+    if (t.t !== 'op') { if (opStart == null) opStart = t.start; operands.push(t); continue; }
+    const at = opStart ?? t.start;
+    if (t.v === 'BDC' || t.v === 'BMC') { if (depth) depth++; else if (operands.some((x) => x.t === 'name' && x.v === PD_KEY)) { depth = 1; start = at; } }
+    else if (t.v === 'EMC' && depth && --depth === 0) spans.push([start, t.end]);
+    operands = []; opStart = null;
+  }
+  return spans;
+}
+// Takes the tagged drawing out of a pdf-lib page. Returns true if there was any.
+function pdStripPage(L, out, p) {
+  const { PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = L, node = p.node;
+  const raw = node.get(PDFName.of('Contents')), r = raw && out.context.lookup(raw);
+  const parts = r instanceof PDFArray ? r.asArray() : raw ? [raw] : [];
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  let src = parts.map((x) => { const st = out.context.lookup(x); return st ? text(st) : ''; }).join('\n');
+  if (!src.includes(PD_KEY)) return false;
+  const spans = pdTaggedSpans(src); if (!spans.length) return false;
+  for (const [a, b] of spans.reverse()) src = src.slice(0, a) + ' ' + src.slice(b);
+  const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
+  node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
+  return true;
+}
+let pdOpening = Promise.resolve();
+async function pdReadBack(d) {
+  const pd = pdfDocs.get(0), src = d.sources[0];
+  if (!pd || !src || src.password) return;
+  let raw;
+  try { const md = await pd.getMetadata(), c = md && md.info && md.info.Custom; raw = c && (c instanceof Map ? c.get(PD_KEY) : c[PD_KEY]); } catch { return; }
+  if (typeof raw !== 'string') return;
+  let list; try { list = JSON.parse(raw); } catch { return; }
+  if (!Array.isArray(list)) return;
+  const L = await loadPdfLib();
+  const out = await L.PDFDocument.load(src, { ignoreEncryption: true, updateMetadata: false });
+  if (out.isEncrypted) return;
+  for (const p of out.getPages()) pdStripPage(L, out, p);
+  out.getInfoDict().delete(L.PDFName.of(PD_KEY));
+  const bytes = await out.save();
+  const npd = await loadProtected(bytes, d.name);
+  if (!npd) return;
+  if (doc !== d || pdfDocs.get(0) !== pd) { try { npd.destroy(); } catch {} return; }
+  // The source without the drawing replaces the opened one: the settings draw it again, and saving writes it anew.
+  d.sources[0] = bytes; pdfDocs.set(0, npd); try { pd.destroy(); } catch {}
+  const have = docMarks();
+  for (const m of list) if (m && PD_TYPES[m.type] && m.id && !have.some((x) => x.id === m.id)) have.push({ ...m, rev: uid() });
+  syncHiddenComments(); persist();
+  await layoutPages(true); renderSide();
+}
+FEATURE.onDocShown.push((d) => { pdOpening = pdReadBack(d).catch((e) => console.warn('page design: could not read it back', e)); });
+TEST_HOOKS.pdOpening = () => pdOpening;
 
 /* dialogs */
 const pdField = {
@@ -4679,7 +5706,7 @@ cmd('pd_headfoot', { label: 'Header & footer…', icon: 'panel-top', enabled: ha
 cmd('pd_bates', { label: 'Bates numbering…', icon: 'hash', enabled: has, run: () => pdEdit('pd_bates') });
 cmd('pd_manage', { label: 'Manage page design…', icon: 'layers', enabled: has, run: pdManage });
 ribbonAdd('edit', 'Page design', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
-menuAdd('Tools', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
+menuAdd('Edit', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 TEST_HOOKS.pdItems = () => pdItems();
 
 // ---- src/features/50-comments.js
@@ -4929,8 +5956,8 @@ async function cmSave({ L, out, p, m, ctx }) {
     AP: { N: out.context.register(ap) },
   });
   annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
-  annot.set(PDFName.of('T'), PDFHexString.fromText('Cowdrey.PDF'));
-  annot.set(PDFName.of('M'), PDFString.fromDate(new Date()));
+  const who = cmAuthorOf(m); if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
+  annot.set(PDFName.of('M'), PDFString.fromDate(m.at ? new Date(m.at) : new Date()));
   if (contents) annot.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
   const ref = out.context.register(annot);
   let annots = p.node.lookup(PDFName.of('Annots'));
@@ -5167,11 +6194,11 @@ cmd('cm_fill', {
 cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (matchMedia('(max-width: 760px)').matches) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
 ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Add');
 ribbonAdd('markup', 'Shapes', ['cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud'], 'Add');
-ribbonAdd('markup', 'Text', ['cm_callout', 'cm_typewriter'], 'Add');
-ribbonAdd('markup', 'Stamp', ['cm_stamp'], 'Add');
-ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Edit');
-ribbonAdd('markup', 'Edit', ['cm_list']);
-menuAdd('Mark up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
+ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add');
+ribbonAdd('markup', 'Add', ['cm_stamp']);
+ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up'); // right after Colour
+ribbonAdd('markup', 'Comments', ['cm_list']);
+menuAdd('Comment', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
 // A colour picked while a comment is selected changes that comment's colour.
 document.addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('#ribbonBody [data-color]'); if (!b) return;
@@ -5212,33 +6239,85 @@ async function cmItems() {
   const A = pdfjs.AnnotationType, items = [];
   for (let n = 0; n < doc.pages.length; n++) {
     const entry = doc.pages[n], own = doc.marks[pageKey(entry)] || [];
-    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m) }); }
+    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m), by: cmAuthorOf(m), at: m.at || 0 }); }
     const gone = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
     for (const a of await cmPageAnnots(entry)) {
       if (!a.rect || !a.id || [A.WIDGET, A.LINK, A.POPUP].includes(a.annotationType) || gone.has(a.id) || (a.parentId && gone.has(a.parentId))) continue;
       const ed = own.find((m) => m.type === 'ae' && m.ref === a.id && m.contents != null);
       const text = ed ? ed.contents : (a.contentsObj && a.contentsObj.str) || (Array.isArray(a.textContent) ? a.textContent.join(' ') : '') || '';
       const c = a.color && a.color.length === 3 ? `rgb(${a.color[0]},${a.color[1]},${a.color[2]})` : '#888888';
-      items.push({ n, entry, a, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: a.titleObj && a.titleObj.str });
+      items.push({ n, entry, a, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate) });
     }
   }
   items.sort((p, q) => p.n - q.n || q.y - p.y);
   return items;
 }
+/* ---- who wrote a comment, and when ---- */
+// S.author: the name written as the author of your comments. undefined: not asked yet; '': asked, left blank.
+const cmAuthorOf = (m) => m.author || S.author || '';
+// A PDF date (D:YYYYMMDDHHmmSS…) as milliseconds, or 0.
+function cmPdfDate(s) {
+  const m = /^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/.exec(String(s || '')); if (!m) return 0;
+  const t = Date.UTC(+m[1], (+m[2] || 1) - 1, +m[3] || 1, +m[4] || 0, +m[5] || 0, +m[6] || 0); return isFinite(t) ? t : 0;
+}
+const cmWhen = (t) => t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+async function cmAskName(first) {
+  const name = await dialog('Your name', `<p>${first ? 'Your comments show this name as their author. You can change it in the Comments panel.' : 'Shown as the author of your new comments.'}</p><label class="field"><span>Name</span><input id="dlgInput" type="text" value="${esc(S.author || '')}" autocomplete="name" maxlength="80"></label>`,
+    [{ label: first ? 'Skip' : 'Cancel' }, { label: 'Save', primary: true, input: true }]);
+  if (name == null) { if (first && S.author == null) { S.author = ''; saveSettings(); } return; }
+  S.author = name.trim(); saveSettings();
+  // The comment that brought the question up is yours too.
+  if (first && S.author && doc) for (const [key, list] of Object.entries(doc.marks)) if (key !== '__doc' && Array.isArray(list)) for (const m of list) if (m && m.at && !m.author) m.author = S.author;
+  cmPanelSoon();
+}
+// New comments get their date, and your name once you have given it; the first one asks for the name.
+const cmChanged0 = changed;
+changed = function (before) {
+  cmChanged0(before);
+  if (!doc) return;
+  let fresh = false;
+  for (const [key, list] of Object.entries(doc.marks)) {
+    if (key === '__doc' || !Array.isArray(list)) continue;
+    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
+  }
+  if (fresh && S.author == null && !CM.askingName) { CM.askingName = true; cmAskName(true).finally(() => { CM.askingName = false; }); }
+};
+const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
+const CM_EVERYONE = '*everyone*';
 async function cmRenderPanel() {
   const panel = $('#sidePanel');
   if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its comments.</p>'; return; }
   const token = ++CM.panelToken;
   await loadPdfjs();
-  const items = await cmItems();
+  const all = await cmItems();
   if (token !== CM.panelToken || S.side !== 'comments') return;
+  const types = [...new Set(all.map((it) => it.label))].sort(), authors = [...new Set(all.map((it) => it.by || ''))].sort();
+  const f = CM.filter || (CM.filter = { type: '', by: CM_EVERYONE, sort: S.cmSort || 'page' });
+  if (f.type && !types.includes(f.type)) f.type = '';
+  if (f.by !== CM_EVERYONE && !authors.includes(f.by)) f.by = CM_EVERYONE;
+  const items = all.filter((it) => (!f.type || it.label === f.type) && (f.by === CM_EVERYONE || (it.by || '') === f.by));
+  // Newest or oldest first; comments without a date go last.
+  if (f.sort !== 'page') items.sort((p, q) => (!p.at - !q.at) || (f.sort === 'new' ? q.at - p.at : p.at - q.at) || p.n - q.n || q.y - p.y);
   CM.items = items;
-  panel.innerHTML = !items.length
+  const opt = (v, t, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(t)}</option>`;
+  const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'not set'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
+  const bar = all.length ? `<div class="cm-filters">
+    <label><span>Type</span><select data-cm-f="type">${opt('', 'All types', !f.type)}${types.map((t) => opt(t, t, f.type === t)).join('')}</select></label>
+    <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
+    <label><span>Sort</span><select data-cm-f="sort">${CM_SORTS.map(([v, t]) => opt(v, t, f.sort === v)).join('')}</select></label></div>` : '';
+  const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
+  panel.innerHTML = you + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
-    : `<div class="cm-head">${items.length} comment${items.length === 1 ? '' : 's'}</div><ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span></span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by ? `<span class="cm-by">${esc(it.by)}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button></li>`).join('')}</ul>`;
+    : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span></span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
   $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => cmGoTo(items[+b.dataset.cmGo]));
   $$('[data-cm-del]', panel).forEach((b) => b.onclick = () => cmDelete(items[+b.dataset.cmDel]));
+  $$('[data-cm-f]', panel).forEach((el) => el.onchange = () => {
+    const k = el.dataset.cmF; f[k] = el.value;
+    if (k === 'sort') { S.cmSort = el.value; saveSettings(); }
+    cmRenderPanel().then(() => { const again = $(`#sidePanel [data-cm-f="${k}"]`); if (again) again.focus(); });
+  });
+  const nb = $('[data-cm-name]', panel); if (nb) nb.onclick = () => cmAskName(false);
 }
 function cmGoTo(it) {
   goPage(it.n);
@@ -5274,6 +6353,12 @@ addStyle(`
 .app[data-tool="cmstamp"] .marks { cursor: copy; }
 .marks .cm-draft { pointer-events: none; }
 .cm-head { font-size: 12px; color: var(--ink-3); padding: 4px 8px 6px; }
+.cm-you { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-3); padding: 2px 8px 8px; }
+.cm-you b { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.cm-you .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
+.cm-filters { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 6px; }
+.cm-filters label { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
+.cm-filters select { font: inherit; font-size: 12px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; min-width: 0; width: 100%; height: 30px; }
 .cm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .cm-item { display: flex; align-items: flex-start; border-radius: 8px; }
 .cm-item:hover { background: var(--hover); }
@@ -5295,6 +6380,7 @@ addStyle(`
 .cm-stamp-face small { font-weight: 400; font-size: 9px; }
 `);
 TEST_HOOKS.cmItems = async () => (await cmItems()).map((it) => [it.label, it.n + 1, it.text, !!it.m]);
+TEST_HOOKS.setAuthor = (name) => { S.author = name; saveSettings(); };
 
 // ---- src/features/60-pages.js
 /* ---------------- page tools (src/features/60-pages.js) ----------------
@@ -5476,6 +6562,25 @@ function pg60DeleteMany(idx) {
   pg60SetSel([]);
   toast(`Deleted ${pg60Plural(idx.length, 'page')}`);
 }
+// Asks before deleting: which pages (a range, starting with idx), with the count on the button. Enter deletes.
+async function pg60DeleteAsk(idx = pg60Targets()) {
+  if (!has()) return;
+  const N = doc.pages.length;
+  const r = await pg60Ask('Delete pages', `
+    <label class="field"><span>Pages (this PDF has ${N})</span><input name="pages" value="${esc(pg60RangeText(idx))}" autocomplete="off" placeholder="e.g. 2-4, 7"></label>
+    <p class="pg60-note">You can undo this.</p>`,
+  [{ label: 'Cancel' }, { label: `Delete ${pg60Plural(idx.length, 'page')}`, value: 'ok', primary: true }], (dlg, vals) => {
+    const inp = $('input[name="pages"]', dlg), btn = $('.dlg-foot .btn.primary', dlg);
+    const upd = () => { const k = parseRange(vals.pages || '', N).length; btn.textContent = k ? `Delete ${pg60Plural(k, 'page')}` : 'Delete'; btn.disabled = !k; };
+    dlg.addEventListener('input', upd);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!btn.disabled) btn.click(); } });
+    requestAnimationFrame(() => { inp.focus(); inp.select(); });
+  });
+  if (!r || r.action !== 'ok') return;
+  const del = parseRange(r.vals.pages || '', N);
+  if (!del.length) { toast('No pages in that range'); return; }
+  pg60DeleteMany([...new Set(del)].sort((a, b) => a - b));
+}
 // Moves the chosen pages one place up (-1) or down (1), keeping them chosen.
 function pg60MoveMany(idx, d) {
   const set = new Set(idx);
@@ -5519,7 +6624,7 @@ function pg60Wrap(id, multi, enabled) {
 }
 pg60Wrap('rotL', (idx) => pg60RotateMany(idx, -90));
 pg60Wrap('rotR', (idx) => pg60RotateMany(idx, 90));
-pg60Wrap('delPage', pg60DeleteMany);
+pg60Wrap('delPage', (idx) => pg60DeleteAsk(idx)); // one page in view: at once (undo brings it back); several: asked
 pg60Wrap('extract', pg60ExtractMany);
 pg60Wrap('dup', pg60DupMany);
 pg60Wrap('up', (idx) => pg60MoveMany(idx, -1), (idx) => idx.some((n, k) => n !== k));
@@ -5554,12 +6659,14 @@ pg60Panel.addEventListener('drop', (e) => {
   let to = +t.dataset.n; if (to > from) to++; // dropped on a later page: put them after it
   pg60MoveTo(idx, to);
 }, true);
-// Delete or Backspace with pages chosen in the sidebar deletes them.
+// Delete or Backspace on a page in the sidebar asks to delete it (or the pages chosen there).
 document.addEventListener('keydown', (e) => {
   if (!doc || $('#dialog').open || !(e.key === 'Delete' || e.key === 'Backspace')) return;
-  if (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#sidePanel .thumb')) return;
+  const t = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
+  if (!t) return;
   if (selMark || selContent) return;
-  e.preventDefault(); run('delPage');
+  e.preventDefault();
+  pg60DeleteAsk(pg60Many() ? pg60Valid() : [+t.dataset.n]);
 });
 function pg60Paint() {
   const many = pg60Many(), sel = new Set(pg60Valid());
@@ -5714,18 +6821,19 @@ FEATURE.savePage.push(({ p, entry }) => {
 /* ---- commands, ribbon, menu ---- */
 cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app.dataset.tool === 'crop', run: () => { if (app.dataset.tool === 'crop') return setTool('select'); setTool('crop'); toast('Drag a box on the page to keep just that part'); } });
 cmd('pg60_crop', { label: 'Crop margins…', icon: 'scan', enabled: has, run: () => pg60CropDialog() });
-cmd('pg60_split', { label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
-cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
+cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
+cmd('pg60_insert', { rlabel: 'Insert PDF', label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
+cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: has, run: () => pg60DeleteAsk() });
 cmd('pg60_selAll', { label: 'Choose all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
 ribbonAdd('pages', 'Rotate', ['pg60_rotate']);
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_insert', 'pg60_replace']);
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
-ribbonAdd('pages', 'Remove', ['pg60_split']);
-menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', '-', 'tool_crop', 'pg60_crop']);
+ribbonAdd('pages', 'Remove', ['pg60_delete', 'pg60_split']);
+menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
 addStyle(`
 .app[data-tool="crop"] .marks { cursor: crosshair; }
@@ -5741,6 +6849,7 @@ addStyle(`
 .pg60-opt input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .pg60-opt input:not([type="radio"]) { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
 .pg60-num { width: 72px; }
+.pg60-note { font-size: 12px; color: var(--ink-3); margin: 4px 0 0; }
 .pg60-wide { flex: 1; min-width: 120px; }
 .pg60-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .pg60-grid .field { margin: 4px 0; }
@@ -6284,17 +7393,31 @@ async function ffFlatten() {
 }
 
 /* ---- saving ---- */
-// Put the form in order before pdf-lib reads it: entries for widgets deleted from the pages go, and fields whose
-// widgets are on the pages are listed (pages copied into a new PDF lose the list).
+// Put the form in order before pdf-lib reads it: entries for widgets deleted from the pages (or on a deleted page)
+// go, and fields whose widgets are on the pages are listed (pages copied in from another PDF are not on its list).
 function ffFixAcroForm(L, out, pages) {
   const { PDFName, PDFArray, PDFDict, PDFRef } = L, c = out.context;
+  const hasWidget = pages.some((p) => { const a = p.node.lookup(PDFName.of('Annots')); return a instanceof PDFArray && a.asArray().some((r) => { const d = c.lookup(r); return d instanceof PDFDict && String(d.get(PDFName.of('Subtype'))) === '/Widget'; }); });
+  if (!out.catalog.get(PDFName.of('AcroForm')) && !hasWidget) return; // no form: don't add one
   const af = out.catalog.getOrCreateAcroForm().dict;
   let fields = af.lookup(PDFName.of('Fields'));
   if (!(fields instanceof PDFArray)) { fields = c.obj([]); af.set(PDFName.of('Fields'), fields); }
+  // Each widget on a page names that page (a copied page's widgets named a copy of the page they came from).
+  const onPage = new Set(pages.map((p) => p.ref.tag)), shown = new Set();
+  for (const p of pages) {
+    const annots = p.node.lookup(PDFName.of('Annots')); if (!(annots instanceof PDFArray)) continue;
+    for (const r of annots.asArray()) {
+      const d = c.lookup(r); if (!(d instanceof PDFDict) || String(d.get(PDFName.of('Subtype'))) !== '/Widget') continue;
+      if (r instanceof PDFRef) shown.add(r.tag);
+      if (d.get(PDFName.of('P'))) d.set(PDFName.of('P'), p.ref);
+    }
+  }
+  // A widget whose page was deleted
+  const offPage = (r, d) => { const P = d.get(PDFName.of('P')); return String(d.get(PDFName.of('Subtype'))) === '/Widget' && P instanceof PDFRef && !onPage.has(P.tag) && !(r instanceof PDFRef && shown.has(r.tag)); };
   const clean = (arr) => {
     for (let k = arr.size() - 1; k >= 0; k--) {
       const r = arr.get(k), d = r instanceof PDFRef ? c.lookup(r) : r;
-      if (!(d instanceof PDFDict)) { arr.remove(k); continue; }
+      if (!(d instanceof PDFDict) || offPage(r, d)) { arr.remove(k); continue; }
       const kids = d.lookup(PDFName.of('Kids'));
       if (kids instanceof PDFArray && kids.size()) { clean(kids); if (!kids.size()) arr.remove(k); }
     }
@@ -6401,10 +7524,10 @@ async function ffSaveNew(L, out, form, list) {
   }
 }
 FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
+  ffFixAcroForm(L, out, pages); // always: pages moved, deleted or copied in change which fields the PDF has
   const news = ctx.ffNew || [], mods = ffMods(), flat = ffFlat();
   if (!news.length && !mods.length && !flat) return;
   const { PDFName, PDFHexString } = L;
-  ffFixAcroForm(L, out, pages);
   const form = out.getForm();
   for (const md of mods) {
     const f = form.getFields().find((x) => x.getName() === md.name); if (!f) continue;
@@ -6700,15 +7823,33 @@ async function protFind(rx) {
       }
       const quads = [];
       for (const [it, [j0, j1]] of byItem) {
-        const st = tc.styles[it.fontName] || {}, a = xOf(it), { u, v, o, size } = lineFrame({ tm: it.transform });
+        const a = xOf(it), { u, v, o } = lineFrame({ tm: it.transform });
         const P = (x, y) => [o[0] + u[0] * x + v[0] * y, o[1] + u[1] * x + v[1] * y];
-        const y0 = (st.descent ?? -.2) * size, y1 = (st.ascent ?? .8) * size, x0 = a[j0], x1 = a[j1 + 1];
+        const [y0, y1] = protGlyphBand(tc, it), x0 = a[j0], x1 = a[j1 + 1];
         quads.push([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)]);
       }
       if (quads.length) found.push({ entry, quads, text: mt[0] });
     }
   }
   return found;
+}
+// How far a piece of text reaches below and above its baseline, for a redaction box: the font's descent and ascent
+// clamped to the letters (a font's ascent often leaves room for accents), and never into the line above or below.
+const protGlyphExt = (st) => [Math.max(st.descent ?? -.2, -.22), Math.min(st.ascent ?? .8, .9)];
+function protGlyphBand(tc, it) {
+  const f = lineFrame({ tm: it.transform }), size = f.size, ext = protGlyphExt(tc.styles[it.fontName] || {});
+  let y0 = ext[0] * size, y1 = ext[1] * size;
+  for (const jt of tc.items) {
+    if (jt === it || !jt.str || !jt.str.trim() || !jt.transform) continue;
+    const g = lineFrame({ tm: jt.transform }); if (g.u[0] * f.u[0] + g.u[1] * f.u[1] < .99) continue; // same direction only
+    const dx = g.o[0] - f.o[0], dy = g.o[1] - f.o[1], along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+    if (along > it.width || along + jt.width < 0 || Math.abs(perp) < size * .3 || Math.abs(perp) > size * 2.5) continue; // not side by side
+    const e = protGlyphExt(tc.styles[jt.fontName] || {});
+    // Stop where the neighbour's letters start, but always cover this line's capitals and most of its descenders.
+    if (perp > 0) { const top = perp + e[0] * g.size; if (top < y1) y1 = Math.max(size * .72, top); }
+    else { const bot = perp + e[1] * g.size; if (bot > y0) y0 = Math.min(-size * .14, bot); }
+  }
+  return [y0, y1];
 }
 async function protSearch() {
   const last = S.protSearch || {};
@@ -7391,9 +8532,14 @@ async function protCompressDlg() {
         const after = await protMeasure(PROT_LEVELS[lv]);
         if (n !== ask) return;
         if (before == null || after == null) { out.textContent = 'The size can’t be worked out.'; return; }
-        const pc = Math.round((1 - after / before) * 100);
-        out.textContent = `Now ${protSize(before)}. Compressed: ${protSize(after)}${pc > 0 ? ` (${pc}% smaller)` : ''}.`;
-        out.dataset.before = before; out.dataset.after = after;
+        const pc = Math.round((1 - after / before) * 100), none = after >= before * .98;
+        out.textContent = none
+          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.${lv === '96' ? ' Keep it as it is.' : ' Try Smallest, or keep it as it is.'}`
+          : `Now ${protSize(before)}. Compressed: ${protSize(after)} (${pc}% smaller).`;
+        out.dataset.before = before; out.dataset.after = after; out.classList.toggle('none', none);
+        // With nothing to gain, Cancel is the main button.
+        const on = $('.dlg-foot [data-a]:last-child', dlg), cancel = [...$$('.dlg-foot [data-a]', dlg)].find((b) => b.textContent === 'Cancel');
+        if (on && cancel) { on.classList.toggle('primary', !none); cancel.classList.toggle('primary', none); }
       } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }
     };
     $$('input[name=level]', dlg).forEach((x) => x.addEventListener('change', show));
@@ -7423,6 +8569,7 @@ menuAdd('Protect', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply
 menuAdd('Protect', ['protPassword', 'protUnsecure']);
 menuAdd('Protect', ['protFlatten', 'protCompress', 'protClean']);
 TEST_HOOKS.protFind = async (opts) => (await protFind(protRegex(opts))).map((f) => f.text);
+TEST_HOOKS.protFindQuads = async (opts) => (await protFind(protRegex(opts))).map((f) => f.quads);
 TEST_HOOKS.protMeasure = (opt) => protMeasure(opt);
 
 // ---- src/features/90-ocr.js
@@ -8473,7 +9620,7 @@ if (NATIVE) {
 /* ---------------- start ---------------- */
 applyTheme();
 app.dataset.sidebar = S.sidebar ? 'on' : 'off';
-$$('.side-tabs [data-side]').forEach((b) => b.setAttribute('aria-selected', b.dataset.side === S.side));
+syncSideTabs();
 renderRibbon(); renderSide(); updateStatus(); icons();
 // A file the app was opened with (Finder, Files, Open with) comes first; otherwise the last document comes back.
 serial(async () => {
