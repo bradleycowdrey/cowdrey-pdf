@@ -56,7 +56,7 @@ const inkIn = (p, x0, y0, x1, y1, n = 0) => p.evaluate(([x0, y0, x1, y1, n]) => 
   return ink;
 }, [x0, y0, x1, y1, n]);
 // Nothing on the page's marks layer paints over it (no cover drawn for the picture).
-const covers = (p) => p.$$eval('.page[data-n="0"] svg.marks polygon:not(.content-sel):not(.content-hover)', (e) => e.length);
+const covers = (p) => p.$$eval('.page[data-n="0"] svg.marks polygon:not(.content-sel):not(.content-hover):not(.content-hints *)', (e) => e.length);
 
 export default async (h) => {
   H = h;
@@ -145,7 +145,7 @@ export default async (h) => {
   await test('text: paragraph mode keeps lines that fitted when one letter is added to the last line', async () => {
     const file = await tightDoc();
     const p = await open(); await openPdf(p, file, 'Tight.pdf');
-    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
     const [x, y] = await at(p, 120, 683); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
     await p.keyboard.press('Control+End'); await p.keyboard.type('!'); await p.keyboard.press('Control+Enter'); await p.waitForTimeout(400);
     ok(!(await p.$('#dialog[open]')), 'not asked: it still fits');

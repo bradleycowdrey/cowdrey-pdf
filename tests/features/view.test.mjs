@@ -86,14 +86,14 @@ export default async (h) => {
     // in the View menu (the Mac app's menu bar)...
     const view = await p.evaluate(() => window.__cowdreyPdf.menus().find(([t]) => t === 'View')[1]);
     for (const id of ['zoomFit', 'zoomPage', 'zoom100', 'tool_hand', 'vw_lay_scroll', 'vw_lay_single', 'vw_lay_two', 'vw_lay_cover', 'vw_files']) ok(view.includes(id), id + ' in ' + view);
-    // ...and on the web, where the ribbon is the menu row: Home has the zoom, Hand and Layout; File has the rest of View
+    // ...and on the web, where the ribbon is the menu row: Home has the zoom (Actual size too), Hand and Layout; Edit's Attach file lists Attachments
     await p.click('[data-rt="home"]');
     const items = await p.$$eval('#ribbonBody [data-cmd]', (b) => b.map((x) => x.getAttribute('aria-label') || x.textContent.trim()));
     await p.click('#ribbonBody [data-rmenu="vw_layout"]'); await p.waitForSelector('#popover:not([hidden])');
     items.push(...await p.$$eval('#popover .mi', (b) => b.map((x) => x.children[1].textContent)));
     eq(await p.$$eval('#popover [role="group"][aria-label="Page layout"] [role="menuitemradio"]', (b) => b.map((x) => x.getAttribute('aria-checked'))), ['true', 'false', 'false', 'false']);
     await p.keyboard.press('Escape');
-    await p.click('#fileBtn'); await p.waitForSelector('#popover:not([hidden])');
+    await p.click('[data-rt="edit"]'); await p.click('#ribbonBody [data-rmenu="vw_attach"]'); await p.waitForSelector('#popover:not([hidden])');
     items.push(...await p.$$eval('#popover .mi', (b) => b.map((x) => x.children[1].textContent)));
     await p.keyboard.press('Escape');
     for (const l of ['Fit width', 'Fit page', 'Actual size', 'Hand', 'Continuous', 'Single page', 'Two pages', 'Two pages with cover', 'Attachments']) ok(items.includes(l), l + ' in ' + items);
@@ -202,9 +202,9 @@ export default async (h) => {
 
   await test('view: Attach file adds a file that is kept in the saved PDF; undo takes it back', async () => {
     const p = await open(); await reopen(p, await attachedPdf());
-    await p.click('#fileBtn'); // on the web, Edit's Attach file is in the File button's list (it has no ribbon button)
+    await p.click('[data-rt="edit"]'); // Edit > Add > Attach file
     const chooser = p.waitForEvent('filechooser');
-    await p.click('#popover [data-cmd="vw_attach"]');
+    await p.click('#ribbonBody [data-cmd="vw_attach"]');
     await (await chooser).setFiles([{ name: 'hello.txt', mimeType: 'text/plain', buffer: Buffer.from('Another hello') }, { name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('# Plan') }]);
     await p.waitForTimeout(800);
     eq(await p.evaluate(() => document.querySelector('[data-side="files"]').getAttribute('aria-selected')), 'true', 'the panel opens');

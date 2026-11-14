@@ -54,7 +54,7 @@ export default async (h) => {
     const [chk, icon] = await p.$eval('#popover [data-cmd="tool_highlight"]', (b) => [b.querySelector('.mchk').getBoundingClientRect().left, b.querySelector(':scope > svg').getBoundingClientRect().left]);
     ok(chk < icon, 'the check comes before the icon');
     await p.keyboard.press('Escape');
-    // File (on the web it also lists View's Actual size and Attachments, which are toggles): every row has its icon
+    // File: every row has its icon
     await p.click('#fileBtn'); await p.waitForTimeout(100);
     eq((await menuRows(p)).filter(([, icon]) => !icon).map(([id]) => id), []);
     eq(await p.$eval('#popover', (x) => x.classList.contains('has-chk')), !!(await p.$('#popover [data-chk]')), 'File: a check column only with a toggle in it');
@@ -124,14 +124,14 @@ export default async (h) => {
     await p.click('#ribbonBody [data-cmd="fold:Shapes"]');
     eq(await p.$eval('#app', (a) => a.dataset.tool), 'rect');
     await p.click('#ribbonBody [data-rmenu="fold:Shapes"]'); await p.waitForSelector('#popover:not([hidden])');
-    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['tool_rect', 'cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon']);
+    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['tool_rect', 'cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon', 'cm_area']);
     await p.click('#popover [data-cmd="cm_oval"]'); await p.waitForTimeout(150);
     eq(await p.$eval('#ribbonBody [data-cmd="fold:Shapes"]', (b) => [b.textContent, b.getAttribute('aria-pressed')]), ['Oval', 'true']);
     // the other small groups are one button each, which shows when one of its tools is on
     await run(p, 'cm_underline');
     ok(await p.$eval('#ribbonBody [data-rmenu="fold:Text mark-up"]', (b) => b.hasAttribute('data-on')), 'Text mark-up on');
     await p.click('#ribbonBody [data-rmenu="fold:Add"]'); await p.waitForSelector('#popover:not([hidden])');
-    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'cm_stamp']);
+    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'cm_stamp', 'sign']);
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr3/fix-visual/ph-comment-add.png' });
     eq(p.errors, []); await p.ctx.close();
   });

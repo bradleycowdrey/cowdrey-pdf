@@ -89,6 +89,9 @@ const TXT_SPACINGS = [1, 1.15, 1.5, 2];
 const txtLead = (m, size, spacing = m.spacing, size0 = m.size0) => (+spacing ? +spacing * 1.2 * size : m.lead0 * Math.max(1, size / size0));
 const txtOrigin = (F, i, x) => [F.o[0] + F.u[0] * x - F.v[0] * i * F.lead, F.o[1] + F.u[1] * x - F.v[1] * i * F.lead];
 const txtAlignK = (a) => ({ center: .5, right: 1 }[a] || 0);
+// Where a line of width w starts in its block: aligned in the block's width (wrap), or, for a line edited on its own,
+// in the line's original box (box: centred on its middle, or ending where it ended).
+const txtLineX = (m, w) => m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : m.box ? (m.box - w) * txtAlignK(m.align) : 0;
 function txtRelayout(page, m) {
   m.std = txtIsStd(m);
   m.lines = m.wrap ? txtWrap(m.text, m.wrap, txtMeasurer(page, m)) : m.text.split('\n');
@@ -98,8 +101,11 @@ function txtRelayout(page, m) {
 // page's fonts as. A face from the page is written with that font where it has the letters (as the own font is).
 const TXT_STD_FACES = [['sans', 'Helvetica'], ['serif', 'Times'], ['mono', 'Courier']];
 const txtFontInfo = new Map(); // loaded name -> { font, codes, fam, bold, italic, ascent, descent, label }
-// A font's name as people know it: no subset tag, words apart ("ABCDEF+Carlito-Bold-8659" is "Carlito Bold").
-const txtFontLabel = (name) => baseName(name).replace(/[-_,+]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').trim() || 'As in the PDF';
+// A font's name as people know it: no subset tag, words apart, a weight in one word ("ABCDEF+Carlito-Bold-8659" is
+// "Carlito Bold", "DMSans-SemiBold" is "DM Sans SemiBold").
+const txtFontLabel = (name) => baseName(name).replace(/^[A-Z]{6}\+/, '').replace(/[-_,+]+/g, ' ').replace(/([A-Z]+)([A-Z][a-z]{3,})/g, '$1 $2').replace(/([a-z])([A-Z])/g, '$1 $2')
+  .replace(/\b(Semi|Demi|Extra|Ultra) (Bold|Light|Condensed|Expanded)\b/g, '$1$2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').replace(/\s+/g, ' ').trim() || 'As in the PDF';
+TEST_HOOKS.fontLabel = txtFontLabel;
 const txtStdFace = (face) => TXT_STD_FACES.some(([k]) => k === face);
 // Drawn in a standard font: a standard face, or bold or italic asked of a font that isn't.
 const txtIsStd = (m) => txtStdFace(m.face) || m.bold !== (m.loaded ? !!m.fbold : m.base.bold) || m.italic !== (m.loaded ? !!m.fitalic : m.base.italic);
@@ -206,7 +212,7 @@ FEATURE.markTypes.tpara = {
     g.appendChild(txtPoly(v, [top, [top[0] + F.u[0] * wmax, top[1] + F.u[1] * wmax], [top[0] + F.u[0] * wmax - F.v[0] * dn, top[1] + F.u[1] * wmax - F.v[1] * dn], [top[0] - F.v[0] * dn, top[1] - F.v[1] * dn]], 'transparent'));
     m.lines.forEach((line, i) => {
       if (!line.trim()) return;
-      const w = meas(line), x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0;
+      const w = meas(line), x = txtLineX(m, w);
       const org = txtOrigin(F, i, x), [ox, oy] = toView(v, ...org);
       const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}:${m.fam}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, loaded: m.loaded, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
       const gl = svgEl('g', { transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` });
@@ -248,7 +254,7 @@ async function txtDrawPara(L, out, p, m, ctx) {
       try { r.hex = sf.encodeText(r.chars.join('')); r.w = sf.widthOfTextAtSize(r.chars.join(''), 1); } catch { const s = txtSafe(r.chars.join('')); r.hex = sf.encodeText(s); r.w = sf.widthOfTextAtSize(s, 1); }
     }
     for (const r of runs) w += (r.w + r.chars.length * (m.tc || 0)) * hs;
-    const x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0, org = txtOrigin(F, i, x);
+    const x = txtLineX(m, w), org = txtOrigin(F, i, x);
     const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
@@ -592,7 +598,7 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       place(); requestAnimationFrame(place);
     },
     cleanup() { if (note) { note.remove(); note = null; } }, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
-    opts: { align: !!m.wrap, spacing: !!m.wrap, face: txtFaceOpts(v, m) },
+    opts: { align: !!(m.wrap || m.box), spacing: !!m.wrap, face: txtFaceOpts(v, m) },
     place(ta, f) {
       const F = txtFrame({ ...m, size: f.size, spacing: f.spacing || 0 }), px = f.size * scale, lh = F.lead * scale;
       const [ox, oy] = toView(v, ...F.o), [ax, ay] = toView(v, F.o[0] + F.u[0], F.o[1] + F.u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
@@ -701,12 +707,13 @@ openLineEditor = function (v, m, isNew) {
   const le = lineEditor; if (!le || le.m !== m) return;
   const base = { size: lineFrame(m).size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: false, align: 'left', face: '', spacing: 0 };
   txtLine = { le, base, fmt: { ...base } };
-  txtShowBar(v, le.ed, txtLine.fmt, { align: false, face: txtFaceOpts(v, m) }, (f) => {
+  // Alignment too: the line keeps its own box, and aligns in it (its text centred on the box's middle, or ending at its right).
+  txtShowBar(v, le.ed, txtLine.fmt, { align: true, face: txtFaceOpts(v, m) }, (f) => {
     const px = f.size * scale, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, [, oy] = toView(v, m.tm[4], m.tm[5]);
     // Another font: the page's (as pdf.js loaded it, unless bold or italic is asked of it), or a standard one.
     const info = /^f:/.test(f.face) && txtFontInfo.get(f.face.slice(2)), fam = info ? info.fam : f.face;
     const font = !f.face ? lineFont(v, m, px, f.bold, f.italic) : info && f.bold === info.bold && f.italic === info.italic ? `${px}px "${info.loaded}", ${cssFamily(fam)}` : txtCss(fam, f, px);
-    Object.assign(le.ed.style, { font, color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
+    Object.assign(le.ed.style, { font, color: f.color, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
   }, () => le.ed.focus({ preventScroll: true }));
 };
 const txtCoreCloseLine = closeLineEditor;
@@ -725,7 +732,7 @@ closeLineEditor = function (commit) {
   const before = snapshot(), list = marksOf(le.v.entry);
   if (!le.isNew) { const k = list.indexOf(le.m); if (k >= 0) list.splice(k, 1); }
   const m = txtNewPara([le.m], 0, T.base.size * 1.2);
-  Object.assign(m, { text, size: T.fmt.size, color: T.fmt.color, bold: T.fmt.bold, italic: T.fmt.italic, underline: T.fmt.underline });
+  Object.assign(m, { text, size: T.fmt.size, color: T.fmt.color, bold: T.fmt.bold, italic: T.fmt.italic, underline: T.fmt.underline, align: T.fmt.align || 'left', box: le.m.width });
   txtApplyFace(m, T.fmt.face); txtRelayout(le.v.page, m);
   list.push(m);
   drawMarks(le.v); changed(before);
@@ -753,18 +760,23 @@ onEditDown = async function (e, v) {
 };
 // Paragraph mode: hovering outlines the whole paragraph.
 const txtCoreHover = onEditHover;
+// As the core's: once a frame, for where the pointer is now, and late answers dropped (the same hoverSeq and hoverRaf).
 onEditHover = function (e, v) {
   if (txtEd) return;
   if (!S.txtPara || app.dataset.tool !== 'edit' || lineEditor) return txtCoreHover(e, v);
-  const t = Date.now(); if (t - (v._txtHover || 0) < 60) return; v._txtHover = t;
-  const [x, y] = toPdf(v, ...localPoint(e, v));
-  contentMap(v.page).then((cm) => {
-    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
-    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
-    const L = cm.lines.find((l) => inQuad(l.quad, x, y));
-    if (!L || txtCovered(v.entry, L)) return txtCoreHover(e, v);
-    svg.style.cursor = 'text';
-    for (const l of txtBlock(cm, L, v.entry).lines) svg.appendChild(svgEl('polygon', { class: 'content-hover', points: l.quad.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  const pt = localPoint(e, v);
+  cancelAnimationFrame(hoverRaf);
+  hoverRaf = requestAnimationFrame(() => {
+    const my = ++hoverSeq, [x, y] = toPdf(v, ...pt);
+    contentMap(v.page).then((cm) => {
+      if (my !== hoverSeq || !S.txtPara || app.dataset.tool !== 'edit' || lineEditor || txtEd) return;
+      const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+      svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+      const L = cm.lines.find((l) => inQuad(l.quad, x, y));
+      if (!L || txtCovered(v.entry, L)) return txtCoreHover(e, v);
+      svg.style.cursor = 'text';
+      for (const l of txtBlock(cm, L, v.entry).lines) svg.appendChild(svgEl('polygon', { class: 'content-hover', points: l.quad.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+    });
   });
 };
 // Add text: click for text that fits, or drag across to make a box the text wraps in.
@@ -944,15 +956,23 @@ async function txtReplaceDialog() {
 
 /* ---- commands, ribbon, keys, styles ---- */
 const TXT_REPLACE_KEY = isMac ? 'Mod-Alt-f' : 'Mod-h';
-cmd('txtParaMode', { label: 'Edit as paragraphs', icon: 'pilcrow', enabled: has, pressed: () => !!S.txtPara, run: () => {
-  S.txtPara = !S.txtPara; saveSettings();
-  if (app.dataset.tool !== 'edit') setTool('edit'); else refreshRibbon();
-  toast(S.txtPara ? 'Click a paragraph to edit it as one block' : 'Click a line to edit it');
-} });
+// Lines or paragraphs: a setting of Edit PDF (kept for next time), chosen in its button's menu (a choice of one), not
+// a second tool. Choosing one turns Edit PDF on.
+const txtEditHint = TOOL_HINTS.edit;
+Object.defineProperty(TOOL_HINTS, 'edit', { get: () => S.txtPara ? txtEditHint.replace(/^Click text/, 'Click a paragraph') : txtEditHint });
+function txtSetPara(on) {
+  const was = !!S.txtPara; S.txtPara = on; saveSettings();
+  if (app.dataset.tool !== 'edit') setTool('edit'); else { closeLineEditor(true); toolHint = TOOL_HINTS.edit; refreshRibbon(); modeChip(); }
+  if (was !== on) toast(on ? 'Click a paragraph to edit it as one block' : 'Click a line to edit it');
+}
+cmd('txtEditLines', { label: 'Edit lines', icon: 'text', radio: 'Edit text', enabled: has, pressed: () => !S.txtPara, run: () => txtSetPara(false) });
+cmd('txtEditParas', { label: 'Edit paragraphs', icon: 'pilcrow', radio: 'Edit text', enabled: has, pressed: () => !!S.txtPara, run: () => txtSetPara(true) });
+C.tool_edit.menu = ['txtEditLines', 'txtEditParas'];
+C.tool_edit.tip = 'Edit PDF: click text to change it, or a picture to move it (the arrow chooses lines or paragraphs)';
 cmd('txtReplace', { label: 'Replace text…', icon: 'replace', key: TXT_REPLACE_KEY, enabled: has, run: txtReplaceDialog });
-ribbonAdd('edit', 'Edit the PDF', ['txtParaMode', 'txtReplace']);
+{ const g = RIBBON.edit[1].find(([n]) => n === 'Edit the PDF')[1], k = g.indexOf('deleteMark'); g.splice(k < 0 ? g.length : k, 0, 'txtReplace'); }
 { const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('find') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtReplace'); else menuAdd('Edit', ['txtReplace']); }
-{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('tool_erase') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtParaMode'); else menuAdd('Edit', ['txtParaMode']); }
+{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('tool_edit') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtEditLines', 'txtEditParas'); else menuAdd('Edit', ['txtEditLines', 'txtEditParas']); }
 setTimeout(() => { try { ACCEL['Mod-Alt-f'] = 'CmdOrCtrl+Alt+F'; ACCEL['Mod-h'] = 'CmdOrCtrl+H'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey)) return;

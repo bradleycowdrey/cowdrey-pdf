@@ -186,7 +186,7 @@ export default async (h) => {
     }
     await p.click('#moreBtn'); await p.waitForTimeout(100);
     const ids = await p.$$eval('#popover [data-cmd]', (e) => e.map((x) => x.dataset.cmd));
-    for (const id of ['legal', 'about', 'zoom100', 'sample']) ok(ids.includes(id), id + ' in More: ' + ids);
+    for (const id of ['legal', 'about', 'cm_hide', 'sample']) ok(ids.includes(id), id + ' in More: ' + ids);
     ok(!ids.includes('shortcuts'), 'no Keyboard shortcuts on a touch-only phone');
     const pb = await p.locator('#popover').boundingBox(); ok(pb.y + pb.height <= 844 && pb.x >= 0 && pb.x + pb.width <= 390, 'menu fits ' + JSON.stringify(pb));
     await p.keyboard.press('Escape'); await p.evaluate(() => window.__cowdreyPdf.run('shortcuts')); await p.waitForSelector('#dialog[open]');
@@ -206,7 +206,7 @@ export default async (h) => {
     ok(titles.includes('Comment') && !titles.includes('Mark up') && !titles.includes('Tools'), titles.join());
     await p.evaluate(() => window.__cowdreyPdf.openMenu('Edit'));
     const edit = await p.$$eval('#popover [data-cmd]', (e) => e.map((x) => x.dataset.cmd));
-    for (const id of ['pd_watermark', 'tool_edit', 'txtParaMode', 'tool_link']) ok(edit.includes(id), id + ' in Edit');
+    for (const id of ['pd_watermark', 'tool_edit', 'txtEditLines', 'txtEditParas', 'tool_link']) ok(edit.includes(id), id + ' in Edit');
     const all = await p.evaluate(() => document.querySelector('#popover').textContent);
     ok(!/\bimage\b/i.test(all), 'no "image" in Edit: ' + all);
     await p.ctx.close();

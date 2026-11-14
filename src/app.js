@@ -357,7 +357,7 @@ async function renderView(v) {
       }
     }
   } catch (e) { console.warn('annotation layer', e); }
-  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
+  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; if (!stale()) editHints(v); }).catch(() => {}); // read ahead for Edit PDF
   if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   if (stale()) return;
   drawMarks(v);
@@ -632,6 +632,7 @@ function drawMarks(v) {
   }
   // A thumbnail is a picture of the layer, without the page's styles: no selection box or handles in it.
   if (v.thumb) return;
+  editHints(v, svg);
   drawSelection(v, svg);
   drawMarkBox(v, svg);
 }
@@ -1212,7 +1213,8 @@ function setTool(t) {
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
-  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
+  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; editHints(v); }).catch(() => {}); }), 0);
+  if (was === 'edit' && t !== 'edit') { $$('.marks .content-hints, .marks .content-hover').forEach((n) => n.remove()); $$('svg.marks').forEach((s) => { s.style.cursor = ''; }); } // the hover's cursor goes too
   if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; } // the hint for the tool being left goes with it
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
@@ -2095,20 +2097,41 @@ function startErase(e, v) {
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
-// Hover feedback for the Edit tool: what a click would edit is outlined.
-let hoverTimer = 0;
+// Hover feedback for the Edit tool: what a click would edit is outlined. Once a frame, for the last place the
+// pointer moved to (so where it stops is always the one shown), and an answer that comes after a newer one is dropped.
+let hoverSeq = 0, hoverRaf = 0;
 function onEditHover(e, v) {
   if (app.dataset.tool !== 'edit' || lineEditor) return;
-  const t = Date.now(); if (t - hoverTimer < 40) return; hoverTimer = t;
-  const [x, y] = toPdf(v, ...localPoint(e, v));
-  contentAt(v, x, y).then((hit) => {
-    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
-    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
-    svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
-    if (!hit) return;
-    const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark ? matQuad(hit.mark.mat) : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
-    svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  const pt = localPoint(e, v);
+  cancelAnimationFrame(hoverRaf);
+  hoverRaf = requestAnimationFrame(() => {
+    const my = ++hoverSeq, [x, y] = toPdf(v, ...pt);
+    contentAt(v, x, y).then((hit) => { if (my === hoverSeq && app.dataset.tool === 'edit' && !lineEditor) editHoverShow(v, hit); });
   });
+}
+// While Edit PDF is on, every line of text and picture that can be edited has a faint outline (under the marks), so
+// it shows at once what a click can change; the one under the pointer is outlined more strongly (above).
+function editHints(v, svg = v.el.querySelector('svg.marks')) {
+  if (!svg) return;
+  svg.querySelectorAll('.content-hints').forEach((n) => n.remove());
+  const cm = v.page && v.page._cmapValue; if (app.dataset.tool !== 'edit' || !cm || v.thumb) return;
+  const own = marksOf(v.entry), g = svgEl('g', { class: 'content-hints', 'aria-hidden': 'true' });
+  const poly = (q) => g.appendChild(svgEl('polygon', { points: q.map(([qx, qy]) => toView(v, qx, qy).map((n) => n.toFixed(1)).join(',')).join(' ') }));
+  for (const im of cm.images) {
+    const mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+    if (!(mark && mark.deleted)) poly(mark ? matQuad(mark.mat) : im.quad);
+  }
+  for (const L of cm.lines) poly(L.quad);
+  svg.insertBefore(g, svg.firstChild);
+}
+TEST_HOOKS.editHints = () => views.map((v) => v.el.querySelectorAll('svg.marks .content-hints polygon').length);
+function editHoverShow(v, hit) {
+  const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+  svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+  svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
+  if (!hit) return;
+  const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark ? matQuad(hit.mark.mat) : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
+  svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
 }
 
 /* Saving content edits. A small reader for page content streams: it finds where each piece of text and each picture
@@ -3258,7 +3281,10 @@ async function renderSide() {
   // A list box: one Tab stop (the page in view), arrows move, Shift+arrows choose several, Enter goes to the page.
   const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
   const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
-  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
+  // Each thumbnail has its page's size and shape from the start (the big page's, or else the first page's), so the
+  // list does not jump as they are drawn: the longer side 182 px (as drawn), at most 150 px wide.
+  const box = (n) => { const vp = (views[n] || views[0] || {}).viewport, w = vp ? vp.width : 612, hh = vp ? vp.height : 792; return `width:${Math.min(150, 182 * w / Math.max(w, hh)).toFixed(1)}px;aspect-ratio:${w.toFixed(1)} / ${hh.toFixed(1)}`; };
+  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1" style="${box(n)}"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
   thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target).then(followThumbAgain); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
@@ -3709,8 +3735,9 @@ cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Re
 TEST_HOOKS.cmdLabel = (id) => C[id].label;
 TEST_HOOKS.cmdEnabled = (id) => !C[id].enabled || !!C[id].enabled();
 TEST_HOOKS.cmdShown = (id) => shown(id);
+TEST_HOOKS.cmdMenu = (id) => (C[id] && (C[id].menu || C[id].sub)) || [];
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
-cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
+cmd('deleteMark', { label: 'Delete selected', rlabel: 'Delete', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
 cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
 cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
@@ -3759,7 +3786,7 @@ const MENUS = [
   ['File', ['open', 'openRecent', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect (the Comment tab's Add has it too)
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -3773,7 +3800,7 @@ const menuIcon = (icon) => icon ? ic(icon) : '<span></span>', menuChk = (on) => 
 function menuHtml(ids) {
   let html = '', group = false;
   for (const id of ids.filter(shown)) {
-    const radio = /^theme_/.test(id) ? 'Appearance' : /^vw_lay_/.test(id) ? 'Page layout' : false;
+    const radio = (C[id] && C[id].radio) || (/^theme_/.test(id) ? 'Appearance' : /^vw_lay_/.test(id) ? 'Page layout' : false);
     if (radio !== group) { html += (group ? '</div>' : '') + (radio ? `<div role="group" aria-label="${radio}">` : ''); group = radio; }
     if (id === '-') { html += '<div class="msep"></div>'; continue; }
     const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
@@ -3857,14 +3884,14 @@ function moreMenuHtml(menus = MENUS, keep = () => true) {
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
   }).join('');
 }
-/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). What only
-   the menus had is on it too: File (at the start of the tab row) lists the File menu, then what the other menus have
-   that no ribbon tab shows; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its
-   menus in the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
+/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). Every
+   command in the menus has a home on a ribbon tab too (a test checks), so File (at the start of the tab row) lists
+   the File menu alone; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its menus in
+   the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
 if (!MAC_APP) app.dataset.menubar = 'ribbon';
 function fileMenuHtml() {
-  const file = MENUS.find(([t]) => t === 'File'), rest = MENUS.filter(([t]) => t !== 'File' && t !== 'Help');
-  return menuHtml(file ? file[1] : []) + moreMenuHtml(rest, (id) => !/^theme_/.test(id)); // the theme: its own button
+  const file = MENUS.find(([t]) => t === 'File');
+  return menuHtml(file ? file[1] : []);
 }
 const helpMenuHtml = () => menuHtml((MENUS.find(([t]) => t === 'Help') || ['', []])[1]);
 function menuButton(b, html) {
@@ -4007,9 +4034,9 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'sidebar', 'darkPage'], 'rows', 'keep']]],
-  edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab
+  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', 'sidebar', 'darkPage'], 'rows', 'keep']]],
+  edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase', 'deleteMark']], ['Add', ['tool_text', 'image']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_pen', 'tool_note']] /* Highlight: in Text mark-up */, ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab, and in Add
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
@@ -4122,7 +4149,7 @@ function phoneFold(groups) {
     }
     let list = Array.isArray(ids) ? members(ids) : [], name = label;
     // groups of small buttons side by side (Text box, Add) are one button, named after the last of them
-    while (look === 'rows' && groups[k + 1] && groups[k + 1][2] === 'rows' && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
+    while (look === 'rows' && !keep && groups[k + 1] && groups[k + 1][2] === 'rows' && !groups[k + 1][3] && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
     if (!look || keep || list.length < 2) { out.push(groups[k]); continue; }
     const label2 = name, face = () => list.find(on) || (list.includes(foldLast[label2]) ? foldLast[label2] : list[0]);
     cmd('fold:' + name, look === 'icons'
@@ -4135,7 +4162,7 @@ function phoneFold(groups) {
 // The Style button's list: the colours (as on the Comment tab), then the group's own commands; one with `sub` (a list
 // of command ids) shows them under its name.
 matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
-Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+Object.assign(TEST_HOOKS, { menus: () => MENUS, ribbon: () => RIBBON, S, docMarks: () => docMarks() });
 // A menu as the menu bar lists it (the Mac app's window shows the bar if macOS turns its menus down), opened under File.
 TEST_HOOKS.openMenu = (title) => { const m = MENUS.find(([t]) => t === title); closePopover(); openPopover($('#fileBtn'), menuHtml(m[1])); };
 function foldStyleHtml(ids) {

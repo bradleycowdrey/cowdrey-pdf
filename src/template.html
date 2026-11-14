@@ -172,7 +172,7 @@ button { font: inherit; color: inherit; }
 .side-panel { flex: 1; overflow: auto; padding: 0 10px 16px; }
 .thumbs { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 4px; }
 .thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--ink-3); font-size: 12px; }
-.thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; }
+.thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; height: auto; }
 .thumb[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .thumb.drag-over { outline: 2px dashed var(--accent); }
 .thumb.ctx-for { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -204,13 +204,14 @@ button { font: inherit; color: inherit; }
 .annotationLayer { z-index: 3; }
 .annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { background: rgba(174, 23, 71, .07); color: #111; }
 .marks { position: absolute; inset: 0; z-index: 4; overflow: visible; pointer-events: none; }
-.app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
+/* :where() keeps these general rules light (0,3,0), so each tool's own cursor below (and in features) wins. */
+.app[data-tool]:where(:not([data-tool="select"]):not([data-tool="highlight"])) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
 .marks .mk { pointer-events: auto; cursor: pointer; }
 .app[data-tool="select"] .marks .mk-ontext { pointer-events: none; } /* text mark-up stays on its text: a drag there selects text */
 /* Touch: with a drawing or placing tool a finger draws on the page instead of scrolling it; with the text tools
    (Highlight, Underline…) a finger selects text; with Select a finger drags a mark. */
-.app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
+.app[data-tool]:where(:not([data-tool="select"]):not([data-tool="edit"])) .marks,
 .app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page .textLayer,
 .app[data-tool="select"] .marks .mk { touch-action: none; }
 /* The text tools select the words under a comment or shape, as if it were not there. */
@@ -230,7 +231,8 @@ button { font: inherit; color: inherit; }
 .app[data-tool="edit"] .marks { cursor: default; }
 .app[data-tool="erase"] .marks { cursor: crosshair; }
 .app[data-busy] .marks, .app[data-busy] .marks * { cursor: progress !important; }
-.marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
+.marks .content-hints { pointer-events: none; fill: none; stroke: color-mix(in srgb, var(--brand) 40%, transparent); stroke-width: 1; stroke-dasharray: 2 3; }
+.marks .content-hover { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 2; pointer-events: none; }
 .marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
 .kb-block { position: absolute; z-index: 5; pointer-events: none; border-radius: 3px; outline: 2px solid var(--accent); outline-offset: 0; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
 .marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }

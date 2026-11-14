@@ -81,12 +81,23 @@ async function bmHeading(n) {
       line.items.push(i); line.size = Math.max(line.size, s);
     }
     lines.sort((a, b) => b.y - a.y);
-    const head = lines.find((l) => l.size >= median * 1.15);
-    if (!head) return null;
-    head.items.sort((a, b) => a.transform[4] - b.transform[4]);
-    let text = '', end = null;
-    for (const i of head.items) { if (end != null && i.transform[4] > end + size(i) * .15 && !/\s$/.test(text)) text += ' '; text += i.str; end = i.transform[4] + (i.width || 0); }
-    text = text.replace(/\s+/g, ' ').trim();
+    const k = lines.findIndex((l) => l.size >= median * 1.15);
+    if (k < 0) return null;
+    const head = lines[k];
+    // A heading wrapped over lines: the lines right under it at the same size (within 5%) are part of it.
+    const parts = [head];
+    for (let j = k + 1; j < lines.length; j++) {
+      const l = lines[j], prev = parts[parts.length - 1];
+      if (Math.abs(l.size - head.size) > head.size * .05 || prev.y - l.y > head.size * 1.6) break;
+      parts.push(l);
+    }
+    const lineText = (l) => {
+      l.items.sort((a, b) => a.transform[4] - b.transform[4]);
+      let t = '', end = null;
+      for (const i of l.items) { if (end != null && i.transform[4] > end + size(i) * .15 && !/\s$/.test(t)) t += ' '; t += i.str; end = i.transform[4] + (i.width || 0); }
+      return t;
+    };
+    const text = parts.map(lineText).join(' ').replace(/\s+/g, ' ').trim();
     return text ? (text.length > 80 ? text.slice(0, 79).trim() + '…' : text) : null;
   } catch { return null; }
 }
@@ -154,7 +165,7 @@ async function bmGo(id) {
   const n = bmPageOf(at.item.key);
   if (n >= 0) goPage(n);
   else if (at.item.url) openExternal(at.item.url);
-  else toast('This bookmark’s page was deleted');
+  else toast(at.item.key == null ? 'This bookmark has no destination' : 'This bookmark’s page was deleted');
 }
 
 /* ---- the panel ---- */
@@ -168,10 +179,10 @@ async function bmRender(panel = $('#sidePanel')) {
   const row = (b, depth) => {
     const kids = b.items && b.items.length, n = bmPageOf(b.key), sel = b.id === BM.sel;
     return `<li role="treeitem" data-bm="${b.id}" aria-selected="${sel}"${kids ? ` aria-expanded="${!!b.open}"` : ''}>
-      <div class="bm-row${n < 0 && !b.url ? ' bm-gone' : ''}" draggable="true" tabindex="${sel || (!BM.sel && b === tree[0]) ? 0 : -1}" style="padding-left:${4 + depth * 14}px">
+      <div class="bm-row${n < 0 && !b.url && b.key != null ? ' bm-gone' : ''}" draggable="true" tabindex="${sel || (!BM.sel && b === tree[0]) ? 0 : -1}" style="padding-left:${4 + depth * 14}px">
         ${kids ? `<button type="button" class="bm-tw" tabindex="-1" aria-label="${b.open ? 'Collapse' : 'Expand'}">${ic(b.open ? 'chevron-down' : 'chevron-right')}</button>` : '<span class="bm-tw"></span>'}
         <span class="bm-t" title="${esc(b.title)}">${esc(b.title)}</span>
-        <span class="bm-pg"${n < 0 ? ` title="${b.url ? esc(b.url) : 'Its page was deleted'}"` : ''}>${n >= 0 ? n + 1 : b.url ? ic('external-link') : '–'}</span>
+        <span class="bm-pg"${n < 0 ? ` title="${b.url ? esc(b.url) : b.key == null ? 'No destination' : 'Its page was deleted'}"` : ''}>${n >= 0 ? n + 1 : b.url ? ic('external-link') : '–'}</span>
       </div>
       ${kids && b.open ? `<ul role="group">${b.items.map((c) => row(c, depth + 1)).join('')}</ul>` : ''}
     </li>`;
@@ -329,6 +340,7 @@ FEATURE.outlinePanel = (panel) => bmRender(panel);
 FEATURE.onDocShown.push(() => { BM.sel = null; BM.renaming = null; BM.cache = null; });
 cmd('bmAdd', { label: 'Add bookmark', icon: 'bookmark-plus', key: 'Mod-b', enabled: has, run: () => bmAdd(false) });
 { const vm = MENUS.find(([t]) => t === 'View'), i = vm ? vm[1].indexOf('sidebar') : -1; if (i >= 0) vm[1].splice(i + 1, 0, 'bmAdd'); else menuAdd('View', ['bmAdd']); }
+ribbonAdd('home', 'Edit', ['bmAdd']);
 setTimeout(() => { try { ACCEL['Mod-b'] = 'CmdOrCtrl+B'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;
