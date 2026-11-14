@@ -298,19 +298,7 @@ FEATURE.savePage.push(async ({ L, out, p, entry, entries, marks }) => {
       }
       if (same || a.dest == null) continue;
       // Copied pages: the destination pointed into the PDF the page came from (pdf-lib copied that page along with
-      // the link, outside the page list; it is dropped, with its content, so the file doesn't carry it).
-      const act = d.lookup(PDFName.of('A')), cur = d.lookup(PDFName.of('Dest')) || (act instanceof PDFDict ? act.lookup(PDFName.of('D')) : null);
-      const stray = cur instanceof PDFArray && cur.size() ? cur.get(0) : null;
-      if (stray instanceof PDFRef && !outPages.some((pg) => pg.ref === stray || pg.ref.toString() === stray.toString())) {
-        const sd = out.context.lookup(stray);
-        if (sd instanceof PDFDict && String(sd.get(PDFName.of('Type'))) === '/Page') {
-          const keep = new Set(outPages.flatMap((pg) => { const c = pg.node.get(PDFName.of('Contents')); const l = c instanceof PDFArray ? c.asArray() : [c]; return l.map(String); }));
-          const c = sd.get(PDFName.of('Contents')), l = c instanceof PDFArray ? c.asArray() : [c];
-          for (const x of l) if (x instanceof PDFRef && !keep.has(String(x))) out.context.delete(x);
-          if (c instanceof PDFRef && !keep.has(String(c))) out.context.delete(c);
-          out.context.delete(stray);
-        }
-      }
+      // the link, outside the page list; lnkSweep drops such copies once every page is saved).
       const key = await lnkDestKey(entry.src, a.dest), at = key == null ? -1 : idxOf(key);
       if (at < 0) { remove(); continue; }
       let view = [PDFName.of('XYZ'), PDFNull, PDFNumber.of(top(outPages[at])), PDFNull];
@@ -329,4 +317,41 @@ FEATURE.savePage.push(async ({ L, out, p, entry, entries, marks }) => {
     if (!(annots instanceof PDFArray)) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
     annots.push(out.context.register(annot));
   }
+});
+
+// Copied pages: pdf-lib also copies every page a link pointed to (and, through that page's links, the pages it points
+// to), outside the page list. Once links point at the saved pages, those copies (and their content) are dropped.
+function lnkSweep(L, out) {
+  const { PDFName, PDFArray, PDFDict, PDFRef } = L;
+  const kept = new Set(out.getPages().map((pg) => pg.ref.toString()));
+  const list = (c) => c instanceof PDFArray ? c.asArray() : c ? [c] : [];
+  const keepContents = new Set(out.getPages().flatMap((pg) => list(pg.node.get(PDFName.of('Contents'))).map(String)));
+  const strays = out.context.enumerateIndirectObjects().filter(([r, o]) => o instanceof PDFDict && !kept.has(r.toString()) && String(o.get(PDFName.of('Type'))) === '/Page' && !o.get(PDFName.of('Kids')));
+  if (!strays.length) return;
+  // A copy something in the saved file still refers to (say a form button that goes to it) is kept.
+  const refsIn = (o, seen = new Set()) => {
+    const outR = [];
+    const walk = (x) => {
+      if (x instanceof PDFRef) { outR.push(x.toString()); return; }
+      if (x instanceof PDFDict) { if (seen.has(x)) return; seen.add(x); for (const [, v] of x.entries()) walk(v); }
+      else if (x instanceof PDFArray) for (const v of x.asArray()) walk(v);
+    };
+    walk(o); return outR;
+  };
+  const used = new Set();
+  const stack = [out.context.trailerInfo.Root, out.context.trailerInfo.Info].filter(Boolean).map(String);
+  while (stack.length) {
+    const id = stack.pop(); if (used.has(id)) continue; used.add(id);
+    const [num, gen] = id.split(' ').map(Number), obj = out.context.lookup(PDFRef.of(num, gen));
+    if (obj) for (const r of refsIn(obj.dict || obj)) stack.push(r);
+  }
+  for (const [r, o] of strays) {
+    if (used.has(r.toString())) continue;
+    for (const c of list(o.get(PDFName.of('Contents')))) if (c instanceof PDFRef && !keepContents.has(String(c)) && !used.has(String(c))) out.context.delete(c);
+    out.context.delete(r);
+  }
+}
+FEATURE.saveDoc.push(async ({ L, out, entries }) => {
+  const same = entries === doc.pages && doc.sources.length === 1 && entries.every((e, n) => e.src === 0 && e.i === n) && pdfDocs.get(0).numPages === entries.length;
+  if (!same) lnkSweep(L, out);
 });

@@ -13,6 +13,9 @@ export default async (h) => {
     const web = d.context.register(d.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, 595, 170, 615], Border: [0, 0, 0], A: { S: 'URI', URI: L.PDFString.of('https://old.example.com/') } }));
     const go = d.context.register(d.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, 495, 180, 515], Border: [0, 0, 0], Dest: [pages[2].ref, 'XYZ', 0, 792, null] }));
     pages[0].node.set(N('Annots'), d.context.obj([web, go]));
+    // page 3 links back to page 1 (copying either page makes pdf-lib copy the other, and so on)
+    const back = d.context.register(d.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, 695, 250, 725], Border: [0, 0, 0], A: { S: 'GoTo', D: [pages[0].ref, 'Fit'] } }));
+    pages[2].node.set(N('Annots'), d.context.obj([back]));
     fs.writeFileSync(tmp, await d.save()); return tmp;
   }
   // The links on a saved page: [rect, uri or saved page index]
@@ -127,6 +130,8 @@ export default async (h) => {
     eq(d.getPageCount(), 3);
     eq(d.context.enumerateIndirectObjects().filter(([, o]) => o instanceof L.PDFDict && String(o.get(N('Type'))) === '/Page').length, 3, 'no stray copy of the linked page');
     eq(linksOf(d, 0), [[[70, 595, 170, 615], 'https://old.example.com/'], [[70, 495, 180, 515], 1]]);
+    eq(linksOf(d, 1), [[[70, 695, 250, 725], 0]], 'page 3 still links back to page 1');
+    eq(String(d.getPage(1).node.lookup(N('Annots')).lookup(0).lookup(N('Dest')).get(1)), '/Fit', 'keeps how the page is shown');
     await reopen(p, await savedOf(p));
     await p.waitForSelector('.page[data-n="0"] .annotationLayer .linkAnnotation');
     await p.click('.page[data-n="0"] .annotationLayer .linkAnnotation:nth-child(2) a'); await p.waitForTimeout(700);
