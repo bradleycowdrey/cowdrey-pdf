@@ -191,7 +191,7 @@ async function pg60Replace() {
     current = at;
   });
   pg60SetSel([]);
-  toast(`Replaced ${pg60Plural(out.length, 'page')}`);
+  undoToast(`Replaced ${pg60Plural(out.length, 'page')}`);
 }
 
 /* ---- split into several files ---- */
@@ -235,7 +235,7 @@ function pg60Reverse() {
     const picked = t.map((n) => doc.pages[n]).reverse();
     t.forEach((n, k) => { doc.pages[n] = picked[k]; });
   });
-  toast(t.length === doc.pages.length ? 'Page order reversed' : `Reversed ${pg60Plural(t.length, 'page')}`);
+  undoToast(t.length === doc.pages.length ? 'Page order reversed' : `Reversed ${pg60Plural(t.length, 'page')}`);
 }
 async function pg60RotateRange() {
   const t = pg60Many() ? pg60Valid() : [...doc.pages.keys()];
@@ -260,7 +260,6 @@ function pg60DeleteMany(idx) {
   const gone = new Set(idx);
   pageOp(() => { doc.pages = doc.pages.filter((_, n) => !gone.has(n)); current = Math.max(0, Math.min(idx[0], doc.pages.length - 1)); });
   pg60SetSel([]); pagesDeleted(idx);
-  toast(`Deleted ${pg60Plural(idx.length, 'page')}`);
 }
 // Asks before deleting: which pages (a range, starting with idx), with the count on the button. Enter deletes.
 async function pg60DeleteAsk(idx = pg60Targets()) {
@@ -310,7 +309,7 @@ function pg60DupMany(idx) {
   const set = new Set(idx);
   pageOp(() => { doc.pages = doc.pages.flatMap((e, n) => (set.has(n) ? [e, JSON.parse(JSON.stringify(e))] : [e])); });
   pg60SetSel([]);
-  toast(`Duplicated ${pg60Plural(idx.length, 'page')}`);
+  undoToast(`Duplicated ${pg60Plural(idx.length, 'page')}`);
 }
 async function pg60ExtractMany(idx) {
   try {
@@ -522,7 +521,7 @@ async function pg60SetCrop(idx, margins) {
   }
   if (!crops.length) { toast('Those margins leave nothing of the page'); return 0; }
   pageOp(() => { for (const [e, c] of crops) { if (c) e.crop = c; else delete e.crop; } });
-  toast(!margins ? 'Crop removed' : `Cropped ${pg60Plural(crops.length, 'page')}`);
+  undoToast(!margins ? 'Crop removed' : `Cropped ${pg60Plural(crops.length, 'page')}`);
   return crops.length;
 }
 // Saved as the page's CropBox (what readers show) and TrimBox (the finished size for printing).

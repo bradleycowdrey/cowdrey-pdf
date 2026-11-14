@@ -42,13 +42,18 @@ let toastTimer;
 const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
 let toolHint = '', toolJustSet = null; // the mode chip's hint, and the tool chosen in this task (see setTool)
 const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
-function toast(msg) {
+// `action`: { label, run } adds a button to the toast (Undo after deleting a page), kept up longer so it can be reached.
+function toast(msg, action) {
   msg = touchWords(msg);
   // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
   // of a toast that goes after a moment and covers the page (toasts are for what happened).
   // (A phone's chip has room for the tool's name only: there the hint is also shown once, as a toast.)
   if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); }; t.append(' ', b);
+  }
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
   for (const b of document.querySelectorAll(TOAST_AVOID)) {
@@ -57,7 +62,12 @@ function toast(msg) {
     top = Math.min(top, r.top);
   }
   t.style.setProperty('--toast-bottom', Math.max(48, innerHeight - top + 12) + 'px');
-  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2600);
+}
+// What was done to the pages, with Undo on the toast (it takes back that change only, not one made since).
+function undoToast(msg) {
+  const top = undoStack[undoStack.length - 1];
+  toast(msg, { label: 'Undo', run: () => { if (top && undoStack[undoStack.length - 1] === top) undo(); } });
 }
 
 /* ---------------- features ----------------
@@ -2388,11 +2398,20 @@ const rotatePage = (d) => pageOp(() => { const e = doc.pages[current]; e.rot = (
 const rotateAll = (d) => pageOp(() => doc.pages.forEach((e) => { e.rot = (e.rot + d + 360) % 360; }));
 // Page moves and deletes are read out (the pages change under a screen reader's cursor without a word otherwise).
 // `idx`: the pages moved (indexes before the move); `to`: where the first of them is now.
-function pagesMoved(idx, to, together = true) { if (doc) announce(idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`); }
-function pagesDeleted(n) { if (doc) announce(`${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted. ${doc.pages.length} left.`); }
+// They are also shown, with Undo, as a toast.
+function pagesMoved(idx, to, together = true) {
+  if (!doc) return;
+  const msg = idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`;
+  announce(msg); undoToast(msg);
+}
+function pagesDeleted(n) {
+  if (!doc) return;
+  const msg = `${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted`;
+  announce(`${msg}. ${doc.pages.length} left.`); undoToast(msg);
+}
 const deletePage = () => { const n = current; pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); }); pagesDeleted([n]); };
 const movePage = (d) => { const t = current + d, n = current; if (!doc || t < 0 || t >= doc.pages.length) return; pageOp(() => { const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; }); pagesMoved([n], t); };
-const duplicatePage = () => pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; });
+const duplicatePage = () => { const n = current; pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; }); if (doc) undoToast(`Page ${n + 1} duplicated`); };
 async function insertBlank() {
   const L = await loadPdfLib();
   const base = await (await pageOf(doc.pages[current])).getViewport({ scale: 1 });

@@ -316,6 +316,10 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .about .logo { width: 64px; height: 64px; border-radius: 15px; font-size: 22px; }
 .toast { position: fixed; left: 50%; bottom: var(--toast-bottom, 48px); max-width: calc(100vw - 32px); box-sizing: border-box; text-align: center; transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
 .toast.show { opacity: 1; }
+.toast .toast-act { margin: -4px -8px -4px 6px; padding: 4px 8px; border: 0; border-radius: 12px; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; pointer-events: auto; }
+.toast .toast-act:hover { background: color-mix(in srgb, var(--surface) 18%, transparent); }
+.toast .toast-act:focus-visible { outline: 2px solid var(--surface); outline-offset: 1px; }
+.toast:not(.show) .toast-act { pointer-events: none; visibility: hidden; }
 /* The find bar sits in a zero-height strip that sticks to the top of the viewer, so it stays put while the pages scroll. */
 .find-dock { position: sticky; top: 0; left: 0; height: 0; z-index: 20; }
 .findbar { position: absolute; top: 10px; right: 16px; z-index: 20; display: flex; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
