@@ -182,7 +182,7 @@ export default async (h) => {
     await p.fill('.annotationLayer input[name="name"]', 'Bradley Cowdrey'); await p.click('.annotationLayer .checkBox input');
     await p.click('[data-rt="markup"]'); await p.click('[data-cmd="tool_note"]');
     const g = await p.locator('.page[data-n="0"]').boundingBox(); await p.mouse.click(g.x + 400, g.y + 650);
-    await p.fill('#dlgInput', 'Looks good'); await p.click('#dialog .btn.primary');
+    await p.fill('.page-ask textarea', 'Looks good'); await p.click('.page-ask .btn.primary');
     await run(p, 'protFlatten'); await answer(p, 'Flatten'); await p.waitForTimeout(200);
     ok(await p.$eval('.annotationLayer input[name="name"]', (e) => e.disabled), 'fields locked on screen');
     const out = await savedOf(p), d = await PDFDocument.load(out);

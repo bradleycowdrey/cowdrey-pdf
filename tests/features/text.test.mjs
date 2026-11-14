@@ -45,6 +45,20 @@ export default async (h) => {
   const { test, eq, ok, open, openPdf, savedOf, reopen, at, PDFDocument } = h;
   const file = await makeDoc(h);
 
+  await test('text: Escape in the paragraph editor keeps the change and stays in Edit PDF; a second Escape leaves', async () => {
+    const p = await open(); await openPdf(p, file, 'Notes.pdf');
+    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+    const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
+    await p.keyboard.press('End'); await p.keyboard.type(' Kept.'); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+    if (await p.$('#dialog[open]')) await letRun(p);
+    ok(!(await p.$('.txt-editor')), 'closed');
+    eq((await allMarks(p)).map((m) => m.type), ['tpara'], 'kept');
+    eq(await p.evaluate(() => document.querySelector('.app').dataset.tool), 'edit', 'still Edit PDF');
+    eq(await p.evaluate(() => document.activeElement.id), 'viewer', 'the keys stay on the page');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(100);
+    eq(await p.evaluate(() => document.querySelector('.app').dataset.tool), 'select', 'a second Escape leaves');
+    eq(p.errors, []); await p.ctx.close();
+  });
   await test('text: paragraph mode edits a whole paragraph, re-wraps it to the block\'s width, and saves it in its own font', async () => {
     const p = await open(); await openPdf(p, file, 'Notes.pdf');
     await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
@@ -114,13 +128,13 @@ export default async (h) => {
     await p.click('[data-rt="edit"]'); await p.click('[data-cmd="tool_text"]');
     const [x1, y1] = await at(p, 72, 500), [x2] = await at(p, 252, 500);
     await p.mouse.move(x1, y1); await p.mouse.down(); await p.mouse.move(x2, y1, { steps: 6 }); await p.mouse.up();
-    await p.waitForSelector('#dialog[open] #dlgInput');
-    eq(await p.inputValue('#txtBoxW'), '180', 'box width from the drag');
-    await p.selectOption('#dialog select[data-tf="fam"]', 'serif');
-    await p.click('#dialog [data-tf="bold"]'); await p.click('#dialog [data-tf="center"]'); await p.click('#dialog [data-tf="color"][data-c="#2448C9"]');
-    await p.fill('#dlgInput', 'Signed off by the board on Tuesday, with thanks to every store in the pilot.');
-    await shot(p, 'add-text-dialog.png');
-    await p.click('#dialog .btn.primary'); await p.waitForTimeout(400);
+    await p.waitForSelector('.page .txt-editor'); ok(!(await p.$('#dialog[open]')), 'typed on the page');
+    eq(await p.$eval('.txt-editor', (t) => Math.round(t.getBoundingClientRect().width)), Math.round(x2 - x1 + 3), 'box width from the drag');
+    await p.selectOption('.txt-bar select[data-tf="fam"]', 'serif');
+    await p.click('.txt-bar [data-tf="bold"]'); await p.click('.txt-bar [data-tf="center"]'); if (await p.isVisible('.txt-bar [data-tf="colors"]')) await p.click('.txt-bar [data-tf="colors"]'); await p.click('.txt-bar [data-tf="color"][data-c="#2448C9"]');
+    await p.keyboard.type('Signed off by the board on Tuesday, with thanks to every store in the pilot.');
+    await shot(p, 'add-text-inline.png');
+    await p.keyboard.press('Control+Enter'); await p.waitForTimeout(400);
     let [m] = await allMarks(p);
     eq([m.type, m.fam, m.bold, m.align, m.w, m.color], ['text', 'serif', true, 'center', 180, '#2448C9']);
     ok(m.lines.length >= 2 && m.lw.every((w) => w <= 180), 'wrapped: ' + JSON.stringify(m.lines));
@@ -134,7 +148,7 @@ export default async (h) => {
     await openPdf(p, file, 'Notes.pdf');
     await p.click('[data-rt="edit"]'); await p.click('[data-cmd="tool_text"]');
     const [ax, ay] = await at(p, 100, 450); await p.mouse.click(ax, ay);
-    await p.waitForSelector('#dialog[open] #dlgInput'); await p.fill('#dlgInput', 'Draft'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(400);
+    await p.waitForSelector('.page .txt-editor'); await p.keyboard.type('Draft'); await p.keyboard.press('Escape'); await p.waitForTimeout(400);
     [m] = await allMarks(p);
     eq([m.text, m.fam, m.bold, m.align], ['Draft', 'serif', true, 'center'], 'the last format is kept for the next text');
     const [bx, by] = await at(p, m.x + 5, m.y - 8);

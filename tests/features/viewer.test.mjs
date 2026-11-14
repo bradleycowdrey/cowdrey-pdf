@@ -164,7 +164,7 @@ export default async (h) => {
     await p.evaluate(() => { document.querySelector('#viewer').scrollTop = 0; }); await p.waitForTimeout(300);
     g = await p.locator('.page[data-n="0"]').boundingBox();
     await p.mouse.click(g.x + 200, g.y + 300, { button: 'right' }); await pick(p, 'Add comment here');
-    await p.fill('#dlgInput', 'Look here'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(200);
+    await p.fill('.page-ask textarea', 'Look here'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(200);
     const note = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().find((m) => m.type === 'note'));
     ok(note && note.text === 'Look here', 'note added');
     const [nx, ny] = await h.at(p, note.x, note.y);
@@ -173,7 +173,7 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
     const mk = await p.locator('.page[data-n="0"] svg.marks .mk').first().boundingBox();
     await p.mouse.click(mk.x + mk.width / 2, mk.y + mk.height / 2, { button: 'right' }); await p.waitForTimeout(150);
-    eq((await menu(p)).slice(0, 4), ['Copy', 'Duplicate', 'Delete', 'Edit note…']);
+    eq((await menu(p)).slice(0, 4), ['Copy', 'Duplicate', 'Delete', 'Edit note']);
     await pick(p, 'Copy');
     await p.mouse.click(g.x + 400, g.y + 600, { button: 'right' }); await pick(p, 'Paste');
     const notes = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'note').map((m) => [m.x, m.y]));

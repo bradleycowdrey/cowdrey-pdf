@@ -90,8 +90,8 @@ export default async (h) => {
     await p.keyboard.type('x'); await p.keyboard.press('Escape'); await p.waitForTimeout(100);
     t = await toast(); ok(/^Change kept/.test(t) && !/Ctrl|⌘/.test(t), t);
     await run(p, 'tool_text'); await p.waitForTimeout(100);
-    await p.mouse.click(b.x + 8, b.y + 200); await p.waitForSelector('#dialog[open]');
-    ok(!/Ctrl|⌘/.test(await p.textContent('#dialog')), 'Add text dialog: ' + await p.textContent('#dialog .txt-hint'));
+    await p.mouse.click(b.x + 8, b.y + 200); await p.waitForSelector('.page .txt-editor');
+    ok(!(await p.$('#dialog[open]')), 'Add text types on the page, with no dialog');
     eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
     // with a mouse and keyboard the keys are named, and Keyboard shortcuts has one row for Ctrl+D
     const d = await open(); await openPdf(d);
@@ -192,7 +192,7 @@ export default async (h) => {
     // Note, with the keyboard only: choose it on the ribbon, press Enter again to place it
     await p.click('[data-rt="markup"]'); await p.focus('#ribbonBody [data-cmd="tool_note"]'); await p.keyboard.press('Enter');
     eq(await p.$eval('#app', (a) => a.dataset.tool), 'note');
-    await p.keyboard.press('Enter'); await p.waitForSelector('#dialog[open] #dlgInput');
+    await p.keyboard.press('Enter'); await p.waitForSelector('.page-ask textarea:focus');
     await p.keyboard.type('Placed with the keyboard'); await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
     let ms = await allMarks(p); eq(ms.map((m) => [m.type, m.text]), [['note', 'Placed with the keyboard']]);
     eq(await p.$eval('#app', (a) => a.dataset.tool), 'select');
@@ -210,7 +210,7 @@ export default async (h) => {
     const [s2, ex, ey] = await centre(ms[1].id); ok(s2 && Math.abs(ex) <= 2 && Math.abs(ey) <= 2, `stamp selected and centred: ${s2} ${ex} ${ey}`);
     await p.keyboard.press('Delete'); eq(await marks(p), ['note'], 'Delete removes it');
     // Enter with nothing to place does nothing; a cancelled note leaves nothing behind
-    await run(p, 'tool_note'); await p.focus('#viewer'); await p.keyboard.press('Enter'); await p.waitForSelector('#dialog[open]');
+    await run(p, 'tool_note'); await p.focus('#viewer'); await p.keyboard.press('Enter'); await p.waitForSelector('.page-ask');
     await p.keyboard.press('Escape'); await p.waitForTimeout(300); eq(await marks(p), ['note']);
     eq(p.errors, []); await p.ctx.close();
   });

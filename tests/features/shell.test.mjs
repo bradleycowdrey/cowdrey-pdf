@@ -70,8 +70,9 @@ export default async (h) => {
     const p = await open(); await openPdf(p);
     await p.click('[data-rt="edit"]'); await p.click('[data-cmd="tool_text"]');
     const g = await p.locator('.page[data-n="0"]').boundingBox();
-    await p.mouse.click(g.x + 100, g.y + 300); await p.waitForSelector('#dialog[open] #dlgInput');
-    await p.fill('#dlgInput', 'First words'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(200);
+    await p.mouse.click(g.x + 100, g.y + 300); await p.waitForSelector('.page .txt-editor');
+    await p.keyboard.type('First words'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+    await run(p, 'tool_select');
     const t = await p.locator('.page[data-n="0"] svg.marks text.mk').first().boundingBox();
     await p.mouse.dblclick(t.x + 5, t.y + t.height / 2); await p.waitForSelector('.txt-editor');
     await p.keyboard.press('Control+a'); await p.keyboard.type('Kept by Escape'); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
@@ -141,9 +142,9 @@ export default async (h) => {
     ok(await p.evaluate(() => { const a = document.activeElement; return a.matches('#dialog .dlg-body :is(input, textarea, select)'); }), 'focus on a field, not Close');
     await p.keyboard.press('Escape');
     await run(p, 'tool_note'); const g = await p.locator('.page[data-n="0"]').boundingBox(); await p.mouse.click(g.x + 300, g.y + 300);
-    await p.waitForSelector('#dialog[open] #dlgInput');
-    eq(await p.$eval('#dlgInput', (e) => e.getAttribute('aria-labelledby')), 'dlgTitle', 'the field is named');
-    await p.fill('#dlgInput', 'Hello'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(100);
+    await p.waitForSelector('.page-ask textarea');
+    eq(await p.$eval('.page-ask textarea', (e) => e.getAttribute('aria-label')), 'Note', 'the field is named');
+    await p.fill('.page-ask textarea', 'Hello'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(100);
     ok((await p.textContent('#saveState')).startsWith('Edited'), 'edited');
     await p.ctx.close();
   });

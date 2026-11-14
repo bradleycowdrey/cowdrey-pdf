@@ -73,6 +73,7 @@ const FEATURE = {
   onDocShown: [],  // (doc) — when a document is shown
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
   markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
+  selActions: [],  // { label, icon, order, run() } — what can be done with text selected on the page (its bar and menu)
 };
 function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
 const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
@@ -666,6 +667,7 @@ function restore(s, layout) {
 function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
 function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
+let markDown = null; // { id, t }: the last press on a note or text box
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
   if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
@@ -681,8 +683,13 @@ function onMarksDown(e, v) {
     if (!hit) { selectMark(null); return; }
     selectMark({ key: pageKey(v.entry), id: hit.dataset.id, entry: v.entry });
     const m = marksOf(v.entry).find((x) => x.id === hit.dataset.id);
-    if (m && m.type === 'note' && e.detail === 2) { editNote(v, m); return; }
-    if (m && m.type === 'text' && e.detail === 2) { editText(v, m); return; }
+    // A second press on a note or text box within half a second changes its words (pointer events carry no
+    // click count, and the redraw after the first press means no dblclick arrives).
+    if (m && (m.type === 'note' || m.type === 'text')) {
+      const now = Date.now(), again = markDown && markDown.id === m.id && now - markDown.t < 500;
+      markDown = again ? null : { id: m.id, t: now };
+      if (again) { e.preventDefault(); setTimeout(() => (m.type === 'note' ? editNote : editText)(v, m), 0); return; }
+    }
     startMove(e, v, m);
     return;
   }
@@ -691,7 +698,7 @@ function onMarksDown(e, v) {
   if (tool === 'pen') return startInk(e, v);
   if (tool === 'rect') return startRect(e, v);
   if (tool === 'text') { e.preventDefault(); return addText(v, x, y); }
-  if (tool === 'note') { e.preventDefault(); return addNote(v, x, y); }
+  if (tool === 'note') { e.preventDefault(); if (pageAskTook(e)) return; return addNote(v, x, y); }
   if (tool === 'sign' || tool === 'image') { e.preventDefault(); return placeImage(v, px, py); }
 }
 // Double-click: change a note's or a text box's words (Select), or a comment's (Edit PDF).
@@ -751,6 +758,24 @@ function nudgeMark(key, big) {
   if (v) { const [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, dx * scale, dy * scale); [dx, dy] = [x1 - x0, y1 - y0]; }
   const before = snapshot();
   offsetMark(m, JSON.parse(JSON.stringify(m)), dx, dy);
+  redrawPage(selMark.entry); changed(before);
+  return true;
+}
+// Alt+Shift+arrows: the selected mark's right edge (Left, Right) or bottom edge (Up, Down) moves 2 pt, as dragging its
+// handle would; a mark that keeps its proportions grows or shrinks from its top-left corner.
+function sizeMark(key) {
+  const m = selectedMark(), v = m && views.find((x) => x.entry === selMark.entry && x.rendered); if (!v) return false;
+  const svg = v.el.querySelector('svg.marks'), el = svg && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`), b = el && markViewBox(svg, el);
+  const stretch = MARK_STRETCH(m) || ((('x1' in m) || (Array.isArray(m.quads) && m.type !== 'cmMarkup')) && !MARK_SCALE[m.type]); // form fields, redaction areas too
+  if (!b || !(stretch || MARK_SCALE[m.type])) return false;
+  const d = 2 * scale, w0 = Math.max(1, b[2] - b[0]), h0 = Math.max(1, b[3] - b[1]);
+  let sx = 1 + ({ ArrowRight: d, ArrowLeft: -d }[key] || 0) / w0, sy = 1 + ({ ArrowDown: d, ArrowUp: -d }[key] || 0) / h0;
+  sx = Math.max(sx, 4 / w0); sy = Math.max(sy, 4 / h0);
+  if (!stretch) sx = sy = key === 'ArrowRight' || key === 'ArrowDown' ? Math.max(sx, sy) : Math.min(sx, sy);
+  const before = snapshot(), orig = JSON.parse(JSON.stringify(m)), [ax, ay] = [b[0], b[1]];
+  const P = ([x, y]) => { const [vx, vy] = toView(v, x, y); return toPdf(v, ax + (vx - ax) * sx, ay + (vy - ay) * sy); };
+  resizeMark(m, orig, P, sx);
+  if (Array.isArray(orig.quads) && m.type !== 'cmMarkup') m.quads = orig.quads.map((q) => Array.isArray(q[0]) ? q.map(P) : q);
   redrawPage(selMark.entry); changed(before);
   return true;
 }
@@ -828,17 +853,56 @@ async function editText(v, m) {
   if (text == null) return;
   const before = snapshot(); m.text = text; drawMarks(v); changed(before);
 }
+/* A small editor that opens on the page, by what it is for (a note's words…). Like the text editors, Escape, Done,
+   Ctrl+Enter (⌘Return) and a click away all keep what was typed; Undo takes it back. Resolves with the text. */
+let pageAskOpen = null, pageAskAway = 0;
+function pageAsk(v, px, py, { label, text = '', done = 'Done', placeholder = '' }) {
+  if (pageAskOpen) pageAskOpen.finish();
+  return new Promise((res) => {
+    const box = document.createElement('div');
+    box.className = 'page-ask'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', label);
+    box.innerHTML = `<div class="page-ask-h">${esc(label)}</div><textarea rows="3" spellcheck="true" aria-label="${esc(label)}" placeholder="${esc(placeholder)}"></textarea><div class="page-ask-f"><button type="button" class="btn primary">${esc(done)}</button></div>`;
+    const ta = $('textarea', box); ta.value = text;
+    v.el.appendChild(box);
+    const W = v.el.clientWidth, H = v.el.clientHeight, w = box.offsetWidth, h = box.offsetHeight;
+    box.style.left = Math.max(4, Math.min(px + 14, W - w - 4)) + 'px';
+    box.style.top = (py + 14 + h > H - 4 && py - h - 14 > 4 ? py - h - 14 : Math.max(4, Math.min(py + 14, H - h - 4))) + 'px';
+    const P = pageAskOpen = { box, finish: () => {
+      if (pageAskOpen !== P) return;
+      pageAskOpen = null; document.removeEventListener('pointerdown', away, true);
+      const had = box.contains(document.activeElement); box.remove();
+      if (had) viewer.focus({ preventScroll: true });
+      res(ta.value.replace(/\r/g, ''));
+    } };
+    // A press anywhere else keeps the text; on the page it does only that (it doesn't also add another note).
+    const away = (e) => { if (box.contains(e.target)) return; if (e.target.closest && e.target.closest('.page')) pageAskAway = e.timeStamp; P.finish(); };
+    document.addEventListener('pointerdown', away, true);
+    box.addEventListener('pointerdown', (e) => e.stopPropagation());
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); e.stopPropagation(); P.finish(); keptHint(!!ta.value.trim() && ta.value !== text); return; }
+      if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
+    });
+    $('button', box).onclick = () => P.finish();
+    ta.focus({ preventScroll: true }); ta.select();
+    if (!coarse()) box.scrollIntoView({ block: 'nearest' });
+  });
+}
+const pageAskTook = (e) => e && pageAskAway && e.timeStamp === pageAskAway;
+TEST_HOOKS.pageAskOpen = () => !!pageAskOpen;
+// Note: the note is placed where clicked and its words typed beside it. Left empty, no note is added.
 async function addNote(v, x, y) {
-  const text = await askText('Add a note', 'The note shows as a comment in any PDF reader.', '', 'Add', false, true);
-  if (!text) return;
-  const before = snapshot();
-  marksOf(v.entry).push({ id: uid(), type: 'note', x, y, text });
-  drawMarks(v); changed(before); setTool('select');
+  const before = snapshot(), m = { id: uid(), type: 'note', x, y, text: '' }, list = marksOf(v.entry);
+  list.push(m); drawMarks(v);
+  const text = await pageAsk(v, ...toView(v, x, y), { label: 'Note', placeholder: 'Type a note' });
+  if (!text.trim()) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); drawMarks(v); kbPlace = null; return; }
+  m.text = text; drawMarks(v); changed(before);
 }
 async function editNote(v, m) {
-  const text = await askText('Note', '', m.text, 'Save', false, true);
-  if (text == null) return;
-  const before = snapshot(); m.text = text; drawMarks(v); changed(before);
+  const text = await pageAsk(v, ...toView(v, m.x, m.y), { label: 'Note', text: m.text });
+  if (text === m.text) return;
+  const before = snapshot(), list = marksOf(v.entry);
+  if (!text.trim()) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); selectMark(null); drawMarks(v); changed(before); toast('Note removed'); return; }
+  m.text = text; drawMarks(v); changed(before);
 }
 let pendingImage = null; // { data, w, h } waiting to be placed
 const placeHint = (what) => coarse() ? `Tap where ${what} goes` : `Click where ${what} goes, or press Enter to put it in the middle`;
@@ -925,6 +989,47 @@ function highlightSelection() {
   return any;
 }
 document.addEventListener('pointerup', () => { if (app.dataset.tool === 'highlight') setTimeout(highlightSelection, 0); });
+/* ---- text selected with the Select tool: a small bar over it (Highlight, Underline, Strikethrough, Redact, Copy),
+   the same actions as in its right-click menu. It shows once the selection is made (the button or finger let go). */
+FEATURE.selActions.push(
+  { label: 'Highlight', icon: 'highlighter', order: 10, run: () => highlightSelection() },
+  { label: 'Copy', icon: 'copy', key: 'Mod-c', order: 90, run: () => { document.execCommand('copy'); getSelection().removeAllRanges(); toast('Copied'); } },
+);
+const selActionList = () => [...FEATURE.selActions].sort((a, b) => a.order - b.order);
+let selBar = null;
+function pageSelection() {
+  const sel = getSelection(); if (!sel || sel.isCollapsed || !String(sel).trim() || !doc) return null;
+  const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+  return el && el.closest('.page .textLayer') ? sel : null;
+}
+function hideSelBar() { if (selBar) { selBar.remove(); selBar = null; } }
+function showSelBar() {
+  hideSelBar();
+  const sel = app.dataset.tool === 'select' && !TL.down && !$('#dialog').open && $('#popover').hidden && pageSelection(); if (!sel) return; // not with a menu open
+  const r = sel.getRangeAt(0).getBoundingClientRect(), w = $('#viewer').getBoundingClientRect();
+  if (!r.width || r.bottom < w.top || r.top > w.bottom) return;
+  const acts = selActionList(), bar = selBar = document.createElement('div');
+  bar.className = 'sel-bar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Selected text');
+  bar.innerHTML = acts.map((a, k) => `<button type="button" data-sa="${k}" title="${esc(a.label)}" aria-label="${esc(a.label)}">${ic(a.icon)}</button>`).join('');
+  document.body.appendChild(bar); icons();
+  bar.addEventListener('mousedown', (e) => e.preventDefault()); // the text stays selected
+  bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+  bar.addEventListener('click', (e) => { const b = e.target.closest('[data-sa]'); if (!b) return; hideSelBar(); acts[+b.dataset.sa].run(); });
+  // Above the selection (below it on touch screens, where the system's own menu sits above), inside the viewer.
+  const bw = bar.offsetWidth, bh = bar.offsetHeight, below = coarse() || r.top - bh - 8 < w.top;
+  bar.style.left = Math.max(w.left + 4, Math.min(r.left + r.width / 2 - bw / 2, w.right - bw - 4)) + 'px';
+  bar.style.top = Math.max(w.top + 4, Math.min(below ? r.bottom + 8 : r.top - bh - 8, w.bottom - bh - 4)) + 'px';
+}
+let selBarT = 0;
+const selBarSoon = (ms) => { clearTimeout(selBarT); selBarT = setTimeout(showSelBar, ms); };
+document.addEventListener('pointerup', (e) => { if (e.button !== 2 && (!e.target.closest || !e.target.closest('.sel-bar'))) selBarSoon(60); });
+// A finger's selection handles move with no pointer events: the bar follows the selection once it rests.
+document.addEventListener('selectionchange', () => { if (!pageSelection()) { clearTimeout(selBarT); hideSelBar(); } else if (!TL.down) selBarSoon(350); });
+document.addEventListener('pointerdown', (e) => { if (selBar && !selBar.contains(e.target)) hideSelBar(); }, true);
+$('#viewer').addEventListener('scroll', hideSelBar, { passive: true });
+document.addEventListener('keydown', (e) => { if (selBar && e.key === 'Escape') hideSelBar(); }, true);
+TEST_HOOKS.selBar = () => selBar && $$('button', selBar).map((b) => b.getAttribute('aria-label'));
+TEST_HOOKS.selId = () => selMark && selMark.id;
 // Touch: a finger dragged over text with a text tool (Highlight, Underline…) selects that text, as a mouse would (the
 // page does not scroll then: see touch-action in template.html). Letting go marks it up.
 const TEXT_TOOLS = new Set(['highlight', 'cmunderline', 'cmstrike', 'cmsquiggly', 'protredtext']);
@@ -947,6 +1052,12 @@ document.addEventListener('pointerdown', (e) => {
 // the item in the middle of the part of the page in view, as a click there would; it is then selected, so the arrow
 // keys move it and Delete removes it.
 const PLACE_TOOLS = new Set(['text', 'note', 'sign', 'image', 'cmstamp', 'cmtype', 'cmcallout']);
+// Tools that are dragged out (shapes, area highlight, redaction area, form fields): Enter drags one of the usual size
+// (160 by 100 pt; a line 160 pt long; a field its own size) in the middle of the page in view, then selects it, so the
+// arrow keys move it and Alt+Shift+arrows resize it.
+const DRAG_TOOLS = new Set(['rect', 'cmoval', 'cmcloud', 'cmline', 'cmarrow', 'cmarea', 'protredarea']);
+const dragTool = (t) => DRAG_TOOLS.has(t) || (/^ff_/.test(t) && t !== 'ff_edit' && !!FEATURE.tools[t]);
+const keyPlaces = (t) => PLACE_TOOLS.has(t) || dragTool(t);
 let kbPlace = null; // { v, ids, x, y } while a placement made with Enter is under way
 function placeByKey() {
   const v = views[current], svg = v && v.rendered && v.el.querySelector('svg.marks'); if (!svg) return false;
@@ -955,10 +1066,13 @@ function placeByKey() {
   if (right <= left || bottom <= top) return false;
   const x = (left + right) / 2, y = (top + bottom) / 2;
   const k = kbPlace = { v, ids: new Set(marksOf(v.entry).map((m) => m.id)), x, y };
-  const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
+  // a form field is clicked (it then takes its own size); the other drag tools are dragged corner to corner
+  const t = app.dataset.tool, drag = dragTool(t) && !/^ff_/.test(t), hw = drag ? 80 * scale : 0, hh = drag && t !== 'cmline' && t !== 'cmarrow' ? 50 * scale : 0;
+  const o = { clientX: x - hw, clientY: y - hh, bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
   svg.dispatchEvent(new PointerEvent('pointerdown', o));
-  window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
-  setTimeout(() => { if (kbPlace === k && !$('#dialog').open) kbPlace = null; }, 0); // nothing asked, nothing placed
+  if (drag) for (const f of [.5, 1]) window.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: x - hw + 2 * hw * f, clientY: y - hh + 2 * hh * f }));
+  window.dispatchEvent(new PointerEvent('pointerup', { ...o, clientX: x + hw, clientY: y + hh, buttons: 0 }));
+  setTimeout(() => { if (kbPlace === k && !$('#dialog').open && !pageAskOpen) kbPlace = null; }, 0); // nothing asked, nothing placed
   return true;
 }
 $('#dialog').addEventListener('close', () => { const k = kbPlace; if (k) setTimeout(() => { if (kbPlace === k) kbPlace = null; }, 1500); });
@@ -1003,7 +1117,8 @@ function modeChip() {
   const t = app.dataset.tool, on = !!doc && t && t !== 'select';
   chip.hidden = !on; app.classList.toggle('tool-on', on);
   if (!on) return;
-  const name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  let name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  if (dragTool(t) && !coarse()) hint = (hint || 'drag on the page') + ', or press Enter to add one';
   chip.title = $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
 }
 $('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
@@ -2801,8 +2916,20 @@ $('#findList').addEventListener('keydown', (e) => {
 });
 $('#findAll').onclick = () => findListShow($('#findList').hidden);
 for (const [id, k] of [['#findCase', 'matchCase'], ['#findWord', 'words']]) $(id).onclick = () => { findOpts[k] = !findOpts[k]; $(id).setAttribute('aria-pressed', findOpts[k]); runFind($('#findInput').value.trim()); };
-function openFind() { $('#findbar').hidden = false; $('#findInput').focus(); $('#findInput').select(); }
-function closeFind() { $('#findbar').hidden = true; findListShow(false); runFind(''); }
+// Closing Find gives the focus back to what opened it (a button, a menu's button…), or else to the page.
+let findReturn = null;
+function openFind() {
+  const a = document.activeElement;
+  if ($('#findbar').hidden) findReturn = a && a !== document.body && !$('#findbar').contains(a) && !pop.contains(a) ? a : (pop.hidden ? null : popAnchor);
+  $('#findbar').hidden = false; $('#findInput').focus(); $('#findInput').select();
+}
+function closeFind() {
+  const had = $('#findbar').contains(document.activeElement) || document.activeElement === document.body;
+  $('#findbar').hidden = true; findListShow(false); runFind('');
+  const back = findReturn && findReturn.isConnected && findReturn.offsetParent !== null && !findReturn.disabled ? findReturn : viewer;
+  findReturn = null;
+  if (had) back.focus({ preventScroll: true });
+}
 let findTimer;
 $('#findInput').addEventListener('input', (e) => { clearTimeout(findTimer); findTimer = setTimeout(() => runFind(e.target.value.trim()), 200); });
 $('#findInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') closeFind(); });
@@ -3178,12 +3305,21 @@ function showDialog(title, body, actions, setup) {
     });
     dlg.oncancel = (e) => { e.preventDefault(); done(null); };
     dlg.showModal();
-    // Start on the first field, or else on the main button, never on the close button.
-    const first = $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
-    if (first && document.activeElement === $('[data-x]', dlg)) first.focus();
+    // Start on the first field you type in (with a mouse and keyboard; a touch screen would open its keyboard), or else
+    // on the first field, or else on the main button, never on the close button: what's typed at once isn't lost.
+    // (not a field that belongs to a choice not made: focusing "Pages [1-3]" would choose it)
+    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return !(l && $('input[type="radio"]:not(:checked)', l)); });
+    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    if (first && (document.activeElement === $('[data-x]', dlg) || !dlg.contains(document.activeElement))) { first.focus(); if (fine && first === texty && first.select) first.select(); }
+    // Enter in a one-line field presses the main button (fields with their own Enter, like lists, say so first).
+    dlg.onkeydown = (e) => {
+      if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || !e.target.matches(`:is(${DLG_TEXTY}):not(textarea)`)) return;
+      const pb = $('.dlg-foot .btn.primary:not([disabled])', dlg); if (pb) { e.preventDefault(); pb.click(); }
+    };
     const inp = $('#dlgInput', dlg); if (inp) { inp.focus(); inp.select && inp.select(); inp.onkeydown = (e) => { if (e.key === 'Enter' && (inp.tagName !== 'TEXTAREA' || e.metaKey || e.ctrlKey)) { e.preventDefault(); done(inp.value); } }; }
   });
 }
+const DLG_TEXTY = 'input:not([type="hidden"], [type="radio"], [type="checkbox"], [type="range"], [type="color"], [type="file"], [type="button"], [disabled]), textarea:not([disabled])';
 function askText(title, note, value, ok, password, multiline) {
   const field = multiline ? `<textarea id="dlgInput" rows="4">${esc(value)}</textarea>` : `<input id="dlgInput" type="${password ? 'password' : 'text'}" value="${esc(value)}" autocomplete="off">`;
   return dialog(title, `${note ? `<p id="dlgNote">${esc(note)}</p>` : ''}<label class="field">${field.replace('id="dlgInput"', `id="dlgInput" aria-labelledby="dlgTitle"${note ? ' aria-describedby="dlgNote"' : ''}`)}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
@@ -3221,6 +3357,7 @@ cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, r
 cmd('undo', { get label() { return undoStack.length ? 'Undo ' + undoName() : 'Undo'; }, rlabel: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
 cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Redo'; }, rlabel: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 TEST_HOOKS.cmdLabel = (id) => C[id].label;
+TEST_HOOKS.cmdEnabled = (id) => !C[id].enabled || !!C[id].enabled();
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
@@ -3237,7 +3374,8 @@ cmd('up', { rlabel: 'Move up', label: 'Move page up', icon: 'arrow-up', enabled:
 cmd('down', { rlabel: 'Move down', label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
 cmd('dup', { label: 'Duplicate page', icon: 'copy-plus', enabled: has, run: duplicatePage });
 cmd('blank', { rlabel: 'Blank page', label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
-cmd('delPage', { rlabel: 'Delete', label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage, menu: ['delPage', 'pg60_delete'] });
+cmd('delPage', { rlabel: 'Delete', label: 'Delete page', icon: 'file-x-2', enabled: () => has() && doc.pages.length > 1, // a PDF keeps one page at least
+  run: deletePage, menu: ['delPage', 'pg60_delete'] });
 cmd('extract', { label: 'Extract pages…', icon: 'file-output', enabled: has, run: extractPages });
 cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => isPhone() ? app.dataset.sidebar === 'open' : S.sidebar, run: () => toggleSidebar() });
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
@@ -3399,7 +3537,8 @@ function pageMenu(v, cx, cy, anchor) {
   const b = v.el.getBoundingClientRect(), [x, y] = toPdf(v, cx - b.left, cy - b.top), n = views.indexOf(v);
   const text = String(getSelection() || '').trim();
   return openCtx([
-    text && { label: 'Copy', icon: 'copy', key: 'Mod-c', run: () => document.execCommand('copy') }, text && '-',
+    // text selected: mark it up from here, as from its bar
+    ...(text ? [...selActionList().map((a) => ({ label: a.label, icon: a.icon, key: a.key, run: a.run })), '-'] : []),
     { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', disabled: !markClip, run: () => pasteMark(null, v, x, y) },
     { label: 'Add comment here', icon: 'message-square-plus', run: () => addNote(v, x, y) },
     '-',
@@ -3416,8 +3555,8 @@ function markMenu(v, m, at, anchor) {
     { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', run: duplicateMark },
     { label: 'Delete', icon: 'trash-2', run: deleteSelected },
     '-',
-    m.type === 'note' && { label: 'Edit note…', icon: 'pencil', run: () => editNote(v, m) },
-    m.type === 'text' && { label: 'Edit text…', icon: 'pencil', run: () => editText(v, m) },
+    m.type === 'note' && { label: 'Edit note', icon: 'pencil', run: () => editNote(v, m) },
+    m.type === 'text' && { label: 'Edit text', icon: 'pencil', run: () => editText(v, m) },
     ...own.map((id) => ctxCmd(id)),
   ], at, anchor || viewer, 'Mark');
 }
@@ -3558,7 +3697,7 @@ function renderRibbon() {
   // Groups for a selection (Picture…) come last, so showing one never moves the tools people already know.
   const [, all] = RIBBON[S.ribbon] || RIBBON.home, onSel = ([, ids]) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => C[id] && C[id].contextual);
   const groups = phoneFold([...all.filter((g) => !onSel(g)), ...all.filter(onSel)]);
-  $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
+  $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="toolbar" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
     ? swatchesHtml(COLORS, { now: swatchNow(), attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${swatchNow().toLowerCase()}"` })
     : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => pickColor(b.dataset.color));
@@ -3653,6 +3792,34 @@ $$('.r-scroll').forEach((a) => {
 $('#ribbonTabs').addEventListener('scroll', ribbonEdges, { passive: true });
 window.addEventListener('resize', ribbonEdges);
 // Keyboard focus that lands on a button out of view brings it into view.
+/* Each ribbon group is a toolbar with one Tab stop (the button last used there, or else the one pressed, or the first):
+   Tab and Shift+Tab move between groups, the arrow keys (and Home, End) within one, Down opens a button's list. */
+const rbLast = {}; // tab:group -> the item last focused in it
+const rbKey = (b) => b.dataset.cmd || (b.dataset.rmenu ? 'menu:' + b.dataset.rmenu : '') || (b.dataset.color ? 'color:' + b.dataset.color : '') || (b.matches('[data-colorpick]') ? 'pick' : '');
+const rbItems = (g) => $$('button:not([disabled]), input:not([disabled])', g).filter((b) => !b.closest('[hidden]'));
+const rbGroupKey = (g) => S.ribbon + ':' + g.getAttribute('aria-label');
+function rbRoving() {
+  $$('#ribbonBody .r-group').forEach((g) => {
+    const items = rbItems(g), want = rbLast[rbGroupKey(g)];
+    const cur = (want && items.find((b) => rbKey(b) === want)) || items.find((b) => b.getAttribute('aria-pressed') === 'true' || b.getAttribute('aria-checked') === 'true') || items[0];
+    $$('button, input', g).forEach((b) => { b.tabIndex = b === cur ? 0 : -1; });
+  });
+}
+$('#ribbonBody').addEventListener('focusin', (e) => {
+  const g = e.target.closest('.r-group'); if (!g || !rbKey(e.target)) return;
+  rbLast[rbGroupKey(g)] = rbKey(e.target);
+  $$('button, input', g).forEach((b) => { b.tabIndex = b === e.target ? 0 : -1; });
+});
+$('#ribbonBody').addEventListener('keydown', (e) => {
+  const g = e.target.closest('.r-group'); if (!g || e.altKey || e.ctrlKey || e.metaKey) return;
+  const items = rbItems(g), k = items.indexOf(e.target); if (k < 0) return;
+  const menu = e.target.closest('[data-rmenu]');
+  if (e.key === 'ArrowDown' && menu) { e.preventDefault(); e.stopPropagation(); if (menu.getAttribute('aria-expanded') !== 'true') { closePopover(); openRibbonMenu(menu.dataset.rmenu); } return; }
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  const n = step ? items[(k + step + items.length) % items.length] : e.key === 'Home' ? items[0] : e.key === 'End' ? items[items.length - 1] : null;
+  if (!n) return;
+  e.preventDefault(); e.stopPropagation(); n.focus();
+});
 $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
@@ -3676,6 +3843,7 @@ function refreshRibbon() {
   $('#saveBtn').disabled = !has();
   $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });
   $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
+  rbRoving();
   scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
@@ -3701,7 +3869,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
-  if (e.key === 'Enter' && doc && PLACE_TOOLS.has(app.dataset.tool)) {
+  if (e.key === 'Enter' && doc && keyPlaces(app.dataset.tool)) {
     // on the page, or still on the button that chose the tool (Enter there would only choose it again)
     const a = document.activeElement, c = a && a.dataset && C[a.dataset.cmd];
     if (!a || a === document.body || a.closest('#viewer') || (c && (a.dataset.cmd === app.dataset.tool || (c.pressed && c.pressed())))) { e.preventDefault(); placeByKey(); return; }
@@ -3710,6 +3878,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
   // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
   if (/^Arrow/.test(e.key) && !e.altKey && selMark) { e.preventDefault(); nudgeMark(e.key, e.shiftKey); return; }
+  if (/^Arrow/.test(e.key) && e.altKey && e.shiftKey && selMark) { e.preventDefault(); sizeMark(e.key); return; }
   // The arrows turn the page only from the page itself: on a button, swatch, tab or menu they stay with it.
   const a = document.activeElement;
   if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && a && a.matches && a.matches('[data-color]')) { // colour swatches: move along the row

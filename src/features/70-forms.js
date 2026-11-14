@@ -63,7 +63,7 @@ async function ffLoadKnown() {
   const all = await ffAllWidgets();
   ffKnown.clear(); for (const { a } of all) ffKnown.add(a.fieldName);
 }
-FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLastRadio = null; ffLoadKnown(); });
+FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLastRadio = null; ffKnownSrcs = pdfDocs.size; ffLoadKnown().then(() => refreshRibbon()).catch(() => {}); });
 
 /* ---- form design and filling in ----
    New fields are designed (moved, resized, given properties) while a form tool or Edit fields is chosen on the Forms
@@ -767,8 +767,14 @@ cmd('ffProps', { label: 'Properties…', icon: 'sliders-horizontal', enabled: ()
 FEATURE.markTypes.ff.menu = ['ffProps']; // in the mark's right-click menu
 cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffDeleteSelected });
 cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-search', enabled: has, run: ffRecognize });
-cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });
-cmd('ffFlatten', { label: 'Flatten form', tip: 'Flatten form: make the form fields part of the page when you save. Comments stay comments.', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
+// Clear and Flatten form only for a PDF with a form (its own fields, or ones added here).
+let ffKnownSrcs = -1;
+const ffHasForm = () => {
+  if (pdfDocs.size !== ffKnownSrcs) { ffKnownSrcs = pdfDocs.size; ffLoadKnown().then(() => refreshRibbon()).catch(() => {}); } // a PDF inserted since
+  return ffKnown.size > 0 || ffFlat() || Object.values(doc.marks).some((l) => Array.isArray(l) && l.some((m) => m && m.type === 'ff'));
+};
+cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: () => has() && ffHasForm(), run: ffClear });
+cmd('ffFlatten', { label: 'Flatten form', tip: 'Flatten form: make the form fields part of the page when you save. Comments stay comments.', icon: 'layers-2', enabled: () => has() && ffHasForm(), pressed: ffFlat, run: ffFlatten });
 cmd('ffPreview', { label: 'Fill in', icon: 'text-cursor-input', enabled: () => has() && !ffFlat(), pressed: () => S.ribbon === 'forms' && !ffIsTool(), run: ffPreview });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
