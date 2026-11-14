@@ -16,7 +16,10 @@ const CM_STAMPS = [
   ['forComment', 'For comment', '#1C7ED6', 'ForComment'], ['received', 'Received', '#7048E8', 'Received'], ['void', 'Void', '#C92A2A', 'Void'],
 ];
 const CM = { draft: null, stamp: null, panelToken: 0, panelTimer: null };
-const cmStroke = () => (S.color === '#FFD43B' ? '#E03131' : S.color);
+// Each tool draws in its own colour (see COLOR_TOOLS): the pressed swatch on the Comment tab.
+Object.assign(COLOR_TOOLS, { cmunderline: '#E03131', cmstrike: '#E03131', cmsquiggly: '#E03131', cmarea: '#FFD43B', cmoval: '#E03131', cmline: '#E03131', cmarrow: '#E03131', cmpolygon: '#E03131', cmpolyline: '#E03131', cmcloud: '#E03131', cmcallout: '#E03131', cmtype: '#111111', cmstamp: '#2448C9' });
+for (const t of ['cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']) COLOR_MARKS.add(t);
+const cmStroke = (t) => toolColor(t);
 const cmRgb = (hex) => { const n = parseInt(String(hex || '#000000').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const cmNum = (n) => { const r = Math.round(n * 1000) / 1000; return Object.is(r, -0) ? '0' : String(r); };
 const cmToday = () => new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -277,7 +280,7 @@ function cmMarkupSelection(kind) {
   }
   sel.removeAllRanges();
   if (!byView.size) return false;
-  const before = snapshot(), color = cmStroke();
+  const before = snapshot(), color = cmStroke('cm' + kind);
   for (const [v, quads] of byView) { marksOf(v.entry).push({ id: uid(), type: 'cmMarkup', kind, quads, color, text }); drawMarks(v); }
   changed(before);
   return true;
@@ -303,14 +306,14 @@ function cmDrag(e, v, make, update) {
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 4) { const list = marksOf(v.entry); list.splice(list.indexOf(m), 1); drawMarks(v); return; }
-    changed(before);
+    changed(before); selectNew(v, m);
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
 const cmBoxMark = (type, extra) => (x, y) => ({ id: uid(), type, x1: x, y1: y, x2: x, y2: y, color: cmStroke(), w: S.width, ...extra() });
 const cmBoxUpdate = (m, x, y) => { m.x2 = x; m.y2 = y; };
 const cmLineUpdate = (m, x, y) => { m.pts[1] = [x, y]; };
-FEATURE.tools.cmarea = { down: (e, v) => cmDrag(e, v, (x, y) => ({ id: uid(), type: 'hl', area: true, rects: [[x, y, x, y]], color: S.color }), (m, x, y) => { m.rects[0][2] = x; m.rects[0][3] = y; }) };
+FEATURE.tools.cmarea = { down: (e, v) => cmDrag(e, v, (x, y) => ({ id: uid(), type: 'hl', area: true, rects: [[x, y, x, y]], color: cmStroke('cmarea') }), (m, x, y) => { m.rects[0][2] = x; m.rects[0][3] = y; }) };
 FEATURE.tools.rect = { down: (e, v) => cmDrag(e, v, cmBoxMark('rect', () => (S.cmFill ? { fill: true } : {})), cmBoxUpdate) };
 FEATURE.tools.cmoval = { down: (e, v) => cmDrag(e, v, cmBoxMark('cmShape', () => ({ kind: 'oval', fill: !!S.cmFill })), cmBoxUpdate) };
 FEATURE.tools.cmcloud = { down: (e, v) => cmDrag(e, v, cmBoxMark('cmShape', () => ({ kind: 'cloud', fill: !!S.cmFill })), cmBoxUpdate) };
@@ -331,12 +334,15 @@ function cmDraftEnd(keep) {
   const d = CM.draft; if (!d) return;
   CM.draft = null;
   const enough = d.pts.length >= (d.kind === 'polygon' ? 3 : 2);
+  let m = null;
   if (keep && enough) {
     const before = snapshot();
-    marksOf(d.v.entry).push({ id: uid(), type: 'cmShape', kind: d.kind, pts: d.pts, color: d.color, w: S.width, ...(d.kind === 'polygon' ? { fill: !!S.cmFill } : {}) });
+    m = { id: uid(), type: 'cmShape', kind: d.kind, pts: d.pts, color: d.color, w: S.width, ...(d.kind === 'polygon' ? { fill: !!S.cmFill } : {}) };
+    marksOf(d.v.entry).push(m);
     changed(before);
   }
   if (d.v.rendered) drawMarks(d.v);
+  if (m && app.dataset.tool === 'cm' + d.kind) selectNew(d.v, m);
 }
 for (const kind of ['polygon', 'polyline']) {
   FEATURE.tools['cm' + kind] = {
@@ -370,7 +376,7 @@ FEATURE.tools.cmcallout = {
   down(e, v) {
     e.preventDefault();
     const start = localPoint(e, v); let end = start;
-    const color = S.color === '#FFD43B' ? '#E03131' : S.color;
+    const color = cmStroke('cmcallout');
     const svg = v.el.querySelector('svg.marks');
     const line = svgEl('line', { class: 'cm-draft', x1: start[0], y1: start[1], x2: start[0], y2: start[1], stroke: color, 'stroke-width': 1.5, 'stroke-dasharray': '5 3' });
     svg.appendChild(line);
@@ -385,8 +391,9 @@ FEATURE.tools.cmcallout = {
       // the box sits on the far side of where the drag ended, so the leader line meets its nearest edge
       const ox = end[0] < start[0] ? end[0] - box.bw * scale : end[0], oy = end[1] < start[1] ? end[1] - box.bh * scale : end[1];
       const [x, y] = toPdf(v, ox, oy);
-      marksOf(v.entry).push({ id: uid(), type: 'cmCallout', x, y, rot, tx, ty, text, size, color, lw: Math.max(1, Math.min(S.width, 3)), ...box });
-      drawMarks(v); changed(before); setTool('select');
+      const m = { id: uid(), type: 'cmCallout', x, y, rot, tx, ty, text, size, color, lw: Math.max(1, Math.min(S.width, 3)), ...box };
+      marksOf(v.entry).push(m);
+      drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   },
@@ -398,8 +405,9 @@ FEATURE.tools.cmtype = {
     const text = await askText('Typewriter', 'Type the text to place here.', '', 'Add', false, true);
     if (!text || !text.trim()) return;
     const before = snapshot();
-    marksOf(v.entry).push({ id: uid(), type: 'cmType', x, y, rot: totalRot(v), text, size: 12, color: S.color === '#FFD43B' ? '#111111' : S.color });
-    drawMarks(v); changed(before);
+    const m = { id: uid(), type: 'cmType', x, y, rot: totalRot(v), text, size: 12, color: cmStroke('cmtype') };
+    marksOf(v.entry).push(m);
+    drawMarks(v); changed(before); selectNew(v, m);
   },
 };
 
@@ -427,7 +435,7 @@ async function cmPickStamp() {
     CM.stamp = { stamp: k, label, color, name, sub: k === 'received' ? cmToday() : '' };
   } else {
     if (!custom.trim()) { toast('Type the stamp text first'); return; }
-    CM.stamp = { stamp: 'custom', label: custom.trim(), color: S.color === '#FFD43B' ? '#1C7ED6' : S.color, name: 'Custom', sub: '' };
+    CM.stamp = { stamp: 'custom', label: custom.trim(), name: 'Custom', sub: '' };
   }
   setTool('cmstamp'); toast('Click the page to place the stamp');
 }
@@ -436,8 +444,9 @@ FEATURE.tools.cmstamp = {
     e.preventDefault();
     if (!CM.stamp) { cmPickStamp(); return; }
     const [x, y] = toPdf(v, ...localPoint(e, v)), s = CM.stamp, before = snapshot();
-    marksOf(v.entry).push({ id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub: s.sub, name: s.name, color: s.color, text: s.label, ...cmStampSize(s.label, s.sub) });
-    drawMarks(v); changed(before); setTool('select');
+    const m = { id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub: s.sub, name: s.name, color: s.color || cmStroke('cmstamp'), text: s.label, ...cmStampSize(s.label, s.sub) };
+    marksOf(v.entry).push(m);
+    drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
   },
 };
 
@@ -480,19 +489,15 @@ cmd('cm_fill', {
   },
 });
 cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (matchMedia('(max-width: 760px)').matches) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
-ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Add');
-ribbonAdd('markup', 'Shapes', ['cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud'], 'Add');
-ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add');
-ribbonAdd('markup', 'Add', ['cm_stamp']);
-ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up'); // right after Colour
+// Compact groups, so the whole tab fits a laptop screen: Shapes is a grid of icons (closed shapes above, lines below).
+ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Shapes', 'rows');
+ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon'], null, 'icons');
+ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add', 'rows');
+ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
+ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
+ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
 menuAdd('Comment', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_callout', 'cm_typewriter', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
-// A colour picked while a comment is selected changes that comment's colour.
-document.addEventListener('click', (e) => {
-  const b = e.target.closest && e.target.closest('#ribbonBody [data-color]'); if (!b) return;
-  const s = cmSelected(); if (!s || !('color' in s.m)) return;
-  const before = snapshot(); s.m.color = b.dataset.color; redrawPage(s.entry); changed(before);
-});
 
 /* ---- the Comments panel: every comment on every page, yours and the PDF's own ---- */
 const CM_SUBTYPES = { Text: 'Note', FreeText: 'Text box', Line: 'Line', Square: 'Rectangle', Circle: 'Oval', Polygon: 'Polygon', PolyLine: 'Polyline', Highlight: 'Highlight', Underline: 'Underline', Squiggly: 'Squiggly', StrikeOut: 'Strikethrough', Stamp: 'Stamp', Caret: 'Caret', Ink: 'Drawing', FileAttachment: 'Attachment', Sound: 'Sound', Redact: 'Redaction' };
@@ -526,22 +531,78 @@ async function cmPageAnnots(entry) {
 async function cmItems() {
   const A = pdfjs.AnnotationType, items = [];
   for (let n = 0; n < doc.pages.length; n++) {
-    const entry = doc.pages[n], own = doc.marks[pageKey(entry)] || [];
-    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m), by: cmAuthorOf(m), at: m.at || 0 }); }
-    const gone = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
+    const entry = doc.pages[n], own = doc.marks[pageKey(entry)] || [], start = items.length;
+    for (const m of own) { const d = cmDescribe(m); if (d) items.push({ n, entry, m, key: 'm:' + m.id, ...d, color: m.color || (m.type === 'note' ? '#FFD43B' : '#888888'), y: cmTop(m), by: cmAuthorOf(m), at: m.at || 0, thread: [] }); }
+    const gone = new Set(own.filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref)), fileThread = [];
     for (const a of await cmPageAnnots(entry)) {
       if (!a.rect || !a.id || [A.WIDGET, A.LINK, A.POPUP].includes(a.annotationType) || gone.has(a.id) || (a.parentId && gone.has(a.parentId))) continue;
+      // Replies and review states (Accepted, Rejected…) belong to the comment they answer.
+      if (a.inReplyTo) { fileThread.push({ to: 'a:' + a.inReplyTo, by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate), text: (a.contentsObj && a.contentsObj.str) || '', state: a.stateModel === 'Review' && a.state ? a.state : null }); continue; }
       const ed = own.find((m) => m.type === 'ae' && m.ref === a.id && m.contents != null);
       const text = ed ? ed.contents : (a.contentsObj && a.contentsObj.str) || (Array.isArray(a.textContent) ? a.textContent.join(' ') : '') || '';
       const c = a.color && a.color.length === 3 ? `rgb(${a.color[0]},${a.color[1]},${a.color[2]})` : '#888888';
-      items.push({ n, entry, a, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate) });
+      items.push({ n, entry, a, key: 'a:' + a.id, label: a.subtype === 'Line' && a.lineEndings && a.lineEndings.some((e) => e !== 'None') ? 'Arrow' : CM_SUBTYPES[a.subtype] || a.subtype || 'Comment', text, color: c, y: a.rect[3], by: (a.titleObj && a.titleObj.str) || '', at: cmPdfDate(a.modificationDate || a.creationDate), thread: [] });
+    }
+    const mine = own.filter((m) => m.type === 'cmReply').map((r) => ({ to: r.to ? 'm:' + r.to : 'a:' + r.ref, by: r.by || '', at: r.at || 0, text: r.text || '', state: r.state || null, r }));
+    for (const it of items.slice(start)) {
+      it.thread = fileThread.concat(mine).filter((t) => t.to === it.key).sort((p, q) => p.at - q.at);
+      const st = it.thread.filter((t) => t.state).pop();
+      it.status = st && st.state !== 'None' ? (CM_STATES.find(([, pdf]) => pdf === st.state) || [st.state])[0] : '';
+      it.replies = it.thread.filter((t) => !t.state);
     }
   }
   items.sort((p, q) => p.n - q.n || q.y - p.y);
   return items;
 }
+/* ---- replies and review status: saved as Text annotations in reply to the comment (/IRT), as other apps do ---- */
+const CM_STATES = [['Accepted', 'Accepted'], ['Rejected', 'Rejected'], ['Done', 'Completed'], ['Cancelled', 'Cancelled']]; // shown, written
+const CM_ANNOT_TYPES = new Set(['hl', 'ink', 'rect', 'note', 'cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']); // saved as comments, so they can be answered
+const cmCanReply = (it) => !!it.a || CM_ANNOT_TYPES.has(it.m.type);
+FEATURE.markTypes.cmReply = { draw: () => null };
+function cmAddReply(it, text, state) {
+  const before = snapshot(), list = marksOf(it.entry), to = it.m ? { to: it.m.id } : { ref: it.a.id, rect: it.a.rect, subtype: it.a.subtype || '' };
+  // A status changed again before saving replaces the one set earlier.
+  if (state) for (let k = list.length - 1; k >= 0; k--) { const r = list[k]; if (r.type === 'cmReply' && r.state && (it.m ? r.to === it.m.id : r.ref === it.a.id)) list.splice(k, 1); }
+  if (!(state === 'None' && !it.thread.some((t) => t.state && !t.r))) list.push({ id: uid(), type: 'cmReply', ...to, ...(state ? { state } : { text }), by: S.author || '', at: Date.now() });
+  changed(before);
+}
+FEATURE.savePage.push(({ L, out, p, marks }) => {
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFString, PDFHexString } = L, N = (k) => PDFName.of(k);
+  const annots = p.node.lookup(N('Annots')); if (!(annots instanceof PDFArray)) return;
+  // Replies left answering a comment that is gone (deleted here) go too.
+  for (let k = annots.size() - 1; k >= 0; k--) { const d = out.context.lookup(annots.get(k)); const irt = d instanceof PDFDict && d.get(N('IRT')); if (irt instanceof PDFRef && !out.context.lookup(irt)) { const r = annots.get(k); annots.remove(k); if (r instanceof PDFRef) out.context.delete(r); } }
+  const rs = marks.filter((m) => m.type === 'cmReply'); if (!rs.length) return;
+  const list = annots.asArray().map((r) => [r, out.context.lookup(r)]).filter(([r, d]) => r instanceof PDFRef && d instanceof PDFDict);
+  const nums = (d, k) => { const a = d.lookup(N(k)); return a instanceof PDFArray ? a.asArray().map((x) => out.context.lookup(x).asNumber()) : null; };
+  const parentOf = (r) => {
+    if (r.to) return list.find(([, d]) => { const nm = d.lookup(N('NM')); return nm && (nm.decodeText ? nm.decodeText() : String(nm)) === 'cpdf-' + r.to; });
+    // The PDF's own comment: by its reference where the file keeps its numbers, else by its rectangle and type.
+    // (pdf.js gives a note without its own look an icon-sized rectangle: only its top left corner is the file's)
+    const same = (d) => { const rc = nums(d, 'Rect'), sub = String(d.lookup(N('Subtype'))).slice(1); return rc && r.rect && rc.every((n, j) => (sub === 'Text' && (j === 1 || j === 2)) || Math.abs(n - r.rect[j]) < .6) && (!r.subtype || sub === r.subtype); };
+    const id = /^(\d+)R(\d*)$/.exec(r.ref || '');
+    return list.find(([ref, d]) => id && ref.objectNumber === +id[1] && same(d)) || list.find(([, d]) => same(d));
+  };
+  for (const r of rs) {
+    const par = parentOf(r); if (!par) continue;
+    const [pref, pd] = par, label = r.state ? (CM_STATES.find(([, pdf]) => pdf === r.state) || ['None'])[0] : '';
+    const d = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: nums(pd, 'Rect') || [0, 0, 0, 0], F: 28, Name: 'Comment', Open: false, C: [1, 0.83, 0.23] });
+    d.set(N('IRT'), pref);
+    d.set(N('NM'), PDFString.of('cpdf-' + r.id));
+    if (r.by) d.set(N('T'), PDFHexString.fromText(r.by));
+    d.set(N('M'), PDFString.fromDate(new Date(r.at || Date.now())));
+    d.set(N('Contents'), PDFHexString.fromText(r.state ? `${label} set by ${r.by || 'No name'}` : r.text));
+    if (r.state) { d.set(N('State'), PDFString.of(r.state)); d.set(N('StateModel'), PDFString.of('Review')); }
+    annots.push(out.context.register(d));
+  }
+});
+// On the page, a reply is part of its comment: no note icon of its own.
+FEATURE.afterRender.push(async (v) => {
+  const ids = (await cmPageAnnots(v.entry)).filter((a) => a.inReplyTo).map((a) => a.id); if (!ids.length) return;
+  const hide = () => { for (const id of ids) { const el = v.el.querySelector(`.annotationLayer [data-annotation-id="${CSS.escape(id)}"]`); if (el) el.style.display = 'none'; } };
+  hide(); setTimeout(hide, 300);
+});
 /* ---- who wrote a comment, and when ---- */
-// S.author: the name written as the author of your comments. undefined: not asked yet; '': asked, left blank.
+// S.author: the name written as the author of your comments; none until set in the Comments panel ('No name').
 const cmAuthorOf = (m) => m.author || S.author || '';
 // A PDF date (D:YYYYMMDDHHmmSS…) as milliseconds, or 0.
 function cmPdfDate(s) {
@@ -549,16 +610,17 @@ function cmPdfDate(s) {
   const t = Date.UTC(+m[1], (+m[2] || 1) - 1, +m[3] || 1, +m[4] || 0, +m[5] || 0, +m[6] || 0); return isFinite(t) ? t : 0;
 }
 const cmWhen = (t) => t ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-async function cmAskName(first) {
-  const name = await dialog('Your name', `<p>${first ? 'Your comments show this name as their author. You can change it in the Comments panel.' : 'Shown as the author of your new comments.'}</p><label class="field"><span>Name</span><input id="dlgInput" type="text" value="${esc(S.author || '')}" autocomplete="name" maxlength="80"></label>`,
-    [{ label: first ? 'Skip' : 'Cancel' }, { label: 'Save', primary: true, input: true }]);
-  if (name == null) { if (first && S.author == null) { S.author = ''; saveSettings(); } return; }
-  S.author = name.trim(); saveSettings();
-  // The comment that brought the question up is yours too.
-  if (first && S.author && doc) for (const [key, list] of Object.entries(doc.marks)) if (key !== '__doc' && Array.isArray(list)) for (const m of list) if (m && m.at && !m.author) m.author = S.author;
+async function cmAskName() {
+  const name = await dialog('Your name', `<p>Shown as the author of your comments.</p><label class="field"><span>Name</span><input id="dlgInput" type="text" value="${esc(S.author || '')}" autocomplete="name" maxlength="80"></label>`,
+    [{ label: 'Cancel' }, { label: 'Save', primary: true, input: true }]);
+  if (name == null) return;
+  const had = S.author; S.author = name.trim(); saveSettings();
+  // Your comments made before there was a name take the first one given.
+  if (!had && S.author && doc) for (const [key, list] of Object.entries(doc.marks)) if (key !== '__doc' && Array.isArray(list)) for (const m of list) if (m && m.at && !m.author && !(m.type === 'cmReply' ? m.by : false)) m[m.type === 'cmReply' ? 'by' : 'author'] = S.author;
   cmPanelSoon();
 }
-// New comments get their date, and your name once you have given it; the first one asks for the name.
+// New comments get their date, and your name once you have set it. The first comment without a name says where to
+// set it, once, without stopping you.
 const cmChanged0 = changed;
 changed = function (before) {
   cmChanged0(before);
@@ -568,7 +630,7 @@ changed = function (before) {
     if (key === '__doc' || !Array.isArray(list)) continue;
     for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
   }
-  if (fresh && S.author == null && !CM.askingName) { CM.askingName = true; cmAskName(true).finally(() => { CM.askingName = false; }); }
+  if (fresh && !S.author && !S.cmNameTold) { S.cmNameTold = true; saveSettings(); toast('Comments are signed as "No name". Set your name in the Comments panel.'); }
 };
 const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
 const CM_EVERYONE = '*everyone*';
@@ -587,8 +649,10 @@ async function cmRenderPanel() {
   // Newest or oldest first; comments without a date go last.
   if (f.sort !== 'page') items.sort((p, q) => (!p.at - !q.at) || (f.sort === 'new' ? q.at - p.at : p.at - q.at) || p.n - q.n || q.y - p.y);
   CM.items = items;
+  if (selMark && items.some((it) => it.key === 'm:' + selMark.id)) CM.open = 'm:' + selMark.id; // the comment selected on the page
+  const focusReply = document.activeElement && document.activeElement.matches && document.activeElement.matches('#sidePanel [data-cm-reply]');
   const opt = (v, t, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(t)}</option>`;
-  const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'not set'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
+  const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'No name'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
   const bar = all.length ? `<div class="cm-filters">
     <label><span>Type</span><select data-cm-f="type">${opt('', 'All types', !f.type)}${types.map((t) => opt(t, t, f.type === t)).join('')}</select></label>
     <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
@@ -596,25 +660,45 @@ async function cmRenderPanel() {
   const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
   panel.innerHTML = you + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
-    : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span></span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
+    : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span>${it.status ? `<span class="cm-status" data-status="${esc(it.status)}">${esc(it.status)}</span>` : ''}</span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button>${cmThreadHtml(it, k)}</li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
-  $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => cmGoTo(items[+b.dataset.cmGo]));
+  $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => { const it = items[+b.dataset.cmGo]; cmGoTo(it); if (CM.open !== it.key) { CM.open = it.key; cmRenderPanel(); } });
+  $$('[data-cm-reply]', panel).forEach((ta) => {
+    const it = items[+ta.dataset.cmReply], send = () => { const t = ta.value.trim(); if (!t) { ta.focus(); return; } delete CM.drafts[it.key]; cmAddReply(it, t); ta.value = ''; };
+    ta.value = CM.drafts[it.key] || '';
+    ta.oninput = () => { CM.drafts[it.key] = ta.value; };
+    ta.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } };
+    $(`[data-cm-send="${ta.dataset.cmReply}"]`, panel).onclick = send;
+    if (focusReply) ta.focus();
+  });
+  $$('[data-cm-status]', panel).forEach((sel) => sel.onchange = () => { cmAddReply(items[+sel.dataset.cmStatus], null, sel.value); });
   $$('[data-cm-del]', panel).forEach((b) => b.onclick = () => cmDelete(items[+b.dataset.cmDel]));
   $$('[data-cm-f]', panel).forEach((el) => el.onchange = () => {
     const k = el.dataset.cmF; f[k] = el.value;
     if (k === 'sort') { S.cmSort = el.value; saveSettings(); }
     cmRenderPanel().then(() => { const again = $(`#sidePanel [data-cm-f="${k}"]`); if (again) again.focus(); });
   });
-  const nb = $('[data-cm-name]', panel); if (nb) nb.onclick = () => cmAskName(false);
+  const nb = $('[data-cm-name]', panel); if (nb) nb.onclick = () => cmAskName();
+}
+// A comment's replies always show; the open one (picked in the list or on the page) also takes a reply and a status.
+CM.drafts = {};
+function cmThreadHtml(it, k) {
+  const open = CM.open === it.key && cmCanReply(it);
+  if (!it.replies.length && !open) return '';
+  const reps = it.replies.map((r) => `<li class="cm-reply"><span class="cm-by">${esc([r.by || 'No name', cmWhen(r.at)].filter(Boolean).join(' · '))}</span><span class="cm-snip">${esc(r.text)}</span></li>`).join('');
+  const st = (CM_STATES.find(([v]) => v === it.status) || [, 'None'])[1];
+  const form = open ? `<div class="cm-form"><textarea data-cm-reply="${k}" rows="2" placeholder="Reply" aria-label="Reply to ${esc(it.label)} on page ${it.n + 1}"></textarea>
+    <div class="cm-form-bar"><label><span>Status</span><select data-cm-status="${k}">${[['None', 'None'], ...CM_STATES.slice(0, 3)].map(([v, pdf]) => `<option value="${pdf}"${pdf === st ? ' selected' : ''}>${v}</option>`).join('')}</select></label><button type="button" class="btn primary" data-cm-send="${k}">Reply</button></div></div>` : '';
+  return `<div class="cm-thread">${reps ? `<ul class="cm-replies" aria-label="Replies">${reps}</ul>` : ''}${form}</div>`;
 }
 function cmGoTo(it) {
   goPage(it.n);
-  if (it.m) { setTool('select'); selectMark({ key: pageKey(it.entry), id: it.m.id, entry: it.entry }); }
+  if (it.m) { setTool('select'); selectMark({ key: pageKey(it.entry), id: it.m.id, entry: it.entry }); } else if (selMark) selectMark(null);
   if (matchMedia('(max-width: 760px)').matches) toggleSidebar(false);
 }
 function cmDelete(it) {
   const before = snapshot(), list = marksOf(it.entry);
-  if (it.m) { const k = list.indexOf(it.m); if (k < 0) return; list.splice(k, 1); if (selMark && selMark.id === it.m.id) selMark = null; redrawPage(it.entry); changed(before); }
+  if (it.m) { const k = list.indexOf(it.m); if (k < 0) return; list.splice(k, 1); for (let j = list.length - 1; j >= 0; j--) if (list[j].type === 'cmReply' && list[j].to === it.m.id) list.splice(j, 1); if (selMark && selMark.id === it.m.id) selMark = null; redrawPage(it.entry); changed(before); }
   else { list.push({ id: uid(), type: 'ae', ref: it.a.id, rect: it.a.rect, subtype: it.a.subtype || '', deleted: true }); changed(before); syncHiddenComments(); redrawPage(it.entry); }
   toast(`${it.label} deleted`);
 }
@@ -632,7 +716,13 @@ renderSide = function () { if (S.side === 'comments') return cmRenderPanel(); re
 const cmPersist0 = persist;
 persist = function () { cmPersist0(); cmPanelSoon(); };
 const cmSelectMark0 = selectMark;
-selectMark = function (s) { cmSelectMark0(s); if (S.side === 'comments') $$('#sidePanel .cm-item').forEach((li, k) => { const it = CM.items && CM.items[k]; li.classList.toggle('on', !!(s && it && it.m && it.m.id === s.id)); }); };
+selectMark = function (s) {
+  cmSelectMark0(s);
+  if (S.side !== 'comments') return;
+  $$('#sidePanel .cm-item').forEach((li, k) => { const it = CM.items && CM.items[k]; li.classList.toggle('on', !!(s && it && it.m && it.m.id === s.id)); });
+  // A comment picked on the page opens in the list, ready for a reply.
+  if (s && CM.open !== 'm:' + s.id && CM.items && CM.items.some((it) => it.key === 'm:' + s.id)) { CM.open = 'm:' + s.id; cmPanelSoon(); }
+};
 
 addStyle(`
 .sidebar .side-tabs { grid-template-columns: repeat(2, 1fr); } /* four tabs: two rows of two */
@@ -654,12 +744,26 @@ addStyle(`
 .cm-go { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: flex-start; border: 0; background: none; text-align: left; padding: 7px 4px 7px 8px; cursor: pointer; color: var(--ink); }
 .cm-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin-top: 4px; box-shadow: 0 0 0 1px var(--line); }
 .cm-body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.cm-top { display: flex; gap: 6px; align-items: baseline; font-size: 13px; }
+.cm-top { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 13px; }
+.cm-top span { white-space: nowrap; }
 .cm-top b { font-weight: 600; }
 .cm-top span { color: var(--ink-3); font-size: 12px; }
 .cm-snip { font-size: 12px; color: var(--ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
 .cm-by { font-size: 11px; color: var(--ink-3); }
 .cm-del { width: 30px; height: 30px; margin: 4px 2px 0 0; opacity: .7; }
+.cm-item { flex-wrap: wrap; }
+.cm-status { font-size: 11px !important; font-weight: 600; padding: 0 7px; border-radius: 9px; line-height: 18px; background: var(--hover); color: var(--ink-2) !important; }
+.cm-status[data-status="Accepted"], .cm-status[data-status="Done"] { background: color-mix(in srgb, #2B8A3E 18%, transparent); color: var(--ink) !important; }
+.cm-status[data-status="Rejected"] { background: color-mix(in srgb, #C92A2A 18%, transparent); color: var(--ink) !important; }
+.cm-thread { flex: 1 0 100%; min-width: 0; box-sizing: border-box; padding: 0 10px 8px 26px; display: flex; flex-direction: column; gap: 6px; }
+.cm-replies { list-style: none; margin: 0; padding: 0 0 0 8px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.cm-reply { display: flex; flex-direction: column; gap: 1px; }
+.cm-form { display: flex; flex-direction: column; gap: 6px; }
+.cm-form textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; resize: vertical; min-height: 52px; width: 100%; box-sizing: border-box; }
+.cm-form-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cm-form-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); min-width: 0; }
+.cm-form-bar select { font: inherit; font-size: 12px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; height: 30px; }
+.cm-form-bar .btn { height: 30px; padding: 0 12px; font-size: 12px; }
 .cm-item:hover .cm-del, .cm-del:focus-visible { opacity: 1; }
 .cm-stamps { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 8px 0 4px; }
 .cm-stamp { border: 1px solid var(--line); background: #FFFFFF; border-radius: 10px; padding: 10px 6px; cursor: pointer; display: grid; place-items: center; min-height: 58px; }
@@ -669,3 +773,4 @@ addStyle(`
 `);
 TEST_HOOKS.cmItems = async () => (await cmItems()).map((it) => [it.label, it.n + 1, it.text, !!it.m]);
 TEST_HOOKS.setAuthor = (name) => { S.author = name; saveSettings(); };
+TEST_HOOKS.cmThreads = async () => (await cmItems()).map((it) => [it.label, it.status, it.replies.map((r) => [r.by, r.text])]);

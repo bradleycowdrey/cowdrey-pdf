@@ -402,6 +402,8 @@ async function onMarksDblClick(e, v) {
   }
 }
 function selectMark(s) { selMark = s; views.forEach((v) => v.rendered && drawMarks(v)); refreshRibbon(); }
+// A mark just drawn is selected, so it can be restyled at once (the tool stays on for the next one).
+const selectNew = (v, m) => { if (marksOf(v.entry).includes(m)) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry }); };
 function deleteSelected() {
   if (selContent) return deleteContent();
   if (!selMark) return;
@@ -465,23 +467,23 @@ function startMove(e, v, m) {
 function startInk(e, v) {
   e.preventDefault();
   const before = snapshot();
-  const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: S.color === '#FFD43B' ? '#2448C9' : S.color, w: S.width };
+  const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: toolColor('pen'), w: S.width };
   marksOf(v.entry).push(m);
   const move = (ev) => { m.pts.push(toPdf(v, ...localPoint(ev, v))); drawMarks(v); };
-  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); };
+  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); selectNew(v, m); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
 function startRect(e, v) {
   e.preventDefault();
   const before = snapshot();
   const [x, y] = toPdf(v, ...localPoint(e, v));
-  const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: S.color === '#FFD43B' ? '#E03131' : S.color, w: S.width };
+  const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: toolColor('rect'), w: S.width };
   marksOf(v.entry).push(m);
   const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...localPoint(ev, v)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.abs(m.x2 - m.x1) < 3 && Math.abs(m.y2 - m.y1) < 3) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
-    changed(before);
+    changed(before); selectNew(v, m);
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
@@ -489,8 +491,9 @@ async function addText(v, x, y) {
   const text = await askText('Add text', 'Type the text to place on the page.', '', 'Add', false, true);
   if (!text) return;
   const before = snapshot();
-  marksOf(v.entry).push({ id: uid(), type: 'text', x, y, text, size: 14, color: S.color === '#FFD43B' ? '#111111' : S.color, rot: totalRot(v) });
-  drawMarks(v); changed(before); setTool('select');
+  const m = { id: uid(), type: 'text', x, y, text, size: 14, color: toolColor('text'), rot: totalRot(v) };
+  marksOf(v.entry).push(m);
+  drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
 async function editText(v, m) {
   const text = await askText('Edit text', '', m.text, 'Save', false, true);
@@ -515,7 +518,8 @@ function placeImage(v, px, py) {
   const before = snapshot();
   const [x, y] = toPdf(v, px, py);
   marksOf(v.entry).push({ id: uid(), type: 'img', x, y, w: pendingImage.w, h: pendingImage.h, data: pendingImage.data, rot: totalRot(v) });
-  pendingImage = null; drawMarks(v); changed(before); setTool('select');
+  const m = marksOf(v.entry)[marksOf(v.entry).length - 1];
+  pendingImage = null; drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
 // Highlight: select text with the Highlight tool (or select it, then press Highlight).
 function highlightSelection() {
@@ -531,7 +535,7 @@ function highlightSelection() {
       const b = v.el.getBoundingClientRect();
       const [x1, y1] = toPdf(v, rect.left - b.left, rect.top - b.top), [x2, y2] = toPdf(v, rect.right - b.left, rect.bottom - b.top);
       let list = marksOf(v.entry), m = list.find((mm) => mm.pending);
-      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: S.color, pending: true }; list.push(m); }
+      if (!m) { m = { id: uid(), type: 'hl', rects: [], color: toolColor('highlight'), pending: true }; list.push(m); }
       m.rects.push([x1, y1, x2, y2]); any = true;
     }
   }
@@ -545,6 +549,7 @@ function setTool(t) {
   closeLineEditor(true);
   const was = app.dataset.tool;
   app.dataset.tool = t;
+  if (t in COLOR_TOOLS) S.colorTool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
   if (t === 'edit' && was !== 'edit') toast(`${matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click'} text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
@@ -1277,22 +1282,89 @@ function saveCommentEdits(L, out, p, marks, same) {
 }
 
 /* ---------------- signature and pictures ---------------- */
+// A signature is drawn, typed (in a handwriting font the system has) or taken from a picture of one. The last three
+// used are kept on this device.
+const SIG_INKS = [['#13235E', 'Blue'], ['#111111', 'Black']];
+const SIG_FONTS = [
+  ['Script', '"Snell Roundhand", "Segoe Script", "URW Chancery L", "Z003", "Apple Chancery", "Brush Script MT", cursive'],
+  ['Brush', '"Brush Script MT", "Brush Script Std", "Segoe Script", "Z003", cursive'],
+  ['Pen', '"Bradley Hand", "Segoe Print", "Comic Neue", "Chalkboard SE", cursive'],
+];
+const sigSaved = () => { const l = store.get('signatures', null); if (Array.isArray(l)) return l; const one = store.get('signature', null); return one ? [one] : []; };
+const sigKeep = (sig) => store.set('signatures', [sig, ...sigSaved().filter((x) => x.data !== sig.data)].slice(0, 3));
+function sigUse(sig) { sigKeep(sig); pendingImage = sig; setTool('sign'); toast(`${matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click'} where the signature goes`); }
 async function signature() {
-  const saved = store.get('signature', null);
-  const body = `<p>Draw your signature. It is kept on this device for next time.</p><canvas class="sig-pad" id="sigPad" width="900" height="320"></canvas>`;
-  const res = await dialog('Signature', body, [{ label: 'Clear', value: 'clear', keep: true }, ...(saved ? [{ label: 'Use saved', value: 'saved' }] : []), { label: 'Cancel' }, { label: 'Place', value: 'place', primary: true }], (dlg) => {
-    const c = $('#sigPad', dlg), g = c.getContext('2d');
-    g.lineWidth = 6; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#13235E';
+  let mode = 'draw', ink = SIG_INKS[0][0], font = 0, pick = null;
+  const saved = sigSaved();
+  const tab = (k, t) => `<button type="button" role="tab" data-sig-mode="${k}" aria-selected="${k === 'draw'}" tabindex="${k === 'draw' ? 0 : -1}">${t}</button>`;
+  const body = `<div class="sig-modes" role="tablist" aria-label="How to sign">${tab('draw', 'Draw')}${tab('type', 'Type')}${tab('upload', 'Picture')}</div>
+    <div class="sig-row" data-sig-for="type" hidden><label class="field"><span>Your name</span><input id="sigName" type="text" autocomplete="name" maxlength="60"></label></div>
+    <div class="sig-row" data-sig-for="upload" hidden><button type="button" class="btn" id="sigFileBtn">${ic('image-plus')}<span>Choose a picture…</span></button><input type="file" id="sigFile" accept="image/*" hidden><span class="sig-note">A white background becomes see-through.</span></div>
+    <canvas class="sig-pad" id="sigPad" width="900" height="320" aria-label="Signature"></canvas>
+    <div class="sig-row"><span class="sig-note" id="sigHint">Draw with the mouse, a finger or a pen.</span><span class="sig-opts">
+      <span class="sig-fonts" data-sig-for="type" hidden role="group" aria-label="Style">${SIG_FONTS.map(([n, f], k) => `<button type="button" class="sig-font" data-sig-font="${k}" aria-pressed="${k === 0}" style="font-family:${esc(f)}">${n}</button>`).join('')}</span>
+      <span class="sig-inks" data-sig-for="draw type" role="group" aria-label="Ink">${SIG_INKS.map(([c, n]) => `<button type="button" class="swatch" data-sig-ink="${c}" style="background:${c}" title="${n}" aria-label="${n}" aria-pressed="${c === ink}"></button>`).join('')}</span></span></div>
+    ${saved.length ? `<div class="sig-saved"><span class="sig-note">Saved on this device</span><div class="sig-list">${saved.map((s, k) => `<span class="sig-item"><button type="button" class="sig-use" data-sig-use="${k}" aria-label="Use saved signature ${k + 1}"><img src="${s.data}" alt=""></button><button type="button" class="icon-btn sig-del" data-sig-del="${k}" aria-label="Remove saved signature ${k + 1}" title="Remove">${ic('x')}</button></span>`).join('')}</div></div>` : ''}`;
+  const res = await dialog('Signature', body, [{ label: 'Clear', value: 'clear', keep: true }, { label: 'Cancel' }, { label: 'Place', value: 'place', primary: true }], (dlg) => {
+    const c = $('#sigPad', dlg), g = c.getContext('2d'), name = $('#sigName', dlg);
     let drawing = false, any = false;
+    const clear = () => { g.clearRect(0, 0, c.width, c.height); any = false; };
+    const typed = () => {
+      clear(); const t = name.value.trim(); if (!t) return;
+      let size = 150; g.font = `${size}px ${SIG_FONTS[font][1]}`;
+      while (size > 30 && g.measureText(t).width > c.width - 60) { size -= 6; g.font = `${size}px ${SIG_FONTS[font][1]}`; }
+      g.fillStyle = ink; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(t, c.width / 2, c.height / 2); any = true;
+    };
+    const setMode = (k) => {
+      mode = k; clear();
+      $$('[data-sig-mode]', dlg).forEach((b) => { b.setAttribute('aria-selected', b.dataset.sigMode === k); b.tabIndex = b.dataset.sigMode === k ? 0 : -1; });
+      $$('[data-sig-for]', dlg).forEach((el) => { el.hidden = !el.dataset.sigFor.split(' ').includes(k); });
+      $('#sigHint', dlg).textContent = { draw: 'Draw with the mouse, a finger or a pen.', type: 'Type your name, then pick a style.', upload: 'A photo or scan of your signature on white paper.' }[k];
+      c.classList.toggle('typed', k !== 'draw');
+      if (k === 'type') { typed(); name.focus(); }
+    };
+    $$('[data-sig-mode]', dlg).forEach((b) => b.onclick = () => setMode(b.dataset.sigMode));
+    $('.sig-modes', dlg).addEventListener('keydown', (e) => tabKeys(e, $$('[data-sig-mode]', dlg), (b) => { setMode(b.dataset.sigMode); b.focus(); }));
     const pt = (e) => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
-    c.onpointerdown = (e) => { drawing = true; any = true; c.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...pt(e)); };
+    c.onpointerdown = (e) => { if (mode !== 'draw') return; drawing = true; any = true; c.setPointerCapture(e.pointerId); g.lineWidth = 6; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = ink; g.beginPath(); g.moveTo(...pt(e)); };
     c.onpointermove = (e) => { if (drawing) { g.lineTo(...pt(e)); g.stroke(); } };
     c.onpointerup = () => { drawing = false; };
-    dlg.__clear = () => { g.clearRect(0, 0, c.width, c.height); any = false; };
-    dlg.__get = () => (any ? trimCanvas(c) : null);
+    name.oninput = typed;
+    name.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('.dlg-foot .btn.primary', dlg).click(); } };
+    $$('[data-sig-font]', dlg).forEach((b) => b.onclick = () => { font = +b.dataset.sigFont; $$('[data-sig-font]', dlg).forEach((x) => x.setAttribute('aria-pressed', x === b)); typed(); });
+    $$('[data-sig-ink]', dlg).forEach((b) => b.onclick = () => { ink = b.dataset.sigInk; $$('[data-sig-ink]', dlg).forEach((x) => x.setAttribute('aria-pressed', x === b)); if (mode === 'type') typed(); });
+    $('#sigFileBtn', dlg).onclick = () => $('#sigFile', dlg).click();
+    $('#sigFile', dlg).onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      try { clear(); sigFromPicture(c, await sigLoadImage(f)); any = true; } catch { toast('That picture could not be read'); }
+    };
+    $$('[data-sig-use]', dlg).forEach((b) => b.onclick = () => { pick = saved[+b.dataset.sigUse]; $('.dlg-foot .btn.primary', dlg).click(); });
+    $$('[data-sig-del]', dlg).forEach((b) => b.onclick = () => {
+      const k = +b.dataset.sigDel, gone = saved[k];
+      store.set('signatures', sigSaved().filter((x) => x.data !== gone.data));
+      b.closest('.sig-item').remove(); if (!$('.sig-item', dlg)) $('.sig-saved', dlg).remove();
+      toast('Signature removed from this device');
+    });
+    dlg.__clear = () => { clear(); if (mode === 'type') { name.value = ''; name.focus(); } };
+    dlg.__get = () => pick || (any ? trimCanvas(c) : null);
+    dlg.__empty = () => ({ draw: 'Draw your signature first', type: 'Type your name first', upload: 'Choose a picture first' }[mode]);
   });
-  if (res === 'saved' && saved) { pendingImage = saved; setTool('sign'); toast('Click where the signature goes'); return; }
-  if (res && res.value === 'place' && res.data) { store.set('signature', res.data); pendingImage = res.data; setTool('sign'); toast('Click where the signature goes'); }
+  if (res && res.value === 'place' && res.data) sigUse(res.data);
+}
+function sigLoadImage(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = r.result; }; r.onerror = rej; r.readAsDataURL(file); });
+}
+// The picture, fitted to the pad, with its white (and near-white) background made transparent.
+function sigFromPicture(c, im) {
+  const g = c.getContext('2d'), k = Math.min((c.width - 20) / im.naturalWidth, (c.height - 20) / im.naturalHeight);
+  const w = Math.max(1, Math.round(im.naturalWidth * k)), h = Math.max(1, Math.round(im.naturalHeight * k)), x = Math.round((c.width - w) / 2), y = Math.round((c.height - h) / 2);
+  g.drawImage(im, x, y, w, h);
+  const d = g.getImageData(x, y, w, h), px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const light = Math.min(px[i], px[i + 1], px[i + 2]); // the darkest channel: paper is light in all three
+    if (light >= 225) px[i + 3] = 0; else if (light > 160) px[i + 3] = Math.round(px[i + 3] * (225 - light) / 65);
+  }
+  g.putImageData(d, x, y);
 }
 function trimCanvas(c) {
   const g = c.getContext('2d'), { width, height } = c, px = g.getImageData(0, 0, width, height).data;
@@ -1602,6 +1674,7 @@ async function buildPdf(only) {
       }
       if (m.type === 'note') {
         const annot = out.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], ...((m.author || S.author) ? { T: PDFHexString.fromText(m.author || S.author) } : {}), F: 4, Open: false });
+        annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id)); // replies find their note by it
         const ref = out.context.register(annot);
         let annots = p.node.lookup(PDFName.of('Annots'));
         if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
@@ -2021,7 +2094,7 @@ function showDialog(title, body, actions, setup) {
     $$('[data-a]', dlg).forEach((b) => b.onclick = () => {
       const a = actions[+b.dataset.a];
       if (a.value === 'clear' && dlg.__clear) { dlg.__clear(); return; }
-      if (a.value === 'place' && dlg.__get) { const data = dlg.__get(); if (!data) { toast('Draw your signature first'); return; } done({ value: 'place', data }); return; }
+      if (a.value === 'place' && dlg.__get) { const data = dlg.__get(); if (!data) { toast(dlg.__empty ? dlg.__empty() : 'Draw your signature first'); return; } done({ value: 'place', data }); return; }
       if (a.input) { done($('#dlgInput', dlg).value); return; }
       done(a.value ?? null);
     });
@@ -2074,7 +2147,7 @@ cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
 cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
 cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
-const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Box', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
+const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Rectangle', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
 for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
@@ -2181,17 +2254,19 @@ $('#moreBtn').addEventListener('click', () => {
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], ['Colour', 'COLORS'], ['Add', ['sign']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
   export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
-// Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of).
-function ribbonAdd(tab, group, ids, before) {
+// Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of). `look` makes a
+// compact group on wide screens: 'rows' (small buttons with their names, two rows) or 'icons' (a grid of icons).
+function ribbonAdd(tab, group, ids, before, look) {
   const t = RIBBON[tab]; if (!t) throw new Error('No ribbon tab ' + tab);
   let g = t[1].find(([label]) => label === group);
   if (!g) { g = [group, []]; const k = before ? t[1].findIndex(([label]) => label === before) : -1; k >= 0 ? t[1].splice(k, 0, g) : t[1].push(g); }
+  if (look) g[2] = look;
   for (const id of ids) if (!g[1].includes(id)) g[1].push(id);
 }
 // Adds commands to a menu (made before Help if missing), after a separator.
@@ -2202,6 +2277,24 @@ function menuAdd(title, ids) {
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
 const COLORS = ['#FFD43B', '#69DB7C', '#74C0FC', '#F783AC', '#E03131', '#2448C9', '#111111'];
+const COLOR_NAMES = { '#FFD43B': 'Yellow', '#69DB7C': 'Green', '#74C0FC': 'Light blue', '#F783AC': 'Pink', '#E03131': 'Red', '#2448C9': 'Blue', '#111111': 'Black' };
+// Each drawing tool keeps its own colour (the last one picked for it, else its default here): the pressed swatch is
+// always the colour the tool in use draws with. With Select, the swatches are for the selected mark, or else for the
+// drawing tool used last. Features add their tools and the marks a swatch can recolour.
+const COLOR_TOOLS = { highlight: '#FFD43B', pen: '#2448C9', rect: '#E03131', text: '#111111' };
+const COLOR_MARKS = new Set(['hl', 'ink', 'rect', 'text']);
+const colorToolNow = () => (app.dataset.tool in COLOR_TOOLS ? app.dataset.tool : S.colorTool in COLOR_TOOLS ? S.colorTool : 'highlight');
+const toolColor = (t = colorToolNow()) => (S.toolColor && S.toolColor[t]) || COLOR_TOOLS[t] || '#E03131';
+const colorMark = () => { const m = selMark && doc && selectedMark(); return m && COLOR_MARKS.has(m.type) && typeof m.color === 'string' ? m : null; };
+const swatchNow = () => { const m = colorMark(); return (m ? m.color : toolColor()).toUpperCase(); };
+function pickColor(c) {
+  const m = colorMark(), t = colorToolNow();
+  // A selected mark takes the colour (one undo step); a drawing tool in use keeps it for its next marks too.
+  if (m && m.color.toUpperCase() !== c) { const before = snapshot(); m.color = c; redrawPage(selMark.entry); changed(before); }
+  if (!m || app.dataset.tool !== 'select') { S.toolColor = { ...S.toolColor, [t]: c }; saveSettings(); }
+  if (!m && app.dataset.tool === 'select') { const tc = C['tool_' + t] || C['cm_' + t.slice(2)] || C[{ cmtype: 'cm_typewriter' }[t]]; toast(`${tc ? tc.label.replace(/…$/, '') : 'Next mark'}: ${COLOR_NAMES[c] || c}`); }
+  refreshRibbon();
+}
 // The commands on a tab that are pressed for the tool in use now (the tool's own buttons, not other toggles).
 function toolOnTab(tab) {
   const t = app.dataset.tool, ids = (RIBBON[tab] ? RIBBON[tab][1] : []).flatMap(([, x]) => Array.isArray(x) ? x : []);
@@ -2226,10 +2319,10 @@ function renderRibbon() {
   if (focused) { const t = $(`#ribbonTabs [data-rt="${S.ribbon}"]`); t && t.focus({ preventScroll: true }); }
   $('#ribbonBody').setAttribute('aria-labelledby', 'rt-' + (RIBBON[S.ribbon] ? S.ribbon : 'home'));
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
-  $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
-    ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
+  $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
+    ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${swatchNow() === c}"></button>`).join('')
     : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
-  $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
+  $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => pickColor(b.dataset.color));
   icons(); refreshRibbon();
   const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
   if (tab) scrollIntoRow(tabs, tab);
@@ -2275,6 +2368,7 @@ $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
   $$('#ribbonBody [data-rmenu]').forEach((b) => { b.disabled = !C[b.dataset.rmenu].menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled())); });
+  const sw = $('#ribbonBody [data-color]') && swatchNow(); $$('#ribbonBody [data-color]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.color === sw));
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
   let shift = false;
   $$('#ribbonBody .r-group').forEach((g) => {

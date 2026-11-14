@@ -23,7 +23,8 @@ export default async (h) => {
       const bad = await p.$$eval('#ribbonBody .rb', (bs) => {
         const out = [];
         bs.forEach((b, k) => { const s = b.querySelector('span'); if (s && s.getClientRects().length && s.offsetHeight > 2 * parseFloat(getComputedStyle(s).lineHeight) + 1) out.push('3 lines: ' + s.textContent);
-          const n = bs[k + 1]; if (n && b.parentNode === n.parentNode && b.getBoundingClientRect().right > n.getBoundingClientRect().left + .5) out.push('overlap: ' + b.textContent + '/' + n.textContent); });
+          const n = bs[k + 1], r = b.getBoundingClientRect(), q = n && n.getBoundingClientRect(); // (compact groups stack buttons in two rows)
+          if (n && b.parentNode === n.parentNode && r.right > q.left + .5 && r.left < q.right - .5 && r.bottom > q.top + .5 && r.top < q.bottom - .5) out.push('overlap: ' + b.textContent + '/' + n.textContent); });
         return out;
       });
       eq(bad, [], t);
