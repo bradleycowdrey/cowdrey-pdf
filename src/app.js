@@ -3259,7 +3259,10 @@ async function renderSide() {
   // A list box: one Tab stop (the page in view), arrows move, Shift+arrows choose several, Enter goes to the page.
   const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
   const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
-  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
+  // Each thumbnail has its page's size and shape from the start (the big page's, or else the first page's), so the
+  // list does not jump as they are drawn: the longer side 182 px (as drawn), at most 150 px wide.
+  const box = (n) => { const vp = (views[n] || views[0] || {}).viewport, w = vp ? vp.width : 612, hh = vp ? vp.height : 792; return `width:${Math.min(150, 182 * w / Math.max(w, hh)).toFixed(1)}px;aspect-ratio:${w.toFixed(1)} / ${hh.toFixed(1)}`; };
+  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1" style="${box(n)}"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
   thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target).then(followThumbAgain); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {

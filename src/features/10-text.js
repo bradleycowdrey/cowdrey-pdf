@@ -101,8 +101,11 @@ function txtRelayout(page, m) {
 // page's fonts as. A face from the page is written with that font where it has the letters (as the own font is).
 const TXT_STD_FACES = [['sans', 'Helvetica'], ['serif', 'Times'], ['mono', 'Courier']];
 const txtFontInfo = new Map(); // loaded name -> { font, codes, fam, bold, italic, ascent, descent, label }
-// A font's name as people know it: no subset tag, words apart ("ABCDEF+Carlito-Bold-8659" is "Carlito Bold").
-const txtFontLabel = (name) => baseName(name).replace(/[-_,+]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').trim() || 'As in the PDF';
+// A font's name as people know it: no subset tag, words apart, a weight in one word ("ABCDEF+Carlito-Bold-8659" is
+// "Carlito Bold", "DMSans-SemiBold" is "DM Sans SemiBold").
+const txtFontLabel = (name) => baseName(name).replace(/^[A-Z]{6}\+/, '').replace(/[-_,+]+/g, ' ').replace(/([A-Z]+)([A-Z][a-z]{3,})/g, '$1 $2').replace(/([a-z])([A-Z])/g, '$1 $2')
+  .replace(/\b(Semi|Demi|Extra|Ultra) (Bold|Light|Condensed|Expanded)\b/g, '$1$2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').replace(/\s+/g, ' ').trim() || 'As in the PDF';
+TEST_HOOKS.fontLabel = txtFontLabel;
 const txtStdFace = (face) => TXT_STD_FACES.some(([k]) => k === face);
 // Drawn in a standard font: a standard face, or bold or italic asked of a font that isn't.
 const txtIsStd = (m) => txtStdFace(m.face) || m.bold !== (m.loaded ? !!m.fbold : m.base.bold) || m.italic !== (m.loaded ? !!m.fitalic : m.base.italic);
