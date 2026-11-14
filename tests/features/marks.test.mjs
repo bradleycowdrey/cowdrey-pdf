@@ -229,7 +229,7 @@ export default async (h) => {
     const items = await p.$$eval('#popover [data-cmd]', (b) => b.map((x) => x.dataset.cmd));
     ok(['cm_hide', 'cm_export', 'cm_import'].every((id) => items.includes(id)), JSON.stringify(items));
     await p.keyboard.press('Escape');
-    await p.click('.menubar button:has-text("Comment")'); await p.waitForTimeout(100);
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('Comment')); await p.waitForTimeout(100);
     ok((await p.textContent('#popover')).includes('Export comments'), 'Comment menu');
     await p.ctx.close();
   });

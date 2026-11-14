@@ -55,7 +55,8 @@ function hideHintToast() {
   hintToast = null;
 }
 const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
-function toast(msg) {
+// `action`: { label, run } adds a button to the toast (Undo after deleting a page), kept up longer so it can be reached.
+function toast(msg, action) {
   msg = touchWords(msg);
   // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
   // of a toast that goes after a moment and covers the page (toasts are for what happened).
@@ -63,6 +64,10 @@ function toast(msg) {
   if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
   hintToast = app.dataset.tool !== 'select' && toolHint && msg === touchWords(toolHint) ? msg : null;
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); }; t.append(' ', b);
+  }
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
   for (const b of document.querySelectorAll(TOAST_AVOID)) {
@@ -71,7 +76,12 @@ function toast(msg) {
     top = Math.min(top, r.top);
   }
   t.style.setProperty('--toast-bottom', Math.max(48, innerHeight - top + 12) + 'px');
-  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2600);
+}
+// What was done to the pages, with Undo on the toast (it takes back that change only, not one made since).
+function undoToast(msg) {
+  const top = undoStack[undoStack.length - 1];
+  toast(msg, { label: 'Undo', run: () => { if (top && undoStack[undoStack.length - 1] === top) undo(); } });
 }
 
 /* ---------------- features ----------------
@@ -184,6 +194,7 @@ async function showDoc(d, loaded) {
   syncHiddenComments(); // before any page is drawn
   $('#drop').hidden = true;
   setTitle(); setSaved(true, true);
+  sideForDoc();
   await layoutPages();
   renderSide();
   store.set('current', d.id);
@@ -575,6 +586,7 @@ function drawMarks(v) {
     }
     if (!g) continue;
     g.dataset.id = m.id; g.dataset.type = m.type;
+    if (markOnText(m)) g.classList.add('mk-ontext');
     if (g.classList.contains('mk')) { g.setAttribute('role', 'img'); g.setAttribute('aria-label', markLabel(m, true)); }
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
@@ -722,6 +734,7 @@ function onMarksDown(e, v) {
       markDown = again ? null : { id: m.id, t: now };
       if (again) { e.preventDefault(); setTimeout(() => (m.type === 'note' ? editNote : editText)(v, m), 0); return; }
     }
+    if (markOnText(m)) return;
     startMove(e, v, m);
     return;
   }
@@ -782,9 +795,39 @@ function offsetMark(m, o, dx, dy) {
   if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
 }
 const selectedMark = () => selMark && (doc.marks[selMark.key] || []).find((m) => m.id === selMark.id);
+/* Text mark-up (a highlight, underline, strikethrough or squiggly made on text) stays on its text, as in other PDF
+   apps: it can be selected (a click on it), recoloured and deleted, never dragged or nudged off its words. With
+   Select, a drag across it selects the page's text as anywhere else (its marks let the pointer through). */
+const markOnText = (m) => !!m && ((m.type === 'hl' && !m.area) || m.type === 'cmMarkup');
+// The text mark-up under a point on screen (x, y), on page v: the last drawn (topmost) first.
+function onTextMarkAt(v, x, y) {
+  const svg = v && v.el.querySelector('svg.marks'); if (!svg) return null;
+  for (const g of [...svg.querySelectorAll('.mk-ontext[data-id]')].reverse()) {
+    const parts = g.children.length ? [...g.children] : [g];
+    if (parts.some((el) => { const r = el.getBoundingClientRect(); return x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 3 && y <= r.bottom + 3; })) {
+      const m = marksOf(v.entry).find((mm) => mm.id === g.dataset.id); if (m) return m;
+    }
+  }
+  return null;
+}
+// Select: a click (no drag, no text selected) on text mark-up selects it; a click elsewhere lets one go.
+let onTextDown = null;
+document.addEventListener('pointerdown', (e) => {
+  onTextDown = app.dataset.tool === 'select' && e.button === 0 && e.target.closest && e.target.closest('#pages .page') && !e.target.closest('.mk:not(.mk-ontext), .mk-handle, .annotationLayer :is(input, textarea, select, button, a)') ? { x: e.clientX, y: e.clientY } : null;
+}, true);
+document.addEventListener('pointerup', (e) => {
+  const d = onTextDown; onTextDown = null;
+  if (!d || !doc || app.dataset.tool !== 'select' || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+  const sel = getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  const pe = document.elementFromPoint(e.clientX, e.clientY), pg = pe && pe.closest('#pages .page'), v = pg && views.find((x) => x.el === pg);
+  const m = v && onTextMarkAt(v, e.clientX, e.clientY);
+  if (m) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry });
+  else if (markOnText(selMark && selectedMark())) selectMark(null);
+});
 // Arrow keys: 1 pt a press (10 with Shift), along the page as it is shown.
 function nudgeMark(key, big) {
   const m = selectedMark(); if (!m) return false;
+  if (markOnText(m)) return true; // stays on its text (the arrows don't scroll the page either)
   const d = big ? 10 : 1, v = views.find((x) => x.entry === selMark.entry);
   let [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[key];
   if (v) { const [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, dx * scale, dy * scale); [dx, dy] = [x1 - x0, y1 - y0]; }
@@ -796,6 +839,7 @@ function nudgeMark(key, big) {
 // Alt+Shift+arrows: the selected mark's right edge (Left, Right) or bottom edge (Up, Down) moves 2 pt, as dragging its
 // handle would; a mark that keeps its proportions grows or shrinks from its top-left corner.
 function sizeMark(key) {
+  if (markOnText(selMark && selectedMark())) return true;
   const m = selectedMark(), v = m && views.find((x) => x.entry === selMark.entry && x.rendered); if (!v) return false;
   const svg = v.el.querySelector('svg.marks'), el = svg && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`), b = el && markViewBox(svg, el);
   const stretch = MARK_STRETCH(m) || ((('x1' in m) || (Array.isArray(m.quads) && m.type !== 'cmMarkup')) && !MARK_SCALE[m.type]); // form fields, redaction areas too
@@ -1531,7 +1575,7 @@ async function onEditDown(e, v) {
   const seq = downSeq.get(e) ?? editSeq;
   if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomTo(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
-  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return startMove(e, v, om); }
+  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return markOnText(om) ? undefined : startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
   if (selContent && selContent.v === v && selContent.kind === 'image') {
     const r = imageRect(selContent);
@@ -2535,11 +2579,20 @@ const rotatePage = (d) => pageOp(() => { const e = doc.pages[current]; e.rot = (
 const rotateAll = (d) => pageOp(() => doc.pages.forEach((e) => { e.rot = (e.rot + d + 360) % 360; }));
 // Page moves and deletes are read out (the pages change under a screen reader's cursor without a word otherwise).
 // `idx`: the pages moved (indexes before the move); `to`: where the first of them is now.
-function pagesMoved(idx, to, together = true) { if (doc) announce(idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`); }
-function pagesDeleted(n) { if (doc) announce(`${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted. ${doc.pages.length} left.`); }
+// They are also shown, with Undo, as a toast.
+function pagesMoved(idx, to, together = true) {
+  if (!doc) return;
+  const msg = idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`;
+  announce(msg); undoToast(msg);
+}
+function pagesDeleted(n) {
+  if (!doc) return;
+  const msg = `${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted`;
+  announce(`${msg}. ${doc.pages.length} left.`); undoToast(msg);
+}
 const deletePage = () => { const n = current; pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); }); pagesDeleted([n]); };
 const movePage = (d) => { const t = current + d, n = current; if (!doc || t < 0 || t >= doc.pages.length) return; pageOp(() => { const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; }); pagesMoved([n], t); };
-const duplicatePage = () => pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; });
+const duplicatePage = () => { const n = current; pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; }); if (doc) undoToast(`Page ${n + 1} duplicated`); };
 async function insertBlank() {
   const L = await loadPdfLib();
   const base = await (await pageOf(doc.pages[current])).getViewport({ scale: 1 });
@@ -3111,7 +3164,14 @@ $('#findNext').onclick = () => stepFind(1); $('#findPrev').onclick = () => stepF
 
 /* ---------------- sidebar: pages, outline, documents ---------------- */
 function syncSideTabs() { $$('.side-tabs [data-side]').forEach((b) => { const on = b.dataset.side === S.side; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; b.id ||= 'side-' + b.dataset.side; if (on) $('#sidePanel').setAttribute('aria-labelledby', b.id); }); }
-function setSide(t) { S.side = t; saveSettings(); syncSideTabs(); renderSide(); }
+function setSide(t) { S.side = t; delete S.sideBack; saveSettings(); syncSideTabs(); renderSide(); }
+// With no document open, the sidebar shows Recent (Pages would be empty); the tab used before comes back with the
+// next document.
+function sideNoDoc() {
+  if (doc || S.side === 'docs') return;
+  S.sideBack = S.side; S.side = 'docs'; saveSettings(); syncSideTabs(); renderSide();
+}
+function sideForDoc() { if (S.sideBack && S.side === 'docs') { S.side = S.sideBack; syncSideTabs(); } delete S.sideBack; }
 $$('.side-tabs [data-side]').forEach((b) => b.addEventListener('click', () => setSide(b.dataset.side)));
 // Arrow keys, Home and End move between tabs (and choose them), as in any tab list.
 function tabKeys(e, list, choose) {
@@ -3142,7 +3202,7 @@ async function renderSide() {
   const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
   panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
-  thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target); } }), { root: panel, rootMargin: '300px' });
+  thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target).then(followThumbAgain); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
     thumbIO.observe(t);
     t.onclick = () => { goPage(+t.dataset.n); if (isPhone()) toggleSidebar(false); };
@@ -3265,7 +3325,23 @@ function markThumb() {
     if (n === current) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
     t.tabIndex = (focused ? t === focused : n === current) ? 0 : -1;
   });
+  followThumb();
 }
+// The page in view keeps its thumbnail in view in the sidebar (as the document scrolls, or a page is typed in),
+// unless the pointer or the focus is in the sidebar (someone looking through it there).
+function followThumb() {
+  const panel = $('#sidePanel');
+  if (S.side !== 'thumbs' || app.dataset.sidebar === 'off' || panel.matches(':hover, :focus-within')) return;
+  const t = $(`.thumb[data-n="${current}"]`, panel); if (!t) return;
+  const p = panel.getBoundingClientRect(), r = t.getBoundingClientRect(); if (!p.height) return;
+  if (r.top < p.top) panel.scrollTop -= p.top - r.top + 8;
+  else if (r.bottom > p.bottom) panel.scrollTop += r.bottom - p.bottom + 8;
+  else return;
+  followUntil = Date.now() + 1500;
+}
+// Thumbnails take their page's shape once drawn, which moves the ones below: follow again for a moment.
+let followUntil = 0;
+function followThumbAgain() { if (Date.now() < followUntil) followThumb(); }
 $('#sidePanel').addEventListener('keydown', (e) => {
   const t = e.target.closest && e.target.closest('#sidePanel .thumb'); if (!t || !doc || e.ctrlKey || e.metaKey) return;
   const list = $$('#sidePanel .thumb'), k = list.indexOf(t), last = list.length - 1;
@@ -3350,7 +3426,7 @@ async function renderDocs() {
   const panel = $('#sidePanel');
   const all = (await listDocs()).sort((a, b) => b.updated - a.updated);
   if (S.side !== 'docs') return;
-  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
+  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No recent PDFs yet. Files you open appear here, kept on this device.</p>';
   icons();
   $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
@@ -3366,6 +3442,7 @@ async function renderDocs() {
 async function closeDocument() {
   if (!doc) return false;
   closeLineEditor(true);
+  if (app.dataset.organize === '1' && typeof pg60Organize === 'function') pg60Organize(false);
   if (doc.dirty) {
     const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Recent either way.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
     if (!a || (a === 'save' && !(await savePdf(false)))) return false;
@@ -3379,10 +3456,10 @@ async function closeDocument() {
   for (const f of FEATURE.onDocClosed) { try { f(); } catch (e) { console.warn(e); } }
   for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
   pdfDocs.clear();
-  doc = null; selMark = null; undoStack.length = redoStack.length = 0;
+  doc = null; selMark = null; current = 0; undoStack.length = redoStack.length = 0;
   pagesEl.innerHTML = ''; views = []; $('#drop').hidden = false;
   store.set('current', null);
-  setTitle(); setSaved(true); updateStatus(); renderSide(); refreshRibbon();
+  setTitle(); setSaved(true); updateStatus(); sideNoDoc(); renderSide(); refreshRibbon();
   const o = $('#drop [data-cmd="open"]') || $('#drop button'); if (o) o.focus({ preventScroll: true });
   return true;
 }
@@ -3558,13 +3635,17 @@ cmd('undo', { get label() { return undoStack.length ? 'Undo ' + undoName() : 'Un
 cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Redo'; }, rlabel: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 TEST_HOOKS.cmdLabel = (id) => C[id].label;
 TEST_HOOKS.cmdEnabled = (id) => !C[id].enabled || !!C[id].enabled();
+TEST_HOOKS.cmdShown = (id) => shown(id);
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
 cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
 cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
 const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Rectangle', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
-for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
+// Highlight, as on the selection's bar: text already selected is highlighted at once (the tool in use stays on);
+// with none, the tool turns on and highlights what is selected next. Its tooltip says both.
+const MARKUP_TIP = (verb, then = verb.toLowerCase() + ' it') => `${verb} the selected text, or turn this on and select text to ${then}`;
+for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, ...(t === 'highlight' ? { tip: MARKUP_TIP('Highlight') } : {}), enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
 cmd('rotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: has, run: () => rotatePage(-90) });
@@ -3600,10 +3681,10 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
+  ['File', ['open', 'openRecent', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -3646,7 +3727,7 @@ function openPopover(anchor, html, at) {
   }
   const f = $('.pop-sw button[aria-checked="true"], .mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -3673,7 +3754,7 @@ pop.addEventListener('click', (e) => {
   const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
 });
 pop.addEventListener('change', (e) => { if (e.target.matches('[data-colorpick]')) { pickColor(e.target.value.toUpperCase()); closePopover(); } });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
   $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
@@ -3694,13 +3775,49 @@ $('#menubar').addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (bs[k].getAttribute('aria-expanded') !== 'true') bs[k].click(); }
 });
 // Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
-function moreMenuHtml() {
+function moreMenuHtml(menus = MENUS, keep = () => true) {
   const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids.flatMap((id) => [id, ...((C[id] && C[id].menu) || [])]) : [])));
-  return MENUS.map(([t, ids], k) => {
-    const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
+  return menus.map(([t, ids]) => {
+    const k = MENUS.findIndex(([x]) => x === t), only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id) && keep(id));
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
   }).join('');
 }
+/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). What only
+   the menus had is on it too: File (at the start of the tab row) lists the File menu, then what the other menus have
+   that no ribbon tab shows; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its
+   menus in the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
+if (!MAC_APP) app.dataset.menubar = 'ribbon';
+function fileMenuHtml() {
+  const file = MENUS.find(([t]) => t === 'File'), rest = MENUS.filter(([t]) => t !== 'File' && t !== 'Help');
+  return menuHtml(file ? file[1] : []) + moreMenuHtml(rest, (id) => !/^theme_/.test(id)); // the theme: its own button
+}
+const helpMenuHtml = () => menuHtml((MENUS.find(([t]) => t === 'Help') || ['', []])[1]);
+function menuButton(b, html) {
+  b.addEventListener('click', () => {
+    const open = b.getAttribute('aria-expanded') === 'true';
+    closePopover(); if (open) return;
+    b.setAttribute('aria-expanded', 'true'); openPopover(b, html());
+  });
+  b.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && b.getAttribute('aria-expanded') !== 'true') { e.preventDefault(); b.click(); } });
+}
+menuButton($('#fileBtn'), fileMenuHtml); menuButton($('#helpBtn'), helpMenuHtml);
+// Alt pressed and let go on its own, or F10: to the ribbon's tab row (again: back to the document).
+let altAlone = false;
+document.addEventListener('keydown', (e) => {
+  altAlone = e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+  if (e.key === 'F10' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && app.dataset.menubar === 'ribbon' && !$('#dialog').open) { e.preventDefault(); closePopover(); ribbonKeyFocus(); }
+}, true);
+document.addEventListener('keyup', (e) => { if (e.key === 'Alt' && altAlone && app.dataset.menubar === 'ribbon' && !$('#dialog').open && pop.hidden) { e.preventDefault(); ribbonKeyFocus(); } altAlone = false; }, true);
+document.addEventListener('pointerdown', () => { altAlone = false; }, true);
+function ribbonKeyFocus() {
+  const a = document.activeElement;
+  if (a && a.closest && a.closest('.ribbon-head')) { viewer.focus({ preventScroll: true }); return; }
+  const t = $('#ribbonTabs [aria-selected="true"]'); if (t && t.offsetParent) t.focus(); else if ($('#fileBtn').offsetParent) $('#fileBtn').focus();
+}
+cmd('openRecent', { label: 'Open recent…', icon: 'history', run: () => {
+  if (app.dataset.sidebar === 'off' || (isPhone() && app.dataset.sidebar !== 'open')) toggleSidebar(true);
+  setSide('docs'); setTimeout(() => { const f = $('#sidePanel .doc-open') || $('.side-tabs [data-side="docs"]'); f && f.focus({ preventScroll: true }); }, 60);
+} });
 $('#moreBtn').addEventListener('click', () => {
   const b = $('#moreBtn'), open = b.getAttribute('aria-expanded') === 'true';
   closePopover(); if (open) return;
@@ -3770,7 +3887,7 @@ function ctxFor(el, x, y) {
   if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
   const t = el.closest('#sidePanel .thumb, .pg60-cell'); if (t) return thumbMenu(t, { x, y });
   const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
-  const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
+  const hit = el.closest('svg.marks .mk[data-id]'), m = (hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id)) || (!String(getSelection() || '').trim() && onTextMarkAt(v, x, y));
   return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
 }
 document.addEventListener('contextmenu', (e) => {
@@ -3815,13 +3932,13 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
+  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
-  export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
+  export: ['Export', [['Save', ['saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
 // Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of). `look` makes a
 // compact group on wide screens: 'rows' (small buttons with their names, two rows) or 'icons' (a grid of icons).
@@ -3944,6 +4061,8 @@ function phoneFold(groups) {
 // of command ids) shows them under its name.
 matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
 Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+// A menu as the menu bar lists it (the Mac app's window shows the bar if macOS turns its menus down), opened under File.
+TEST_HOOKS.openMenu = (title) => { const m = MENUS.find(([t]) => t === title); closePopover(); openPopover($('#fileBtn'), menuHtml(m[1])); };
 function foldStyleHtml(ids) {
   const now = swatchNow();
   let html = `<div class="pop-sw" role="group" aria-label="Colour">${swatchesHtml(COLORS, { now, attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${now.toLowerCase()}"`, menu: true })}</div>`;
@@ -4312,6 +4431,7 @@ serial(async () => {
   if (/[?&]sample\b/.test(location.search)) { await openSample(); return; }
   const last = store.get('current', null);
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
+  sideNoDoc();
 });
 if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation

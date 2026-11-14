@@ -111,7 +111,7 @@ export default async (h) => {
     await p.click('[data-rt="markup"]');
     await p.click('[data-cmd="cm_oval"]'); await drag(p, [60, 470], [180, 400]);
     ok(!(await p.$('#dialog[open]')), 'no dialog while drawing');
-    eq(await p.textContent('#toast'), 'Comments are signed as "No name". Set your name in the Comments panel.');
+    eq(await p.textContent('#toast'), 'Your comments show as "No name". Set your name in the Comments panel.');
     await p.evaluate(() => { document.querySelector('#toast').textContent = ''; });
     await p.click('[data-cmd="cm_cloud"]'); await drag(p, [220, 470], [360, 400]); await p.waitForTimeout(150);
     eq(await p.textContent('#toast'), '', 'told only once');
@@ -229,13 +229,13 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
-  await h.test('comments: the Comment tab fits 1440 and 1280 wide windows: Signature, Stamp and the Comments list in view', async () => {
+  await h.test('comments: the Comment tab fits 1440 and 1280 wide windows: Stamp and the Comments list in view (Signature is on Protect)', async () => {
     for (const width of [1440, 1280]) {
       const p = await open({ width }); await openPdf(p);
       await p.click('[data-rt="markup"]'); await p.waitForTimeout(150);
       const [sw, cw, right] = await p.$eval('#ribbonBody', (e) => [e.scrollWidth, e.clientWidth, e.getBoundingClientRect().right]);
       ok(sw <= cw, `${width}: no hidden groups (${sw}/${cw})`);
-      for (const id of ['sign', 'cm_stamp', 'cm_list', 'tool_rect', 'cm_cloud', 'cm_area', 'cm_typewriter']) ok(await p.$eval(`#ribbonBody [data-cmd="${id}"]`, (b, r) => b.getBoundingClientRect().right <= r && b.getBoundingClientRect().width > 20, right), `${width}: ${id} in view`);
+      for (const id of ['cm_stamp', 'cm_list', 'tool_rect', 'cm_cloud', 'cm_area', 'cm_typewriter']) ok(await p.$eval(`#ribbonBody [data-cmd="${id}"]`, (b, r) => b.getBoundingClientRect().right <= r && b.getBoundingClientRect().width > 20, right), `${width}: ${id} in view`);
       eq(await p.$eval('#ribbonBody [data-cmd="cm_cloud"]', (b) => [b.title, b.textContent.trim()]), ['Cloud', 'Cloud'], 'icon buttons keep their names');
       await p.ctx.close();
     }

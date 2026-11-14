@@ -50,7 +50,7 @@ export default async (h) => {
     await p.ctx.close();
     // a short desktop window with a mouse keeps the desktop layout
     const d = await open({ width: 1000, height: 480 }); await openPdf(d);
-    eq(await d.$eval('#menubar', (e) => getComputedStyle(e).display), 'flex'); await d.ctx.close();
+    ok(await d.$eval('#fileBtn', (e) => getComputedStyle(e).display !== 'none'), 'File on the ribbon'); await d.ctx.close();
   });
 
   await test('mobile: Undo and Redo sit in the title bar on phones on every tab, disabled when there is nothing to undo', async () => {
@@ -123,7 +123,7 @@ export default async (h) => {
 
   await test('mobile: menu toggles are checkbox items and Appearance is a radio group, with their checked state', async () => {
     const p = await open(); await openPdf(p);
-    await p.click('#menubar > button:has-text("View")'); await p.waitForTimeout(100);
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('View')); await p.waitForTimeout(100);
     const item = (id) => p.$eval(`#popover [data-cmd="${id}"]`, (b) => [b.getAttribute('role'), b.getAttribute('aria-checked')]);
     eq(await item('sidebar'), ['menuitemcheckbox', 'true']); eq(await item('darkPage'), ['menuitemcheckbox', 'false']);
     eq(await item('zoomIn'), ['menuitem', null]);
@@ -144,9 +144,9 @@ export default async (h) => {
       const p = await open({ scheme }); await openPdf(p);
       const accent = await p.evaluate(() => { const d = document.createElement('i'); d.style.color = 'var(--accent)'; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; });
       const ring = () => p.evaluate(() => { const s = getComputedStyle(document.activeElement); return [s.outlineStyle, s.outlineColor, parseFloat(s.outlineWidth)]; });
-      // the menu bar, after Escape closes a menu
-      await p.click('#menubar > button:has-text("File")'); await p.keyboard.press('Escape');
-      eq(await ring(), ['solid', accent, 2], scheme + ' menu bar');
+      // the ribbon's File menu button, after Escape closes its menu
+      await p.click('#fileBtn'); await p.keyboard.press('Escape');
+      eq(await ring(), ['solid', accent, 2], scheme + ' File');
       // a title bar button and a swatch, reached with Tab
       await p.focus('#saveBtn'); await p.keyboard.press('Shift+Tab'); await p.keyboard.press('Tab');
       eq(await ring(), ['solid', accent, 2], scheme + ' Save');
@@ -182,7 +182,7 @@ export default async (h) => {
     await q.waitForTimeout(400);
     eq(await q.$eval('#menubar', (e) => getComputedStyle(e).display), 'flex', 'refused: menu bar kept');
     await q.ctx.close();
-    const w = await open(); eq(await w.$eval('#menubar', (e) => getComputedStyle(e).display), 'flex', 'web'); await w.ctx.close();
+    const w = await open(); eq(await w.$eval('#menubar', (e) => getComputedStyle(e).display), 'none', 'web: the ribbon has the menus'); ok(await w.$eval('#fileBtn', (e) => getComputedStyle(e).display !== 'none'), 'web: File'); await w.ctx.close();
   });
 
   await test('mobile: with Note or Stamp chosen, Enter places it in the middle of the page in view, selected, and the arrows move it; pages are named regions', async () => {

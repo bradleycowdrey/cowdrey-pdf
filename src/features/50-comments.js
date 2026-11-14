@@ -293,7 +293,7 @@ document.addEventListener('pointerup', () => {
   CM.selDown = false; setTimeout(() => { if (cmMarkupKind() === k) cmMarkupSelection(k); }, 0);
 });
 for (const [kind, [label, icon]] of Object.entries(CM_MARKUP)) {
-  cmd('cm_' + kind, { label, icon, enabled: has, pressed: () => app.dataset.tool === 'cm' + kind, run: () => { if (cmMarkupSelection(kind)) return; setTool('cm' + kind); toast('Select text to ' + (kind === 'strike' ? 'strike it through' : kind === 'squiggly' ? 'add a squiggly line' : 'underline it')); } });
+  cmd('cm_' + kind, { label, icon, tip: kind === 'squiggly' ? MARKUP_TIP('Add a squiggly line under', 'mark it') : MARKUP_TIP(kind === 'strike' ? 'Strike through' : 'Underline'), enabled: has, pressed: () => app.dataset.tool === 'cm' + kind, run: () => { if (cmMarkupSelection(kind)) return; setTool('cm' + kind); toast('Select text to ' + (kind === 'strike' ? 'strike it through' : kind === 'squiggly' ? 'add a squiggly line' : 'underline it')); } });
 }
 
 /* ---- shapes dragged out on the page ---- */
@@ -501,7 +501,7 @@ ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
 ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
 ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
-menuOrder('Comment', ['tool_select', '-', 'tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'tool_note', 'cm_typewriter', 'cm_callout', '-', 'tool_pen', 'tool_rect', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_stamp', 'sign', '-', 'cm_fill', 'cm_list']);
+menuOrder('Comment', ['tool_select', '-', 'tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'tool_note', 'cm_typewriter', 'cm_callout', '-', 'tool_pen', 'tool_rect', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
 
 /* ---- the Comments panel: every comment on every page, yours and the PDF's own ---- */
 const CM_SUBTYPES = { Text: 'Note', FreeText: 'Text box', Line: 'Line', Square: 'Rectangle', Circle: 'Oval', Polygon: 'Polygon', PolyLine: 'Polyline', Highlight: 'Highlight', Underline: 'Underline', Squiggly: 'Squiggly', StrikeOut: 'Strikethrough', Stamp: 'Stamp', Caret: 'Caret', Ink: 'Drawing', FileAttachment: 'Attachment', Sound: 'Sound', Redact: 'Redaction' };
@@ -633,9 +633,19 @@ changed = function (before) {
   let fresh = false;
   for (const [key, list] of Object.entries(doc.marks)) {
     if (key === '__doc' || !Array.isArray(list)) continue;
-    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
+    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; if (CM_ANNOT_TYPES.has(m.type) || m.type === 'cmReply') fresh = true; }
   }
-  if (fresh && !S.author && !S.cmNameTold) { S.cmNameTold = true; saveSettings(); toast('Comments are signed as "No name". Set your name in the Comments panel.'); }
+  // Only for a comment (a note, a highlight, a shape…), not a text box or an edit; never over a dialog (it waits for
+  // the dialog to close); once.
+  if (fresh && !S.author && !S.cmNameTold && !CM.nameTellSoon) {
+    CM.nameTellSoon = true;
+    const tell = () => {
+      if ($('#dialog').open) { $('#dialog').addEventListener('close', () => setTimeout(tell, 0), { once: true }); return; }
+      CM.nameTellSoon = false; if (S.author || S.cmNameTold) return;
+      S.cmNameTold = true; saveSettings(); toast('Your comments show as "No name". Set your name in the Comments panel.');
+    };
+    tell();
+  }
 };
 const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
 const CM_EVERYONE = '*everyone*';

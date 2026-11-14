@@ -227,7 +227,7 @@ export default async (h) => {
     await p.click('[data-rt="edit"]'); await p.click('[data-cmd="pd_watermark"]'); await p.waitForSelector('#dialog[open] .pd-form');
     await p.click('#dialog .dlg-foot button:has-text("Add watermark")'); await p.waitForTimeout(400);
     eq(await label('undo'), 'Undo Watermark');
-    await p.click('#menubar > button:has-text("Edit")'); await p.waitForTimeout(150);
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('Edit')); await p.waitForTimeout(150);
     ok(await p.$('#popover .mi[data-cmd="undo"]:has-text("Undo Watermark")'), 'the Edit menu names it');
     await p.keyboard.press('Escape');
     await p.keyboard.press('Control+z'); await p.waitForTimeout(200);
