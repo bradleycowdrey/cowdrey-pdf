@@ -1002,7 +1002,7 @@ function pageSelection() {
 function hideSelBar() { if (selBar) { selBar.remove(); selBar = null; } }
 function showSelBar() {
   hideSelBar();
-  const sel = app.dataset.tool === 'select' && !TL.down && !$('#dialog').open && pageSelection(); if (!sel) return;
+  const sel = app.dataset.tool === 'select' && !TL.down && !$('#dialog').open && $('#popover').hidden && pageSelection(); if (!sel) return; // not with a menu open
   const r = sel.getRangeAt(0).getBoundingClientRect(), w = $('#viewer').getBoundingClientRect();
   if (!r.width || r.bottom < w.top || r.top > w.bottom) return;
   const acts = selActionList(), bar = selBar = document.createElement('div');
@@ -1019,7 +1019,7 @@ function showSelBar() {
 }
 let selBarT = 0;
 const selBarSoon = (ms) => { clearTimeout(selBarT); selBarT = setTimeout(showSelBar, ms); };
-document.addEventListener('pointerup', (e) => { if (!e.target.closest || !e.target.closest('.sel-bar')) selBarSoon(60); });
+document.addEventListener('pointerup', (e) => { if (e.button !== 2 && (!e.target.closest || !e.target.closest('.sel-bar'))) selBarSoon(60); });
 // A finger's selection handles move with no pointer events: the bar follows the selection once it rests.
 document.addEventListener('selectionchange', () => { if (!pageSelection()) { clearTimeout(selBarT); hideSelBar(); } else if (!TL.down) selBarSoon(350); });
 document.addEventListener('pointerdown', (e) => { if (selBar && !selBar.contains(e.target)) hideSelBar(); }, true);
@@ -3010,7 +3010,8 @@ function showDialog(title, body, actions, setup) {
     dlg.showModal();
     // Start on the first field you type in (with a mouse and keyboard; a touch screen would open its keyboard), or else
     // on the first field, or else on the main button, never on the close button: what's typed at once isn't lost.
-    const fine = matchMedia('(pointer: fine)').matches, texty = $(`.dlg-body :is(${DLG_TEXTY})`, dlg);
+    // (not a field that belongs to a choice not made: focusing "Pages [1-3]" would choose it)
+    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return !(l && $('input[type="radio"]:not(:checked)', l)); });
     const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
     if (first && (document.activeElement === $('[data-x]', dlg) || !dlg.contains(document.activeElement))) { first.focus(); if (fine && first === texty && first.select) first.select(); }
     // Enter in a one-line field presses the main button (fields with their own Enter, like lists, say so first).
@@ -3257,8 +3258,8 @@ function markMenu(v, m, at, anchor) {
     { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', run: duplicateMark },
     { label: 'Delete', icon: 'trash-2', run: deleteSelected },
     '-',
-    m.type === 'note' && { label: 'Edit note…', icon: 'pencil', run: () => editNote(v, m) },
-    m.type === 'text' && { label: 'Edit text…', icon: 'pencil', run: () => editText(v, m) },
+    m.type === 'note' && { label: 'Edit note', icon: 'pencil', run: () => editNote(v, m) },
+    m.type === 'text' && { label: 'Edit text', icon: 'pencil', run: () => editText(v, m) },
     ...own.map((id) => ctxCmd(id)),
   ], at, anchor || viewer, 'Mark');
 }

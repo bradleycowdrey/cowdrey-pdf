@@ -71,6 +71,7 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     await selectText(p, 0, 'The pelican count'); await p.waitForTimeout(200);
     const s = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'The pelican count' }).first().boundingBox();
     await p.mouse.click(s.x + 4, s.y + s.height / 2, { button: 'right' }); await p.waitForSelector('#popover:not([hidden])');
+    await p.waitForTimeout(400); ok(!(await p.$('.sel-bar')), 'the bar makes way for the menu');
     const items = await p.$$eval('#popover .mi span:nth-child(2)', (e) => e.map((x) => x.textContent));
     eq(items.slice(0, 5), ['Highlight', 'Underline', 'Strikethrough', 'Mark for redaction', 'Copy']);
     await p.click('#popover .mi:has-text("Highlight")'); await p.waitForTimeout(200);

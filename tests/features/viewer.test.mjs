@@ -173,7 +173,7 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
     const mk = await p.locator('.page[data-n="0"] svg.marks .mk').first().boundingBox();
     await p.mouse.click(mk.x + mk.width / 2, mk.y + mk.height / 2, { button: 'right' }); await p.waitForTimeout(150);
-    eq((await menu(p)).slice(0, 4), ['Copy', 'Duplicate', 'Delete', 'Edit note…']);
+    eq((await menu(p)).slice(0, 4), ['Copy', 'Duplicate', 'Delete', 'Edit note']);
     await pick(p, 'Copy');
     await p.mouse.click(g.x + 400, g.y + 600, { button: 'right' }); await pick(p, 'Paste');
     const notes = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'note').map((m) => [m.x, m.y]));
