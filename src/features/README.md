@@ -32,7 +32,7 @@ Plug in through:
   `FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => …)` — once, before the file is written.
   Document-wide settings (a watermark, headers and footers…) go in `docMarks()`, a list of `{ id, type, … }`
   objects stored, undone and restored with the marks (change them inside `snapshot()`/`changed()` too).
-- `FEATURE.afterRender.push((v) => …)` after a page is drawn; `FEATURE.onDocShown.push((doc) => …)`;
+- `FEATURE.afterRender.push((v) => …)` after a page is drawn; `FEATURE.onDocShown.push((doc) => …)`; `FEATURE.onDocClosed.push(() => …)` when File > Close closes it;
   `(FEATURE.onTab ||= []).push((tab) => …)` when another ribbon tab is chosen.
 - `TEST_HOOKS.name = fn` exposes `fn` to tests as `window.__cowdreyPdf.name`.
 

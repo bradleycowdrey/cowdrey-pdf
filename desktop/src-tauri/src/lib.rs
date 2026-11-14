@@ -347,7 +347,7 @@ fn window_menu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
         Box::new(PredefinedMenuItem::maximize(app, None)?),
         Box::new(PredefinedMenuItem::fullscreen(app, None)?),
         Box::new(PredefinedMenuItem::separator(app)?),
-        // Cmd+W closes the current tab (File menu), as in most tabbed apps.
+        // Cmd+W closes the document (File > Close); Cmd+Shift+W closes the window.
         Box::new(MenuItem::with_id(app, "app:closeWindow", "Close Window", true, Some("CmdOrCtrl+Shift+W"))?),
     ];
     submenu(app, "Window", &items)

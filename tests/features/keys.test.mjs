@@ -82,4 +82,30 @@ export default async (h) => {
     eq(d, [true, null, { enabled: [['cmd:b', true]] }, true]);
     eq(n >= 1, true); eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Close (Ctrl+W): asks about unsaved changes, then goes back to the start; Recent keeps the document', async () => {
+    const p = await open(); await openPdf(p);
+    await p.keyboard.press('Control+w'); await p.waitForTimeout(300);
+    ok(await p.evaluate(() => !window.__cowdreyPdf.doc), 'an unchanged document closes at once');
+    ok(await p.$eval('#drop', (e) => !e.hidden), 'start screen'); eq(await p.textContent('#docTitle'), 'Cowdrey.PDF');
+    eq(await p.$$eval('.page', (e) => e.length), 0);
+    await openPdf(p);
+    await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(200);
+    await p.keyboard.press('Control+w'); await h.answer(p, 'Cancel'); await p.waitForTimeout(200);
+    ok(await p.evaluate(() => !!window.__cowdreyPdf.doc), 'Cancel keeps it open');
+    await p.evaluate(() => window.__cowdreyPdf.run('closeDoc')); await h.answer(p, "Don't save"); await p.waitForTimeout(400);
+    ok(await p.evaluate(() => !window.__cowdreyPdf.doc), 'closed');
+    ok(await p.evaluate(() => document.activeElement.matches('#drop [data-cmd="open"]')), 'focus on Open');
+    await p.click('[data-side="docs"]').catch(() => {}); await p.waitForSelector('.doc-item'); eq(await p.$$eval('.doc-item', (e) => e.length), 2, 'both opens kept in Recent');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Mac app: File > Close has Cmd+W', async () => {
+    const p = await open({ init: h.macApp() }); await p.waitForTimeout(600);
+    const menus = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu').pop()[1].menus);
+    const c = menus[0].items.find((x) => x.id === 'cmd:closeDoc');
+    ok(c && c.accel === 'CmdOrCtrl+W' && c.label === 'Close', JSON.stringify(c));
+    eq(menus[0].items[menus[0].items.length - 1].id, 'cmd:closeDoc', 'last in File');
+    await p.ctx.close();
+  });
 };

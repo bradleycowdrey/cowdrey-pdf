@@ -357,6 +357,7 @@ function crdSayPaint(only) {
 }
 FEATURE.afterRender.push((v) => { if (crdSay.on && views[crdSay.n] === v) crdSayPaint(v); });
 FEATURE.onDocShown.push(() => { crdSayStop(); });
+FEATURE.onDocClosed.push(() => { crdSayStop(); });
 
 /* ---- read mode ---- */
 function crdReadBar() {

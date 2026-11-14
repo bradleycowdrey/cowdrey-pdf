@@ -72,6 +72,7 @@ const FEATURE = {
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
+  onDocClosed: [], // () — when the document is closed (Close), before it goes: leave its own views and modes
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
   markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
   selActions: [],  // { label, icon, order, run() } — what can be done with text selected on the page (its bar and menu)
@@ -3215,6 +3216,31 @@ async function renderDocs() {
     renderDocs();
   }; });
 }
+// Close (Ctrl/Cmd+W): back to the start screen. Changes not saved to a file are asked about first; either way they
+// stay in Recent, so the document can be opened again from there.
+async function closeDocument() {
+  if (!doc) return false;
+  closeLineEditor(true);
+  if (doc.dirty) {
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Recent either way.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    if (!a || (a === 'save' && !(await savePdf(false)))) return false;
+  }
+  clearTimeout(persistTimer); persistTimer = null;
+  try { await persistNow(); } catch (e) { console.warn(e); }
+  if (app.dataset.tool !== 'select') setTool('select');
+  pendingImage = null; selContent = null; closePopover();
+  if (!$('#findbar').hidden) closeFind();
+  findState.texts.clear();
+  for (const f of FEATURE.onDocClosed) { try { f(); } catch (e) { console.warn(e); } }
+  for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
+  pdfDocs.clear();
+  doc = null; selMark = null; undoStack.length = redoStack.length = 0;
+  pagesEl.innerHTML = ''; views = []; $('#drop').hidden = false;
+  store.set('current', null);
+  setTitle(); setSaved(true); updateStatus(); renderSide(); refreshRibbon();
+  const o = $('#drop [data-cmd="open"]') || $('#drop button'); if (o) o.focus({ preventScroll: true });
+  return true;
+}
 async function openStored(id) {
   if (doc && doc.id === id) return true;
   const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return false;
@@ -3377,6 +3403,7 @@ function run(id) {
 cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFiles });
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
+cmd('closeDoc', { label: 'Close', icon: 'x', key: 'Mod-w', enabled: has, run: () => serial(closeDocument) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
 cmd('exportImage', { rlabel: 'Page as picture', label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
@@ -3428,7 +3455,7 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
+  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
@@ -3901,7 +3928,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (mod) {
     const key = (e.shiftKey ? 'Shift-' : '') + (e.altKey ? 'Alt-' : '') + e.key.toLowerCase();
-    const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
+    const map = { 'o': 'open', 'w': 'closeDoc', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
     const id = map[key.replace('Shift-', 'shift-').replace('Alt-', 'alt-')];
     if (id && !(typing && ['z', 'shift-z', 'y'].includes(key.toLowerCase()))) { e.preventDefault(); run(id); }
     return;
@@ -4021,7 +4048,7 @@ async function beforeQuit() {
   }
   NATIVE.core.invoke('quit_app').catch(() => {});
 }
-const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
+const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-w': 'CmdOrCtrl+W', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
 // The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
 // Paste and Select All are the system's, for text fields. Checkmarks and greyed-out commands follow the app: the
 // whole menu bar is sent when its items change, and only the items that were turned on or off otherwise.
