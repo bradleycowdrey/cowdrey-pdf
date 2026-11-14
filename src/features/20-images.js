@@ -355,15 +355,15 @@ startImageDrag = function (e, v, s, mode) { if (!picPressed) { drawMarks(v); ret
 
 /* Commands */
 const picOn = () => !!picSel() && !picCrop;
-cmd('picRotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: picOn, run: () => picEdit(picRotate(-1)) });
-cmd('picRotR', { label: 'Rotate right', icon: 'rotate-cw', enabled: picOn, run: () => picEdit(picRotate(1)) });
-cmd('picFlipH', { label: 'Flip horizontal', icon: 'flip-horizontal-2', enabled: picOn, run: () => picEdit(picFlip(true)) });
-cmd('picFlipV', { label: 'Flip vertical', icon: 'flip-vertical-2', enabled: picOn, run: () => picEdit(picFlip(false)) });
-cmd('picCrop', { label: 'Crop', icon: 'crop', enabled: picOn, run: picCropStart });
+cmd('picRotL', { contextual: true, label: 'Rotate left', icon: 'rotate-ccw', enabled: picOn, run: () => picEdit(picRotate(-1)) });
+cmd('picRotR', { contextual: true, label: 'Rotate right', icon: 'rotate-cw', enabled: picOn, run: () => picEdit(picRotate(1)) });
+cmd('picFlipH', { contextual: true, label: 'Flip horizontal', icon: 'flip-horizontal-2', enabled: picOn, run: () => picEdit(picFlip(true)) });
+cmd('picFlipV', { contextual: true, label: 'Flip vertical', icon: 'flip-vertical-2', enabled: picOn, run: () => picEdit(picFlip(false)) });
+cmd('picCrop', { contextual: true, label: 'Crop', icon: 'crop', enabled: picOn, run: picCropStart });
 cmd('picCropApply', { label: 'Apply crop', icon: 'check', enabled: () => !!picCrop, run: () => picCropEnd(true) });
 cmd('picCropCancel', { label: 'Cancel crop', icon: 'x', enabled: () => !!picCrop, run: () => picCropEnd(false) });
-cmd('picReplace', { label: 'Replace…', icon: 'replace', enabled: picOn, run: () => picInput.click() });
-cmd('picExtract', { label: 'Save picture as PNG…', icon: 'image-down', enabled: picOn, run: picExtract });
+cmd('picReplace', { contextual: true, label: 'Replace…', icon: 'replace', enabled: picOn, run: () => picInput.click() });
+cmd('picExtract', { contextual: true, rlabel: 'Save as PNG', label: 'Save picture as PNG…', icon: 'image-down', enabled: picOn, run: picExtract });
 cmd('picDelete', { label: 'Delete picture', icon: 'trash-2', enabled: picOn, run: picDelete });
 ribbonAdd('edit', 'Picture', ['picRotL', 'picRotR', 'picFlipH', 'picFlipV', 'picCrop', 'picReplace', 'picExtract']);
 

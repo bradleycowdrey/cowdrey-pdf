@@ -53,19 +53,33 @@ button { font: inherit; color: inherit; }
 .btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
 .icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
+.btn:disabled, .btn:disabled:hover { opacity: .45; cursor: default; background: var(--surface); }
+.btn.primary:disabled, .btn.primary:disabled:hover { background: var(--brand); }
+.more-btn { display: none; }
 
 /* ribbon */
 .ribbon { border-bottom: 1px solid var(--line); }
-.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); }
-.ribbon-tabs button { border: 0; background: none; padding: 6px 10px 8px; color: var(--ink-2); font-weight: 500; cursor: pointer; position: relative; }
+.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; }
+.ribbon-tabs::-webkit-scrollbar { display: none; }
+.ribbon-tabs button { flex: none; }
+.ribbon-tabs button { border: 0; background: none; padding: 5px 10px 6px; color: var(--ink-2); font-weight: 500; cursor: pointer; position: relative; }
 .ribbon-tabs button[aria-selected="true"] { color: var(--accent); }
 .ribbon-tabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
-.ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 6px max(12px, env(safe-area-inset-left, 0px)) 6px; overflow-x: auto; scrollbar-width: thin; min-height: 64px; }
-.r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); }
+/* One height on every tab: labels take two lines at most and buttons never shrink; a wide tab scrolls, with a fade
+   at the edge that has more (.more-l / .more-r). */
+.ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 4px max(12px, env(safe-area-inset-left, 0px)) 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; height: 76px; }
+.ribbon-body.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); }
+.ribbon-body.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px); mask-image: linear-gradient(90deg, transparent, #000 48px); }
+.ribbon-body.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+.ribbon-tabs.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); flex: none; }
+.r-group[hidden] { display: none; }
 .r-group:last-child { border-right: 0; }
 .r-items { display: flex; gap: 2px; align-items: center; flex: 1; }
-.r-label { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
-.rb { border: 0; background: none; border-radius: 6px; padding: 4px 8px; display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 52px; cursor: pointer; color: var(--ink); font-size: 12px; }
+.r-label { font-size: 11px; line-height: 1.3; color: var(--ink-3); margin-top: 1px; white-space: nowrap; }
+.rb { border: 0; background: none; border-radius: 6px; padding: 3px 6px; display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; align-self: stretch; gap: 2px; min-width: 52px; max-width: 92px; flex: none; cursor: pointer; color: var(--ink); font-size: 12px; }
+.rb > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: center; line-height: 1.15; overflow-wrap: normal; }
+.rb:focus-visible, .ribbon-tabs button:focus-visible, .side-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rb:hover { background: var(--hover); }
 .rb[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .rb:disabled { opacity: .4; cursor: default; background: none; }
@@ -77,6 +91,9 @@ button { font: inherit; color: inherit; }
 .app[data-sidebar="off"] .workspace { grid-template-columns: 0 1fr; }
 .app[data-sidebar="off"] .sidebar { visibility: hidden; }
 .sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.side-top { display: flex; align-items: center; }
+.side-top .side-tabs { flex: 1; min-width: 0; }
+.side-close { display: none; }
 .side-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 10px; padding: 3px; border-radius: 9px; background: var(--hover); }
 .side-tabs button { border: 0; background: none; border-radius: 7px; padding: 5px 4px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
 .side-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
@@ -140,17 +157,23 @@ button { font: inherit; color: inherit; }
 .sb-zoom { display: flex; align-items: center; gap: 6px; }
 .sb-zoom input[type="range"] { width: 110px; accent-color: var(--accent); }
 .sb-zoom .icon-btn { width: 28px; height: 28px; }
+#zoomLabel { height: 26px; padding: 0 10px; }
 .page-jump { width: 44px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--ink); font: inherit; padding: 1px 2px; }
 
 /* popovers, dialogs, toast */
-.popover { position: fixed; z-index: 50; min-width: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
+.popover { position: fixed; z-index: 50; min-width: 220px; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 6px; }
 .popover[hidden] { display: none; }
 .mi { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; cursor: pointer; color: var(--ink); }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: none; }
+.mi:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mh { font-size: 11px; font-weight: 600; color: var(--ink-3); padding: 6px 8px 2px; }
 .mi:disabled { opacity: .45; cursor: default; background: none; }
 .mi .k { color: var(--ink-3); font-size: 12px; }
 .msep { height: 1px; background: var(--line); margin: 5px 6px; }
 dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(480px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 24px); }
+dialog > .dlg-head, dialog > .dlg-foot { flex: none; }
+dialog > .dlg-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
 dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 @media (prefers-reduced-transparency: reduce) { dialog::backdrop { backdrop-filter: none; background: rgba(18, 12, 15, .55); } }
 .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 6px; }
@@ -173,14 +196,27 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 /* phones: the ribbon becomes a scrolling tool row; the sidebar becomes an overlay */
 @media (max-width: 760px) {
   .menubar, .sb-brand, .tb-actions .btn span, .save-state { display: none; }
+  .more-btn { display: grid; }
+  .tb-actions .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .tb-actions .icon-btn { width: 40px; height: 40px; }
   .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
   .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
   .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+  .app[data-sidebar="open"]::after { content: ""; position: fixed; inset: 0; z-index: 29; background: rgba(18, 12, 15, .35); }
+  .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 6px; }
+  .side-tabs button { min-height: 40px; }
   .r-label { display: none; }
-  .rb { min-width: 44px; min-height: 44px; }
+  .ribbon-body { height: 72px; }
+  .ribbon-tabs button { min-height: 40px; }
+  .rb { min-width: 44px; min-height: 44px; max-width: 76px; font-size: 11px; }
   .sb-zoom input[type="range"] { display: none; }
+  .statusbar { gap: 8px; }
+  .sb-zoom { gap: 2px; }
+  .sb-zoom .icon-btn, #zoomLabel { width: auto; min-width: 40px; height: 40px; }
+  .page-jump { height: 40px; width: 48px; }
+  .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
 }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media print {
   .titlebar, .ribbon, .sidebar, .statusbar, .findbar, .popover, .toast, dialog { display: none !important; }
   body, .app, .workspace, .viewer { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
@@ -198,23 +234,27 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <nav class="menubar" id="menubar" aria-label="Menus"></nav>
     </div>
     <div class="tb-actions">
-      <button class="icon-btn" id="themeBtn" type="button" title="Theme"><i data-lucide="sun-moon"></i></button>
-      <button class="btn" type="button" data-cmd="open"><i data-lucide="folder-open"></i><span>Open</span></button>
-      <button class="btn primary" type="button" data-cmd="save" id="saveBtn"><i data-lucide="download"></i><span>Save PDF</span></button>
+      <button class="icon-btn" id="themeBtn" type="button" title="Theme" aria-label="Theme"><i data-lucide="sun-moon"></i></button>
+      <button class="btn" type="button" data-cmd="open" aria-label="Open"><i data-lucide="folder-open"></i><span>Open</span></button>
+      <button class="btn primary" type="button" data-cmd="save" id="saveBtn" aria-label="Save PDF"><i data-lucide="download"></i><span>Save PDF</span></button>
+      <button class="icon-btn more-btn" id="moreBtn" type="button" title="More" aria-label="More" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
     </div>
   </header>
   <div class="ribbon">
-    <div class="ribbon-tabs" role="tablist" id="ribbonTabs"></div>
-    <div class="ribbon-body" id="ribbonBody"></div>
+    <div class="ribbon-tabs" role="tablist" aria-label="Ribbon" id="ribbonTabs"></div>
+    <div class="ribbon-body" id="ribbonBody" role="tabpanel"></div>
   </div>
   <div class="workspace">
     <aside class="sidebar" id="sidebar" aria-label="Sidebar">
-      <div class="side-tabs" role="tablist">
-        <button type="button" role="tab" data-side="thumbs" aria-selected="true">Pages</button>
-        <button type="button" role="tab" data-side="outline" aria-selected="false">Outline</button>
-        <button type="button" role="tab" data-side="docs" aria-selected="false">Documents</button>
+      <div class="side-top">
+        <div class="side-tabs" role="tablist" aria-label="Sidebar">
+          <button type="button" role="tab" data-side="thumbs" aria-selected="true" aria-controls="sidePanel">Pages</button>
+          <button type="button" role="tab" data-side="outline" aria-selected="false" aria-controls="sidePanel">Outline</button>
+          <button type="button" role="tab" data-side="docs" aria-selected="false" aria-controls="sidePanel">Documents</button>
+        </div>
+        <button class="icon-btn side-close" id="sideClose" type="button" title="Close sidebar" aria-label="Close sidebar"><i data-lucide="x"></i></button>
       </div>
-      <div class="side-panel" id="sidePanel"></div>
+      <div class="side-panel" id="sidePanel" role="tabpanel"></div>
     </aside>
     <main class="viewer" id="viewer" tabindex="-1">
       <div class="findbar" id="findbar" hidden>
@@ -244,12 +284,12 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <button class="icon-btn" type="button" data-cmd="zoomOut" title="Zoom out"><i data-lucide="minus"></i></button>
       <input type="range" id="zoomRange" min="25" max="400" step="5" value="100" aria-label="Zoom">
       <button class="icon-btn" type="button" data-cmd="zoomIn" title="Zoom in"><i data-lucide="plus"></i></button>
-      <button class="btn" type="button" data-cmd="zoomFit" id="zoomLabel" style="height:26px;padding:0 10px">Fit</button>
+      <button class="btn" type="button" data-cmd="zoomFit" id="zoomLabel">Fit</button>
     </span>
   </footer>
 </div>
 <div class="popover" id="popover" hidden role="menu"></div>
-<dialog id="dialog"></dialog>
+<dialog id="dialog" aria-modal="true" aria-labelledby="dlgTitle"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
 <input type="file" id="mergeInput" accept="application/pdf,.pdf" multiple hidden>

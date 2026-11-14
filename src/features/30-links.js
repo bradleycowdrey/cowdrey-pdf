@@ -34,7 +34,7 @@ cmd('tool_link', { label: 'Link', icon: 'link', enabled: has, pressed: () => app
   if (was !== 'link') toast('Drag a box to add a link, or click a link to change it');
 } });
 ribbonAdd('edit', 'Links', ['tool_link']);
-menuAdd('Mark up', ['tool_link']);
+{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('image') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'tool_link'); else menuAdd('Edit', ['tool_link']); }
 
 const lnkRect = (m) => [Math.min(m.x1, m.x2), Math.min(m.y1, m.y2), Math.max(m.x1, m.x2), Math.max(m.y1, m.y2)];
 // A rectangle in PDF coordinates, as a box on screen (any rotation).

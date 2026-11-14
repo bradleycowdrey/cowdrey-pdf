@@ -334,7 +334,7 @@ function txtOpenEditor(v, o) {
   fit();
   ta.addEventListener('input', () => { fit(); txtPlaceBar(v, ta); });
   ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); txtCloseEditor(false); return; }
+    if (e.key === 'Escape') { e.preventDefault(); const was = ta.value; txtCloseEditor(true); keptHint(was !== o.text); return; } // keeps, like clicking away; Undo takes it back
     if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); txtCloseEditor(true); return; }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
@@ -669,7 +669,7 @@ cmd('txtParaMode', { label: 'Edit as paragraphs', icon: 'pilcrow', enabled: has,
 cmd('txtReplace', { label: 'Replace text…', icon: 'replace', key: TXT_REPLACE_KEY, enabled: has, run: txtReplaceDialog });
 ribbonAdd('edit', 'Edit the PDF', ['txtParaMode', 'txtReplace']);
 { const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('find') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtReplace'); else menuAdd('Edit', ['txtReplace']); }
-{ const i = MENUS.findIndex(([t]) => t === 'Mark up'); if (i >= 0 && !MENUS[i][1].includes('txtParaMode')) MENUS[i][1].push('txtParaMode'); }
+{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('tool_erase') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtParaMode'); else menuAdd('Edit', ['txtParaMode']); }
 setTimeout(() => { try { ACCEL['Mod-Alt-f'] = 'CmdOrCtrl+Alt+F'; ACCEL['Mod-h'] = 'CmdOrCtrl+H'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey)) return;
