@@ -644,8 +644,8 @@ addStyle(`
 .cm-you { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-3); padding: 2px 8px 8px; }
 .cm-you b { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 .cm-you .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
-.cm-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 8px 6px; }
-.cm-filters label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 11px; color: var(--ink-3); }
+.cm-filters { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 6px; }
+.cm-filters label { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
 .cm-filters select { font: inherit; font-size: 12px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px; min-width: 0; width: 100%; height: 30px; }
 .cm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .cm-item { display: flex; align-items: flex-start; border-radius: 8px; }

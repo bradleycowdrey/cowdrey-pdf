@@ -401,7 +401,9 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
         };
         v.el.appendChild(note);
       }
-      note.style.left = ta.offsetLeft + 'px'; note.style.top = (ta.offsetTop + ta.offsetHeight + 8) + 'px';
+      // Under the text, or under the format bar when the bar sits below it (near the top of the page).
+      const place = () => { if (!note) return; const below = txtBar && txtBar.isConnected && txtBar.offsetTop > ta.offsetTop; note.style.left = Math.max(4, Math.min(ta.offsetLeft, v.el.clientWidth - note.offsetWidth - 4)) + 'px'; note.style.top = (below ? txtBar.offsetTop + txtBar.offsetHeight : ta.offsetTop + ta.offsetHeight) + 8 + 'px'; };
+      place(); requestAnimationFrame(place);
     },
     cleanup() { if (note) { note.remove(); note = null; } }, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
     opts: { align: !!m.wrap },
@@ -743,7 +745,7 @@ addStyle(`
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }
 .txt-editor.txt-over-ed { outline-color: var(--danger, #E03131); }
-.txt-over { position: absolute; z-index: 7; display: flex; align-items: center; gap: 8px; max-width: 360px; padding: 6px 6px 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--danger, #E03131); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); font: 12px/1.3 var(--font-ui); }
+.txt-over { position: absolute; z-index: 7; display: flex; align-items: center; gap: 8px; max-width: min(360px, calc(100% - 8px)); box-sizing: border-box; padding: 6px 6px 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--danger, #E03131); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); font: 12px/1.3 var(--font-ui); }
 .txt-over .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
 .field textarea.txt-paper { background: #fff; color-scheme: light; }
 .field.txt-wfield { flex-direction: row; align-items: center; gap: 10px; }
