@@ -111,7 +111,7 @@ export default async (h) => {
     await p.click('[data-rt="markup"]');
     await p.click('[data-cmd="cm_oval"]'); await drag(p, [60, 470], [180, 400]);
     ok(!(await p.$('#dialog[open]')), 'no dialog while drawing');
-    eq(await p.textContent('#toast'), 'Comments are signed as "No name". Set your name in the Comments panel.');
+    eq(await p.textContent('#toast'), 'Your comments show as "No name". Set your name in the Comments panel.');
     await p.evaluate(() => { document.querySelector('#toast').textContent = ''; });
     await p.click('[data-cmd="cm_cloud"]'); await drag(p, [220, 470], [360, 400]); await p.waitForTimeout(150);
     eq(await p.textContent('#toast'), '', 'told only once');

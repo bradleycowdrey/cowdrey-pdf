@@ -633,9 +633,19 @@ changed = function (before) {
   let fresh = false;
   for (const [key, list] of Object.entries(doc.marks)) {
     if (key === '__doc' || !Array.isArray(list)) continue;
-    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
+    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; if (CM_ANNOT_TYPES.has(m.type) || m.type === 'cmReply') fresh = true; }
   }
-  if (fresh && !S.author && !S.cmNameTold) { S.cmNameTold = true; saveSettings(); toast('Comments are signed as "No name". Set your name in the Comments panel.'); }
+  // Only for a comment (a note, a highlight, a shape…), not a text box or an edit; never over a dialog (it waits for
+  // the dialog to close); once.
+  if (fresh && !S.author && !S.cmNameTold && !CM.nameTellSoon) {
+    CM.nameTellSoon = true;
+    const tell = () => {
+      if ($('#dialog').open) { $('#dialog').addEventListener('close', () => setTimeout(tell, 0), { once: true }); return; }
+      CM.nameTellSoon = false; if (S.author || S.cmNameTold) return;
+      S.cmNameTold = true; saveSettings(); toast('Your comments show as "No name". Set your name in the Comments panel.');
+    };
+    tell();
+  }
 };
 const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
 const CM_EVERYONE = '*everyone*';
