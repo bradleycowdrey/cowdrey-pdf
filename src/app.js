@@ -747,6 +747,8 @@ function restore(s, layout) {
 function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
 function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
+// The same, kept on the page: a drag that runs past the page's edge draws up to the edge, never onto the canvas.
+function pagePoint(e, v) { const r = v.el.getBoundingClientRect(); return [Math.max(0, Math.min(r.width, e.clientX - r.left)), Math.max(0, Math.min(r.height, e.clientY - r.top))]; }
 let markDown = null; // { id, t }: the last press on a note or text box
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
@@ -934,7 +936,7 @@ function startInk(e, v) {
   const before = snapshot();
   const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: toolColor('pen'), w: S.width };
   marksOf(v.entry).push(m);
-  const move = (ev) => { m.pts.push(toPdf(v, ...localPoint(ev, v))); drawMarks(v); };
+  const move = (ev) => { m.pts.push(toPdf(v, ...pagePoint(ev, v))); drawMarks(v); };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); selectNew(v, m); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
@@ -944,7 +946,7 @@ function startRect(e, v) {
   const [x, y] = toPdf(v, ...localPoint(e, v));
   const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: toolColor('rect'), w: S.width };
   marksOf(v.entry).push(m);
-  const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...localPoint(ev, v)); drawMarks(v); };
+  const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...pagePoint(ev, v)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.abs(m.x2 - m.x1) < 3 && Math.abs(m.y2 - m.y1) < 3) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }

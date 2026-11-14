@@ -140,7 +140,7 @@ FEATURE.tools.protredarea = {
     const [x, y] = toPdf(v, ...localPoint(e, v));
     const m = { id: uid(), type: 'redact', quads: [[[x, y], [x, y], [x, y], [x, y]]], fill: '#000000', label: '', applied: false };
     marksOf(v.entry).push(m);
-    const move = (ev) => { const [x2, y2] = toPdf(v, ...localPoint(ev, v)); m.quads = [[[x, y], [x2, y], [x2, y2], [x, y2]]]; drawMarks(v); };
+    const move = (ev) => { const [x2, y2] = toPdf(v, ...pagePoint(ev, v)); m.quads = [[[x, y], [x2, y], [x2, y2], [x, y2]]]; drawMarks(v); };
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       const b = quadBox(m.quads[0]);
