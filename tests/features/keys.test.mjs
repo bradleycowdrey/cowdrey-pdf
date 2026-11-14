@@ -56,4 +56,30 @@ export default async (h) => {
     ok(m && !m.bold && m.italic && m.underline, JSON.stringify(m && [m.bold, m.italic, m.underline]));
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Mac app: the menu bar greys out commands that do not apply, and sends only what changed', async () => {
+    const p = await open({ init: h.macApp() }); await p.waitForTimeout(600);
+    const full = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu').pop()[1].menus);
+    const find = (id) => full.flatMap((m) => m.items).find((x) => x.id === id);
+    eq([find('cmd:open').enabled, find('cmd:save').enabled, find('cmd:print').enabled], [true, false, false], 'no document');
+    ok(full.flatMap((m) => m.items).filter((x) => x.kind === 'item').every((x) => typeof x.enabled === 'boolean'), 'every item says');
+    const n = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu').length);
+    await openPdf(p); await p.waitForTimeout(400);
+    const upd = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu_enabled').map(([, a]) => a.items).flat());
+    ok(upd.some(([id, on]) => id === 'cmd:save' && on === true), JSON.stringify(upd.slice(0, 6)));
+    ok(upd.every(([id, on]) => typeof id === 'string' && typeof on === 'boolean'), 'pairs');
+    // Only items that changed: nothing is sent again while nothing changes.
+    const k = await p.evaluate(() => window.__calls.length); await p.evaluate(() => window.__cowdreyPdf.run('zoomIn')); await p.waitForTimeout(400);
+    eq(await p.evaluate((k) => window.__calls.slice(k).filter(([c]) => c === 'set_menu_enabled').length, k), 0, 'no change, nothing sent');
+    // The pure diff the menu uses.
+    const d = await p.evaluate(() => {
+      const H = window.__cowdreyPdf, m = [{ title: 'File', items: [{ kind: 'item', id: 'cmd:a', label: 'A', enabled: true }, { kind: 'sep' }, { kind: 'item', id: 'cmd:b', label: 'B', enabled: false }] }];
+      const a = H.macMenuDelta(m, null), b = H.macMenuDelta(m, a.state);
+      const m2 = JSON.parse(JSON.stringify(m)); m2[0].items[2].enabled = true; const c = H.macMenuDelta(m2, a.state);
+      const m3 = JSON.parse(JSON.stringify(m)); m3[0].items[0].label = 'A2'; const e = H.macMenuDelta(m3, a.state);
+      return [!!a.send.full, b.send, c.send, !!e.send.full];
+    });
+    eq(d, [true, null, { enabled: [['cmd:b', true]] }, true]);
+    eq(n >= 1, true); eq(p.errors, []); await p.ctx.close();
+  });
 };

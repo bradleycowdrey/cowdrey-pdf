@@ -4023,13 +4023,19 @@ async function beforeQuit() {
 }
 const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
 // The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
-// Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
-var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
-function macMenu() {
-  if (!MAC_APP) return;
+// Paste and Select All are the system's, for text fields. Checkmarks and greyed-out commands follow the app: the
+// whole menu bar is sent when its items change, and only the items that were turned on or off otherwise.
+var lastMenu = '', lastEnabled = null, menuTimer = null; // var: applyTheme can run before this line
+// Whether a command can be chosen now, as the in-app menus show it. Undo and Redo also edit text in a text field.
+function macEnabled(id) {
+  const c = C[id]; if (!c.enabled || c.enabled()) return true;
+  const el = document.activeElement;
+  return (id === 'undo' || id === 'redo') && !!el && (/INPUT|TEXTAREA/.test(el.tagName) || el.isContentEditable);
+}
+function macMenuSpec() {
   // Only a real switch is a check item: a command that opens a window (its name ends in …) never is (Apple's HIG).
-  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
-  const menus = MENUS.map(([title, ids]) => {
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, enabled: macEnabled(id), checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
+  return MENUS.map(([title, ids]) => {
     // About and Check for Updates live in the Cowdrey.PDF menu.
     let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates').map((id) => id === '-' ? { kind: 'sep' } : item(id));
     if (title === 'Edit') {
@@ -4040,11 +4046,29 @@ function macMenu() {
     items = items.filter((x, k, a) => x.kind !== 'sep' || (k > 0 && k < a.length - 1 && a[k - 1].kind !== 'sep')); // no separator at an end, or two together
     return { title, items };
   });
-  const json = JSON.stringify(menus);
-  if (json === lastMenu) return;
-  lastMenu = json;
-  MAC_APP.core.invoke('set_menu', { menus }).then(() => document.documentElement.classList.add('mac-app'), () => { lastMenu = ''; });
 }
+// What to send for a menu bar: { full: menus } when its items changed, { enabled: [[id, on]…] } when only some were
+// turned on or off, or null when nothing changed. (Pure, for tests: takes and gives back the state it compares to.)
+function macMenuDelta(menus, last) {
+  const items = menus.flatMap((m) => m.items).filter((x) => x.kind === 'item');
+  const enabled = Object.fromEntries(items.map((x) => [x.id, x.enabled !== false]));
+  const shape = JSON.stringify(menus, (k, v) => (k === 'enabled' ? undefined : v));
+  if (!last || shape !== last.shape) return { send: { full: menus }, state: { shape, enabled } };
+  const diff = Object.entries(enabled).filter(([id, on]) => last.enabled[id] !== on);
+  return { send: diff.length ? { enabled: diff } : null, state: { shape, enabled } };
+}
+TEST_HOOKS.macMenuSpec = macMenuSpec; TEST_HOOKS.macMenuDelta = macMenuDelta;
+function macMenu() {
+  if (!MAC_APP) return;
+  const { send, state } = macMenuDelta(macMenuSpec(), lastEnabled);
+  if (!send) return;
+  lastEnabled = state; lastMenu = state.shape;
+  const failed = () => { lastEnabled = null; lastMenu = ''; };
+  if (send.full) MAC_APP.core.invoke('set_menu', { menus: send.full }).then(() => document.documentElement.classList.add('mac-app'), failed);
+  else MAC_APP.core.invoke('set_menu_enabled', { items: send.enabled }).catch(() => { failed(); scheduleMacMenu(); }); // the whole bar instead
+}
+// Undo and Redo in the menu follow the focus too (a text field has its own undo).
+if (MAC_APP) { document.addEventListener('focusin', () => scheduleMacMenu()); document.addEventListener('focusout', () => scheduleMacMenu()); }
 function scheduleMacMenu() { if (!MAC_APP) return; clearTimeout(menuTimer); menuTimer = setTimeout(macMenu, 120); }
 if (NATIVE) {
   NATIVE.event.listen('open-files', () => serial(takeOpened));
