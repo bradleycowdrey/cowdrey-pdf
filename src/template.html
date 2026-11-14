@@ -374,7 +374,8 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .sb-pages { display: grid; width: 40px; height: 40px; margin-left: -8px; }
   /* with a finger, the title and status bar buttons are 44px targets (Apple's minimum) */
   @media (pointer: coarse) {
-    .tb-actions { gap: 0; }
+    .titlebar { gap: 6px; }
+    .tb-actions { gap: 0; margin-right: -4px; } /* the last button's edge is still 4px in from the screen's */
     .tb-actions .btn, .tb-actions .icon-btn, .sb-pages { width: 44px; height: 44px; }
     .sb-zoom .icon-btn, #zoomLabel { min-width: 44px; height: 44px; }
   }

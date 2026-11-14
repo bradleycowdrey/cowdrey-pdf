@@ -177,7 +177,7 @@ export default async (h) => {
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Prepared' }).first().boundingBox();
     await p.touchscreen.tap(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor'); await p.waitForTimeout(200);
     const bar = await p.locator('.txt-bar').boundingBox(), ed = await p.locator('.line-editor').boundingBox();
-    ok(bar.height < 48, 'one row: ' + bar.height);
+    ok(bar.height < 60, 'one row: ' + bar.height); // 44px touch targets
     ok(bar.x >= 0 && bar.x + bar.width <= 390, 'inside the screen');
     ok(bar.y + bar.height <= ed.y || bar.y >= ed.y + ed.height, 'does not cover the line');
     await shot(p, `phone-format-bar-${scheme}.png`);
@@ -185,7 +185,7 @@ export default async (h) => {
     ok(!(await p.isVisible('.txt-bar .txt-cols .swatch')), 'swatches folded away');
     await p.click('.txt-bar [data-tf="colors"]'); await p.waitForTimeout(100);
     ok(await p.isVisible('.txt-bar .txt-cols .swatch'), 'swatches shown');
-    ok((await p.locator('.txt-bar').boundingBox()).height < 48, 'still one row');
+    ok((await p.locator('.txt-bar').boundingBox()).height < 60, 'still one row');
     await shot(p, `phone-format-bar-colours-${scheme}.png`);
     await p.click('.txt-bar [data-c="#E03131"]'); await p.waitForTimeout(100);
     ok(!(await p.isVisible('.txt-bar .txt-cols .swatch')), 'folded again after picking');
