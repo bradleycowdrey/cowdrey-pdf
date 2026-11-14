@@ -56,7 +56,7 @@ const inkIn = (p, x0, y0, x1, y1, n = 0) => p.evaluate(([x0, y0, x1, y1, n]) => 
   return ink;
 }, [x0, y0, x1, y1, n]);
 // Nothing on the page's marks layer paints over it (no cover drawn for the picture).
-const covers = (p) => p.$$eval('.page[data-n="0"] svg.marks polygon:not(.content-sel):not(.content-hover)', (e) => e.length);
+const covers = (p) => p.$$eval('.page[data-n="0"] svg.marks polygon:not(.content-sel):not(.content-hover):not(.content-hints *)', (e) => e.length);
 
 export default async (h) => {
   H = h;

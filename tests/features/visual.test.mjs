@@ -124,14 +124,14 @@ export default async (h) => {
     await p.click('#ribbonBody [data-cmd="fold:Shapes"]');
     eq(await p.$eval('#app', (a) => a.dataset.tool), 'rect');
     await p.click('#ribbonBody [data-rmenu="fold:Shapes"]'); await p.waitForSelector('#popover:not([hidden])');
-    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['tool_rect', 'cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon']);
+    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['tool_rect', 'cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon', 'cm_area']);
     await p.click('#popover [data-cmd="cm_oval"]'); await p.waitForTimeout(150);
     eq(await p.$eval('#ribbonBody [data-cmd="fold:Shapes"]', (b) => [b.textContent, b.getAttribute('aria-pressed')]), ['Oval', 'true']);
     // the other small groups are one button each, which shows when one of its tools is on
     await run(p, 'cm_underline');
     ok(await p.$eval('#ribbonBody [data-rmenu="fold:Text mark-up"]', (b) => b.hasAttribute('data-on')), 'Text mark-up on');
     await p.click('#ribbonBody [data-rmenu="fold:Add"]'); await p.waitForSelector('#popover:not([hidden])');
-    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'cm_stamp']);
+    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'cm_stamp', 'sign']);
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr3/fix-visual/ph-comment-add.png' });
     eq(p.errors, []); await p.ctx.close();
   });
