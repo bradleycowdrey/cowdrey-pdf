@@ -94,6 +94,7 @@ const FEATURE = {
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
   savePageLate: [], // the same, after every savePage hook (redaction among them): drawing that must not be cut
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
+  commitEdits: [], // async () — keep what is being typed in a feature's own editor, before saving, printing or exporting
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
   onDocClosed: [], // () — when the document is closed (Close), before it goes: leave its own views and modes
@@ -2816,6 +2817,7 @@ function saveDropUnused(L, out) {
 }
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
+  await commitEditing();
   const L = await loadPdfLib();
   // Only protected files whose pages are still in the document count.
   const used = new Set(doc.pages.map((e) => e.src));
@@ -3656,9 +3658,21 @@ function about() {
 const C = {};
 const has = () => !!doc && doc.pages.length > 0;
 function cmd(id, o) { C[id] = o; }
+// Whatever is still being typed (a line, a paragraph or text box, a note, callout or typewriter text, a form field
+// made here, a bookmark's name) is kept first, so a save, print or export has it.
+async function commitEditing() {
+  closeLineEditor(true);
+  const a = document.activeElement;
+  if (a && a.matches && a.matches('.ff-ctl')) a.dispatchEvent(new Event('change'));
+  if (pageAskOpen) pageAskOpen.finish();
+  for (const h of FEATURE.commitEdits) { try { await h(); } catch (e) { console.warn(e); } }
+  await new Promise((r) => setTimeout(r, 0)); // what waited on an editor (a note, a callout) is added now
+}
+const COMMIT_FIRST = new Set(['save', 'saveCopy', 'share', 'print', 'exportImage', 'exportText']);
 function run(id) {
   const c = C[id]; if (!c) return;
   if (id !== 'undo' && id !== 'redo') closeLineEditor(true); // keep what's being typed before saving, rotating…
+  if (COMMIT_FIRST.has(id) && !(c.enabled && !c.enabled())) { closePopover(); return commitEditing().then(() => c.run()); }
   if (c.enabled && !c.enabled()) return; closePopover(); c.run();
 }
 cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFiles });

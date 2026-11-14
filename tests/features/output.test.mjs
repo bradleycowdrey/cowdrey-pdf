@@ -126,4 +126,79 @@ export default async (h) => {
     ok(!d.context.enumerateIndirectObjects().some(([, o]) => o instanceof C.PDFRawStream && old.has(dec(o))), 'the original page content is still in the file');
     await p.ctx.close();
   });
+
+  // Ctrl+S while still typing: the downloaded file (the web app with no file picker) has what was typed.
+  const ctrlS = async (p) => {
+    await p.evaluate(() => { window.showSaveFilePicker = undefined; });
+    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), p.keyboard.press('Control+s')]);
+    return h.fs.readFileSync(await dl.path());
+  };
+  const textOf = async (bytes) => {
+    const doc = await (await pdfjs()).getDocument({ data: new Uint8Array(bytes), verbosity: 0 }).promise;
+    const tc = await (await doc.getPage(1)).getTextContent(); await doc.loadingTask.destroy();
+    return tc.items.map((i) => i.str).join(' ');
+  };
+  const annotTexts = async (bytes) => {
+    const L = pdfLib(), d = await L.PDFDocument.load(bytes), a = d.getPage(0).node.Annots();
+    return a ? a.asArray().map((r) => d.context.lookup(r)).map((x) => { const c = x.lookup(L.PDFName.of('Contents')); return c ? c.decodeText() : ''; }) : [];
+  };
+  const drag = async (p, [x1, y1], [x2, y2]) => { const a = await h.at(p, x1, y1), b = await h.at(p, x2, y2); await p.mouse.move(...a); await p.mouse.down(); await p.mouse.move(...b, { steps: 5 }); await p.mouse.up(); await p.waitForTimeout(120); };
+
+  await test('saved file: Ctrl+S while typing in a form field made here keeps the value (and Undo still takes it back)', async () => {
+    const p = await open({ width: 1000, height: 1300 }); await openPdf(p, WORD, 'Pelican report.pdf');
+    await p.click('[data-rt="forms"]'); await p.click('[data-cmd="ff_text"]'); await drag(p, [100, 300], [300, 280]);
+    await p.click('[data-rt="home"]'); await p.waitForTimeout(200);
+    await p.click('.ff-fill-layer .ff-ctl-text'); await p.keyboard.type('Filled value');
+    const bytes = await ctrlS(p);
+    const L = pdfLib(), f = (await L.PDFDocument.load(bytes)).getForm().getFields().filter((x) => x instanceof L.PDFTextField);
+    ok(f.some((x) => x.getText() === 'Filled value'), 'saved values: ' + JSON.stringify(f.map((x) => x.getText())));
+    await p.keyboard.press('Escape'); await p.click('#viewer', { position: { x: 5, y: 5 } }).catch(() => {});
+    await p.evaluate(() => window.__cowdreyPdf.run('undo')); await p.waitForTimeout(200);
+    eq(await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'ff').map((m) => m.val || '')), [''], 'undo takes the value back');
+    await p.ctx.close();
+  });
+
+  await test('saved file: Ctrl+S while typing keeps the words in every editor (line, paragraph, Add text, note, callout, typewriter, bookmark name)', async () => {
+    const got = {};
+    { // a line in Edit PDF
+      const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+      await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+      const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Budget' }).first().boundingBox();
+      await p.mouse.click(b.x + 20, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+      await p.keyboard.press('Control+a'); await p.keyboard.type('Budget: 99 dollars');
+      got.line = /Budget: 99 dollars/.test(await textOf(await ctrlS(p))); await p.ctx.close();
+    }
+    { // a paragraph
+      const p = await open(); await openPdf(p);
+      await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+      const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'pelican count' }).first().boundingBox();
+      await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.txt-editor');
+      await p.keyboard.press('Control+a'); await p.keyboard.type('Zebras everywhere');
+      got.paragraph = /Zebras everywhere/.test(await textOf(await ctrlS(p))); await p.ctx.close();
+    }
+    { // Add text
+      const p = await open(); await openPdf(p);
+      await p.evaluate(() => window.__cowdreyPdf.run('tool_text')); await p.mouse.click(...(await h.at(p, 100, 620)));
+      await p.waitForSelector('.txt-editor'); await p.keyboard.type('Added words');
+      got.text = /Added words/.test(await textOf(await ctrlS(p))); await p.ctx.close();
+    }
+    { // a note, a callout and typewriter text, each still being typed
+      for (const [k, tool, place] of [['note', 'tool_note', 'click'], ['callout', 'cm_callout', 'drag'], ['typewriter', 'cm_typewriter', 'click']]) {
+        const p = await open(); await openPdf(p);
+        await p.evaluate((t) => window.__cowdreyPdf.run(t), tool);
+        if (place === 'drag') await drag(p, [100, 640], [200, 600]); else await p.mouse.click(...(await h.at(p, 100, 620)));
+        await p.waitForSelector('.page-ask textarea'); await p.keyboard.type('Words for ' + k);
+        got[k] = (await annotTexts(await ctrlS(p))).includes('Words for ' + k); await p.ctx.close();
+      }
+    }
+    { // a bookmark's name
+      const p = await open(); await openPdf(p);
+      await p.click('[data-side="outline"]'); await p.click('#viewer'); await p.keyboard.press('Control+b');
+      await p.waitForSelector('#sidePanel .bm-in'); await p.fill('#sidePanel .bm-in', 'Named mid-typing');
+      const d = await pdfLib().PDFDocument.load(await ctrlS(p)), L = pdfLib();
+      const o = d.catalog.lookup(L.PDFName.of('Outlines')), first = o && o.lookup(L.PDFName.of('First'));
+      got.bookmark = !!first && first.lookup(L.PDFName.of('Title')).decodeText() === 'Named mid-typing'; await p.ctx.close();
+    }
+    eq(got, { line: true, paragraph: true, text: true, note: true, callout: true, typewriter: true, bookmark: true });
+  });
 };

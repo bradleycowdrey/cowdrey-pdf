@@ -252,6 +252,7 @@ function bmWire(panel) {
   };
 }
 // Rename in place: Enter or leaving the field keeps the name, Esc leaves it as it was.
+FEATURE.commitEdits.push(async () => { if (BM.renaming && BM.finishRename) await BM.finishRename(true); }); // a name being typed is kept before a save
 function bmRename(id) {
   const panel = $('#sidePanel'), li = id && $(`[data-bm="${id}"]`, panel); if (!li) return;
   BM.sel = id;
@@ -266,7 +267,8 @@ function bmRename(id) {
     else await bmRender();
     bmFocus($('#sidePanel'), id);
   };
-  inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } };
+  BM.finishRename = finish;
+  inp.onkeydown = (e) => { if (!((e.metaKey || e.ctrlKey) && /^[sp]$/i.test(e.key))) e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } };
   inp.onblur = () => finish(true);
   inp.onclick = (e) => e.stopPropagation(); inp.ondblclick = (e) => e.stopPropagation();
   inp.focus(); inp.select();

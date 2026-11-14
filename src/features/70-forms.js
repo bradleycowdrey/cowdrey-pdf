@@ -106,6 +106,7 @@ function ffFillControl(m, fs) {
   el.addEventListener('pointerdown', (e) => e.stopPropagation()); // fill it in, don't select or move it
   el.addEventListener('change', () => {
     const before = snapshot(), val = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+    if (m.kind !== 'radio' && m.val === val) return; // kept already (by a save while it still had focus)
     if (m.kind === 'radio') { for (const r of ffMarks()) if (r.kind === 'radio' && r.name === m.name) r.val = r.id === m.id; }
     else m.val = val;
     changed(before);
