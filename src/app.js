@@ -1361,9 +1361,11 @@ async function buildPdf(only) {
     try { const dd = await PDFDocument.load(b, { password: '', updateMetadata: false }); doc.sources[k].ownerOnly = true; return dd; } catch { return d; }
   }));
   const entries = only ? only.map((n) => doc.pages[n]) : doc.pages;
-  const same = !only && doc.sources.length === 1 && entries.length === loaded[0].getPageCount() && entries.every((e, n) => e.src === 0 && e.i === n);
+  // Every page of one source, in order (the opened file, or a copy of it made by a feature such as OCR): keep that file.
+  const s0 = entries.length ? entries[0].src : 0;
+  const same = !only && entries.length === loaded[s0].getPageCount() && entries.every((e, n) => e.src === s0 && e.i === n);
   let out, pages;
-  if (same) { out = loaded[0]; pages = out.getPages(); }
+  if (same) { out = loaded[s0]; pages = out.getPages(); }
   else {
     out = await PDFDocument.create();
     pages = [];
