@@ -566,6 +566,7 @@ function drawMarks(v) {
     }
     if (!g) continue;
     g.dataset.id = m.id; g.dataset.type = m.type;
+    if (markOnText(m)) g.classList.add('mk-ontext');
     if (g.classList.contains('mk')) { g.setAttribute('role', 'img'); g.setAttribute('aria-label', markLabel(m, true)); }
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
@@ -713,6 +714,7 @@ function onMarksDown(e, v) {
       markDown = again ? null : { id: m.id, t: now };
       if (again) { e.preventDefault(); setTimeout(() => (m.type === 'note' ? editNote : editText)(v, m), 0); return; }
     }
+    if (markOnText(m)) return;
     startMove(e, v, m);
     return;
   }
@@ -773,9 +775,39 @@ function offsetMark(m, o, dx, dy) {
   if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
 }
 const selectedMark = () => selMark && (doc.marks[selMark.key] || []).find((m) => m.id === selMark.id);
+/* Text mark-up (a highlight, underline, strikethrough or squiggly made on text) stays on its text, as in other PDF
+   apps: it can be selected (a click on it), recoloured and deleted, never dragged or nudged off its words. With
+   Select, a drag across it selects the page's text as anywhere else (its marks let the pointer through). */
+const markOnText = (m) => !!m && ((m.type === 'hl' && !m.area) || m.type === 'cmMarkup');
+// The text mark-up under a point on screen (x, y), on page v: the last drawn (topmost) first.
+function onTextMarkAt(v, x, y) {
+  const svg = v && v.el.querySelector('svg.marks'); if (!svg) return null;
+  for (const g of [...svg.querySelectorAll('.mk-ontext[data-id]')].reverse()) {
+    const parts = g.children.length ? [...g.children] : [g];
+    if (parts.some((el) => { const r = el.getBoundingClientRect(); return x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 3 && y <= r.bottom + 3; })) {
+      const m = marksOf(v.entry).find((mm) => mm.id === g.dataset.id); if (m) return m;
+    }
+  }
+  return null;
+}
+// Select: a click (no drag, no text selected) on text mark-up selects it; a click elsewhere lets one go.
+let onTextDown = null;
+document.addEventListener('pointerdown', (e) => {
+  onTextDown = app.dataset.tool === 'select' && e.button === 0 && e.target.closest && e.target.closest('#pages .page') && !e.target.closest('.mk:not(.mk-ontext), .mk-handle, .annotationLayer :is(input, textarea, select, button, a)') ? { x: e.clientX, y: e.clientY } : null;
+}, true);
+document.addEventListener('pointerup', (e) => {
+  const d = onTextDown; onTextDown = null;
+  if (!d || !doc || app.dataset.tool !== 'select' || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+  const sel = getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  const pe = document.elementFromPoint(e.clientX, e.clientY), pg = pe && pe.closest('#pages .page'), v = pg && views.find((x) => x.el === pg);
+  const m = v && onTextMarkAt(v, e.clientX, e.clientY);
+  if (m) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry });
+  else if (markOnText(selMark && selectedMark())) selectMark(null);
+});
 // Arrow keys: 1 pt a press (10 with Shift), along the page as it is shown.
 function nudgeMark(key, big) {
   const m = selectedMark(); if (!m) return false;
+  if (markOnText(m)) return true; // stays on its text (the arrows don't scroll the page either)
   const d = big ? 10 : 1, v = views.find((x) => x.entry === selMark.entry);
   let [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[key];
   if (v) { const [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, dx * scale, dy * scale); [dx, dy] = [x1 - x0, y1 - y0]; }
@@ -787,6 +819,7 @@ function nudgeMark(key, big) {
 // Alt+Shift+arrows: the selected mark's right edge (Left, Right) or bottom edge (Up, Down) moves 2 pt, as dragging its
 // handle would; a mark that keeps its proportions grows or shrinks from its top-left corner.
 function sizeMark(key) {
+  if (markOnText(selMark && selectedMark())) return true;
   const m = selectedMark(), v = m && views.find((x) => x.entry === selMark.entry && x.rendered); if (!v) return false;
   const svg = v.el.querySelector('svg.marks'), el = svg && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`), b = el && markViewBox(svg, el);
   const stretch = MARK_STRETCH(m) || ((('x1' in m) || (Array.isArray(m.quads) && m.type !== 'cmMarkup')) && !MARK_SCALE[m.type]); // form fields, redaction areas too
@@ -1493,7 +1526,7 @@ async function onEditDown(e, v) {
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
   if (om && om.type === 'te') { selectContent(null); return openLineEditor(await phoneZoomTo(v, om), om, false); }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
-  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return startMove(e, v, om); }
+  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return markOnText(om) ? undefined : startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
   if (selContent && selContent.v === v && selContent.kind === 'image') {
     const r = imageRect(selContent);
@@ -3616,7 +3649,7 @@ function ctxFor(el, x, y) {
   if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
   const t = el.closest('#sidePanel .thumb, .pg60-cell'); if (t) return thumbMenu(t, { x, y });
   const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
-  const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
+  const hit = el.closest('svg.marks .mk[data-id]'), m = (hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id)) || (!String(getSelection() || '').trim() && onTextMarkAt(v, x, y));
   return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
 }
 document.addEventListener('contextmenu', (e) => {

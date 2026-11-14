@@ -171,6 +171,7 @@ button { font: inherit; color: inherit; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
 .marks .mk { pointer-events: auto; cursor: pointer; }
+.app[data-tool="select"] .marks .mk-ontext { pointer-events: none; } /* text mark-up stays on its text: a drag there selects text */
 /* Touch: with a drawing or placing tool a finger draws on the page instead of scrolling it; with the text tools
    (Highlight, Underline…) a finger selects text; with Select a finger drags a mark. */
 .app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
