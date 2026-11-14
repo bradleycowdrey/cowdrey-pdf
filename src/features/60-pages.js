@@ -526,7 +526,7 @@ FEATURE.savePage.push(({ p, entry }) => {
 
 /* ---- commands, ribbon, menu ---- */
 cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app.dataset.tool === 'crop', run: () => { if (app.dataset.tool === 'crop') return setTool('select'); setTool('crop'); toast('Drag a box on the page to keep just that part'); } });
-cmd('pg60_crop', { label: 'Crop margins…', icon: 'scan', enabled: has, run: () => pg60CropDialog() });
+cmd('pg60_crop', { label: 'Crop margins…', icon: 'frame', enabled: has, run: () => pg60CropDialog() });
 cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
 cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => pg60Combine() });

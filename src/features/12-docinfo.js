@@ -155,7 +155,7 @@ FEATURE.saveDoc.push(async ({ L, out }) => {
   if (m) out.catalog.delete(L.PDFName.of('Metadata'));
 });
 
-cmd('docProps', { label: 'Document properties…', icon: 'file-text', key: 'Mod-d', enabled: has, run: diShow });
+cmd('docProps', { label: 'Document properties…', icon: 'file-cog', key: 'Mod-d', enabled: has, run: diShow });
 { const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('print') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'docProps'); else menuAdd('File', ['docProps']); }
 ribbonAdd('home', 'File', ['docProps']);
 setTimeout(() => { try { ACCEL['Mod-d'] = 'CmdOrCtrl+D'; scheduleMacMenu(); } catch {} }, 0);
