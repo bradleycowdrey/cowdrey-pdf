@@ -134,6 +134,19 @@ export default async (h) => {
     eq(q.errors, []); await q.ctx.close();
   });
 
+  await test('Edit PDF: on a phone, a tap on small body text that zooms in first still puts the caret at the tap', async () => {
+    const q = await open({ width: 390, height: 844, touch: true }); await openPdf(q);
+    await q.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+    const z0 = await q.evaluate(() => window.__cowdreyPdf.views()[0].el.offsetWidth);
+    const s = q.locator('.page[data-n="0"] .textLayer span', { hasText: 'pelican count' }).first(), b = await s.boundingBox();
+    await q.touchscreen.tap(b.x + b.width * .45, b.y + b.height / 2); await q.waitForSelector('.line-editor'); await q.waitForTimeout(400);
+    ok(await q.evaluate(() => window.__cowdreyPdf.views()[0].el.offsetWidth) > z0, 'zoomed in to edit');
+    const [c0, c1, t] = await caret(q); eq(c0, c1, 'collapsed');
+    ok(c0 >= 12 && c0 <= 17, `caret near 45% of "${t}": ${c0}`);
+    await q.keyboard.type('X'); eq(await q.$eval('.line-editor', (e) => e.textContent), t.slice(0, c0) + 'X' + t.slice(c0));
+    eq(q.errors, []); await q.ctx.close();
+  });
+
   await test('Edit PDF: deleting a picture hides the same draw on screen that the saved file removes (clipped copies, forms)', async () => {
     const p = await open(); await openPdf(p, await clippedDoc(), 'Clipped.pdf');
     await editTool(p);

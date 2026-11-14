@@ -1609,7 +1609,7 @@ async function onEditDown(e, v) {
   const own = e.target.closest && e.target.closest('.mk');
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
   const seq = downSeq.get(e) ?? editSeq;
-  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomTo(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
+  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomAt(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
   if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return markOnText(om) ? undefined : startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
@@ -1735,9 +1735,19 @@ async function editLine(v, L, mark, seq = editSeq) {
   const m = mark || await teMarkFor(v, L, cm);
   await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
   if (seq !== editSeq) return;
-  v = await phoneZoomTo(v, m);
+  v = await phoneZoomAt(v, m);
   if (seq !== editSeq) return;
   openLineEditor(v, m, !mark);
+}
+// phoneZoomTo for a line opened by a tap: the caret's place in the text is read from the tap before the zoom moves
+// the page, and kept for the editor (where the tap lands after the zoom is only known once it is laid out).
+async function phoneZoomAt(v, m) {
+  if (!isPhone() || !editAt) return phoneZoomTo(v, m);
+  if (!v.page._cmapValue) v.page._cmapValue = await contentMap(v.page);
+  const at = editAt, k = clickOffset(v, m, at);
+  const nv = await phoneZoomTo(v, m);
+  if (k != null && editAt === at) at.k = k;
+  return nv;
 }
 // A te mark for a line of the page, not yet in the page's list: its text, font, colours and the original's text state.
 async function teMarkFor(v, L, cm) {
@@ -1769,10 +1779,11 @@ async function phoneZoomPx(v, px, at, want = 18, min = 14) {
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
   // The tap's spot stays under the finger (as far as the page can scroll), so the caret goes where it was tapped.
+  await new Promise(requestAnimationFrame);
   let b = nv.el.getBoundingClientRect();
   viewer.scrollLeft += b.left + fx * b.width - at.x; viewer.scrollTop += b.top + fy * b.height - at.y;
   b = nv.el.getBoundingClientRect();
-  if (editAt) editAt = { ...editAt, x: b.left + fx * b.width, y: b.top + fy * b.height };
+  if (editAt) Object.assign(editAt, { x: b.left + fx * b.width, y: b.top + fy * b.height });
   renderView(nv);
   return nv;
 }
@@ -1871,7 +1882,7 @@ function openLineEditor(v, m, isNew) {
   lineEditor = { ed, v, m, isNew, follow: teFollowers(v, m) };
   if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
-  placeCaret(ed, editAt && { ...editAt, k: clickOffset(v, m, editAt) });
+  placeCaret(ed, editAt && { ...editAt, k: editAt.k ?? clickOffset(v, m, editAt) });
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
