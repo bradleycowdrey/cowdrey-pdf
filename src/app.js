@@ -922,7 +922,7 @@ function modeChip() {
   chip.hidden = !on; app.classList.toggle('tool-on', on);
   if (!on) return;
   const name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
-  $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
+  chip.title = $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
 }
 $('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
 

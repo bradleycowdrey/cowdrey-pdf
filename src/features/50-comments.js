@@ -658,7 +658,7 @@ async function cmRenderPanel() {
     <label><span>Author</span><select data-cm-f="by">${opt(CM_EVERYONE, 'Everyone', f.by === CM_EVERYONE)}${authors.map((a) => opt(a, a || 'No name', f.by === a)).join('')}</select></label>
     <label><span>Sort</span><select data-cm-f="sort">${CM_SORTS.map(([v, t]) => opt(v, t, f.sort === v)).join('')}</select></label></div>` : '';
   const head = `<div class="cm-head">${items.length === all.length ? `${all.length} comment${all.length === 1 ? '' : 's'}` : `${items.length} of ${all.length} comments`}</div>`;
-  const tools = `<div class="cm-tools" role="group" aria-label="All comments"><button type="button" class="btn" data-cmd="cm_hide" aria-pressed="${CM.hidden}">${ic(CM.hidden ? 'eye' : 'eye-off')}<span>${CM.hidden ? 'Show all' : 'Hide all'}</span></button><button type="button" class="btn" data-cmd="cm_export" title="Save the comments as an XFDF file">${ic('file-up')}<span>Export</span></button><button type="button" class="btn" data-cmd="cm_import" title="Add comments from an XFDF file">${ic('file-down')}<span>Import</span></button></div>`;
+  const tools = `<div class="cm-tools" role="group" aria-label="All comments"><button type="button" class="btn" data-cmd="cm_hide" aria-pressed="${CM.hidden}" title="${CM.hidden ? 'Show the comments on the page' : 'Hide the comments on the page (they stay in the PDF)'}">${ic(CM.hidden ? 'eye' : 'eye-off')}<span>${CM.hidden ? 'Show' : 'Hide'}</span></button><button type="button" class="btn" data-cmd="cm_export" title="Save the comments as an XFDF file">${ic('file-up')}<span>Export</span></button><button type="button" class="btn" data-cmd="cm_import" title="Add comments from an XFDF file">${ic('file-down')}<span>Import</span></button></div>`;
   panel.innerHTML = you + tools + (!all.length
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
     : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span>${it.status ? `<span class="cm-status" data-status="${esc(it.status)}">${esc(it.status)}</span>` : ''}</span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button>${cmThreadHtml(it, k)}</li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
@@ -926,7 +926,7 @@ cmXfdfInput.addEventListener('change', async () => {
 });
 cmd('cm_export', { label: 'Export comments…', rlabel: 'Export', icon: 'file-up', enabled: has, run: cmExportXfdf });
 cmd('cm_import', { label: 'Import comments…', rlabel: 'Import', icon: 'file-down', enabled: has, run: () => cmXfdfInput.click() });
-ribbonAdd('markup', 'Comments', ['cm_hide', 'cm_export', 'cm_import']);
+C.cm_list.menu = ['cm_list', 'cm_hide', 'cm_export', 'cm_import']; // on the Comments list button's arrow, so the tab still fits a laptop screen
 menuAdd('Comment', ['cm_hide', 'cm_export', 'cm_import']);
 TEST_HOOKS.cmImportXfdf = (xml) => cmImportXfdf(xml);
 TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;
@@ -938,8 +938,8 @@ addStyle(`
 .app[data-tool="cmtype"] .marks { cursor: text; }
 .app[data-hide-marks="1"] .page .marks :is([data-type="hl"], [data-type="ink"], [data-type="rect"], [data-type="note"], [data-type^="cm"], .mk-selbox-g),
 .app[data-hide-marks="1"] .page .annotationLayer :is(section:not(.linkAnnotation):not([class*="WidgetAnnotation"]), .popup) { display: none !important; }
-.cm-tools { display: flex; gap: 4px; padding: 0 8px 8px; flex-wrap: wrap; }
-.cm-tools .btn { height: 28px; padding: 0 9px; font-size: 12px; gap: 5px; }
+.cm-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px; }
+.cm-tools .btn { height: 28px; padding: 0 7px; font-size: 12px; gap: 4px; white-space: nowrap; }
 .cm-tools .btn svg { width: 14px; height: 14px; }
 .cm-tools .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .app[data-tool="cmstamp"] .marks { cursor: copy; }

@@ -203,6 +203,12 @@ button { font: inherit; color: inherit; }
 .mode-chip .mode-stop:hover { background: var(--hover); color: var(--ink); }
 .mode-chip .mode-stop svg { width: 14px; height: 14px; }
 .app.tool-on .sb-brand { display: none; }
+/* phones: the chip takes the room of the zoom buttons (a pinch zooms) */
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .statusbar > span:first-child { white-space: nowrap; }
+  .app.tool-on .mode-chip { flex: 1 1 0; }
+  .app.tool-on .sb-zoom .icon-btn, .app.tool-on .sb-spacer { display: none; }
+}
 .sb-spacer { flex: 1; }
 .sb-brand { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-brand a { color: inherit; }

@@ -116,7 +116,7 @@ export default async (h) => {
     const overlap = (a, b) => a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right;
     const toastAgainst = async (sel) => {
       await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
-      await p.evaluate(() => window.__cowdreyPdf.run('tool_erase')); await p.waitForTimeout(250);
+      await p.evaluate(() => window.__cowdreyPdf.run('cm_fill')); await p.waitForTimeout(250); // a result toast (tool hints are in the status bar)
       return p.evaluate((s) => [document.querySelector('#toast').getBoundingClientRect().toJSON(), document.querySelector(s).getBoundingClientRect().toJSON()], sel);
     };
     let [t, b] = await toastAgainst('.statusbar');

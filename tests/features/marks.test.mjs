@@ -170,7 +170,7 @@ export default async (h) => {
     eq(await p.$$eval('.page[data-n="0"] svg.marks .mk', (g) => g.filter((x) => getComputedStyle(x).display !== 'none').length), 0, 'your comments hidden');
     eq(await p.evaluate(() => document.querySelector('#app').dataset.hideMarks), '1');
     ok(await p.evaluate(() => window.__cowdreyPdf.cmHiddenCount()) >= 2, 'the file\'s comments are hidden too');
-    ok((await p.textContent('#sidePanel [data-cmd="cm_hide"]')).includes('Show all'), 'the button says Show all');
+    eq((await p.textContent('#sidePanel [data-cmd="cm_hide"]')).trim(), 'Show', 'the button says Show');
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr3/fix-marks/comments-hidden-dark.png' });
     const out = await savedOf(p);
     await p.click('#sidePanel [data-cmd="cm_hide"]'); await p.waitForTimeout(400);
@@ -221,6 +221,16 @@ export default async (h) => {
     ok(/comments and form fields part of the page content/.test(await p.getAttribute('#ribbonBody [data-cmd="protFlatten"]', 'title')), 'tooltip');
     await p.click('[data-rt="forms"]');
     ok(/Comments stay comments/.test(await p.getAttribute('#ribbonBody [data-cmd="ffFlatten"]', 'title')), 'Flatten form tooltip');
+    await p.ctx.close();
+  });
+  await h.test('comments: Hide, Export and Import are on the Comments list button and in the Comment menu', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="markup"]'); await p.click('#ribbonBody [data-rmenu="cm_list"]'); await p.waitForTimeout(100);
+    const items = await p.$$eval('#popover [data-cmd]', (b) => b.map((x) => x.dataset.cmd));
+    ok(['cm_hide', 'cm_export', 'cm_import'].every((id) => items.includes(id)), JSON.stringify(items));
+    await p.keyboard.press('Escape');
+    await p.click('.menubar button:has-text("Comment")'); await p.waitForTimeout(100);
+    ok((await p.textContent('#popover')).includes('Export comments'), 'Comment menu');
     await p.ctx.close();
   });
 };

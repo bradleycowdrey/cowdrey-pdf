@@ -78,11 +78,11 @@ export default async (h) => {
   await test('mobile: hints on a touch screen never name Esc or Ctrl; Keyboard shortcuts lists Ctrl+D once', async () => {
     const p = await open({ width: 390, height: 844, touch: true, ua: IPHONE }); await openPdf(p, WORD, 'Pelican report.pdf');
     ok(await p.evaluate(() => matchMedia('(pointer: coarse)').matches), 'coarse pointer');
-    const toast = () => p.textContent('#toast');
-    await run(p, 'tool_edit'); let t = await toast();
-    ok(/^Tap text/.test(t) && !/Esc|Ctrl|⌘/.test(t), t);
-    await run(p, 'tool_select'); await run(p, 'cm_polygon'); t = await toast(); ok(/^Tap each/.test(t) && /double-tap/.test(t), t);
-    await run(p, 'tool_select'); await run(p, 'cm_typewriter'); t = await toast(); ok(/^Tap where/.test(t), t);
+    const toast = () => p.textContent('#toast'), chip = () => p.textContent('#modeChip .mode-text'); // tool hints are in the status bar's mode chip
+    await run(p, 'tool_edit'); let t = await chip();
+    ok(/^Edit PDF: tap text/.test(t) && !/Esc|Ctrl|⌘/.test(t), t);
+    await run(p, 'tool_select'); await run(p, 'cm_polygon'); t = await chip(); ok(/^Polygon: tap each/.test(t) && /double-tap/.test(t) && !/Esc/.test(t), t);
+    await run(p, 'tool_select'); await run(p, 'cm_typewriter'); t = await chip(); ok(/^Typewriter: tap where/.test(t), t);
     // the line editor's "Change kept" (an iPad with a keyboard can press Esc)
     await run(p, 'tool_edit');
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Budget' }).first().boundingBox();
@@ -95,7 +95,7 @@ export default async (h) => {
     eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
     // with a mouse and keyboard the keys are named, and Keyboard shortcuts has one row for Ctrl+D
     const d = await open(); await openPdf(d);
-    await run(d, 'tool_edit'); ok(/Esc keeps a change; Ctrl\+Z undoes it/.test(await d.textContent('#toast')), await d.textContent('#toast'));
+    await run(d, 'tool_edit'); ok(/^Edit PDF: click text.* · Esc to stop$/.test(await d.textContent('#modeChip .mode-text')), await d.textContent('#modeChip .mode-text'));
     await run(d, 'shortcuts');
     const rows = await d.$$eval('#dialog .dlg-body span', (s) => { const o = []; for (let i = 0; i < s.length; i += 2) o.push([s[i].textContent, s[i + 1].textContent]); return o; });
     eq(rows.filter(([, k]) => k === 'Ctrl+D'), [['Duplicate selection, or document properties when nothing is selected', 'Ctrl+D']]);

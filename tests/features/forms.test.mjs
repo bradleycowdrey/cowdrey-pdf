@@ -33,7 +33,7 @@ export default async (h) => {
     eq((await ffMarks(p)).map((m) => [m.kind, m.name]), [['text', 'Text1'], ['check', 'CheckBox1'], ['radio', 'Group1'], ['radio', 'Group1'], ['combo', 'Dropdown1'], ['list', 'ListBox1'], ['button', 'Button1'], ['date', 'Date1'], ['sig', 'Signature1']]);
     // Properties, with the form tool and with Select
     await props(p, [200, 410], { '#ffName': 'fullName', '#ffTip': 'Your full name', '#ffVal': 'Jane', '#ffMax': 20, '#ffReq': true, '#ffSize': 12 });
-    await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
+    await p.evaluate(() => window.__cowdreyPdf.run('ff_edit')); // Edit fields designs (Select fills in)
     await props(p, [107, 373], { '#ffExp': 'Agreed', '#ffOn': true });
     await props(p, [147, 343], { '#ffExp': 'Pears', '#ffOn': true });
     await props(p, [175, 310], { '#ffOpts': 'Red\nGreen\nBlue', '#ffVal': 'Green', '#ffRo': true });
@@ -73,7 +73,7 @@ export default async (h) => {
     const p = await open({ width: 1000, height: 1300 }); await openPdf(p);
     await p.click('[data-rt="forms"]'); await p.click('[data-cmd="ff_text"]');
     await drag(p, [100, 420], [250, 400]);
-    await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
+    await p.evaluate(() => window.__cowdreyPdf.run('ff_edit')); // Edit fields designs (Select fills in)
     const [cx, cy] = await at(p, 175, 410); await p.mouse.click(cx, cy);
     await drag(p, [175, 410], [215, 380]);
     let m = (await ffMarks(p))[0];
