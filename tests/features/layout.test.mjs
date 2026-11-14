@@ -104,4 +104,17 @@ export default async (h) => {
     eq(await p.getAttribute('#ribbonBody [data-cmd="ffPreview"]', 'aria-pressed'), 'false', 'not pressed on coming back');
     await p.ctx.close();
   });
+
+  await test('layout: Combine is on Home (File, next to Open) and on the Pages tab next to Insert, and both fit at 1440', async () => {
+    const p = await open(); await openPdf(p);
+    for (const [tab, before] of [['home', 'open'], ['pages', null]]) {
+      await p.click(`[data-rt="${tab}"]`);
+      const r = await p.$eval('#ribbonBody [data-cmd="merge"]', (b) => [b.querySelector('span').textContent, b.closest('.r-group').getAttribute('aria-label'), b.getBoundingClientRect().right <= document.querySelector('#ribbonBody').getBoundingClientRect().right]);
+      eq(r, ['Combine', tab === 'home' ? 'File' : 'Insert', true], tab);
+      if (before) eq(await p.$eval('#ribbonBody [data-cmd="merge"]', (b) => b.previousElementSibling.dataset.cmd), before);
+    }
+    const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('#ribbonBody [data-cmd="merge"]')]);
+    ok(fc.isMultiple(), 'asks for several PDFs');
+    await p.ctx.close();
+  });
 };
