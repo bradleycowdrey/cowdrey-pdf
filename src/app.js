@@ -242,7 +242,7 @@ async function layoutPages(keep) {
     io.observe(el);
   }
   updateZoomLabel();
-  if (keep) goPage(anchor, true); else if (singleUp()) showOnly(0);
+  if (keep) goPage(anchor, true); else if (singleUp()) { current = 0; showOnly(0); } // (no scrolling says which page)
   updateStatus();
   releaseFar();
   return true;
@@ -444,6 +444,7 @@ async function setZoom(z, at) {
   const a = at && pageAnchor(at.x, at.y);
   S.zoom = z; saveSettings();
   if (!(await layoutPages(!a)) || !a || !views[a.n]) return;
+  if (singleUp()) { current = a.n; showOnly(a.n); updateStatus(); }
   const el = views[a.n].el;
   viewer.scrollTop = el.offsetTop + a.fy * el.offsetHeight - a.vy;
   viewer.scrollLeft = el.offsetLeft + a.fx * el.offsetWidth - a.vx;
@@ -3427,9 +3428,10 @@ cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
 cmd('zoomIn', { label: 'Zoom in', icon: 'zoom-in', key: 'Mod-=', enabled: has, run: () => setZoom(Math.min(400, Math.round(scale * 100) + 10)) });
 cmd('zoomOut', { label: 'Zoom out', icon: 'zoom-out', key: 'Mod--', enabled: has, run: () => setZoom(Math.max(25, Math.round(scale * 100) - 10)) });
-cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-2', enabled: has, pressed: () => S.zoom === 'fit', run: () => setZoom('fit') });
-cmd('zoomPage', { label: 'Fit page', icon: 'scan', key: 'Mod-0', enabled: has, pressed: () => S.zoom === 'page', run: () => setZoom('page') });
-cmd('zoom100', { label: 'Actual size', icon: 'scan-line', key: 'Mod-1', enabled: has, pressed: () => S.zoom === 100, run: () => setZoom(100) });
+// The zoom in use is checked (not on a phone, which always fits the width: its ribbon would scroll to it).
+cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-2', enabled: has, pressed: () => !isPhone() && S.zoom === 'fit', run: () => setZoom('fit') });
+cmd('zoomPage', { label: 'Fit page', icon: 'scan', key: 'Mod-0', enabled: has, pressed: () => !isPhone() && S.zoom === 'page', run: () => setZoom('page') });
+cmd('zoom100', { label: 'Actual size', icon: 'scan-line', key: 'Mod-1', enabled: has, pressed: () => !isPhone() && S.zoom === 100, run: () => setZoom(100) });
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
 cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, run: shortcutsDialog }); // not without a keyboard

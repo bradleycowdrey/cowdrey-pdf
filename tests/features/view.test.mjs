@@ -141,6 +141,11 @@ export default async (h) => {
     await p.waitForTimeout(500); await p.mouse.wheel(0, 200); await p.waitForTimeout(500);
     eq(await shown(), [1], 'turned to page 2');
     ok(await p.$('.page[data-n="1"] canvas.pdf'), 'page 2 drawn');
+    // zooming with Ctrl and the wheel keeps the page in view
+    await p.click('.thumb[data-n="2"]'); await p.waitForTimeout(500);
+    const g2 = await p.locator('.page[data-n="2"]').boundingBox();
+    await p.mouse.move(g2.x + 100, g2.y + 100); await p.keyboard.down('Control'); await p.mouse.wheel(0, -200); await p.keyboard.up('Control'); await p.waitForTimeout(1000);
+    eq(await shown(), [2], 'zoom keeps the page'); eq(await p.inputValue('#pageJump'), '3');
     // back to continuous: every page is there again
     await run(p, 'vw_lay_scroll');
     eq(await shown(), [0, 1, 2, 3]);

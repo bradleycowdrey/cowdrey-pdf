@@ -8,7 +8,8 @@
 
 /* ---- Hand tool: drag to move around the document; Space held down does the same in any tool ---- */
 TOOL_HINTS.hand = 'Drag to move around the page';
-cmd('tool_hand', { label: 'Hand', icon: 'hand', key: 'h', enabled: has, pressed: () => app.dataset.tool === 'hand', run: () => setTool('hand') });
+// (not without a mouse or trackpad: a finger pans already)
+cmd('tool_hand', { label: 'Hand', icon: 'hand', key: 'h', enabled: has, get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, pressed: () => app.dataset.tool === 'hand', run: () => setTool('hand') });
 FEATURE.tools.hand = { down() {} }; // the page layers let the press through to the viewer, which pans
 let vwSpace = false, vwSpaceUsed = false, vwPan = null;
 const vwPanning = () => app.dataset.tool === 'hand' || vwSpace;
