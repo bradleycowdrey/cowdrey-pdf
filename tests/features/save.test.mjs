@@ -131,7 +131,7 @@ export default async (h) => {
     const p = await open(); await openPdf(p);
     await p.fill('.annotationLayer input[name="name"]', 'Jane Q'); await p.waitForTimeout(200);
     const [fc] = await Promise.all([p.waitForEvent('filechooser'), run(p, 'merge')]);
-    await fc.setFiles(bm);
+    await fc.setFiles(bm); await p.waitForSelector('#dialog[open] .pg60-file'); await p.click('#dialog .btn.primary'); // Combine
     await p.waitForFunction(() => window.__cowdreyPdf.doc.pages.length === 7, null, { timeout: 10000 });
     const bytes = await savedOf(p), d = await L.PDFDocument.load(bytes);
     eq(d.getPageCount(), 7); eq(d.getForm().getTextField('name').getText(), 'Jane Q');

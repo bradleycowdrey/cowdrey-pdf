@@ -93,7 +93,7 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
-  await test('Bookmarks: the PDF’s own outline becomes editable on the first change and replaces the old one on save; a deleted page’s bookmark keeps no destination', async () => {
+  await test('Bookmarks: the PDF’s own outline becomes editable on the first change and replaces the old one on save; a deleted page’s bookmark with nothing under it is left out', async () => {
     const p = await open(); await openPdf(p, await withOutline(), 'Report.pdf');
     await p.click('[data-side="outline"]'); await p.waitForTimeout(300);
     eq(await titles(p), ['Intro 1', '  Scope 2', 'Results 4']);
@@ -113,10 +113,11 @@ export default async (h) => {
     await jump(p, 2); await p.click('#viewer'); await p.keyboard.press('Control+b'); await p.waitForSelector('#sidePanel .bm-in');
     eq(await p.inputValue('#sidePanel .bm-in'), 'Chapter 3', 'named after the heading'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
     const bytes = await savedOf(p); d = await PDFDocument.load(bytes);
-    eq(outlineOf(d), [['Intro', 0, [['Scope', null]], 1], ['Chapter 3', 1], ['Findings', 2]]);
+    // "Scope" went with its page (nothing under it): it is not saved as a bookmark that goes nowhere
+    eq(outlineOf(d), [['Intro', 0], ['Chapter 3', 1], ['Findings', 2]]);
     // the old outline's items are not left in the file
     const titled = [...d.context.enumerateIndirectObjects()].filter(([, o]) => o instanceof L.PDFDict && o.get(N('Title')) && o.get(N('Parent')));
-    eq(titled.length, 4, 'only the new outline items');
+    eq(titled.length, 3, 'only the new outline items');
     // the saved destination keeps the place on the page it had
     const res = d.context.lookup(d.catalog.lookup(N('Outlines')).get(N('Last')));
     eq(res.lookup(N('Dest')).get(3).asNumber(), 500);
@@ -136,5 +137,16 @@ export default async (h) => {
     const r = await p.$eval('#sidePanel .bm-bar', (b) => { const x = b.getBoundingClientRect(), s = b.closest('.sidebar').getBoundingClientRect(); return x.right <= s.right && b.scrollWidth <= b.clientWidth + 1; });
     ok(r, 'toolbar fits');
     await p.ctx.close();
+  });
+
+  await test('Bookmarks: untouched, a bookmark whose page is deleted goes from the saved PDF; one with bookmarks under it stays, without a target', async () => {
+    const p = await open(); await openPdf(p, await withOutline(), 'Report.pdf');
+    await jump(p, 4); await p.evaluate(() => window.__cowdreyPdf.run('delPage')); await p.waitForTimeout(400); // "Results"
+    let d = await PDFDocument.load(await savedOf(p));
+    eq(outlineOf(d), [['Intro', 0, [['Scope', 1]], 1]]);
+    await jump(p, 1); await p.evaluate(() => window.__cowdreyPdf.run('delPage')); await p.waitForTimeout(400); // "Intro", with "Scope" under it
+    d = await PDFDocument.load(await savedOf(p));
+    eq(outlineOf(d), [['Intro', null, [['Scope', 0]], 1]]);
+    eq(p.errors, []); await p.ctx.close();
   });
 };

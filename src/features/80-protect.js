@@ -383,6 +383,9 @@ async function protImageOp(st, ctm, info) {
   const box = quadBox(matQuad(ctm)), hits = st.areas.filter((a) => protOverlap(a.box, box));
   if (!hits.length) return null;
   if (hits.some((a) => protContains(a.box, box))) return ' ';
+  // The same picture drawn again in the same place (some PDFs draw it twice) uses the one redacted copy.
+  const key = info.key && `${info.key}|${ctm.map((n) => n.toFixed(2)).join(',')}`, cache = (st.redImages ||= new Map());
+  if (key && cache.has(key)) return ` /${protAddXObject(st.L, st.out, info.res, cache.get(key), 'CPDFRed')} Do `;
   const im = st.cm && st.cm.images.find((i) => !!i.inline === !!info.inline && quadBox(i.quad).every((n, k) => Math.abs(n - box[k]) < .75));
   const c = im && await protImageCanvas(st.page, im), inv = protInv(ctm);
   if (!c || !inv) return ' '; // its pixels can't be read: it goes, rather than leave what's under the box in the file
@@ -393,8 +396,24 @@ async function protImageOp(st, ctm, info) {
     g.fillStyle = a.fill; g.strokeStyle = a.fill; g.lineWidth = 2; g.fill(); g.stroke();
   }
   const { L, out } = st;
-  const img = info.jpeg ? await out.embedJpg(c.toDataURL('image/jpeg', .92)) : await out.embedPng(c.toDataURL('image/png'));
-  return ` /${protAddXObject(L, out, info.res, img.ref, 'CPDFRed')} Do `;
+  const ref = info.jpeg ? protJpegXObject(out, c, info.smask) : (await out.embedPng(c.toDataURL('image/png'))).ref;
+  if (key) cache.set(key, ref);
+  return ` /${protAddXObject(L, out, info.res, ref, 'CPDFRed')} Do `;
+}
+// A JPEG picture stays a JPEG. When it had a soft mask (see-through parts), the mask is saved beside it as a small
+// grey picture made from the redacted pixels, so the painted-over area is solid and the file does not grow.
+function protJpegXObject(out, c, smask) {
+  const w = c.width, h = c.height, g = c.getContext('2d');
+  let alpha = null;
+  if (smask) {
+    const id = g.getImageData(0, 0, w, h), d = id.data; alpha = new Uint8Array(w * h); let solid = true;
+    for (let i = 0; i < w * h; i++) { alpha[i] = d[i * 4 + 3]; if (alpha[i] !== 255) solid = false; d[i * 4 + 3] = 255; }
+    if (solid) alpha = null; else g.putImageData(id, 0, 0); // colours without their see-through, for the JPEG
+  }
+  const jpg = Uint8Array.from(atob(c.toDataURL('image/jpeg', .92).split(',')[1]), (ch) => ch.charCodeAt(0));
+  const dict = { Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode' };
+  if (alpha) dict.SMask = out.context.register(out.context.flateStream(alpha, { Type: 'XObject', Subtype: 'Image', Width: w, Height: h, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+  return out.context.register(out.context.stream(jpg, dict));
 }
 // Rewrites a content stream so nothing under the redaction areas is left in it: letters are taken out (the rest of
 // their line stays where it was), pictures are cut or painted over, and forms are rewritten the same way.
@@ -460,7 +479,7 @@ async function protRewrite(st, src, res, ctm0, depth) {
       const sub = String(obj.dict.lookup(PDFName.of('Subtype')) || '');
       if (sub === '/Image') {
         const filt = String(obj.dict.lookup(PDFName.of('Filter')) || '');
-        const r = await protImageOp(st, ctm, { res, jpeg: /DCTDecode/.test(filt) && !obj.dict.has(PDFName.of('SMask')) });
+        const r = await protImageOp(st, ctm, { res, jpeg: /DCTDecode/.test(filt), smask: obj.dict.has(PDFName.of('SMask')), key: ref instanceof PDFRef ? ref.toString() : null });
         if (r != null) { edits.push([start, end, r]); touched.add(name); }
       } else if (sub === '/Form' && depth < 8) {
         const mt = obj.dict.lookup(PDFName.of('Matrix')), M = (mt && protNums(out, mt)) || [1, 0, 0, 1, 0, 0];
@@ -913,8 +932,8 @@ async function protCompressDlg() {
   const r = await protAsk('Compress', `<p>Makes the PDF smaller when you save: pictures larger than needed are made smaller, and the file is packed more tightly.</p>
     <div class="prot-checks">${radio('150', 'Balanced', 'Pictures at 150 pixels per inch: good on screen and in print.')}${radio('96', 'Smallest', 'Pictures at 96 pixels per inch: good on screen.')}${radio('keep', 'Keep pictures as they are', 'Only the file is packed.')}</div>
     <div class="prot-size" id="protSize" aria-live="polite">Working out the size…</div>`,
-  [...(cur ? [{ label: 'Don’t compress', value: 'off' }] : []), { label: 'Cancel' }, { label: 'Compress', value: 'on', primary: true }], (dlg) => {
-    const out = $('#protSize', dlg); let ask = 0;
+  [...(cur ? [{ label: 'Don’t compress', value: 'off' }] : []), { label: 'Cancel' }, { label: 'Compress', value: 'on', primary: true }], (dlg, upd) => {
+    const out = $('#protSize', dlg); let ask = 0, tried = false;
     const show = async () => {
       const n = ++ask, lv = ($('input[name=level]:checked', dlg) || {}).value || '150';
       out.textContent = 'Working out the size…';
@@ -924,13 +943,25 @@ async function protCompressDlg() {
         if (n !== ask) return;
         if (before == null || after == null) { out.textContent = 'The size can’t be worked out.'; return; }
         const pc = Math.round((1 - after / before) * 100), none = after >= before * .98;
+        // Balanced gains next to nothing: once, see whether Smallest does better and choose it if so.
+        if (none && lv === '150' && !tried) {
+          tried = true;
+          const small = await protMeasure(PROT_LEVELS['96']);
+          if (n !== ask) return;
+          if (small != null && small <= before * .95) {
+            const r96 = $('input[name=level][value="96"]', dlg); r96.checked = true; upd();
+            if (document.activeElement && document.activeElement.name === 'level') r96.focus();
+            const spc = Math.round((1 - small / before) * 100);
+            out.textContent = `Now ${protSize(before)}. Balanced would save less than 2%. Smallest saves ${spc}% (${protSize(small)}), so it is selected.`;
+            out.dataset.before = before; out.dataset.after = small; out.classList.remove('none');
+            return;
+          }
+        }
+        // Compress stays the main button; the note says how little it would gain.
         out.textContent = none
-          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.${lv === '96' ? ' Keep it as it is.' : ' Try Smallest, or keep it as it is.'}`
+          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.`
           : `Now ${protSize(before)}. Compressed: ${protSize(after)} (${pc}% smaller).`;
         out.dataset.before = before; out.dataset.after = after; out.classList.toggle('none', none);
-        // With nothing to gain, Cancel is the main button.
-        const on = $('.dlg-foot [data-a]:last-child', dlg), cancel = [...$$('.dlg-foot [data-a]', dlg)].find((b) => b.textContent === 'Cancel');
-        if (on && cancel) { on.classList.toggle('primary', !none); cancel.classList.toggle('primary', none); }
       } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }
     };
     $$('input[name=level]', dlg).forEach((x) => x.addEventListener('change', show));

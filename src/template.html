@@ -83,6 +83,16 @@ button { font: inherit; color: inherit; }
 .rb:hover { background: var(--hover); }
 .rb[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .rb:disabled { opacity: .4; cursor: default; background: none; }
+.rb-split { display: inline-flex; align-self: stretch; flex: none; }
+.rb-split > .rb { border-radius: 6px 0 0 6px; padding-right: 2px; }
+.rb-more { border: 0; background: none; border-radius: 0 6px 6px 0; width: 16px; padding: 0; align-self: stretch; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2); cursor: pointer; }
+.rb-more svg { width: 14px; height: 14px; }
+.rb-more:hover, .rb-more[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.rb-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rb-more:disabled { opacity: .4; cursor: default; background: none; }
+@media (pointer: coarse) { .rb-more { width: 28px; } }
+.rb[data-rmenu] > span svg { width: 12px; height: 12px; vertical-align: -2px; margin-left: 1px; }
+.rb[data-rmenu][aria-expanded="true"] { background: var(--hover); }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
 

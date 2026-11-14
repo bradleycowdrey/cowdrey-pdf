@@ -123,7 +123,7 @@ export default async (h) => {
 
   await test('pages: Delete pages… takes a range and asks first; Delete on a page in the sidebar asks too', async () => {
     const p = await open(); await openPdf(p, await named(['Q1', 'Q2', 'Q3', 'Q4', 'Q5']), 'Five.pdf');
-    await p.click('[data-rt="pages"]'); await p.click('#ribbonBody [data-cmd="pg60_delete"]'); await dlg(p);
+    await p.click('[data-rt="pages"]'); await p.click('#ribbonBody [data-rmenu="delPage"]'); await p.click('#popover [data-cmd="pg60_delete"]'); await dlg(p);
     eq(await p.inputValue('#dialog input[name="pages"]'), '1', 'starts with the page in view');
     eq(await p.evaluate(() => document.activeElement.name), 'pages', 'the range field has the focus');
     await p.fill('#dialog input[name="pages"]', '2-3, 5');
@@ -171,6 +171,79 @@ export default async (h) => {
     eq(dl.suggestedFilename(), 'Five (pages 2-4).pdf'); eq((await PDFDocument.load(fs.readFileSync(await dl.path()))).getPageCount(), 3);
     // A plain click chooses one page again, and the page commands go back to the page in view
     await p.click('.thumb[data-n="0"]'); eq(await p.$('.pg60-selbar'), null);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('pages: the Pages tab has one Rotate, one Delete and one Insert, with their other choices in a list, and fits at 1440', async () => {
+    const p = await open({ width: 1440, height: 900 }); await openPdf(p, ABC, 'Letters.pdf');
+    await p.click('[data-rt="pages"]'); await settle(p);
+    const ids = await p.$$eval('#ribbonBody [data-cmd], #ribbonBody [data-rmenu]', (b) => b.map((x) => x.dataset.cmd || 'menu:' + x.dataset.rmenu));
+    for (const gone of ['rotL', 'rotAll', 'pg60_rotate', 'pg60_delete', 'merge', 'pg60_insert', 'blank']) ok(!ids.includes(gone), `${gone} is not on the ribbon: ${ids}`);
+    eq(ids.filter((x) => /^(rotR|delPage|menu:)/.test(x)), ['rotR', 'menu:rotR', 'menu:pg60_ins', 'delPage', 'menu:delPage']);
+    eq(await p.$$eval('#ribbonBody .rb[data-cmd="rotR"] span, #ribbonBody .rb[data-cmd="delPage"] span, #ribbonBody .rb[data-rmenu="pg60_ins"] > span', (s) => s.map((x) => x.textContent)), ['Rotate', 'Insert', 'Delete']);
+    ok(await p.$eval('#ribbonBody', (b) => b.scrollWidth <= b.clientWidth + 1), 'the whole tab fits');
+    const del = await p.$eval('#ribbonBody [data-cmd="delPage"]', (b) => b.getBoundingClientRect().right);
+    ok(del < 1440 - 48, 'Delete is in view: ' + del);
+    const menu = async (id) => { await p.click(`#ribbonBody [data-rmenu="${id}"]`); await p.waitForSelector('#popover:not([hidden])'); const items = await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)); return items; };
+    eq(await menu('rotR'), ['rotL', 'rotR', 'rotAll', 'pg60_rotate']);
+    eq(await p.getAttribute('#ribbonBody [data-rmenu="rotR"]', 'aria-expanded'), 'true');
+    await p.keyboard.press('Escape'); ok(await p.$eval('#popover', (x) => x.hidden), 'Escape closes the list');
+    eq(await p.evaluate(() => document.activeElement.dataset.rmenu), 'rotR', 'focus back on the arrow');
+    eq(await menu('delPage'), ['delPage', 'pg60_delete']);
+    await p.click('#popover [data-cmd="pg60_delete"]'); await dlg(p); await p.click('#dialog [data-x]');
+    eq(await menu('pg60_ins'), ['blank', 'pg60_insert', 'pg60_replace', 'merge']);
+    eq(await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent)), ['Insert blank page', 'Insert from PDF…', 'Replace pages…', 'Combine PDFs…']);
+    await p.click('#popover [data-cmd="blank"]'); await settle(p);
+    eq(await p.$$eval('.thumb', (e) => e.length), 4, 'blank page inserted from the list');
+    // the Rotate face rotates right; Select all pages (the menu, or Ctrl+A on a page in the sidebar)
+    await p.click('#ribbonBody [data-cmd="rotR"]'); await settle(p);
+    eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.rot)), [90, 0, 0, 0]);
+    await p.click('#menubar button:text-is("Pages")'); await p.waitForSelector('#popover:not([hidden])');
+    ok((await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent))).includes('Select all pages'), 'menu says Select all pages');
+    await p.keyboard.press('Escape');
+    await p.focus('.thumb[data-n="0"]'); await p.keyboard.press('Control+a'); await settle(p);
+    eq(await p.evaluate(() => window.__cowdreyPdf.pg60.sel()), [0, 1, 2, 3]);
+    eq(await p.textContent('.pg60-selbar span'), '4 pages selected');
+    await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/pages-ribbon-dark.png' });
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('pages: Combine PDFs lists this PDF and the added files with their pages; they can be moved and taken out, then are joined in that order', async () => {
+    const p = await open(); await openPdf(p, ABC, 'Letters.pdf');
+    const ONE = await named(['Oscar']);
+    const [fc] = await Promise.all([p.waitForEvent('filechooser'), run(p, 'merge')]);
+    await fc.setFiles([XYZ, ONE]); await dlg(p);
+    const rows = () => p.$$eval('#dialog .pg60-file', (r) => r.map((x) => x.querySelector('.pg60-fname').textContent + ' · ' + x.querySelector('.pg60-fcount').textContent));
+    eq(await rows(), ['Letters (open now) · 3 pages', `${path.basename(XYZ, '.pdf')} · 3 pages`, `${path.basename(ONE, '.pdf')} · 1 page`]);
+    eq(await p.textContent('#dialog .pg60-total'), '3 files, 7 pages in all.');
+    ok(await p.$('#dialog .pg60-file[data-k="0"] [data-mv="-1"][disabled]'), 'the first cannot go up');
+    ok(!(await p.$('#dialog .pg60-file[data-k="0"] [data-rm]')), 'the open PDF is not taken out');
+    await p.click('#dialog .pg60-file[data-k="0"] [data-mv="1"]'); // this PDF after the Xray file
+    await p.click('#dialog .pg60-file[data-k="2"] [data-rm]'); // Oscar out
+    eq((await rows()).map((r) => r.split(' · ')[0]), [path.basename(XYZ, '.pdf'), 'Letters (open now)']);
+    eq(await p.textContent('#dialog .pg60-total'), '2 files, 6 pages in all.');
+    await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/combine-dark.png' });
+    // Add files… adds more to the list
+    const [fc2] = await Promise.all([p.waitForEvent('filechooser'), p.click('#dialog .dlg-foot .btn:text-is("Add files…")')]);
+    await fc2.setFiles(ONE); await dlg(p);
+    eq((await rows()).length, 3);
+    await primary(p); await settle(p);
+    await reopen(p, await savedOf(p));
+    eq(await texts(p), ['Xray', 'Yankee', 'Zulu', 'Alpha', 'Bravo', 'Charlie', 'Oscar']);
+    // undo puts it back as it was
+    await p.keyboard.press('Control+z'); await settle(p);
+    eq(p.errors, []); await p.ctx.close();
+    fs.unlinkSync(ONE);
+  });
+
+  await test('pages: Combine PDFs with nothing open opens the first file and adds the rest', async () => {
+    const p = await open();
+    const [fc] = await Promise.all([p.waitForEvent('filechooser'), run(p, 'merge')]);
+    await fc.setFiles([XYZ, ABC]); await dlg(p);
+    eq(await p.$$eval('#dialog .pg60-file', (r) => r.length), 2);
+    await primary(p);
+    await p.waitForFunction(() => window.__cowdreyPdf.doc && window.__cowdreyPdf.doc.pages.length === 6, null, { timeout: 10000 }); await settle(p);
+    eq(await texts(p), ['Xray', 'Yankee', 'Zulu', 'Alpha', 'Bravo', 'Charlie']);
     eq(p.errors, []); await p.ctx.close();
   });
 };

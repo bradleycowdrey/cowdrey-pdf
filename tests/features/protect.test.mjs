@@ -221,7 +221,7 @@ export default async (h) => {
     } finally { fs.unlinkSync(file); }
   });
 
-  await test('Protect: compress says when a PDF is already compact, and Cancel is the main button then', async () => {
+  await test('Protect: compress says when a PDF is already compact, and Compress stays the main button', async () => {
     const d0 = await L.PDFDocument.create(), pg = d0.addPage([612, 792]);
     pg.drawText('Only a little text', { x: 72, y: 720, size: 18, font: await d0.embedFont(L.StandardFonts.Helvetica) });
     const file = tmp('small.pdf', await d0.save());
@@ -231,10 +231,10 @@ export default async (h) => {
       await p.waitForFunction(() => /^Now /.test((document.querySelector('#protSize') || {}).textContent || ''), null, { timeout: 30000 });
       const t = await p.textContent('#protSize');
       ok(/already compact: compressing would save less than 2%/.test(t), t);
-      eq(await p.$eval('#dialog .dlg-foot .btn.primary', (b) => b.textContent), 'Cancel');
-      await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr1/fix-features/compress-compact.png' });
+      eq(await p.$$eval('#dialog .dlg-foot .btn.primary', (b) => b.map((x) => x.textContent)), ['Compress']);
+      await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/compress-compact.png' });
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(150);
-      eq(await p.evaluate(() => window.__cowdreyPdf.doc.marks.__doc || []), [], 'nothing set');
+      ok(await p.evaluate(() => (window.__cowdreyPdf.doc.marks.__doc || []).some((m) => m.type === 'protcompress')), 'Compress still sets compression');
       noErrors(p); await p.ctx.close();
     } finally { fs.unlinkSync(file); }
   });
@@ -298,5 +298,69 @@ export default async (h) => {
     await run(p, 'protRedApply'); // nothing marked yet: a toast, no dialog
     eq(await p.$('#dialog[open]'), null);
     noErrors(p); await p.ctx.close();
+  });
+
+  // A JPEG made in the browser (noisy, so a PNG of it would be several times larger).
+  const makeJpeg = async (W, H, q = .85) => {
+    const p0 = await open();
+    const b = await p0.evaluate(([w, h, q]) => {
+      const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'), id = g.createImageData(w, h);
+      let seed = 3; const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      for (let i = 0; i < w * h; i++) { const x = i % w, y = (i / w) | 0; id.data.set([60 + x / w * 150 + rnd() * 40, 90 + y / h * 120 + rnd() * 40, 200 - rnd() * 60, 255], i * 4); }
+      g.putImageData(id, 0, 0);
+      return Array.from(atob(c.toDataURL('image/jpeg', q).split(',')[1]), (ch) => ch.charCodeAt(0));
+    }, [W, H, q]);
+    await p0.ctx.close(); return Uint8Array.from(b);
+  };
+
+  await test('Protect: redacting part of a see-through JPEG picture keeps it a JPEG with its soft mask; the file does not grow', async () => {
+    const W = 600, H = 400, jpg = await makeJpeg(W, H);
+    const alpha = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) alpha[y * W + x] = Math.max(0, Math.min(255, 255 - Math.hypot(x - W / 2, y - H / 2) / 1.5 | 0)); // fades out at the edges
+    const d0 = await L.PDFDocument.create(), pg = d0.addPage([612, 792]), c = d0.context;
+    const sm = c.register(c.flateStream(alpha, { Type: 'XObject', Subtype: 'Image', Width: W, Height: H, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+    const ref = c.register(c.stream(jpg, { Type: 'XObject', Subtype: 'Image', Width: W, Height: H, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode', SMask: sm }));
+    const key = pg.node.newXObject('Im', ref);
+    pg.pushOperators(L.pushGraphicsState(), L.concatTransformationMatrix(450, 0, 0, 300, 80, 300), L.drawObject(key), L.popGraphicsState());
+    pg.drawText('The secret code is here', { x: 150, y: 450, size: 20, font: await d0.embedFont(L.StandardFonts.Helvetica) });
+    const file = tmp('jpeg-smask.pdf', await d0.save()), size0 = fs.statSync(file).size;
+    try {
+      const p = await open(); await openPdf(p, file, 'Picture.pdf');
+      await p.click('[data-rt="protect"]');
+      await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'secret code'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+      await p.click('[data-cmd="protRedApply"]'); await answer(p, 'Apply'); await p.waitForTimeout(500);
+      const out = await savedOf(p), d = await PDFDocument.load(out);
+      ok(out.length < size0 * 1.3, `about the same size: ${size0} → ${out.length}`);
+      const xo = d.getPage(0).node.Resources().lookup(L.PDFName.of('XObject'));
+      const used = /\/(CPDFRed\d+) Do/.exec(pageContent(d)); ok(used, 'the picture was redrawn');
+      const img = xo.lookup(L.PDFName.of(used[1])), smask = img.dict.lookup(L.PDFName.of('SMask'));
+      eq([String(img.dict.get(L.PDFName.of('Filter'))), img.dict.get(L.PDFName.of('Width')).asNumber()], ['/DCTDecode', W], 'still a JPEG');
+      ok(smask instanceof L.PDFRawStream, 'with its soft mask');
+      // the mask is solid where the box painted over the picture, and see-through at the corners as before
+      const a = L.decodePDFRawStream(smask).decode(), at0 = (x, y) => a[Math.round((300 + 300 - y) / 300 * H - 1) * W + Math.round((x - 80) / 450 * W)];
+      eq([at0(250, 457), at0(81, 301) < 100], [255, true], 'mask');
+      ok(!(await textOf(out)).includes('secret'), 'text gone');
+      noErrors(p); await p.ctx.close();
+    } finally { fs.unlinkSync(file); }
+  });
+
+  await test('Protect: when Balanced gains next to nothing but Smallest does, Compress chooses Smallest and says so', async () => {
+    const jpg = await makeJpeg(600, 600, .92);
+    const d0 = await L.PDFDocument.create(), pg = d0.addPage([612, 792]);
+    const im = await d0.embedJpg(jpg); pg.drawImage(im, { x: 100, y: 300, width: 288, height: 288 }); // 150 pixels per inch already
+    pg.drawText('A picture', { x: 72, y: 720, size: 18, font: await d0.embedFont(L.StandardFonts.Helvetica) });
+    const file = tmp('ppi150.pdf', await d0.save());
+    try {
+      const p = await open(); await openPdf(p, file, 'Picture.pdf');
+      await run(p, 'protCompress');
+      await p.waitForFunction(() => /selected|Compressed|compact/.test((document.querySelector('#protSize') || {}).textContent || ''), null, { timeout: 30000 });
+      const t = await p.textContent('#protSize');
+      ok(/Balanced would save less than 2%\. Smallest saves \d+% \(.+\), so it is selected\./.test(t), t);
+      ok(await p.isChecked('#dialog input[name=level][value="96"]'), 'Smallest chosen');
+      eq(await p.$$eval('#dialog .dlg-foot .btn.primary', (b) => b.map((x) => x.textContent)), ['Compress']);
+      await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/compress-smallest.png' });
+      await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(200);
+      eq(await p.evaluate(() => (window.__cowdreyPdf.doc.marks.__doc || []).filter((m) => m.type === 'protcompress').map((m) => m.level)), ['96']);
+      noErrors(p); await p.ctx.close();
+    } finally { fs.unlinkSync(file); }
   });
 };

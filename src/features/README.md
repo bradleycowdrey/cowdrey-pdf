@@ -10,7 +10,8 @@ every core function and value (`doc`, `views`, `scale`, `marksOf`, `toView`, `to
 Plug in through:
 
 - `cmd(id, { label, icon, key?, enabled?, pressed?, hidden?, rlabel?, contextual?, run })` — a command (Lucide
-  icon names). `rlabel` is a shorter label for the ribbon (two lines at most). A ribbon group whose commands are
+  icon names). `rlabel` is a shorter label for the ribbon (two lines at most). `menu: [ids]` gives its ribbon button a
+  small arrow that lists those commands; a command with `menu` and no `run` is a ribbon button that only opens the list. A ribbon group whose commands are
   all `contextual` (they work on a selection) shows only while one of them is enabled. Switching ribbon tabs goes
   back to the Select tool unless the tab has a button pressed for the tool in use (`pressed` must depend on
   `app.dataset.tool`).
@@ -29,7 +30,8 @@ Plug in through:
   `FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => …)` — once, before the file is written.
   Document-wide settings (a watermark, headers and footers…) go in `docMarks()`, a list of `{ id, type, … }`
   objects stored, undone and restored with the marks (change them inside `snapshot()`/`changed()` too).
-- `FEATURE.afterRender.push((v) => …)` after a page is drawn; `FEATURE.onDocShown.push((doc) => …)`.
+- `FEATURE.afterRender.push((v) => …)` after a page is drawn; `FEATURE.onDocShown.push((doc) => …)`;
+  `(FEATURE.onTab ||= []).push((tab) => …)` when another ribbon tab is chosen.
 - `TEST_HOOKS.name = fn` exposes `fn` to tests as `window.__cowdreyPdf.name`.
 
 Tests: `tests/features/<module>.test.mjs` exporting `export default async (h) => { await h.test('…', async () => {…}) }`

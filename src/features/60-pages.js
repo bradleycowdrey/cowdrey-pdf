@@ -88,6 +88,91 @@ async function pg60Insert() {
   toast(`Inserted ${pg60Plural(idx.length, 'page')}`);
 }
 
+/* ---- combine: this PDF and others, in an order you set ---- */
+const pg60Multi = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/pdf,.pdf', multiple: true, hidden: true, id: 'pg60Files' });
+document.body.appendChild(pg60Multi);
+// Resolves with [{ bytes, name }] (empty when nothing was chosen).
+function pg60PickPdfs() {
+  return new Promise((res) => {
+    pg60Multi.value = '';
+    pg60Multi.oncancel = () => res([]);
+    pg60Multi.onchange = async () => { const fs = [...pg60Multi.files]; pg60Multi.onchange = null; res(await Promise.all(fs.map(async (f) => ({ bytes: new Uint8Array(await f.arrayBuffer()), name: f.name })))); };
+    pg60Multi.click();
+  });
+}
+async function pg60LoadMany(files) {
+  const out = [];
+  for (const f of files) {
+    let pd;
+    try { pd = await loadProtected(f.bytes, f.name); } catch (e) { console.error(e); toast(`Could not open ${f.name}: it may not be a PDF.`); continue; }
+    if (pd) out.push({ ...f, pd, count: pd.numPages });
+  }
+  return out;
+}
+// The list in the Combine dialog: each file with its page count, moved up or down or taken out.
+function pg60FilesHtml(rows) {
+  const name = (r) => esc(r.cur ? `${r.name} (open now)` : r.name.replace(/\.pdf$/i, ''));
+  return rows.map((r, k) => `<li class="pg60-file" data-k="${k}">${ic(r.cur ? 'file-pen' : 'file')}<span class="pg60-fname">${name(r)}</span><span class="pg60-fcount">${pg60Plural(r.count, 'page')}</span>
+    <button type="button" class="icon-btn" data-mv="-1" aria-label="Move ${name(r)} up"${k ? '' : ' disabled'}>${ic('arrow-up')}</button>
+    <button type="button" class="icon-btn" data-mv="1" aria-label="Move ${name(r)} down"${k < rows.length - 1 ? '' : ' disabled'}>${ic('arrow-down')}</button>
+    ${r.cur ? '<span class="pg60-fgap"></span>' : `<button type="button" class="icon-btn" data-rm aria-label="Remove ${name(r)}">${ic('x')}</button>`}</li>`).join('');
+}
+async function pg60Combine() {
+  const rows = doc ? [{ cur: true, name: doc.name, count: doc.pages.length }] : [];
+  const drop = () => { for (const r of rows) if (r.pd) { try { r.pd.destroy(); } catch {} } };
+  let pick = true;
+  for (;;) {
+    if (pick) { rows.push(...await pg60LoadMany(await pg60PickPdfs())); pick = false; }
+    if (!rows.some((r) => !r.cur)) { drop(); return; }
+    const r = await pg60Ask('Combine PDFs', `
+      <p>The files are joined in this order. Move them up or down, or take one out.</p>
+      <ol class="pg60-files"></ol>
+      <p class="pg60-note pg60-total"></p>`,
+    [{ label: 'Cancel' }, { label: 'Add files…', value: 'add' }, { label: 'Combine', value: 'ok', primary: true }], (dlg) => {
+      const list = $('.pg60-files', dlg), btn = $('.dlg-foot .btn.primary', dlg);
+      const draw = (focus) => {
+        list.innerHTML = pg60FilesHtml(rows); icons();
+        const total = rows.reduce((t, x) => t + x.count, 0);
+        $('.pg60-total', dlg).textContent = `${pg60Plural(rows.length, 'file')}, ${pg60Plural(total, 'page')} in all.`;
+        btn.disabled = !rows.some((x) => !x.cur);
+        if (focus) { const b = $(`[data-k="${focus[0]}"] ${focus[1]}`, list); (b && !b.disabled ? b : btn).focus(); }
+      };
+      list.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        const k = +b.closest('[data-k]').dataset.k;
+        if (b.hasAttribute('data-rm')) { const [x] = rows.splice(k, 1); if (x.pd) { try { x.pd.destroy(); } catch {} } draw([Math.min(k, rows.length - 1), '[data-rm]']); return; }
+        const t = k + +b.dataset.mv; if (t < 0 || t >= rows.length) return;
+        [rows[k], rows[t]] = [rows[t], rows[k]]; draw([t, `[data-mv="${b.dataset.mv}"]`]);
+      });
+      draw();
+    });
+    if (!r) { drop(); return; }
+    if (r.action === 'add') { pick = true; continue; }
+    break;
+  }
+  let pages = 0;
+  if (doc) {
+    pageOp(() => {
+      const mine = doc.pages, out = [];
+      for (const x of rows) {
+        if (x.cur) { out.push(...mine); continue; }
+        const k = doc.sources.length; doc.sources.push(x.bytes); pdfDocs.set(k, x.pd);
+        out.push(...[...Array(x.count).keys()].map((i) => ({ src: k, i, rot: 0 })));
+      }
+      doc.pages = out; current = 0;
+    });
+    pages = doc.pages.length;
+  } else {
+    const [first, ...rest] = rows;
+    try { first.pd.destroy(); } catch {}
+    if (!(await serial(() => openBytes(first.bytes, first.name)))) { for (const x of rest) { try { x.pd.destroy(); } catch {} } return; }
+    if (rest.length) pageOp(() => { for (const x of rest) { const k = doc.sources.length; doc.sources.push(x.bytes); pdfDocs.set(k, x.pd); doc.pages.push(...[...Array(x.count).keys()].map((i) => ({ src: k, i, rot: 0 }))); } });
+    pages = doc.pages.length;
+  }
+  pg60SetSel([]);
+  toast(`Combined ${pg60Plural(rows.length, 'file')} into ${pg60Plural(pages, 'page')}`);
+}
+
 /* ---- replace pages with pages from another PDF ---- */
 async function pg60Replace() {
   const other = await pg60LoadOther(); if (!other) return;
@@ -283,6 +368,12 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   pg60DeleteAsk(pg60Many() ? pg60Valid() : [+t.dataset.n]);
 });
+// Cmd/Ctrl+A on a page in the sidebar selects every page.
+document.addEventListener('keydown', (e) => {
+  if (!doc || $('#dialog').open || e.key.toLowerCase() !== 'a' || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey) return;
+  if (!(document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb'))) return;
+  e.preventDefault(); run('pg60_selAll');
+});
 function pg60Paint() {
   const many = pg60Many(), sel = new Set(pg60Valid());
   for (const t of $$('.thumb', pg60Panel)) t.classList.toggle('pg60-sel', many && sel.has(+t.dataset.n));
@@ -290,7 +381,7 @@ function pg60Paint() {
   let bar = $('.pg60-selbar', pg60Panel);
   if (!many) { if (bar) bar.remove(); return; }
   if (!bar) { bar = document.createElement('div'); bar.className = 'pg60-selbar'; list.parentNode.insertBefore(bar, list); }
-  bar.innerHTML = `<span>${sel.size} pages chosen</span><button type="button" class="btn link">Clear</button>`;
+  bar.innerHTML = `<span>${sel.size} pages selected</span><button type="button" class="btn link">Clear</button>`;
 }
 // Thumbnails show the crop too: clipped, and taking only the room of what is left.
 async function pg60ThumbCrop(t) {
@@ -394,7 +485,7 @@ async function pg60CropDialog(n = current, margins) {
     </div>
     <div class="pg60-label">Crop</div>
     ${pg60Opt('to', 'this', `This page (${n + 1})`, !many)}
-    ${many ? pg60Opt('to', 'chosen', `The chosen pages (${esc(pg60RangeText(pg60Valid()))})`, true) : ''}
+    ${many ? pg60Opt('to', 'chosen', `The selected pages (${esc(pg60RangeText(pg60Valid()))})`, true) : ''}
     ${pg60Opt('to', 'all', 'All pages')}
     ${pg60Opt('to', 'range', 'Pages', false, `<input class="pg60-wide" name="range" placeholder="1-3, 5" data-pick="range" autocomplete="off">`)}`,
   [{ label: 'Cancel' }, ...(doc.pages.some((x) => x.crop) ? [{ label: 'Remove crop', value: 'remove' }] : []), { label: 'Crop', value: 'ok', primary: true }]);
@@ -437,17 +528,19 @@ FEATURE.savePage.push(({ p, entry }) => {
 cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app.dataset.tool === 'crop', run: () => { if (app.dataset.tool === 'crop') return setTool('select'); setTool('crop'); toast('Drag a box on the page to keep just that part'); } });
 cmd('pg60_crop', { label: 'Crop margins…', icon: 'scan', enabled: has, run: () => pg60CropDialog() });
 cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
-cmd('pg60_insert', { rlabel: 'Insert PDF', label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
+cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
+cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => pg60Combine() });
+cmd('pg60_ins', { label: 'Insert pages', rlabel: 'Insert', icon: 'file-plus-2', menu: ['blank', 'pg60_insert', 'pg60_replace', '-', 'merge'] });
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
 cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: has, run: () => pg60DeleteAsk() });
-cmd('pg60_selAll', { label: 'Choose all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
-ribbonAdd('pages', 'Rotate', ['pg60_rotate']);
+cmd('pg60_selAll', { label: 'Select all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
+// One button per job: Rotate and Delete open their other choices from a small arrow, Insert is a list.
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
-ribbonAdd('pages', 'Insert', ['pg60_insert', 'pg60_replace']);
+ribbonAdd('pages', 'Insert', ['pg60_ins'], 'Remove');
 ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
-ribbonAdd('pages', 'Remove', ['pg60_delete', 'pg60_split']);
+ribbonAdd('pages', 'Remove', ['pg60_split']);
 menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
 addStyle(`
@@ -469,5 +562,13 @@ addStyle(`
 .pg60-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .pg60-grid .field { margin: 4px 0; }
 .pg60-grid input { width: 100%; box-sizing: border-box; }
+.pg60-files { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 300px; overflow: auto; }
+.pg60-file { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; color: var(--ink); }
+.pg60-file + .pg60-file { border-top: 1px solid var(--line); }
+.pg60-file > svg { width: 16px; height: 16px; flex: none; color: var(--ink-3); }
+.pg60-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg60-fcount { color: var(--ink-3); font-size: 12px; white-space: nowrap; margin-right: 4px; }
+.pg60-fgap { width: 34px; flex: none; }
+.pg60-file .icon-btn:disabled { opacity: .35; cursor: default; }
 `);
 TEST_HOOKS.pg60 = { sel: () => pg60Valid(), setSel: (l) => pg60SetSel(l), crop: (idx, m) => pg60SetCrop(idx, m) };

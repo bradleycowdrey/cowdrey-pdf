@@ -65,15 +65,83 @@ async function ffLoadKnown() {
 }
 FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLastRadio = null; ffLoadKnown(); });
 
+/* ---- form design and filling in ----
+   On the Forms tab new fields are designed: moved, resized, given properties. Anywhere else (or with Preview on)
+   they can be filled in at once, like the fields already in the PDF; what is typed is the field's value. */
+let ffPreviewOn = false;
+const ffDesign = () => S.ribbon === 'forms' && !ffPreviewOn;
+const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list']);
+function ffRedrawAll() { selectMark(null); views.forEach((v) => { if (v.rendered) { drawMarks(v); ffLayer(v); } }); }
+(FEATURE.onTab ||= []).push((k) => { if (k !== 'forms') ffPreviewOn = false; ffRedrawAll(); });
+// Choosing a form tool goes back to designing.
+function ffEndPreview() { if (ffPreviewOn) { ffPreviewOn = false; ffRedrawAll(); } }
+function ffPreview() {
+  ffPreviewOn = !ffPreviewOn;
+  if (ffPreviewOn && ffIsTool()) setTool('select');
+  ffSelectX(null); ffRedrawAll(); refreshRibbon();
+  toast(ffPreviewOn ? 'Fill in the new fields to try them' : 'Back to designing the form');
+}
+// An HTML control over a new field, to fill it in. A change is kept like any other (undo takes it back).
+function ffFillControl(m, fs) {
+  let el;
+  if (m.kind === 'text' || m.kind === 'date') {
+    el = document.createElement(m.multi ? 'textarea' : 'input'); el.value = m.val || '';
+    if (m.max > 0) el.maxLength = m.max;
+    if (m.kind === 'date') el.placeholder = m.fmt || FF_DATE_FORMATS[0];
+  } else if (m.kind === 'check' || m.kind === 'radio') {
+    el = document.createElement('input'); el.type = m.kind === 'check' ? 'checkbox' : 'radio'; el.checked = !!m.val;
+  } else {
+    el = document.createElement('select'); if (m.kind === 'list') el.size = Math.max(2, (m.opts || []).length);
+    for (const o of m.opts || []) el.appendChild(Object.assign(document.createElement('option'), { value: o, textContent: o }));
+    el.value = m.val || ''; if (!(m.opts || []).includes(m.val)) el.selectedIndex = -1;
+  }
+  el.className = 'ff-ctl ff-ctl-' + m.kind; el.style.fontSize = fs + 'px';
+  el.setAttribute('aria-label', m.tip || m.name); el.dataset.field = m.name;
+  if (m.ro) el.disabled = true;
+  if (m.req) el.required = true;
+  el.addEventListener('pointerdown', (e) => e.stopPropagation()); // fill it in, don't select or move it
+  el.addEventListener('change', () => {
+    const before = snapshot(), val = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+    if (m.kind === 'radio') { for (const r of ffMarks()) if (r.kind === 'radio' && r.name === m.name) r.val = r.id === m.id; }
+    else m.val = val;
+    changed(before);
+    if (m.kind === 'radio') views.forEach((v) => v.rendered && drawMarks(v));
+  });
+  return el;
+}
+// The controls sit in their own layer over the page (not inside the SVG, where some browsers misplace them), drawn
+// again with the marks.
+function ffFillLayer(v) {
+  let lay = v.el.querySelector('.ff-fill-layer');
+  const list = !doc || ffFlat() || ffDesign() ? [] : marksOf(v.entry).filter((m) => m.type === 'ff' && FF_FILLABLE.has(m.kind));
+  if (!list.length) { if (lay) lay.remove(); return; }
+  if (!lay) { lay = document.createElement('div'); lay.className = 'ff-fill-layer'; v.el.appendChild(lay); }
+  if (lay.contains(document.activeElement) && lay.__sig === JSON.stringify(list) + scale) return; // typing in it: leave it
+  lay.__sig = JSON.stringify(list) + scale;
+  const had = [...lay.children].indexOf(document.activeElement); // a tick moved focus nowhere: keep it on that field
+  lay.innerHTML = '';
+  for (const m of list) {
+    const [X0, Y0, X1, Y1] = ffBox(m), pts = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]].map(([x, y]) => toView(v, x, y));
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]), w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+    const d = ((totalRot(v) - (m.rot || 0)) % 360 + 360) % 360, lw = d % 180 ? h : w, lh = d % 180 ? w : h;
+    const cx = Math.min(...xs) + w / 2, cy = Math.min(...ys) + h / 2;
+    const fs = (m.size || (m.kind === 'list' ? 9 : Math.min(12, Math.max(6, (lh / scale) * .62)))) * scale;
+    const el = ffFillControl(m, fs);
+    Object.assign(el.style, { left: `${cx - lw / 2}px`, top: `${cy - lh / 2}px`, width: `${lw}px`, height: `${lh}px`, transform: d ? `rotate(${d}deg)` : '' });
+    lay.appendChild(el);
+  }
+  if (had >= 0 && lay.children[had]) lay.children[had].focus({ preventScroll: true });
+}
+
 /* ---- drawing new fields (they look as they will once saved) ---- */
 function ffDraw(v, m, svg) {
   ffHookSvg(v, svg);
-  const flat = ffFlat();
+  const flat = ffFlat(), filling = !flat && !ffDesign() && FF_FILLABLE.has(m.kind);
   const [X0, Y0, X1, Y1] = ffBox(m);
   const pts = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]].map(([x, y]) => toView(v, x, y));
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-  const g = svgEl('g', { class: 'mk ff-mk' + (flat ? ' ff-flat' : '') });
+  const g = svgEl('g', { class: (filling ? 'ff-fill ' : 'mk ') + 'ff-mk' + (flat ? ' ff-flat' : '') });
   const d = ((totalRot(v) - (m.rot || 0)) % 360 + 360) % 360;
   const lw = d % 180 ? h : w, lh = d % 180 ? w : h, cx = x + w / 2, cy = y + h / 2;
   const inner = svgEl('g', { transform: `rotate(${d} ${cx} ${cy}) translate(${cx - lw / 2} ${cy - lh / 2})` });
@@ -82,6 +150,11 @@ function ffDraw(v, m, svg) {
   const clipId = 'ffc' + m.id;
   const clip = svgEl('clipPath', { id: clipId }); clip.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh })); inner.appendChild(clip);
   const body = svgEl('g', { 'clip-path': `url(#${clipId})` });
+  if (filling) {
+    if (m.kind !== 'radio') inner.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh, fill: m.kind === 'check' || m.kind === 'list' ? '#fff' : 'none', stroke: m.kind === 'check' ? '#000' : FF_BORDER, 'stroke-width': s }));
+    g.appendChild(inner);
+    return g;
+  }
   if (m.kind === 'radio') {
     inner.appendChild(svgEl('rect', { class: 'ff-hit', x: 0, y: 0, width: lw, height: lh }));
     const r = Math.min(lw, lh) / 2 - .5 * s;
@@ -137,7 +210,7 @@ function ffIsDouble(e, id) {
 function ffHookSvg(v, svg) {
   if (svg.__ff) return; svg.__ff = true;
   svg.addEventListener('pointerdown', (e) => {
-    const hit = e.target.closest && e.target.closest('.ff-mk'); if (!hit || e.target.closest('.ff-handle')) return;
+    const hit = e.target.closest && e.target.closest('.ff-mk'); if (!hit || hit.classList.contains('ff-fill') || e.target.closest('.ff-handle')) return;
     const tool = app.dataset.tool; if (tool !== 'select' && !/^ff_/.test(tool)) return;
     if (ffIsDouble(e, hit.dataset.id)) ffOnRelease(e, () => ffProps(hit.dataset.id));
   }, true);
@@ -223,7 +296,7 @@ function ffToolDown(kind) {
 for (const [kind, K] of Object.entries(FF_KINDS)) {
   const t = 'ff_' + kind;
   FEATURE.tools[t] = { down: ffToolDown(kind) };
-  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { const was = app.dataset.tool; setTool(t); ffLoadKnown(); if (was !== t) toast(`Drag on the page to add a ${K.label.toLowerCase()}`); } });
+  cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { const was = app.dataset.tool; ffEndPreview(); setTool(t); ffLoadKnown(); if (was !== t) toast(`Drag on the page to add a ${K.label.toLowerCase()}`); } });
 }
 FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (the fields already in the PDF have their own layer)
   const hit = e.target.closest && e.target.closest('.ff-mk');
@@ -233,7 +306,7 @@ FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (th
   selectMark({ key: pageKey(v.entry), id: hit.dataset.id, entry: v.entry });
   if (m) startMove(e, v, m);
 } };
-cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { const was = app.dataset.tool; setTool('ff_edit'); ffLoadKnown(); if (was !== 'ff_edit') toast('Click a field to select it; double-click it for its properties'); } });
+cmd('ff_edit', { label: 'Edit fields', icon: 'square-mouse-pointer', enabled: has, pressed: () => app.dataset.tool === 'ff_edit', run: () => { const was = app.dataset.tool; ffEndPreview(); setTool('ff_edit'); ffLoadKnown(); if (was !== 'ff_edit') toast('Click a field to select it; double-click it for its properties'); } });
 
 /* ---- fields already in the PDF: outlined while a form tool is chosen ---- */
 async function ffWidgets(v) {
@@ -243,6 +316,7 @@ async function ffWidgets(v) {
 function ffGone(entry) { return new Set(marksOf(entry).filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref)); }
 function ffLayer(v) {
   if (!doc || !v.rendered || !v.el.isConnected) return;
+  ffFillLayer(v);
   app.dataset.ffflat = ffFlat() ? 'on' : 'off';
   let s = v.el.querySelector('svg.ff-layer');
   if (!s) {
@@ -690,12 +764,13 @@ cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() &
 cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-text', enabled: has, run: ffRecognize });
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });
 cmd('ffFlatten', { label: 'Flatten form', icon: 'layers', enabled: has, pressed: ffFlat, run: ffFlatten });
+cmd('ffPreview', { label: 'Preview', icon: 'eye', enabled: () => has() && !ffFlat(), pressed: () => ffPreviewOn, run: ffPreview });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
-ribbonAdd('forms', 'Form', ['ffRecognize', 'ffClear', 'ffFlatten']);
+ribbonAdd('forms', 'Form', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);
 menuAdd('Forms', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 menuAdd('Forms', ['ff_edit', 'ffProps', 'ffDelete']);
-menuAdd('Forms', ['ffRecognize', 'ffClear', 'ffFlatten']);
+menuAdd('Forms', ['ffPreview', 'ffRecognize', 'ffClear', 'ffFlatten']);
 TEST_HOOKS.ffProposals = () => ffProposals.map(({ kind, x1, y1, x2, y2 }) => ({ kind, x1, y1, x2, y2 }));
 
 addStyle(`
@@ -708,6 +783,13 @@ addStyle(`
 .app[data-tool^="ff_"] .marks .ff-tag, .app[data-tool^="ff_"] .ff-layer .ff-tag, .marks .ff-mk.sel .ff-tag { display: block; }
 .ff-tag rect { fill: #AE1747; }
 .ff-tag text { fill: #fff; font: 600 10px/1 var(--font-ui); }
+.ff-fill-layer { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.ff-fill-layer .ff-ctl { position: absolute; pointer-events: auto; transform-origin: 50% 50%; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; min-width: 0; line-height: 1.1; margin: 0; padding: 0 2px; border: 0; border-radius: 0; font-family: Helvetica, Arial, sans-serif; color: #111; background: rgba(0, 54, 255, .13); outline: none; resize: none; }
+.ff-fill-layer .ff-ctl:focus { background: transparent; box-shadow: inset 0 0 0 1px #2448C9; }
+.ff-fill-layer .ff-ctl:disabled { background: transparent; }
+.ff-fill-layer select.ff-ctl-list { padding: 0; }
+.ff-fill-layer .ff-ctl-check, .ff-fill-layer .ff-ctl-radio { accent-color: #111; background: none; padding: 0; cursor: pointer; }
+.ff-fill-layer .ff-ctl-radio { border-radius: 50%; }
 .marks .ff-handle { fill: #fff; stroke: #AE1747; stroke-width: 1.5; cursor: nwse-resize; pointer-events: auto; }
 .ff-layer { position: absolute; inset: 0; z-index: 5; overflow: visible; pointer-events: none; width: 100%; height: 100%; }
 .ff-layer .ffx { display: none; fill: rgba(174, 23, 71, .05); stroke: #AE1747; stroke-width: 1; stroke-dasharray: 4 2; }

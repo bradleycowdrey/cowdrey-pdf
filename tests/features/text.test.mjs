@@ -270,4 +270,30 @@ export default async (h) => {
     await shot(p, 'phone-bar.png');
     await p.ctx.close();
   });
+
+  await h.test('Edit PDF: letters missing from the font: whole words use the standard font, and other readers get the exact line', async () => {
+    const { open, openPdf, eq, ok, savedOf, root, path, require } = h;
+    const L = require(path.join(root, 'desktop/node_modules/pdf-lib'));
+    const pdfjs = await import(path.join(root, 'desktop/node_modules/pdfjs-dist/legacy/build/pdf.mjs'));
+    const p = await open(); await openPdf(p, path.join(root, 'tests/fixtures/chrome.pdf'), 'Summary.pdf');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+    const typed = 'Revenue Zebra grew quickly';
+    const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Revenue' }).first().boundingBox();
+    await p.mouse.click(b.x + 8, b.y + b.height / 2); await p.waitForSelector('.line-editor');
+    await p.keyboard.press('Control+a'); await p.keyboard.type(typed); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    const out = await savedOf(p);
+    const task = pdfjs.getDocument({ data: new Uint8Array(out), standardFontDataUrl: path.join(root, 'desktop/node_modules/pdfjs-dist/standard_fonts/') });
+    const items = (await (await (await task.promise).getPage(1)).getTextContent()).items.filter((i) => i.str);
+    await task.destroy();
+    const y = Math.round(items.find((i) => i.str.startsWith('Revenue')).transform[5]);
+    const line = items.filter((i) => Math.round(i.transform[5]) === y);
+    eq(line.map((i) => i.str).join(''), typed, 'the line, read back by pdf.js');
+    for (const w of typed.split(' ')) ok(line.some((i) => i.str === w), `"${w}" is one piece, not split between fonts: ${JSON.stringify(line.map((i) => i.str))}`);
+    // the line says what it reads, for readers that use it (Chrome, Acrobat, poppler)
+    const d = await L.PDFDocument.load(out), c = d.getPage(0).node.Contents();
+    const src = (c instanceof L.PDFArray ? c.asArray().map((r) => d.context.lookup(r)) : [c]).map((s) => Buffer.from(L.decodePDFRawStream(s).decode()).toString('latin1')).join('\n');
+    const hex = 'FEFF' + [...typed].map((ch) => ch.charCodeAt(0).toString(16).padStart(4, '0').toUpperCase()).join('');
+    ok(src.includes(`/ActualText <${hex}>`) && /EMC/.test(src), 'ActualText around the line');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

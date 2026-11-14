@@ -176,8 +176,7 @@ async function txtDrawPara(L, out, p, m, ctx) {
   const col = txtHexRgb(m.color);
   for (let i = 0; i < m.lines.length; i++) {
     const line = m.lines[i]; if (!line.trim()) continue;
-    const runs = [];
-    for (const ch of line) { const code = f ? f.rev.get(ch) : undefined, own = code != null, last = runs[runs.length - 1]; if (last && last.own === own) last.chars.push(own ? code : ch); else runs.push({ own, chars: [own ? code : ch] }); }
+    const runs = glyphRuns(line, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
     let w = 0;
     for (const r of runs) {
       if (r.own) { r.w = r.chars.reduce((s, c) => s + (f.widths.get(c) ?? f.dw), 0) / 1000; continue; }
@@ -186,12 +185,12 @@ async function txtDrawPara(L, out, p, m, ctx) {
     }
     for (const r of runs) w += r.w * hs;
     const x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0, org = txtOrigin(F, i, x);
-    const ops = [O('q'), O('rg', col.map(N)), O('BT'), O('Tr', [N(0)]), O('Tc', [N(0)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
+    const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), O('rg', col.map(N)), O('BT'), O('Tr', [N(0)]), O('Tc', [N(0)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
       else ops.push(O('Tf', [node.newFontDictionary('CPDF', r.sf.ref), N(1)]), O('Tj', [r.hex]));
     }
-    ops.push(O('ET'), O('Q'));
+    ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
     p.pushOperators(...ops);
     if (m.underline) {
       const d = m.size * .12, s0 = [org[0] - F.v[0] * d, org[1] - F.v[1] * d];

@@ -5,7 +5,7 @@
    to put it inside), point it at the page in view, and expand or collapse them all.
    docMarks(): { id, type: 'bookmarks', items: [{ id, title, key: 'src:i' | null, top?, url?, open, items: [...] }] }.
    A bookmark points at a page by its key, so it follows the page when pages move; a bookmark whose page was deleted
-   is kept, without a destination. The PDF's own bookmarks are read into this tree the first time one is changed, and
+   is shown crossed out, and saved without a destination only when it has bookmarks under it (else it is left out). The PDF's own bookmarks are read into this tree the first time one is changed, and
    on saving the tree replaces the PDF's outline. Until then the outline is shown as it is and saved untouched. */
 
 const BM = { sel: null, cache: null, renaming: null, drag: null };
@@ -286,9 +286,15 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
     if (oldRef instanceof PDFRef) ctx.delete(oldRef);
   }
   cat.delete(N('Outlines'));
-  if (!m.items.length) return;
   const pageFor = new Map();
   entries.forEach((e, n) => { const k = pageKey(e); if (!pageFor.has(k)) pageFor.set(k, pages[n]); });
+  // A bookmark whose page is gone, with nothing under it, would go nowhere in any reader: it is left out.
+  const live = (list) => list.flatMap((b) => {
+    const items = live(b.items || []);
+    return b.key != null && !pageFor.get(b.key) && !b.url && !items.length ? [] : [{ ...b, items }];
+  });
+  const items = live(m.items);
+  if (!items.length) return;
   const build = (list, parentRef) => {
     const refs = list.map(() => ctx.nextRef());
     let visible = 0;
@@ -312,7 +318,7 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
     return { first: refs[0], last: refs[refs.length - 1], visible };
   };
   const rootRef = ctx.nextRef();
-  const r = build(m.items, rootRef);
+  const r = build(items, rootRef);
   ctx.assign(rootRef, ctx.obj({ Type: 'Outlines', First: r.first, Last: r.last, Count: r.visible }));
   cat.set(N('Outlines'), rootRef);
 });

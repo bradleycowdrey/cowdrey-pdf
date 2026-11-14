@@ -161,4 +161,49 @@ export default async (h) => {
     ok(!(await p.$('.annotationLayer input')), 'nothing to fill in');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('forms: a new field can be filled in as soon as you leave form design (another tab, or Preview); back on Forms it is designed again', async () => {
+    const p = await open({ width: 1000, height: 1300 }); await openPdf(p);
+    await p.click('[data-rt="forms"]');
+    await p.click('[data-cmd="ff_text"]'); await drag(p, [100, 420], [300, 400]);
+    await p.click('[data-cmd="ff_check"]'); await drag(p, [100, 380], [114, 366]);
+    await p.click('[data-cmd="ff_radio"]'); await drag(p, [100, 350], [114, 336]);
+    await p.click('[data-cmd="ff_radio"]'); await drag(p, [140, 350], [154, 336]);
+    await p.click('[data-cmd="ff_combo"]'); await drag(p, [100, 320], [250, 300]);
+    ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'no fill-in controls while designing');
+    // Another tab: fill them in, without saving and opening again
+    await p.click('[data-rt="home"]'); await p.waitForTimeout(200);
+    eq(await p.$$eval('.ff-fill-layer .ff-ctl', (c) => c.map((x) => x.className.replace('ff-ctl ff-ctl-', ''))), ['text', 'check', 'radio', 'radio', 'combo']);
+    await p.click('.ff-fill-layer .ff-ctl-text'); await p.keyboard.type('Jane Q'); await p.keyboard.press('Tab');
+    await p.click('.ff-fill-layer .ff-ctl-check'); await p.click('.ff-fill-layer .ff-ctl-radio >> nth=1');
+    await p.selectOption('.ff-fill-layer .ff-ctl-combo', 'Option 2');
+    eq((await ffMarks(p)).map((m) => m.val), ['Jane Q', true, false, true, 'Option 2']);
+    eq(await p.inputValue('.ff-fill-layer .ff-ctl-text'), 'Jane Q', 'the typed text stays shown');
+    await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/forms-fill-dark.png' });
+    // Undo takes back the last change; redo puts it back
+    await p.click('#viewer', { position: { x: 5, y: 5 } }); await p.keyboard.press('Control+z'); await p.waitForTimeout(150);
+    eq((await ffMarks(p)).map((m) => m.val)[4], '', 'undo'); await p.keyboard.press('Control+Shift+z'); await p.waitForTimeout(150);
+    const f = (await PDFDocument.load(await savedOf(p))).getForm();
+    eq([f.getTextField('Text1').getText(), f.getCheckBox('CheckBox1').isChecked(), f.getRadioGroup('Group1').getSelected(), f.getDropdown('Dropdown1').getSelected()], ['Jane Q', true, 'Choice2', ['Option 2']]);
+    // Back on Forms: designed again (selectable, properties on double-click), showing what was filled in
+    await p.click('[data-rt="forms"]'); await p.waitForTimeout(200);
+    ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing again');
+    eq(await p.$$eval('.marks .ff-mk.mk', (m) => m.length), 5);
+    ok(/Jane Q/.test(await p.$eval('.marks .ff-mk', (g) => g.textContent)), 'shows the value');
+    const [x, y] = await at(p, 200, 410); await p.mouse.dblclick(x, y); await p.waitForSelector('#dialog[open] #ffName'); await p.click('#dialog [data-x]');
+    // Preview on the Forms tab
+    await p.click('[data-cmd="ffPreview"]'); await p.waitForTimeout(150);
+    eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'true');
+    eq(await p.$$eval('.ff-fill-layer .ff-ctl', (c) => c.length), 5);
+    await p.fill('.ff-fill-layer .ff-ctl-text', 'Pelican'); await p.keyboard.press('Tab');
+    eq((await ffMarks(p))[0].val, 'Pelican');
+    await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/forms-preview-dark.png' });
+    await p.click('[data-cmd="ffPreview"]'); await p.waitForTimeout(150);
+    eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'false');
+    ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing after Preview is turned off');
+    await p.click('[data-cmd="ffPreview"]'); await p.click('[data-cmd="ff_check"]'); await p.waitForTimeout(150); // a form tool ends the preview
+    eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'false');
+    ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing with a form tool');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

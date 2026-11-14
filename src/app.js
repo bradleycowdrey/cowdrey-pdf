@@ -1209,10 +1209,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       f = rev.size ? { ...f, rev } : null;
     }
     const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
-    const runs = [];
-    for (const ch of m.text) { const code = f ? f.rev.get(ch) : undefined; const own = code != null; const last = runs[runs.length - 1]; if (last && last.own === own) last.chars.push(own ? code : ch); else runs.push({ own, chars: [own ? code : ch] }); }
+    const runs = glyphRuns(m.text, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
     // A clean text state: what the page set before (invisible text, spacing, rise) must not apply to the new line.
-    const ops = [O('q'), O('rg', rgbOf(m.color)), O('BT'), O('Tr', [PDFNumber.of(0)]), O('Tc', [PDFNumber.of(0)]), O('Tw', [PDFNumber.of(0)]), O('Tz', [PDFNumber.of(100)]), O('Ts', [PDFNumber.of(0)]), O('Tm', m.tm.map((n) => PDFNumber.of(+(+n).toFixed(4))))];
+    const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), O('rg', rgbOf(m.color)), O('BT'), O('Tr', [PDFNumber.of(0)]), O('Tc', [PDFNumber.of(0)]), O('Tw', [PDFNumber.of(0)]), O('Tz', [PDFNumber.of(100)]), O('Ts', [PDFNumber.of(0)]), O('Tm', m.tm.map((n) => PDFNumber.of(+(+n).toFixed(4))))];
     for (const r of runs) {
       if (r.own) {
         ops.push(O('Tf', [f.key, PDFNumber.of(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
@@ -1223,11 +1222,25 @@ async function saveContentEdits(L, out, p, marks, ctx) {
         ops.push(O('Tf', [key, PDFNumber.of(1)]), O('Tj', [hex]));
       }
     }
-    ops.push(O('ET'), O('Q'));
+    ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
     p.pushOperators(...ops);
   }
   void PDFRef; void PDFRawStream;
 }
+// A line split into runs set in the page's own font (`own`, its codes) or in a standard font (the letters). A word
+// with any letter the font lacks is set in the standard font as a whole: switching fonts inside a word splits it
+// into pieces that readers' search and copy don't put back together.
+function glyphRuns(text, rev) {
+  const runs = [];
+  for (const tok of String(text).match(/\s+|\S+/g) || []) {
+    const chars = [...tok], own = !!rev && chars.every((ch) => rev.has(ch)), vals = own ? chars.map((ch) => rev.get(ch)) : chars;
+    const last = runs[runs.length - 1];
+    if (last && last.own === own) last.chars.push(...vals); else runs.push({ own, chars: vals });
+  }
+  return runs;
+}
+// The line's text for readers (copy, search, screen readers), around a line drawn in more than one font.
+function actualText(L, out, text) { return L.PDFOperator.of('BDC', [L.PDFName.of('Span'), out.context.obj({ ActualText: L.PDFHexString.fromText(text) })]); }
 // Comments from other apps that were deleted or changed.
 function saveCommentEdits(L, out, p, marks, same) {
   const edits = marks.filter((m) => m.type === 'ae'); if (!edits.length) return;
@@ -2048,7 +2061,7 @@ cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFile
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
-cmd('merge', { rlabel: 'Add PDFs', label: 'Add PDFs at the end…', icon: 'files', run: () => $('#mergeInput').click() });
+cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
 cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
@@ -2064,13 +2077,13 @@ for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: h
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
 cmd('rotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: has, run: () => rotatePage(-90) });
-cmd('rotR', { label: 'Rotate right', icon: 'rotate-cw', key: 'Mod-r', enabled: has, run: () => rotatePage(90) });
+cmd('rotR', { rlabel: 'Rotate', label: 'Rotate right', icon: 'rotate-cw', key: 'Mod-r', enabled: has, run: () => rotatePage(90), menu: ['rotL', 'rotR', 'rotAll', 'pg60_rotate'] });
 cmd('rotAll', { rlabel: 'Rotate all', label: 'Rotate all pages', icon: 'refresh-cw', enabled: has, run: () => rotateAll(90) });
 cmd('up', { rlabel: 'Move up', label: 'Move page up', icon: 'arrow-up', enabled: () => has() && current > 0, run: () => movePage(-1) });
 cmd('down', { rlabel: 'Move down', label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
 cmd('dup', { label: 'Duplicate page', icon: 'copy-plus', enabled: has, run: duplicatePage });
 cmd('blank', { rlabel: 'Blank page', label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
-cmd('delPage', { label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage });
+cmd('delPage', { rlabel: 'Delete', label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage, menu: ['delPage', 'pg60_delete'] });
 cmd('extract', { label: 'Extract pages…', icon: 'file-output', enabled: has, run: extractPages });
 cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => isPhone() ? app.dataset.sidebar === 'open' : S.sidebar, run: () => toggleSidebar() });
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
@@ -2109,7 +2122,7 @@ function openPopover(anchor, html) {
   pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
   const f = $('.mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.menubar > button, #moreBtn').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -2129,7 +2142,7 @@ pop.addEventListener('keydown', (e) => {
   e.stopPropagation();
 });
 pop.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd); });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
   $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
@@ -2151,7 +2164,7 @@ $('#menubar').addEventListener('keydown', (e) => {
 });
 // Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
 function moreMenuHtml() {
-  const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids : [])));
+  const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids.flatMap((id) => [id, ...((C[id] && C[id].menu) || [])]) : [])));
   return MENUS.map(([t, ids], k) => {
     const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
@@ -2167,7 +2180,7 @@ const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
   markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], ['Colour', 'COLORS'], ['Add', ['sign']]]],
-  pages: ['Pages', [['Rotate', ['rotL', 'rotR', 'rotAll']], ['Order', ['up', 'down', 'dup']], ['Insert', ['blank', 'merge']], ['Remove', ['extract', 'delPage']]]],
+  pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
   export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
@@ -2197,6 +2210,7 @@ function toolOnTab(tab) {
 }
 function chooseTab(k) {
   S.ribbon = k; saveSettings();
+  for (const h of FEATURE.onTab || []) h(k);
   // A tool from another tab would stay on unseen (and, say, keep a form from being filled): go back to Select.
   if (!toolOnTab(k)) { setTool('select'); pendingImage = null; }
   renderRibbon();
@@ -2212,7 +2226,7 @@ function renderRibbon() {
   const [, groups] = RIBBON[S.ribbon] || RIBBON.home;
   $('#ribbonBody').innerHTML = groups.map(([label, ids]) => `<div class="r-group" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
     ? COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${S.color === c}"></button>`).join('')
-    : ids.filter(shown).map((id) => `<button type="button" class="rb" data-cmd="${id}" title="${esc(C[id].label + (C[id].key ? ' (' + fmtKey(C[id].key) + ')' : ''))}">${ic(C[id].icon)}<span>${esc(C[id].rlabel || C[id].label.replace(/…$/, '').replace(/^Appearance: /, ''))}</span></button>`).join('')}</div><div class="r-label">${label}</div></div>`).join('');
+    : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => { S.color = b.dataset.color; saveSettings(); renderRibbon(); });
   icons(); refreshRibbon();
   const tabs = $('#ribbonTabs'), tab = $(`[data-rt="${S.ribbon}"]`, tabs);
@@ -2220,6 +2234,24 @@ function renderRibbon() {
   const on = $('#ribbonBody [aria-pressed="true"]'); if (on) scrollIntoRow($('#ribbonBody'), on); else $('#ribbonBody').scrollLeft = 0;
   ribbonEdges();
 }
+// A ribbon button. A command with `menu` (a list of command ids) gets a small arrow beside it that opens them.
+function ribbonButton(id) {
+  const c = C[id], label = c.rlabel || c.label.replace(/…$/, '').replace(/^Appearance: /, '');
+  const b = `<button type="button" class="rb" data-cmd="${id}" title="${esc(c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''))}">${ic(c.icon)}<span>${esc(label)}</span></button>`;
+  if (!c.menu) return b;
+  if (!c.run) return `<button type="button" class="rb" data-rmenu="${id}" aria-haspopup="menu" aria-expanded="false" title="${esc(c.label)}">${ic(c.icon)}<span>${esc(label)}${ic('chevron-down')}</span></button>`;
+  const more = `More ${label.toLowerCase()} options`;
+  return `<span class="rb-split">${b}<button type="button" class="rb-more" data-rmenu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(more)}" title="${esc(more)}">${ic('chevron-down')}</button></span>`;
+}
+function openRibbonMenu(id) {
+  const b = $(`#ribbonBody [data-rmenu="${id}"]`); if (!b || !C[id] || !C[id].menu) return;
+  b.setAttribute('aria-expanded', 'true'); openPopover(b.closest('.rb-split') || b, menuHtml(C[id].menu)); popAnchor = b;
+}
+$('#ribbonBody').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-rmenu]'); if (!b) return;
+  const open = b.getAttribute('aria-expanded') === 'true'; closePopover();
+  if (!open) openRibbonMenu(b.dataset.rmenu);
+});
 // Scrolls a row sideways just enough to show el (never the page up or down).
 function scrollIntoRow(row, el) {
   const r = row.getBoundingClientRect(), b = el.getBoundingClientRect(), pad = 48;
@@ -2240,6 +2272,7 @@ window.addEventListener('resize', ribbonEdges);
 $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
+  $$('#ribbonBody [data-rmenu]').forEach((b) => { b.disabled = !C[b.dataset.rmenu].menu.some((id) => id !== '-' && shown(id) && (!C[id].enabled || C[id].enabled())); });
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
   let shift = false;
   $$('#ribbonBody .r-group').forEach((g) => {
