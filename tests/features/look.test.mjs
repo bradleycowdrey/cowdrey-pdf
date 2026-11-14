@@ -144,4 +144,19 @@ export default async (h) => {
     ok(it.every((i) => i[4] === 'serif'), 'in Times');
     eq(p.errors, []); await p.ctx.close();
   });
+  await test('look: the Comment tab\'s groups match the other tabs: 12px names, two rows as tall as a big button, shapes named when there is room', async () => {
+    const p = await open({ width: 1440 }); await openPdf(p);
+    await p.click('[data-rt="markup"]'); await p.waitForTimeout(200);
+    const r = await p.evaluate(() => {
+      const big = document.querySelector('#ribbonBody [data-cmd="tool_select"]'), small = [...document.querySelectorAll('#ribbonBody .r-rows .rb, #ribbonBody .r-icons .rb')];
+      const items = document.querySelector('#ribbonBody .r-rows .r-items');
+      return { size: [...new Set([big, ...small].map((b) => getComputedStyle(b).fontSize))], bigH: big.getBoundingClientRect().height, rowsH: items.scrollHeight,
+        named: [...document.querySelectorAll('#ribbonBody .r-icons .rb')].map((b) => [b.textContent.trim(), b.querySelector('span').getBoundingClientRect().width > 20]) };
+    });
+    eq(r.size, ['12px'], 'one text size');
+    ok(Math.abs(r.rowsH - r.bigH) <= 2, `two rows ${r.rowsH} as tall as a big button ${r.bigH}`);
+    ok(r.named.length >= 7 && r.named.every(([t, v]) => t && v), 'every shape shows its name: ' + JSON.stringify(r.named));
+    const [sw, cw] = await p.$eval('#ribbonBody', (e) => [e.scrollWidth, e.clientWidth]); ok(sw <= cw, `the tab fits (${sw}/${cw})`);
+    await p.ctx.close();
+  });
 };

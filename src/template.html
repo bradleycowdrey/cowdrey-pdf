@@ -128,13 +128,17 @@ button { font: inherit; color: inherit; }
 .swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 2px var(--accent); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .swatch { --sw-edge: rgb(255 255 255 / .34); } }
 :root[data-theme="dark"] .swatch { --sw-edge: rgb(255 255 255 / .34); }
-/* compact ribbon groups (wide screens): small buttons in two rows, with names (r-rows) or as icons (r-icons) */
+/* compact ribbon groups (wide screens): small buttons with their names, in two rows (r-icons too, where there is room
+   for their names; on a phone those fold into one button that shows the tool in use) */
 @media (min-width: 761px) {
   .r-rows .r-items, .r-icons .r-items { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 26px); gap: 2px 2px; align-content: center; }
-  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 8px 0 6px; gap: 6px; align-items: center; }
-  .r-rows .rb > span { -webkit-line-clamp: 1; white-space: nowrap; }
-  .r-icons .rb { width: 30px; padding: 0; justify-content: center; }
+  .r-rows, .r-icons { padding: 0 7px; }
+  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 6px 0 5px; gap: 5px; align-items: center; }
+  .r-rows .rb > span, .r-icons .rb > span { -webkit-line-clamp: 1; white-space: nowrap; }
   .r-swatches .r-items { display: grid; grid-template-columns: repeat(4, 18px); grid-template-rows: repeat(2, 18px); gap: 8px 6px; align-content: center; padding: 0 2px; }
+}
+@media (min-width: 761px) and (max-width: 1399px) {
+  .r-icons .rb { width: 30px; padding: 0; justify-content: center; }
   .r-icons .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
