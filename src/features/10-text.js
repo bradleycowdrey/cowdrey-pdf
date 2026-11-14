@@ -271,6 +271,12 @@ function txtBoxHit(v, x, y) {
 }
 
 /* ---- the format bar ---- */
+// The swatches with a text's own colour: in place of a swatch it is close to (#000000 for #111111), else first.
+function txtOwnSwatches(own) {
+  const rgb = (c) => txtHexRgb(c).map((x) => x * 255), o = rgb(own);
+  const near = TXT_SWATCHES.findIndex((c) => rgb(c).reduce((s, x, k) => s + Math.abs(x - o[k]), 0) < 30);
+  return near >= 0 ? TXT_SWATCHES.map((c, k) => (k === near ? own : c)) : [own, ...TXT_SWATCHES.slice(0, -1)];
+}
 let txtBar = null, txtBarDown = false;
 window.addEventListener('pointerup', () => setTimeout(() => { txtBarDown = false; }, 0), true);
 window.addEventListener('pointercancel', () => { txtBarDown = false; }, true);
@@ -284,7 +290,7 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
-    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? [own, ...TXT_SWATCHES.slice(0, -1)] : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
+    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
   ].join('');
@@ -333,8 +339,10 @@ function txtShowBar(v, target, fmt, opts, onChange, refocus) {
 function txtPlaceBar(v, target) {
   const bar = txtBar; if (!bar || !target.isConnected) return;
   const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
-  const left = Math.max(4, Math.min(er.left - pr.left, pr.width - bw - 4));
-  const vt = viewer.getBoundingClientRect().top;
+  // Inside the page and inside what the viewer shows of it (a page zoomed wider than the screen).
+  const vr = viewer.getBoundingClientRect(), lo = Math.max(4, vr.left - pr.left + 4), hi = Math.min(pr.width, vr.right - pr.left) - bw - 4;
+  const left = Math.max(lo, Math.min(er.left - pr.left, hi));
+  const vt = vr.top;
   let top = er.top - pr.top - bh - 10; if (top < 4 || pr.top + top < vt + 4) top = er.bottom - pr.top + 10;
   bar.style.left = left + 'px'; bar.style.top = top + 'px';
 }

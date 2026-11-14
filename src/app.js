@@ -1675,7 +1675,8 @@ function teFollowers(v, m) {
 // Moves the text after an edited line by how much wider or narrower the line now is. Returns true if anything moved.
 function teReflow(v, m, follow) {
   if (!follow || !follow.list || !follow.list.length) return false;
-  const list = marksOf(v.entry), grow = (x) => (x.text === x.orig ? 0 : teImage(v, x).adv - x.width);
+  // How much wider the text is now, both measured the same way (so the gap after the original is kept).
+  const list = marksOf(v.entry), grow = (x) => (x.text === x.orig ? 0 : teImage(v, x).adv - teImage(v, { ...x, text: x.orig }).adv);
   let shift = (m.dx || 0) + grow(m), moved = false;
   for (const f of follow.list) {
     const dx = Math.abs(shift) < .05 ? 0 : +shift.toFixed(3), inList = list.includes(f);

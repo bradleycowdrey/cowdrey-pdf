@@ -190,7 +190,7 @@ export default async (h) => {
     const out = await savedOf(p), it = await itemsOf(out);
     const hi = it.find((i) => /edited/.test(i.s)), wi = it.find((i) => i.s.trim() === 'world');
     ok(hi && wi, JSON.stringify(it));
-    ok(wi.x >= hi.x + hi.w - .5, `world (x ${wi.x}) starts after the edited text ends (${hi.x + hi.w})`);
+    ok(wi.x >= hi.x + hi.w + 2, `world (x ${wi.x}) starts after the edited text ends (${hi.x + hi.w}), the space kept`);
     ok(Math.abs(wi.y - hi.y) < .5, 'same baseline');
     ok(Math.abs(wi.x - (before.W.tm[4] + w.dx)) < .5, 'where the screen put it');
     // Taking the edit back puts it back
@@ -272,8 +272,8 @@ export default async (h) => {
     const F = await lineOf(q, 'First');
     const [fx, fy] = await atN(q, 0, F.tm[4] + 5, F.tm[5] + 4); await q.mouse.click(fx, fy); await q.waitForSelector('.txt-bar');
     const sw2 = await q.$$eval('.txt-bar [data-tf="color"]', (b) => b.map((x) => [x.dataset.c, x.getAttribute('aria-pressed')]));
-    ok(!sw2.some((x) => x[1] === 'true') || sw2[0][0] === '#000000', JSON.stringify(sw2));
-    eq(sw2[0][1], 'true', 'the line colour is shown pressed');
+    eq(sw2.filter((x) => x[1] === 'true'), [['#000000', 'true']], 'its black, in black\'s place: ' + JSON.stringify(sw2));
+    eq(sw2.length, 6, 'one black, not two');
     await shot(q, 'format-bar-colour-light.png');
     await q.ctx.close();
   });
