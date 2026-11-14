@@ -332,6 +332,7 @@ function txtShowBar(v, target, fmt, opts, onChange, refocus) {
   txtHideBar();
   const bar = txtBar = txtBarEl(fmt, opts, (f) => { onChange(f); txtPlaceBar(v, target); }, refocus);
   bar.classList.add('floating');
+  txtBarKeys(bar, target, refocus);
   v.el.appendChild(bar); icons();
   txtPlaceBar(v, target);
   return bar;
@@ -345,6 +346,31 @@ function txtPlaceBar(v, target) {
   const vt = vr.top;
   let top = er.top - pr.top - bh - 10; if (top < 4 || pr.top + top < vt + 4) top = er.bottom - pr.top + 10;
   bar.style.left = left + 'px'; bar.style.top = top + 'px';
+}
+// The keys of an editor with its bar: Tab and Shift+Tab go round the text and the bar (Escape in the bar goes back
+// to the text), and Ctrl/Cmd+B, I and U press Bold, Italic and Underline, as in a word processor.
+const TXT_FMT_KEYS = { b: 'bold', i: 'italic', u: 'underline' };
+const txtBarStops = (bar) => $$('button, select, input:not([type="hidden"])', bar).filter((b) => !b.disabled && b.getClientRects().length);
+function txtFmtKey(e, bar) {
+  const k = (isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && TXT_FMT_KEYS[(e.key || '').toLowerCase()];
+  const b = k && $(`[data-tf="${k}"]`, bar); if (!b) return false;
+  e.preventDefault(); e.stopPropagation(); b.click(); return true;
+}
+function txtBarKeys(bar, target, refocus) {
+  const back = () => (refocus ? refocus() : target.focus({ preventScroll: true }));
+  target.addEventListener('keydown', (e) => {
+    if (txtBar !== bar || txtFmtKey(e, bar) || e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const stops = txtBarStops(bar); if (!stops.length) return;
+    e.preventDefault(); e.stopPropagation(); (e.shiftKey ? stops[stops.length - 1] : stops[0]).focus();
+  });
+  bar.addEventListener('keydown', (e) => {
+    if (txtFmtKey(e, bar)) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); back(); return; }
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const stops = txtBarStops(bar), k = stops.indexOf(document.activeElement);
+    if (k < 0 || (e.shiftKey ? k > 0 : k < stops.length - 1)) return; // within the bar: the browser moves along
+    e.preventDefault(); e.stopPropagation(); back();
+  });
 }
 function txtHideBar() { if (txtBar) { txtBar.remove(); txtBar = null; } }
 const txtBarBusy = () => (txtBar && txtBar.contains(document.activeElement)) || txtBarDown;
@@ -378,9 +404,10 @@ function txtOpenEditor(v, o) {
 }
 function txtCloseEditor(commit) {
   const E = txtEd; if (!E) return;
+  const had = document.activeElement === E.ta || !!(txtBar && txtBar.contains(document.activeElement));
   txtEd = null; txtHideBar(); txtEditing.delete(E.m.id);
   if (E.cleanup) E.cleanup();
-  const text = E.ta.value.replace(/\r/g, ''), had = document.activeElement === E.ta;
+  const text = E.ta.value.replace(/\r/g, '');
   E.ta.remove();
   if (had) viewer.focus({ preventScroll: true }); // the keys go on working on the page
   if (commit) Promise.resolve(E.done(text, E.fmt)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
@@ -540,11 +567,14 @@ closeLineEditor = function (commit) {
   if (txtEd) txtCloseEditor(commit);
   const le = lineEditor, T = txtLine && txtLine.le === le ? txtLine : null;
   if (le && commit && txtBarBusy() && document.activeElement !== le.ed && T) return; // the format bar is in use
+  // Focus in the editor or its bar goes back to the page when they close, never to the start of the window.
+  const had = le && (document.activeElement === le.ed || (txtBar && txtBar.contains(document.activeElement)));
+  if (had && document.activeElement !== le.ed) le.ed.focus({ preventScroll: true });
   txtLine = null; txtHideBar();
   if (!le || !commit || !T || txtSameFmt(T.fmt, T.base)) return txtCoreCloseLine(commit);
   lineEditor = null; editingIds.delete(le.m.id);
   const text = le.ed.textContent.replace(/[\r\n]+/g, ' ');
-  le.ed.remove(); phoneZoomBack();
+  le.ed.remove(); if (had) viewer.focus({ preventScroll: true }); phoneZoomBack();
   const before = snapshot(), list = marksOf(le.v.entry);
   if (!le.isNew) { const k = list.indexOf(le.m); if (k >= 0) list.splice(k, 1); }
   const m = txtNewPara([le.m], 0, T.base.size * 1.2);

@@ -1738,7 +1738,7 @@ function openLineEditor(v, m, isNew) {
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
-  ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed) closeLineEditor(true); }, 0));
+  ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed && document.activeElement !== ed) closeLineEditor(true); }, 0));
 }
 // Where a click (or tap) on the page put the caret: { x, y, detail } on screen, set while the Edit tool handles it.
 // Opened from the keyboard (no click), the editor selects all of the line.
@@ -1830,8 +1830,9 @@ function closeLineEditor(commit) {
   if (!lineEditor) return false;
   const { ed, v, m, isNew, follow } = lineEditor; lineEditor = null;
   editingIds.delete(m.id);
-  const text = ed.textContent.replace(/[\r\n]+/g, ' ');
+  const text = ed.textContent.replace(/[\r\n]+/g, ' '), had = document.activeElement === ed;
   ed.remove();
+  if (had) viewer.focus({ preventScroll: true }); // the keys (Tab, the arrows, Delete) go on from the page
   phoneZoomBack();
   if (commit && text !== m.text) {
     const before = snapshot(), list = marksOf(v.entry);
