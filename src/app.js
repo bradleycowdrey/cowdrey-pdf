@@ -758,6 +758,24 @@ function nudgeMark(key, big) {
   redrawPage(selMark.entry); changed(before);
   return true;
 }
+// Alt+Shift+arrows: the selected mark's right edge (Left, Right) or bottom edge (Up, Down) moves 2 pt, as dragging its
+// handle would; a mark that keeps its proportions grows or shrinks from its top-left corner.
+function sizeMark(key) {
+  const m = selectedMark(), v = m && views.find((x) => x.entry === selMark.entry && x.rendered); if (!v) return false;
+  const svg = v.el.querySelector('svg.marks'), el = svg && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`), b = el && markViewBox(svg, el);
+  const stretch = MARK_STRETCH(m) || ((('x1' in m) || (Array.isArray(m.quads) && m.type !== 'cmMarkup')) && !MARK_SCALE[m.type]); // form fields, redaction areas too
+  if (!b || !(stretch || MARK_SCALE[m.type])) return false;
+  const d = 2 * scale, w0 = Math.max(1, b[2] - b[0]), h0 = Math.max(1, b[3] - b[1]);
+  let sx = 1 + ({ ArrowRight: d, ArrowLeft: -d }[key] || 0) / w0, sy = 1 + ({ ArrowDown: d, ArrowUp: -d }[key] || 0) / h0;
+  sx = Math.max(sx, 4 / w0); sy = Math.max(sy, 4 / h0);
+  if (!stretch) sx = sy = key === 'ArrowRight' || key === 'ArrowDown' ? Math.max(sx, sy) : Math.min(sx, sy);
+  const before = snapshot(), orig = JSON.parse(JSON.stringify(m)), [ax, ay] = [b[0], b[1]];
+  const P = ([x, y]) => { const [vx, vy] = toView(v, x, y); return toPdf(v, ax + (vx - ax) * sx, ay + (vy - ay) * sy); };
+  resizeMark(m, orig, P, sx);
+  if (Array.isArray(orig.quads) && m.type !== 'cmMarkup') m.quads = orig.quads.map((q) => Array.isArray(q[0]) ? q.map(P) : q);
+  redrawPage(selMark.entry); changed(before);
+  return true;
+}
 // Copy, paste and duplicate the selected mark. A paste lands on the page in view, 10 pt down and right of the
 // original (or of the last paste), and is selected.
 let markClip = null;
@@ -1008,6 +1026,7 @@ document.addEventListener('pointerdown', (e) => { if (selBar && !selBar.contains
 $('#viewer').addEventListener('scroll', hideSelBar, { passive: true });
 document.addEventListener('keydown', (e) => { if (selBar && e.key === 'Escape') hideSelBar(); }, true);
 TEST_HOOKS.selBar = () => selBar && $$('button', selBar).map((b) => b.getAttribute('aria-label'));
+TEST_HOOKS.selId = () => selMark && selMark.id;
 // Touch: a finger dragged over text with a text tool (Highlight, Underline…) selects that text, as a mouse would (the
 // page does not scroll then: see touch-action in template.html). Letting go marks it up.
 const TEXT_TOOLS = new Set(['highlight', 'cmunderline', 'cmstrike', 'cmsquiggly', 'protredtext']);
@@ -1030,6 +1049,12 @@ document.addEventListener('pointerdown', (e) => {
 // the item in the middle of the part of the page in view, as a click there would; it is then selected, so the arrow
 // keys move it and Delete removes it.
 const PLACE_TOOLS = new Set(['text', 'note', 'sign', 'image', 'cmstamp', 'cmtype', 'cmcallout']);
+// Tools that are dragged out (shapes, area highlight, redaction area, form fields): Enter drags one of the usual size
+// (160 by 100 pt; a line 160 pt long; a field its own size) in the middle of the page in view, then selects it, so the
+// arrow keys move it and Alt+Shift+arrows resize it.
+const DRAG_TOOLS = new Set(['rect', 'cmoval', 'cmcloud', 'cmline', 'cmarrow', 'cmarea', 'protredarea']);
+const dragTool = (t) => DRAG_TOOLS.has(t) || (/^ff_/.test(t) && t !== 'ff_edit' && !!FEATURE.tools[t]);
+const keyPlaces = (t) => PLACE_TOOLS.has(t) || dragTool(t);
 let kbPlace = null; // { v, ids, x, y } while a placement made with Enter is under way
 function placeByKey() {
   const v = views[current], svg = v && v.rendered && v.el.querySelector('svg.marks'); if (!svg) return false;
@@ -1038,9 +1063,12 @@ function placeByKey() {
   if (right <= left || bottom <= top) return false;
   const x = (left + right) / 2, y = (top + bottom) / 2;
   const k = kbPlace = { v, ids: new Set(marksOf(v.entry).map((m) => m.id)), x, y };
-  const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
+  // a form field is clicked (it then takes its own size); the other drag tools are dragged corner to corner
+  const t = app.dataset.tool, drag = dragTool(t) && !/^ff_/.test(t), hw = drag ? 80 * scale : 0, hh = drag && t !== 'cmline' && t !== 'cmarrow' ? 50 * scale : 0;
+  const o = { clientX: x - hw, clientY: y - hh, bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
   svg.dispatchEvent(new PointerEvent('pointerdown', o));
-  window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+  if (drag) for (const f of [.5, 1]) window.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: x - hw + 2 * hw * f, clientY: y - hh + 2 * hh * f }));
+  window.dispatchEvent(new PointerEvent('pointerup', { ...o, clientX: x + hw, clientY: y + hh, buttons: 0 }));
   setTimeout(() => { if (kbPlace === k && !$('#dialog').open && !pageAskOpen) kbPlace = null; }, 0); // nothing asked, nothing placed
   return true;
 }
@@ -1086,7 +1114,8 @@ function modeChip() {
   const t = app.dataset.tool, on = !!doc && t && t !== 'select';
   chip.hidden = !on; app.classList.toggle('tool-on', on);
   if (!on) return;
-  const name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  let name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
+  if (dragTool(t) && !coarse()) hint = (hint || 'drag on the page') + ', or press Enter to add one';
   chip.title = $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
 }
 $('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
@@ -3542,7 +3571,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
-  if (e.key === 'Enter' && doc && PLACE_TOOLS.has(app.dataset.tool)) {
+  if (e.key === 'Enter' && doc && keyPlaces(app.dataset.tool)) {
     // on the page, or still on the button that chose the tool (Enter there would only choose it again)
     const a = document.activeElement, c = a && a.dataset && C[a.dataset.cmd];
     if (!a || a === document.body || a.closest('#viewer') || (c && (a.dataset.cmd === app.dataset.tool || (c.pressed && c.pressed())))) { e.preventDefault(); placeByKey(); return; }
@@ -3551,6 +3580,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
   // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
   if (/^Arrow/.test(e.key) && !e.altKey && selMark) { e.preventDefault(); nudgeMark(e.key, e.shiftKey); return; }
+  if (/^Arrow/.test(e.key) && e.altKey && e.shiftKey && selMark) { e.preventDefault(); sizeMark(e.key); return; }
   // The arrows turn the page only from the page itself: on a button, swatch, tab or menu they stay with it.
   const a = document.activeElement;
   if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && a && a.matches && a.matches('[data-color]')) { // colour swatches: move along the row

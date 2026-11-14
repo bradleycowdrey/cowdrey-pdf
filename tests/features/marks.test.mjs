@@ -109,7 +109,7 @@ export default async (h) => {
     const p = await open(); await openPdf(p);
     ok(await p.$eval('#modeChip', (c) => c.hidden), 'hidden with Select');
     await p.click('[data-rt="forms"]'); await p.click('[data-cmd="ff_text"]'); await p.waitForTimeout(100);
-    eq(await p.textContent('#modeChip .mode-text'), 'Text field: drag on the page · Esc to stop');
+    eq(await p.textContent('#modeChip .mode-text'), 'Text field: drag on the page, or press Enter to add one · Esc to stop');
     ok(!(await p.$eval('#toast', (t) => t.classList.contains('show'))), 'no instruction toast');
     await p.click('[data-rt="markup"]'); await p.click('[data-cmd="cm_polygon"]'); await p.waitForTimeout(100);
     eq(await p.textContent('#modeChip .mode-text'), 'Polygon: click each corner, then double-click to finish · Esc to stop');

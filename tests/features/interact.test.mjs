@@ -175,4 +175,36 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     eq(await en(['ffFlatten', 'ffClear', 'protUnsecure']), [true, true, false]);
     eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
   });
+
+  await test('Drag-only tools are placed with Enter: a usual-size one in the middle of the page in view, selected; arrows move it, Alt+Shift+arrows resize it', async () => {
+    const p = await open(); await openPdf(p);
+    const box = (m) => { const xs = [], ys = []; const add = ([x, y]) => { xs.push(x); ys.push(y); };
+      if ('x1' in m) { add([m.x1, m.y1]); add([m.x2, m.y2]); } if (m.pts) m.pts.forEach(add); if (m.rects) m.rects.forEach((r) => { add([r[0], r[1]]); add([r[2], r[3]]); }); if (m.quads) m.quads.forEach((q) => q.forEach(add));
+      return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((n) => Math.round(n)); };
+    const cases = [['tool_rect', 'rect', 160], ['cm_oval', 'cmShape', 160], ['cm_line', 'cmShape', 160], ['cm_arrow', 'cmShape', 160], ['cm_area', 'hl', 160], ['protRedArea', 'redact', 160], ['ff_text', 'ff', 160], ['ff_check', 'ff', 14]];
+    let n = 0;
+    for (const [id, type, w] of cases) {
+      await run(p, id);
+      if (n === 0) ok(/or press Enter to add one · Esc to stop$/.test(await p.textContent('#modeChip .mode-text')), 'the chip says so: ' + await p.textContent('#modeChip .mode-text'));
+      await p.focus('#viewer'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
+      if (await p.$('#dialog[open]')) await p.click('#dialog .btn.primary');
+      const ms = await all(p); eq(ms.length, ++n, id + ' placed');
+      const m = ms[ms.length - 1], b = box(m);
+      eq([m.type, b[2] - b[0]], [type, w], id + ' size');
+      eq(await tool(p), 'select', id + ': Select tool');
+      eq(await p.evaluate(() => window.__cowdreyPdf.selId()), m.id, id + ' selected');
+      await p.keyboard.press('ArrowRight'); await p.waitForTimeout(60);
+      const b2 = box((await all(p))[n - 1]); eq([b2[0] - b[0], b2[2] - b2[0]], [1, w], id + ' moved 1 pt');
+      if (type !== 'ff' || w > 20) {
+        await p.keyboard.press('Alt+Shift+ArrowRight'); await p.waitForTimeout(60);
+        const b3 = box((await all(p))[n - 1]); eq([b3[0], b3[2] - b3[0]], [b2[0], w + 2], id + ' 2 pt wider');
+      }
+    }
+    // the middle of the part of the page in view
+    const r = await p.evaluate(() => { const g = document.querySelector('svg.marks [data-id]'), b = g.getBoundingClientRect(), pg = g.closest('.page').getBoundingClientRect(), w = document.querySelector('#viewer').getBoundingClientRect();
+      return [Math.round(b.left + b.width / 2 - (pg.left + pg.right) / 2), Math.round(b.top + b.height / 2 - (Math.max(pg.top, w.top) + Math.min(pg.bottom, w.bottom)) / 2)]; });
+    ok(Math.abs(r[0]) <= 4 && Math.abs(r[1]) <= 4, 'centred ' + r);
+    await p.keyboard.press('Control+z'); await p.waitForTimeout(100); eq((await all(p)).length, n, 'resizing is one undo step');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
