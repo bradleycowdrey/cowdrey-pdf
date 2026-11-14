@@ -1,7 +1,7 @@
 // End-to-end tests for Cowdrey.PDF. Run: (cd desktop && npm ci) && node tests/sample.mjs && node tests/e2e.mjs
 import fs from 'node:fs'; import path from 'node:path'; import { createRequire } from 'node:module';
 import { open as openApp, openPdf, close, missing, root } from './harness.mjs';
-// The app asks for your name the first time you make a comment: tests start with one, unless they ask for the question.
+// Comments are signed with your name once it is set: tests start with one, unless they ask for none (askName).
 async function open(o = {}) { const p = await openApp(o); if (!o.askName) await p.evaluate(() => window.__cowdreyPdf.setAuthor && window.__cowdreyPdf.setAuthor('Tester')); return p; }
 const require = createRequire(import.meta.url);
 const { PDFDocument } = require('../desktop/node_modules/pdf-lib');
@@ -98,7 +98,7 @@ await test('signature: drawn once, kept for next time, placed as a picture in th
   const g = await p.locator('.page[data-n="0"]').boundingBox();
   await p.mouse.click(g.x + 300, g.y + 450);
   eq(await marks(p), ['img']);
-  ok(await p.evaluate(() => !!localStorage.getItem('cowdrey.pdf:signature')), 'kept');
+  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('cowdrey.pdf:signatures') || '[]').length === 1), 'kept');
   const d = await saved(p); ok(d.getPageCount() === 3);
   await p.ctx.close();
 });
