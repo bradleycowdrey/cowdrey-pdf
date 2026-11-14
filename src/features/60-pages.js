@@ -534,14 +534,14 @@ FEATURE.savePage.push(({ p, entry }) => {
 /* ---- commands, ribbon, menu ---- */
 cmd('tool_crop', { label: 'Crop', icon: 'crop', enabled: has, pressed: () => app.dataset.tool === 'crop', run: () => { if (app.dataset.tool === 'crop') return setTool('select'); setTool('crop'); toast('Drag a box on the page to keep just that part'); } });
 cmd('pg60_crop', { label: 'Crop margins…', icon: 'frame', enabled: has, run: () => pg60CropDialog() });
-cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: has, run: pg60Split });
+cmd('pg60_split', { rlabel: 'Split', label: 'Split into files…', icon: 'split', enabled: () => has() && doc.pages.length > 1, run: pg60Split });
 cmd('pg60_insert', { label: 'Insert from PDF…', icon: 'file-input', enabled: has, run: pg60Insert });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => pg60Combine() });
 cmd('pg60_ins', { label: 'Insert pages', rlabel: 'Insert', icon: 'file-plus-2', menu: ['blank', 'pg60_insert', 'pg60_replace', '-', 'merge'] });
 cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, run: pg60Replace });
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
-cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: has, run: () => pg60DeleteAsk() });
+cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: () => has() && doc.pages.length > 1, run: () => pg60DeleteAsk() });
 cmd('pg60_selAll', { label: 'Select all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
 // One button per job: Rotate and Delete open their other choices from a small arrow, Insert is a list.
 ribbonAdd('pages', 'Order', ['pg60_reverse']);

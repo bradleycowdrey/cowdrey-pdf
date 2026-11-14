@@ -3030,6 +3030,7 @@ cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, r
 cmd('undo', { get label() { return undoStack.length ? 'Undo ' + undoName() : 'Undo'; }, rlabel: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
 cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Redo'; }, rlabel: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 TEST_HOOKS.cmdLabel = (id) => C[id].label;
+TEST_HOOKS.cmdEnabled = (id) => !C[id].enabled || !!C[id].enabled();
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
@@ -3046,7 +3047,8 @@ cmd('up', { rlabel: 'Move up', label: 'Move page up', icon: 'arrow-up', enabled:
 cmd('down', { rlabel: 'Move down', label: 'Move page down', icon: 'arrow-down', enabled: () => has() && current < doc.pages.length - 1, run: () => movePage(1) });
 cmd('dup', { label: 'Duplicate page', icon: 'copy-plus', enabled: has, run: duplicatePage });
 cmd('blank', { rlabel: 'Blank page', label: 'Insert blank page', icon: 'file-plus-2', enabled: has, run: insertBlank });
-cmd('delPage', { rlabel: 'Delete', label: 'Delete page', icon: 'file-x-2', enabled: has, run: deletePage, menu: ['delPage', 'pg60_delete'] });
+cmd('delPage', { rlabel: 'Delete', label: 'Delete page', icon: 'file-x-2', enabled: () => has() && doc.pages.length > 1, // a PDF keeps one page at least
+  run: deletePage, menu: ['delPage', 'pg60_delete'] });
 cmd('extract', { label: 'Extract pages…', icon: 'file-output', enabled: has, run: extractPages });
 cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed: () => isPhone() ? app.dataset.sidebar === 'open' : S.sidebar, run: () => toggleSidebar() });
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });

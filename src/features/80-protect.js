@@ -981,7 +981,8 @@ cmd('protRedArea', { label: 'Mark area', icon: 'box-select', enabled: has, press
 cmd('protRedSearch', { label: 'Search and redact…', icon: 'search-check', enabled: has, run: protSearch });
 cmd('protRedApply', { label: 'Apply redactions…', icon: 'file-check-2', enabled: () => has() && protHasPending(), run: protApply });
 cmd('protPassword', { label: 'Set password…', icon: 'lock', enabled: has, pressed: () => !!(protSec() && protSec().mode === 'set'), run: protPassword });
-cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: has, run: protRemoveSecurity });
+// Only when there is a password to remove: one the PDF came with, or one set here.
+cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: () => has() && (protUsedSources().some((k) => doc.sources[k].password) || docMarks().some((m) => m.type === 'protsec' && m.mode === 'set')), run: protRemoveSecurity });
 cmd('protFlatten', { label: 'Flatten pages…', tip: 'Flatten pages: make comments and form fields part of the page content when you save, so they can no longer be changed', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
 cmd('protCompress', { label: 'Compress…', icon: 'shrink', enabled: has, pressed: () => !!protDM('protcompress'), run: protCompressDlg });
 cmd('protClean', { label: 'Remove hidden info…', icon: 'eye-off', enabled: has, pressed: () => !!protDM('protclean'), run: protClean_ });

@@ -519,7 +519,7 @@ cmd('pd_watermark', { label: 'Watermark…', icon: PD_ICONS.pd_watermark, enable
 cmd('pd_background', { label: 'Background…', icon: PD_ICONS.pd_background, enabled: has, run: () => pdOpen('pd_background') });
 cmd('pd_headfoot', { label: 'Header & footer…', icon: PD_ICONS.pd_headfoot, enabled: has, run: () => pdOpen('pd_headfoot') });
 cmd('pd_bates', { label: 'Bates numbering…', icon: PD_ICONS.pd_bates, enabled: has, run: () => pdOpen('pd_bates') });
-cmd('pd_manage', { label: 'Manage page design…', icon: 'layout-template', enabled: has, run: () => pdManage() });
+cmd('pd_manage', { label: 'Manage page design…', icon: 'layout-template', enabled: () => has() && pdItems().length > 0, run: () => pdManage() });
 ribbonAdd('edit', 'Page design', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 menuAdd('Edit', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 TEST_HOOKS.pdItems = () => pdItems();

@@ -156,4 +156,23 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     await p.keyboard.press('Escape'); ok(await p.evaluate(() => document.activeElement.matches('#ribbonBody [data-rmenu]')), 'Escape back to it');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Commands that do not apply are disabled: Remove security, Delete page, Split, Manage page design, Flatten and Clear form', async () => {
+    const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+    const en = (ids) => p.evaluate((l) => l.map((id) => window.__cowdreyPdf.cmdEnabled(id)), ids);
+    await p.waitForTimeout(400);
+    eq(await en(['protUnsecure', 'pd_manage', 'ffFlatten', 'ffClear', 'delPage', 'pg60_split', 'pg60_delete']), [false, false, false, false, false, false, false], 'one page, no password, no form, no page design');
+    await p.click('[data-rt="protect"]'); eq(await p.$eval('#ribbonBody [data-cmd="protUnsecure"]', (b) => b.disabled), true, 'shown disabled on the ribbon');
+    // they come on once they apply
+    await run(p, 'blank'); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .btn.primary'); await p.waitForFunction(() => window.__cowdreyPdf.doc.pages.length === 2, null, { timeout: 10000 });
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-form'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    await run(p, 'protPassword'); await p.waitForSelector('#dialog[open] input[name=open]');
+    await p.fill('#dialog input[name=open]', 'heron'); await p.fill('#dialog input[name=open2]', 'heron'); await p.click('#dialog .dlg-foot button:has-text("Set password")'); await p.waitForTimeout(200);
+    eq(await en(['protUnsecure', 'pd_manage', 'delPage', 'pg60_split', 'pg60_delete']), [true, true, true, true, true]);
+    eq(await p.$eval('#ribbonBody [data-cmd="protUnsecure"]', (b) => b.disabled), false);
+    // a PDF with a form
+    await openPdf(p); await p.waitForTimeout(500);
+    eq(await en(['ffFlatten', 'ffClear', 'protUnsecure']), [true, true, false]);
+    eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
+  });
 };
