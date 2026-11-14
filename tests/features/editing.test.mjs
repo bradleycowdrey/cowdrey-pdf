@@ -171,21 +171,26 @@ export default async (h) => {
     await p.ctx.close();
   });
 
-  for (const scheme of ['dark', 'light']) await test(`phone (${scheme}): the format bar is one row and does not cover the line being edited`, async () => {
+  for (const scheme of ['dark', 'light']) await test(`phone (${scheme}): the format bar wraps to two rows, every control in view, and does not cover the line being edited`, async () => {
     const p = await open({ width: 390, height: 844, touch: true, scheme }); await openPdf(p, WORD, 'Pelican report.pdf');
     await p.evaluate(() => window.__cowdreyPdf.run('tool_edit')); await p.waitForTimeout(400);
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Prepared' }).first().boundingBox();
     await p.touchscreen.tap(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.line-editor'); await p.waitForTimeout(200);
     const bar = await p.locator('.txt-bar').boundingBox(), ed = await p.locator('.line-editor').boundingBox();
-    ok(bar.height < 60, 'one row: ' + bar.height); // 44px touch targets
+    ok(bar.height < 120, 'two rows at most: ' + bar.height); // 44px touch targets
     ok(bar.x >= 0 && bar.x + bar.width <= 390, 'inside the screen');
+    // Bold, Italic and Underline are in view, not scrolled off the edge
+    const out = await p.$$eval('.txt-bar button, .txt-bar select, .txt-bar input', (es) => { const r = document.querySelector('.txt-bar').getBoundingClientRect(); return es.filter((e) => e.getClientRects().length).filter((e) => { const q = e.getBoundingClientRect(); return q.left < r.left - 1 || q.right > r.right + 1 || q.right > innerWidth; }).map((e) => e.getAttribute('aria-label')); });
+    eq(out, [], 'nothing clipped');
+    eq(await p.$eval('.txt-bar', (e) => e.scrollWidth <= e.clientWidth), true, 'no sideways scroll');
+    for (const k of ['bold', 'italic', 'underline']) ok(await p.isVisible(`.txt-bar [data-tf="${k}"]`), k);
     ok(bar.y + bar.height <= ed.y || bar.y >= ed.y + ed.height, 'does not cover the line');
     await shot(p, `phone-format-bar-${scheme}.png`);
     // the colours open from one button, in the same row
     ok(!(await p.isVisible('.txt-bar .txt-cols .swatch')), 'swatches folded away');
     await p.click('.txt-bar [data-tf="colors"]'); await p.waitForTimeout(100);
     ok(await p.isVisible('.txt-bar .txt-cols .swatch'), 'swatches shown');
-    ok((await p.locator('.txt-bar').boundingBox()).height < 60, 'still one row');
+    ok((await p.locator('.txt-bar').boundingBox()).height < 120, 'still two rows at most');
     await shot(p, `phone-format-bar-colours-${scheme}.png`);
     await p.click('.txt-bar [data-c="#E03131"]'); await p.waitForTimeout(100);
     ok(!(await p.isVisible('.txt-bar .txt-cols .swatch')), 'folded again after picking');

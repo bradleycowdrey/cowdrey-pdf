@@ -356,7 +356,7 @@ function cmDrag(e, v, make, update) {
   const before = snapshot(), start = localPoint(e, v), m = make(...toPdf(v, ...start));
   marksOf(v.entry).push(m); drawMarks(v);
   let end = start;
-  const move = (ev) => { end = localPoint(ev, v); update(m, ...toPdf(v, ...end)); drawMarks(v); };
+  const move = (ev) => { end = pagePoint(ev, v); update(m, ...toPdf(v, ...end)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 4) { const list = marksOf(v.entry); list.splice(list.indexOf(m), 1); drawMarks(v); return; }

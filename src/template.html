@@ -232,6 +232,7 @@ button { font: inherit; color: inherit; }
 .app[data-busy] .marks, .app[data-busy] .marks * { cursor: progress !important; }
 .marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
 .marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
+.kb-block { position: absolute; z-index: 5; pointer-events: none; border-radius: 3px; outline: 2px solid var(--accent); outline-offset: 0; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
 .marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
 .sel-bar { position: fixed; z-index: 40; display: flex; gap: 2px; padding: 4px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
 .sel-bar button { border: 0; background: none; color: var(--ink); width: 32px; height: 32px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
@@ -263,6 +264,7 @@ button { font: inherit; color: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mode-chip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0 2px 0 10px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: 12px; line-height: 24px; }
 .mode-chip[hidden] { display: none; }
+.sb-page[hidden] { display: none; } /* no document: no "Page [ ] of 0" */
 .mode-chip .mode-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mode-chip .mode-name { font-weight: 600; }
 .mode-chip .mode-stop { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
@@ -442,6 +444,11 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .swatch, .sw-row .swatch, .pop-sw .swatch { width: 32px; height: 32px; }
   .sw-more svg, .r-swatches .sw-more svg { width: 16px; height: 16px; }
   .r-swatches .r-items { gap: 4px; }
+  /* menu rows and dialog buttons: 44px for a finger too (a mouse keeps the compact sizes) */
+  #popover .mi, .popover .mi { min-height: 44px; }
+  .dlg-head .icon-btn { width: 44px; height: 44px; margin: -5px -10px -5px 0; }
+  .dlg-foot .btn { height: 44px; padding: 0 18px; border-radius: 22px; }
+  dialog input:is([type="checkbox"], [type="radio"]) { width: 22px; height: 22px; }
 }
 @media (pointer: coarse) and (min-width: 761px) { .r-swatches .r-items { grid-template-columns: repeat(8, 32px); grid-template-rows: 32px; } }
 /* Forced colours (Windows High Contrast): colours stay on swatches and on the page itself; what is pressed, chosen
@@ -534,7 +541,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   </div>
   <footer class="statusbar">
     <button class="icon-btn sb-pages" type="button" data-cmd="sidebar" title="Pages and outline" aria-label="Pages and outline"><i data-lucide="panel-left"></i></button>
-    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> <span id="pageOf">of </span><span id="pageCount">0</span><span id="pageEnd"></span></span>
+    <span class="sb-page" hidden>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> <span id="pageOf">of </span><span id="pageCount">0</span><span id="pageEnd"></span></span>
     <span class="mode-chip" id="modeChip" role="status" hidden><span class="mode-text"></span><button class="mode-stop" type="button" title="Stop (Esc)" aria-label="Stop and go back to Select"><i data-lucide="x"></i></button></span>
     <span class="sb-spacer"></span>
     <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>

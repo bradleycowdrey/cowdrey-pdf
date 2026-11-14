@@ -13,7 +13,7 @@ export default async (h) => {
     for (const scheme of ['dark', 'light']) {
       const p = await open({ scheme }); await openPdf(p, WORD, 'Pelican report.pdf');
       await run(p, 'tool_edit'); await clickLine(p, 'Budget');
-      const sh = await p.$eval('.txt-bar .swatch[aria-pressed="true"]', (b) => getComputedStyle(b).boxShadow);
+      const sh = await p.$eval('.txt-bar .swatch[aria-checked="true"]', (b) => getComputedStyle(b).boxShadow);
       ok(/inset/.test(sh), scheme + ': an inside edge ' + sh);
       ok(scheme === 'dark' ? /rgba\(255, 255, 255/.test(sh) : /rgba\(0, 0, 0/.test(sh), scheme + ': the edge stands out from the bar ' + sh);
       eq(p.errors, []); await p.ctx.close();

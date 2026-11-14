@@ -352,7 +352,7 @@ function crdSayPaint(only) {
   }
   if (first) {
     const vr = viewer.getBoundingClientRect(), br = first.getBoundingClientRect();
-    if (br.top < vr.top + 40 || br.bottom > vr.bottom - 120) viewer.scrollBy({ top: br.top - vr.top - vr.height / 3, behavior: 'smooth' });
+    if (br.top < vr.top + 40 || br.bottom > vr.bottom - 120) viewer.scrollBy({ top: br.top - vr.top - vr.height / 3, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
   }
 }
 FEATURE.afterRender.push((v) => { if (crdSay.on && views[crdSay.n] === v) crdSayPaint(v); });

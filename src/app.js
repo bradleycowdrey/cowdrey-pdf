@@ -474,6 +474,7 @@ viewer.addEventListener('scroll', () => {
 }, { passive: true });
 function updateStatus() {
   $('#pageCount').textContent = doc ? doc.pages.length : 0;
+  $('.sb-page').hidden = !doc;
   if (document.activeElement !== $('#pageJump')) $('#pageJump').value = doc && doc.pages.length ? current + 1 : '';
   refreshRibbon();
 }
@@ -749,6 +750,8 @@ function restore(s, layout) {
 function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
 function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
+// The same, kept on the page: a drag that runs past the page's edge draws up to the edge, never onto the canvas.
+function pagePoint(e, v) { const r = v.el.getBoundingClientRect(); return [Math.max(0, Math.min(r.width, e.clientX - r.left)), Math.max(0, Math.min(r.height, e.clientY - r.top))]; }
 let markDown = null; // { id, t }: the last press on a note or text box
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
@@ -936,7 +939,7 @@ function startInk(e, v) {
   const before = snapshot();
   const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: toolColor('pen'), w: S.width };
   marksOf(v.entry).push(m);
-  const move = (ev) => { m.pts.push(toPdf(v, ...localPoint(ev, v))); drawMarks(v); };
+  const move = (ev) => { m.pts.push(toPdf(v, ...pagePoint(ev, v))); drawMarks(v); };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); selectNew(v, m); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
@@ -946,7 +949,7 @@ function startRect(e, v) {
   const [x, y] = toPdf(v, ...localPoint(e, v));
   const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: toolColor('rect'), w: S.width };
   marksOf(v.entry).push(m);
-  const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...localPoint(ev, v)); drawMarks(v); };
+  const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...pagePoint(ev, v)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.abs(m.x2 - m.x1) < 3 && Math.abs(m.y2 - m.y1) < 3) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
@@ -1611,7 +1614,7 @@ async function onEditDown(e, v) {
   const own = e.target.closest && e.target.closest('.mk');
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
   const seq = downSeq.get(e) ?? editSeq;
-  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomTo(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
+  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomAt(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
   if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return markOnText(om) ? undefined : startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
@@ -1739,9 +1742,19 @@ async function editLine(v, L, mark, seq = editSeq) {
   const m = mark || await teMarkFor(v, L, cm);
   await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
   if (seq !== editSeq) return;
-  v = await phoneZoomTo(v, m);
+  v = await phoneZoomAt(v, m);
   if (seq !== editSeq) return;
   openLineEditor(v, m, !mark);
+}
+// phoneZoomTo for a line opened by a tap: the caret's place in the text is read from the tap before the zoom moves
+// the page, and kept for the editor (where the tap lands after the zoom is only known once it is laid out).
+async function phoneZoomAt(v, m) {
+  if (!isPhone() || !editAt) return phoneZoomTo(v, m);
+  if (!v.page._cmapValue) v.page._cmapValue = await contentMap(v.page);
+  const at = editAt, k = clickOffset(v, m, at);
+  const nv = await phoneZoomTo(v, m);
+  if (k != null && editAt === at) at.k = k;
+  return nv;
 }
 // A te mark for a line of the page, not yet in the page's list: its text, font, colours and the original's text state.
 async function teMarkFor(v, L, cm) {
@@ -1773,10 +1786,11 @@ async function phoneZoomPx(v, px, at, want = 18, min = 14) {
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
   // The tap's spot stays under the finger (as far as the page can scroll), so the caret goes where it was tapped.
+  await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); // laid out at the new size
   let b = nv.el.getBoundingClientRect();
   viewer.scrollLeft += b.left + fx * b.width - at.x; viewer.scrollTop += b.top + fy * b.height - at.y;
   b = nv.el.getBoundingClientRect();
-  if (editAt) editAt = { ...editAt, x: b.left + fx * b.width, y: b.top + fy * b.height };
+  if (editAt) Object.assign(editAt, { x: b.left + fx * b.width, y: b.top + fy * b.height });
   renderView(nv);
   return nv;
 }
@@ -1875,7 +1889,7 @@ function openLineEditor(v, m, isNew) {
   lineEditor = { ed, v, m, isNew, follow: teFollowers(v, m) };
   if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
-  placeCaret(ed, editAt && { ...editAt, k: clickOffset(v, m, editAt) });
+  placeCaret(ed, editAt && { ...editAt, k: editAt.k ?? clickOffset(v, m, editAt) });
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
@@ -3628,9 +3642,12 @@ function showDialog(title, body, actions, setup) {
     // Start on the first field you type in (with a mouse and keyboard; a touch screen would open its keyboard), or else
     // on the first field, or else on the main button, never on the close button: what's typed at once isn't lost.
     // (not a field that belongs to a choice not made: focusing "Pages [1-3]" would choose it)
-    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return !(l && $('input[type="radio"]:not(:checked)', l)); });
-    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    // (and not one that is hidden: focus() on it does nothing, so the browser's own pick, the close button, would stay)
+    const shown = (f) => f.getClientRects().length && !f.closest('[hidden]');
+    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return shown(f) && !(l && $('input[type="radio"]:not(:checked)', l)); });
+    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $$('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg).find(shown) || $('.dlg-body [role="tab"][aria-selected="true"]', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
     if (first && (document.activeElement === $('[data-x]', dlg) || !dlg.contains(document.activeElement))) { first.focus(); if (fine && first === texty && first.select) first.select(); }
+    if (document.activeElement === $('[data-x]', dlg)) { const b = $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn', dlg); if (b) b.focus(); }
     // Enter in a one-line field presses the main button (fields with their own Enter, like lists, say so first).
     dlg.onkeydown = (e) => {
       if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || !e.target.matches(`:is(${DLG_TEXTY}):not(textarea)`)) return;
@@ -3729,7 +3746,7 @@ function shortcutsDialog() {
   const byKey = new Map();
   for (const c of Object.values(C)) if (c.key) { const l = c.label.replace(/…$/, ''); (byKey.get(c.key) || byKey.set(c.key, []).get(c.key)).push(c.key === 'Mod-d' && l === 'Duplicate' ? 'Duplicate selection' : l); }
   const rows = [...byKey].map(([k, ls]) => [ls.length > 1 ? `${ls[0]}, or ${ls.slice(1).join(', or ').replace(/^./, (x) => x.toLowerCase())} when nothing is selected` : ls[0], fmtKey(k) + (k === 'Mod-Shift-z' ? ' or ' + fmtKey('Mod-y') : '')]);
-  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Finish or cancel a tool', 'Esc']);
+  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Edit PDF: go to the next line or picture', 'Tab or arrows'], ['Edit PDF: edit that line or select that picture', 'Enter'], ['Finish or cancel a tool', 'Esc']);
   const row = ([l, k]) => `<span>${esc(l)}</span><span style="color:var(--ink-3);text-align:right">${esc(k)}</span>`;
   return dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${rows.map(row).join('')}</div>`, [{ label: 'Close', primary: true }]);
 }
@@ -4236,6 +4253,85 @@ function refreshRibbon() {
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
+/* ---------------- Edit PDF from the keyboard ---------------- */
+// With Edit PDF on and the page focused, Tab (or Enter, F2) shows an outline on the first line or picture in view;
+// Tab and the arrow keys move it through the page's lines and pictures in reading order, Enter opens the line (caret
+// at its end, as a click there would) or selects the picture, Escape leaves. Tab past the last goes on as usual.
+let kbEdit = null, kbEditLast = null; // { v, blocks, i, el } while the outline shows; { entry, i } of the last one
+async function kbEditBlocks(v) {
+  const cm = await contentMap(v.page); v.page._cmapValue = cm;
+  const own = marksOf(v.entry), out = [];
+  for (const L of cm.lines) if (L.str.trim()) out.push({ kind: 'line', L, quad: L.quad, label: 'Line: ' + L.str.trim() });
+  for (const im of cm.images) {
+    const mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+    if (!(mark && mark.deleted)) out.push({ kind: 'image', im, mark, quad: mark ? matQuad(mark.mat) : im.quad, label: 'Picture' });
+  }
+  for (const b of out) { const pts = b.quad.map(([x, y]) => toView(v, x, y)), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]); b.box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }
+  // reading order: top to bottom, then left to right along a row
+  return out.sort((a, b) => { const ha = a.box[3] - a.box[1], hb = b.box[3] - b.box[1], mid = (b.box[1] + b.box[3]) / 2; return (mid > a.box[1] && mid < a.box[3]) || ((a.box[1] + a.box[3]) / 2 > b.box[1] && (a.box[1] + a.box[3]) / 2 < b.box[3]) ? a.box[0] - b.box[0] : (a.box[1] + ha / 2) - (b.box[1] + hb / 2); });
+}
+function kbEditShow(i) {
+  const k = kbEdit; if (!k) return;
+  k.i = i; kbEditLast = { entry: k.v.entry, i };
+  const b = k.blocks[i], el = k.el || (k.el = document.createElement('div'));
+  el.className = 'kb-block'; el.setAttribute('aria-hidden', 'true');
+  Object.assign(el.style, { left: b.box[0] - 3 + 'px', top: b.box[1] - 3 + 'px', width: b.box[2] - b.box[0] + 6 + 'px', height: b.box[3] - b.box[1] + 6 + 'px' });
+  if (el.parentNode !== k.v.el) k.v.el.appendChild(el);
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  announce(b.label);
+}
+function kbEditEnd() { if (kbEdit && kbEdit.el) kbEdit.el.remove(); kbEdit = null; }
+async function kbEditStart(v) {
+  const k = kbEdit = { v, blocks: [], i: -1, el: null, loading: true };
+  const blocks = await kbEditBlocks(v);
+  if (kbEdit !== k) return;
+  k.blocks = blocks; k.loading = false;
+  if (!blocks.length) { announce('No text or pictures to edit on this page'); return; }
+  // the one edited last, else the first in view
+  const vr = viewer.getBoundingClientRect(), pr = v.el.getBoundingClientRect();
+  let i = kbEditLast && kbEditLast.entry === v.entry && kbEditLast.i < blocks.length ? kbEditLast.i : blocks.findIndex((b) => pr.top + b.box[3] > vr.top && pr.top + b.box[1] < vr.bottom);
+  kbEditShow(Math.max(0, i));
+}
+// Opens the block as a click on it would: a line at its end (the caret goes there), a picture in its middle.
+function kbEditOpen() {
+  const k = kbEdit; if (!k || k.i < 0) return;
+  const b = k.blocks[k.i], v = k.v; kbEditEnd();
+  let x, y;
+  if (b.kind === 'line') { const t = b.L.tm, { u, size } = lineFrame(b.L), w = b.L.width - .5, up = size * .3; [x, y] = toView(v, t[4] + u[0] * w - u[1] * up, t[5] + u[1] * w + u[0] * up); }
+  else { x = (b.box[0] + b.box[2]) / 2; y = (b.box[1] + b.box[3]) / 2; }
+  const r = v.el.getBoundingClientRect(), cx = r.left + x, cy = r.top + y;
+  const hit = document.elementFromPoint(cx, cy), target = hit && v.el.contains(hit) && hit.closest('svg.marks') ? hit : v.el.querySelector('svg.marks');
+  if (!target) return;
+  const o = { clientX: cx, clientY: cy, bubbles: true, cancelable: true, pointerId: 78, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
+  target.dispatchEvent(new PointerEvent('pointerdown', o));
+  window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+}
+// The keys; true when the key was used.
+function kbEditKey(e) {
+  const a = document.activeElement;
+  if (!doc || app.dataset.tool !== 'edit' || lineEditor || a !== viewer || e.altKey || e.ctrlKey || e.metaKey) { if (kbEdit && (!doc || app.dataset.tool !== 'edit')) kbEditEnd(); return false; }
+  const k = kbEdit;
+  if (!k) {
+    if (e.key === 'Tab' && e.shiftKey) return false;
+    if (!['Tab', 'Enter', 'F2'].includes(e.key)) return false;
+    const v = views[current]; if (!v || !v.rendered) return false;
+    e.preventDefault(); kbEditStart(v); return true;
+  }
+  if (k.loading) { if (e.key === 'Tab' || e.key === 'Enter' || /^Arrow/.test(e.key)) { e.preventDefault(); return true; } return false; }
+  const n = k.blocks.length;
+  if (e.key === 'Escape') { e.preventDefault(); kbEditEnd(); announce('Left the page'); return true; }
+  if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); if (n) kbEditOpen(); return true; }
+  const step = e.key === 'Tab' ? (e.shiftKey ? -1 : 1) : { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+  if (e.key === 'Home' || e.key === 'End') { if (!n) return false; e.preventDefault(); kbEditShow(e.key === 'Home' ? 0 : n - 1); return true; }
+  if (!step) return false;
+  const i = k.i + step;
+  if (i < 0 || i >= n) { if (e.key === 'Tab') { kbEditEnd(); return false; } e.preventDefault(); return true; } // Tab goes on; arrows stop
+  e.preventDefault(); kbEditShow(i); return true;
+}
+// A click, a scroll of another page or a new tool takes the outline away.
+document.addEventListener('pointerdown', (e) => { if (kbEdit && e.isTrusted) kbEditEnd(); }, true);
+viewer.addEventListener('focusout', () => setTimeout(() => { if (kbEdit && document.activeElement !== viewer) kbEditEnd(); }, 0));
+
 /* ---------------- keys ---------------- */
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open) return;
@@ -4257,6 +4353,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
+  if (kbEditKey(e)) return;
   if (e.key === 'Enter' && doc && keyPlaces(app.dataset.tool)) {
     // on the page, or still on the button that chose the tool (Enter there would only choose it again)
     const a = document.activeElement, c = a && a.dataset && C[a.dataset.cmd];

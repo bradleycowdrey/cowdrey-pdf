@@ -339,16 +339,22 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   bar.innerHTML = [
     opts.face ? sel('face', 'type', 'Font', `<option value="">${esc(opts.face.own)}</option>${TXT_STD_FACES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}`) : '',
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
-    `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
+    // The size can be typed; Smaller and Bigger are for the mouse and fingers (Up and Down in the box do the same).
+    `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller', 'tabindex="-1"')}<input type="number" class="txt-size" data-tf="size" min="4" max="200" step="0.5" inputmode="decimal" title="Size in points" aria-label="Font size">${btn('bigger', 'plus', 'Bigger', 'tabindex="-1"')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
-    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
+    `<span class="txt-grp txt-cols sw-row" role="radiogroup" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
     opts.spacing ? sel('spacing', 'unfold-vertical', 'Line spacing', `<option value="0">As is</option>${TXT_SPACINGS.map((n) => `<option value="${n}">${n % 1 ? n : n.toFixed(1)}</option>`).join('')}`) : '',
   ].join('');
+  // The swatches are one radio group: one Tab stop (the colour now), the arrow keys move along it.
+  const sws = $$('[data-tf="color"]', bar);
+  sws.forEach((b) => { b.removeAttribute('aria-pressed'); b.setAttribute('role', 'radio'); });
   const sync = () => {
-    $('.txt-size', bar).textContent = txtRound(fmt.size);
-    $$('[data-tf="color"]', bar).forEach((b) => b.setAttribute('aria-pressed', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
+    const sz = $('.txt-size', bar); if (document.activeElement !== sz) sz.value = txtRound(fmt.size);
+    sws.forEach((b) => b.setAttribute('aria-checked', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
+    const on = sws.find((b) => b.getAttribute('aria-checked') === 'true') || sws[0];
+    sws.forEach((b) => { b.tabIndex = b === on ? 0 : -1; });
     $('[data-tf="pick"]', bar).value = /^#[0-9a-f]{6}$/i.test(fmt.color) ? fmt.color : '#111111';
     $('.txt-dot', bar).style.background = fmt.color;
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
@@ -373,6 +379,22 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     else if (k === 'left' || k === 'center' || k === 'right') fmt.align = k;
     sync(); onChange(fmt); refocus && refocus();
   });
+  bar.addEventListener('keydown', (e) => {
+    const k = sws.indexOf(e.target), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (k < 0 || !(d || e.key === 'Home' || e.key === 'End')) return;
+    e.preventDefault(); e.stopPropagation();
+    const n = sws[e.key === 'Home' ? 0 : e.key === 'End' ? sws.length - 1 : (k + d + sws.length) % sws.length];
+    fmt.color = n.dataset.c; sync(); n.focus(); onChange(fmt);
+  });
+  const size = $('.txt-size', bar);
+  const setSize = (n) => { if (!(n > 0)) { sync(); return; } fmt.size = Math.max(4, Math.min(200, txtRound(n))); sync(); onChange(fmt); };
+  size.addEventListener('change', () => setSize(parseFloat(size.value)));
+  size.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); const step = fmt.size < 12 ? .5 : 1; setSize(txtRound(fmt.size + (e.key === 'ArrowUp' ? step : -step))); size.value = txtRound(fmt.size); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); setSize(parseFloat(size.value)); refocus && refocus(); }
+    else if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation(); // typing a size is not a shortcut
+  });
+  size.addEventListener('pointerdown', (e) => e.stopPropagation());
   const pick = $('[data-tf="pick"]', bar);
   pick.addEventListener('input', () => { fmt.color = pick.value; sync(); onChange(fmt); });
   pick.addEventListener('change', () => { refocus && refocus(); });
@@ -447,7 +469,7 @@ function txtPlaceBar(v, target) {
 // The keys of an editor with its bar: Tab and Shift+Tab go round the text and the bar (Escape in the bar goes back
 // to the text), and Ctrl/Cmd+B, I and U press Bold, Italic and Underline, as in a word processor.
 const TXT_FMT_KEYS = { b: 'bold', i: 'italic', u: 'underline' };
-const txtBarStops = (bar) => $$('button, select, input:not([type="hidden"])', bar).filter((b) => !b.disabled && b.getClientRects().length);
+const txtBarStops = (bar) => $$('button, select, input:not([type="hidden"])', bar).filter((b) => !b.disabled && b.tabIndex >= 0 && b.getClientRects().length);
 function txtFmtKey(e, bar) {
   const k = (isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && TXT_FMT_KEYS[(e.key || '').toLowerCase()];
   const b = k && $(`[data-tf="${k}"]`, bar); if (!b) return false;
@@ -560,7 +582,7 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
           e.stopPropagation();
           const s = txtParaFitSize(v.page, m, ta.value.replace(/\r/g, ''), f);
           if (s == null) { toast('Even at 70% of its size it would not fit. Shorten the text, or let it run.'); return; }
-          f.size = s; if (txtBar) { const z = $('.txt-size', txtBar); if (z) z.textContent = txtRound(s); }
+          f.size = s; if (txtBar) { const z = $('.txt-size', txtBar); if (z) z.value = txtRound(s); }
           refit(); txtPlaceBar(v, ta);
         };
         v.el.appendChild(note);
@@ -948,11 +970,10 @@ addStyle(`
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .txt-dot { --sw-edge: rgb(255 255 255 / .34); } }
 :root[data-theme="dark"] .txt-dot { --sw-edge: rgb(255 255 255 / .34); }
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  /* Phones: one row; the colours open from one button */
-  .txt-bar.floating { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
-  .txt-bar.floating::-webkit-scrollbar { display: none; }
+  /* Phones: the bar wraps to a second row, so every control is in view; the colours open from one button */
+  .txt-bar.floating { justify-content: center; row-gap: 2px; }
   .txt-bar.floating .txt-grp { flex: none; }
-  .txt-bar.floating .txt-colgrp { display: inline-flex; }
+  .txt-bar.floating .txt-colgrp { display: inline-flex; border-right: 0; }
   .txt-bar.floating .txt-cols { display: none; }
   .txt-bar.floating.txt-show-cols .txt-cols { display: inline-flex; }
   .txt-bar.floating.txt-show-cols .txt-grp:not(.txt-cols):not(.txt-colgrp) { display: none; }
@@ -965,7 +986,9 @@ addStyle(`
 .txt-b[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .txt-b [data-lucide], .txt-b svg { width: 16px; height: 16px; }
 @media (pointer: coarse) { .txt-b { width: 44px; height: 44px; } .txt-bar select { height: 44px; } } /* a finger's 44px */
-.txt-size { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink); }
+.txt-bar .txt-size { width: 44px; height: 26px; box-sizing: border-box; padding: 0 2px; text-align: center; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; -moz-appearance: textfield; }
+.txt-bar .txt-size::-webkit-inner-spin-button, .txt-bar .txt-size::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+@media (pointer: coarse) { .txt-bar .txt-size { height: 36px; font-size: 16px; } } /* 16px: the phone does not zoom in to type */
 .txt-bar .sw-row { gap: 4px; }
 @media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
 .txt-sel { gap: 4px; color: var(--ink-2); }
