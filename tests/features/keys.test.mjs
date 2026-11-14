@@ -108,4 +108,27 @@ export default async (h) => {
     eq(menus[0].items[menus[0].items.length - 1].id, 'cmd:closeDoc', 'last in File');
     await p.ctx.close();
   });
+
+  await test('phone: a tool hint toast goes once the page is tapped or the tool changes; ribbon rows fade at the edge with more', async () => {
+    const p = await open({ width: 390, height: 844, touch: true, ua: ANDROID }); await openPdf(p);
+    const shown = () => p.evaluate(() => document.querySelector('#toast').classList.contains('show') ? document.querySelector('#toast').textContent : '');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_note')); await p.waitForTimeout(150);
+    eq(await shown(), 'Tap where the note goes');
+    const b = await p.locator('.page[data-n="0"]').boundingBox();
+    await p.touchscreen.tap(b.x + 200, b.y + 400); await p.waitForTimeout(250);
+    eq(await shown(), '', 'gone once placed');
+    await p.keyboard.press('Escape'); await p.keyboard.press('Escape');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit')); await p.waitForTimeout(150);
+    ok((await shown()).startsWith('Tap text'), 'Edit PDF hint');
+    await p.evaluate(() => window.__cowdreyPdf.setTool('select')); await p.waitForTimeout(50);
+    eq(await shown(), '', 'gone when the tool changes');
+    // Edge fades: the tab row and the tool strip say there is more past the edge, on both sides once scrolled.
+    const cls = () => p.$$eval('#ribbonTabs, #ribbonBody', (e) => e.map((x) => [x.classList.contains('more-l'), x.classList.contains('more-r'), getComputedStyle(x).maskImage !== 'none']));
+    eq(await cls(), [[false, true, true], [false, true, true]]);
+    await p.$eval('#ribbonTabs', (e) => { e.scrollLeft = 40; }); await p.waitForTimeout(100);
+    eq((await cls())[0], [true, true, true], 'both sides');
+    await p.$eval('#ribbonTabs', (e) => { e.scrollLeft = e.scrollWidth; }); await p.waitForTimeout(100);
+    eq((await cls())[0], [true, false, true], 'at the end');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

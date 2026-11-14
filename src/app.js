@@ -41,6 +41,14 @@ let toastTimer;
 // Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
 const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
 let toolHint = '', toolJustSet = null; // the mode chip's hint, and the tool chosen in this task (see setTool)
+// A tool's how-to shown as a toast (on a phone): it goes once the page is tapped (the thing is placed) or the tool
+// changes, so it never covers what comes next.
+let hintToast = null;
+function hideHintToast() {
+  const t = $('#toast');
+  if (hintToast && t.classList.contains('show') && t.textContent === hintToast) { clearTimeout(toastTimer); t.classList.remove('show'); }
+  hintToast = null;
+}
 const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
 function toast(msg) {
   msg = touchWords(msg);
@@ -49,6 +57,7 @@ function toast(msg) {
   // (A phone's chip has room for the tool's name only: there the hint is also shown once, as a toast.)
   if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
+  hintToast = app.dataset.tool !== 'select' && toolHint && msg === touchWords(toolHint) ? msg : null;
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
   for (const b of document.querySelectorAll(TOAST_AVOID)) {
@@ -399,6 +408,7 @@ function goPage(n, instant) {
 viewer.addEventListener('scrollend', () => { const lock = navLock; if (lock) setTimeout(() => { if (navLock === lock) navLock = 0; }, 50); });
 for (const ev of ['wheel', 'touchstart', 'pointerdown']) viewer.addEventListener(ev, navUnlock, { passive: true });
 viewer.addEventListener('keydown', (e) => { if (/^(Arrow|Page|Home|End| )/.test(e.key)) navUnlock(); });
+viewer.addEventListener('click', () => hideHintToast(), true); // a tap on the page: the hint has been followed
 viewer.addEventListener('scroll', () => {
   if (!views.length || navLock) return;
   const mid = viewer.scrollTop + viewer.clientHeight / 3;
@@ -1110,7 +1120,7 @@ function setTool(t) {
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
   if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
-  if (t !== was) toolHint = TOOL_HINTS[t] || '';
+  if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; }
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
   // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).
