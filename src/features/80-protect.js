@@ -52,7 +52,8 @@ async function protAsk(title, body, actions, setup) {
     if (setup) setup(dlg, upd);
     upd();
     const first = $('input:not([type=checkbox]):not([type=radio]):not([hidden])', b);
-    if (first) setTimeout(() => first.focus(), 30);
+    // Unless the person has already moved into a field (focusing later would pull their typing into the first one).
+    if (first) setTimeout(() => { if (!b.contains(document.activeElement)) first.focus(); }, 30);
   });
   return res == null ? null : { action: res, ...vals };
 }

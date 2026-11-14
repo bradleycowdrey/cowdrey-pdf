@@ -109,6 +109,30 @@ export default async (h) => {
     fs.unlinkSync(file); noErrors(p); await p.ctx.close();
   });
 
+  await test('Protect: redact on a rotated page: the dragged area and the saved box cover the same words', async () => {
+    const p = await open(); await openPdf(p, CHROME, 'Summary.pdf');
+    await run(p, 'rotR'); await p.waitForTimeout(500);
+    // Where "grew" is, in PDF coordinates (from Search and redact, then undone), and drag over it on the turned page.
+    await run(p, 'protRedSearch'); await p.fill('#dialog input[name=text]', 'grew'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+    const b = await p.evaluate(() => { const q = Object.values(window.__cowdreyPdf.doc.marks).flat().find((x) => x.type === 'redact').quads[0]; const xs = q.map((t) => t[0]), ys = q.map((t) => t[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; });
+    await run(p, 'undo'); await p.waitForTimeout(100); eq(await marks(p), []);
+    const x0 = b[0], y0 = b[1] + 2, gw = b[2] - b[0];
+    await p.click('[data-rt="protect"]'); await p.click('[data-cmd="protRedArea"]');
+    await drag(p, [b[0], b[1]], [b[2], b[3]]);
+    eq(await marks(p), ['redact']);
+    await run(p, 'protRedApply'); await answer(p, 'Apply'); await p.waitForTimeout(400);
+    await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/protect/redact-rotated-applied.png' });
+    const out = await savedOf(p), d = await PDFDocument.load(out);
+    eq(d.getPage(0).getRotation().angle % 360, 90, 'page still turned');
+    const txt = (await textOf(out)).replace(/\s+/g, ' ');
+    ok(!/gre|\bw in/.test(txt) && txt.includes('Revenue') && /in every region/.test(txt), txt);
+    await reopen(p, out);
+    const px = await p.evaluate(([x, y]) => { const v = window.__cowdreyPdf.views()[0], c = v.el.querySelector('canvas.pdf'), k = c.width / v.viewport.width; const [vx, vy] = v.viewport.convertToViewportPoint(x, y); return [...c.getContext('2d').getImageData(Math.round(vx * k), Math.round(vy * k), 1, 1).data]; }, [x0 + gw / 2, y0 + 3]);
+    ok(px[0] < 30 && px[1] < 30 && px[2] < 30, 'black box over the word: ' + px);
+    await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/protect/redact-rotated-saved.png' });
+    noErrors(p); await p.ctx.close();
+  });
+
   await test('Protect: set an open password and limits; the PDF opens only with it and keeps the limits', async () => {
     const p = await open(); await openPdf(p);
     await run(p, 'protPassword'); await p.waitForSelector('#dialog[open] input[name=open]');
