@@ -189,6 +189,13 @@ button { font: inherit; color: inherit; }
 .marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
 .marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
 .marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
+.page-ask { position: absolute; z-index: 7; width: min(260px, calc(100% - 8px)); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.24); padding: 8px; display: grid; gap: 6px; cursor: auto; }
+.page-ask-h { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.page-ask textarea { width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; font: inherit; font-family: var(--font-ui); font-size: 14px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.page-ask textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.page-ask-f { display: flex; justify-content: flex-end; }
+.page-ask-f .btn { min-height: 30px; padding: 4px 14px; }
+@media (pointer: coarse) { .page-ask textarea { font-size: 16px; } }
 .line-editor { position: absolute; z-index: 6; padding: 0 1px; margin: 0 -1px; white-space: pre; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; cursor: text; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
 .find-hit { position: absolute; background: rgba(255, 200, 0, .45); z-index: 1; pointer-events: none; border-radius: 2px; }
 .find-hit.now { background: rgba(255, 120, 0, .6); }

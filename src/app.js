@@ -663,6 +663,7 @@ function restore(s, layout) {
 function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
 function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
+let markDown = null; // { id, t }: the last press on a note or text box
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
   if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
@@ -678,8 +679,13 @@ function onMarksDown(e, v) {
     if (!hit) { selectMark(null); return; }
     selectMark({ key: pageKey(v.entry), id: hit.dataset.id, entry: v.entry });
     const m = marksOf(v.entry).find((x) => x.id === hit.dataset.id);
-    if (m && m.type === 'note' && e.detail === 2) { editNote(v, m); return; }
-    if (m && m.type === 'text' && e.detail === 2) { editText(v, m); return; }
+    // A second press on a note or text box within half a second changes its words (pointer events carry no
+    // click count, and the redraw after the first press means no dblclick arrives).
+    if (m && (m.type === 'note' || m.type === 'text')) {
+      const now = Date.now(), again = markDown && markDown.id === m.id && now - markDown.t < 500;
+      markDown = again ? null : { id: m.id, t: now };
+      if (again) { e.preventDefault(); setTimeout(() => (m.type === 'note' ? editNote : editText)(v, m), 0); return; }
+    }
     startMove(e, v, m);
     return;
   }
@@ -688,7 +694,7 @@ function onMarksDown(e, v) {
   if (tool === 'pen') return startInk(e, v);
   if (tool === 'rect') return startRect(e, v);
   if (tool === 'text') { e.preventDefault(); return addText(v, x, y); }
-  if (tool === 'note') { e.preventDefault(); return addNote(v, x, y); }
+  if (tool === 'note') { e.preventDefault(); if (pageAskTook(e)) return; return addNote(v, x, y); }
   if (tool === 'sign' || tool === 'image') { e.preventDefault(); return placeImage(v, px, py); }
 }
 // Double-click: change a note's or a text box's words (Select), or a comment's (Edit PDF).
@@ -825,17 +831,56 @@ async function editText(v, m) {
   if (text == null) return;
   const before = snapshot(); m.text = text; drawMarks(v); changed(before);
 }
+/* A small editor that opens on the page, by what it is for (a note's words…). Like the text editors, Escape, Done,
+   Ctrl+Enter (⌘Return) and a click away all keep what was typed; Undo takes it back. Resolves with the text. */
+let pageAskOpen = null, pageAskAway = 0;
+function pageAsk(v, px, py, { label, text = '', done = 'Done', placeholder = '' }) {
+  if (pageAskOpen) pageAskOpen.finish();
+  return new Promise((res) => {
+    const box = document.createElement('div');
+    box.className = 'page-ask'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', label);
+    box.innerHTML = `<div class="page-ask-h">${esc(label)}</div><textarea rows="3" spellcheck="true" aria-label="${esc(label)}" placeholder="${esc(placeholder)}"></textarea><div class="page-ask-f"><button type="button" class="btn primary">${esc(done)}</button></div>`;
+    const ta = $('textarea', box); ta.value = text;
+    v.el.appendChild(box);
+    const W = v.el.clientWidth, H = v.el.clientHeight, w = box.offsetWidth, h = box.offsetHeight;
+    box.style.left = Math.max(4, Math.min(px + 14, W - w - 4)) + 'px';
+    box.style.top = (py + 14 + h > H - 4 && py - h - 14 > 4 ? py - h - 14 : Math.max(4, Math.min(py + 14, H - h - 4))) + 'px';
+    const P = pageAskOpen = { box, finish: () => {
+      if (pageAskOpen !== P) return;
+      pageAskOpen = null; document.removeEventListener('pointerdown', away, true);
+      const had = box.contains(document.activeElement); box.remove();
+      if (had) viewer.focus({ preventScroll: true });
+      res(ta.value.replace(/\r/g, ''));
+    } };
+    // A press anywhere else keeps the text; on the page it does only that (it doesn't also add another note).
+    const away = (e) => { if (box.contains(e.target)) return; if (e.target.closest && e.target.closest('.page')) pageAskAway = e.timeStamp; P.finish(); };
+    document.addEventListener('pointerdown', away, true);
+    box.addEventListener('pointerdown', (e) => e.stopPropagation());
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); e.stopPropagation(); P.finish(); keptHint(!!ta.value.trim() && ta.value !== text); return; }
+      if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
+    });
+    $('button', box).onclick = () => P.finish();
+    ta.focus({ preventScroll: true }); ta.select();
+    if (!coarse()) box.scrollIntoView({ block: 'nearest' });
+  });
+}
+const pageAskTook = (e) => e && pageAskAway && e.timeStamp === pageAskAway;
+TEST_HOOKS.pageAskOpen = () => !!pageAskOpen;
+// Note: the note is placed where clicked and its words typed beside it. Left empty, no note is added.
 async function addNote(v, x, y) {
-  const text = await askText('Add a note', 'The note shows as a comment in any PDF reader.', '', 'Add', false, true);
-  if (!text) return;
-  const before = snapshot();
-  marksOf(v.entry).push({ id: uid(), type: 'note', x, y, text });
-  drawMarks(v); changed(before); setTool('select');
+  const before = snapshot(), m = { id: uid(), type: 'note', x, y, text: '' }, list = marksOf(v.entry);
+  list.push(m); drawMarks(v);
+  const text = await pageAsk(v, ...toView(v, x, y), { label: 'Note', placeholder: 'Type a note' });
+  if (!text.trim()) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); drawMarks(v); kbPlace = null; return; }
+  m.text = text; drawMarks(v); changed(before);
 }
 async function editNote(v, m) {
-  const text = await askText('Note', '', m.text, 'Save', false, true);
-  if (text == null) return;
-  const before = snapshot(); m.text = text; drawMarks(v); changed(before);
+  const text = await pageAsk(v, ...toView(v, m.x, m.y), { label: 'Note', text: m.text });
+  if (text === m.text) return;
+  const before = snapshot(), list = marksOf(v.entry);
+  if (!text.trim()) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); selectMark(null); drawMarks(v); changed(before); toast('Note removed'); return; }
+  m.text = text; drawMarks(v); changed(before);
 }
 let pendingImage = null; // { data, w, h } waiting to be placed
 const placeHint = (what) => coarse() ? `Tap where ${what} goes` : `Click where ${what} goes, or press Enter to put it in the middle`;
@@ -955,7 +1000,7 @@ function placeByKey() {
   const o = { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
   svg.dispatchEvent(new PointerEvent('pointerdown', o));
   window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
-  setTimeout(() => { if (kbPlace === k && !$('#dialog').open) kbPlace = null; }, 0); // nothing asked, nothing placed
+  setTimeout(() => { if (kbPlace === k && !$('#dialog').open && !pageAskOpen) kbPlace = null; }, 0); // nothing asked, nothing placed
   return true;
 }
 $('#dialog').addEventListener('close', () => { const k = kbPlace; if (k) setTimeout(() => { if (kbPlace === k) kbPlace = null; }, 1500); });

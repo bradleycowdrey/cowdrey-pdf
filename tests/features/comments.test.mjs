@@ -6,7 +6,7 @@ export default async (h) => {
   const run = (p, id) => p.evaluate((i) => window.__cowdreyPdf.run(i), id);
   const drag = async (p, [x1, y1], [x2, y2]) => { const a = await at(p, x1, y1), b = await at(p, x2, y2); await p.mouse.move(...a); await p.mouse.down(); await p.mouse.move(...b, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(80); };
   const click = async (p, x, y) => { await p.mouse.click(...(await at(p, x, y))); await p.waitForTimeout(80); };
-  const typeIn = async (p, text) => { await p.waitForSelector('#dialog[open] #dlgInput'); await p.fill('#dlgInput', text); await p.click('#dialog .btn.primary'); await p.waitForTimeout(150); };
+  const typeIn = async (p, text) => { await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', text); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(150); }; // typed on the page
   const annotsOf = (d, n = 0) => { const a = d.getPage(n).node.Annots(); return a ? a.asArray().map((r) => d.context.lookup(r)).filter((x) => String(x.get(N('Subtype'))) !== '/Widget') : []; }; // comments, not form fields
   const sub = (a) => String(a.get(N('Subtype'))).slice(1);
   // dark pixels in a box given in screen pixels relative to page 1's corner

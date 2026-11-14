@@ -374,6 +374,7 @@ function cmBoxSize(text, size) {
 FEATURE.tools.cmcallout = {
   down(e, v) {
     e.preventDefault();
+    if (pageAskTook(e)) return; // the click only finished the last one
     const start = localPoint(e, v); let end = start;
     const color = cmStroke('cmcallout');
     const svg = v.el.querySelector('svg.marks');
@@ -381,10 +382,12 @@ FEATURE.tools.cmcallout = {
     svg.appendChild(line);
     const move = (ev) => { end = localPoint(ev, v); line.setAttribute('x2', end[0]); line.setAttribute('y2', end[1]); };
     const up = async () => {
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); line.remove();
-      if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 10) end = [start[0] + 40, start[1] - 70];
-      const text = await askText('Add a callout', 'Type the callout text. It points to where you pressed.', '', 'Add', false, true);
-      if (!text || !text.trim()) return;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 10) { end = [start[0] + 40, start[1] - 70]; line.setAttribute('x2', end[0]); line.setAttribute('y2', end[1]); }
+      // typed on the page where its box goes; the leader line shows until then
+      const text = await pageAsk(v, ...end, { label: 'Callout', placeholder: 'It points to where you pressed' });
+      line.remove();
+      if (!text || !text.trim()) { kbPlace = null; return; }
       const before = snapshot(), [tx, ty] = toPdf(v, ...start), size = 12, rot = totalRot(v);
       const box = cmBoxSize(text, size);
       // the box sits on the far side of where the drag ended, so the leader line meets its nearest edge
@@ -400,9 +403,10 @@ FEATURE.tools.cmcallout = {
 FEATURE.tools.cmtype = {
   async down(e, v) {
     e.preventDefault();
-    const [x, y] = toPdf(v, ...localPoint(e, v));
-    const text = await askText('Typewriter', 'Type the text to place here.', '', 'Add', false, true);
-    if (!text || !text.trim()) return;
+    if (pageAskTook(e)) return; // the click only finished the last one
+    const [px, py] = localPoint(e, v), [x, y] = toPdf(v, px, py);
+    const text = await pageAsk(v, px, py, { label: 'Typewriter', placeholder: 'Type the text to place here' });
+    if (!text || !text.trim()) { kbPlace = null; return; }
     const before = snapshot();
     const m = { id: uid(), type: 'cmType', x, y, rot: totalRot(v), text, size: 12, color: cmStroke('cmtype') };
     marksOf(v.entry).push(m);

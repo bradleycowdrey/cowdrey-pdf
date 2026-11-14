@@ -330,6 +330,7 @@ function txtOpenEditor(v, o) {
   const ta = document.createElement('textarea');
   ta.className = 'txt-editor'; ta.spellcheck = false; ta.rows = 1; ta.value = o.text; ta.setAttribute('aria-label', o.label || 'Edit this text');
   if (o.single || !o.width) ta.wrap = 'off';
+  if (o.placeholder) ta.placeholder = o.placeholder;
   v.el.appendChild(ta);
   const E = txtEd = { v, ta, ...o };
   txtEditing.add(o.m.id); drawMarks(v);
@@ -337,8 +338,9 @@ function txtOpenEditor(v, o) {
   fit();
   ta.addEventListener('input', () => { fit(); txtPlaceBar(v, ta); });
   ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); const was = ta.value; txtCloseEditor(true); keptHint(was !== o.text); return; } // keeps, like clicking away; Undo takes it back
-    if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); txtCloseEditor(true); return; }
+    // Escape keeps, like clicking away (Undo takes it back), and the tool stays on: the page's own Escape doesn't run.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const was = ta.value; txtCloseEditor(true); keptHint(was !== o.text); return; }
+    if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); txtCloseEditor(true); return; }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
   ta.addEventListener('blur', () => setTimeout(() => { if (txtEd === E && !txtBarBusy() && document.activeElement !== ta) txtCloseEditor(true); }, 0));
@@ -349,8 +351,9 @@ function txtCloseEditor(commit) {
   const E = txtEd; if (!E) return;
   txtEd = null; txtHideBar(); txtEditing.delete(E.m.id);
   if (E.cleanup) E.cleanup();
-  const text = E.ta.value.replace(/\r/g, '');
+  const text = E.ta.value.replace(/\r/g, ''), had = document.activeElement === E.ta;
   E.ta.remove();
+  if (had) viewer.focus({ preventScroll: true }); // the keys go on working on the page
   if (commit) Promise.resolve(E.done(text, E.fmt)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
   else drawMarks(E.v);
 }
@@ -464,17 +467,19 @@ async function txtStartPara(v, L) {
   txtEditPara(v, m, true, absorb);
   return true;
 }
+// Where a text box's editor sits: over the box, in its format.
+const txtBoxPlace = (v, m) => (ta, f) => {
+  const [x, y] = toView(v, m.x, m.y), px = f.size * scale, ang = (totalRot(v) - m.rot + 360) % 360, shift = px * .1;
+  Object.assign(ta.style, { left: x + 'px', top: (y - shift) + 'px', font: txtCss(f.famPick === 'page' ? m.fam : f.famPick || m.fam || 'sans', f, px), lineHeight: px * 1.2 + 'px', color: f.color, background: 'rgba(255,255,255,.92)', textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${shift}px`, transform: `rotate(${ang}deg)` });
+  if (m.w) ta.style.width = (m.w * scale + 3) + 'px';
+};
 // A text box in the editor.
 function txtEditBox(v, m) {
   if (txtEd && txtEd.m.id === m.id) return;
   const fmt = txtFmtOf(m);
   txtOpenEditor(v, {
     m, text: m.text, fmt, width: !!m.w, minWidth: 40, label: 'Edit this text', opts: { family: true, align: true },
-    place(ta, f) {
-      const [x, y] = toView(v, m.x, m.y), px = f.size * scale, ang = (totalRot(v) - m.rot + 360) % 360, shift = px * .1;
-      Object.assign(ta.style, { left: x + 'px', top: (y - shift) + 'px', font: txtCss(f.famPick === 'page' ? m.fam : f.famPick || m.fam || 'sans', f, px), lineHeight: px * 1.2 + 'px', color: f.color, background: 'rgba(255,255,255,.92)', textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${shift}px`, transform: `rotate(${ang}deg)` });
-      if (m.w) ta.style.width = (m.w * scale + 3) + 'px';
-    },
+    place: txtBoxPlace(v, m),
     async done(text, f) {
       const fam = f.famPick === 'page' ? (m.famPick === 'page' ? m.fam : await txtPageFam(v)) : f.famPick;
       if (text === m.text && txtSameFmt(f, m) && fam === (m.fam || 'sans')) return;
@@ -555,6 +560,7 @@ onEditHover = function (e, v) {
 // Add text: click for text that fits, or drag across to make a box the text wraps in.
 const txtLast = () => Object.assign({ size: 14, color: S.color === '#FFD43B' ? '#111111' : S.color, bold: false, italic: false, underline: false, align: 'left', famPick: 'sans' }, S.txtFmt || {});
 addText = function (v, x, y) {
+  if (txtEd) { txtCloseEditor(true); return; } // a click away from the text being typed keeps it; the next click adds more
   const hit = txtBoxHit(v, x, y);
   if (hit) { selectMark(null); return txtEditBox(v, hit); }
   const start = toView(v, x, y), svg = v.el.querySelector('svg.marks');
@@ -575,30 +581,31 @@ addText = function (v, x, y) {
       if (w < 0) { x += w * right[0]; y += w * right[1]; }
       boxW = Math.round(Math.abs(w));
     }
-    txtAddDialog(v, x, y, boxW);
+    txtAddInline(v, x, y, boxW);
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 };
-async function txtAddDialog(v, x, y, boxW) {
+// Add text types straight onto the page, in the editor text boxes use, with its format bar. Escape, Enter with Ctrl
+// (⌘) or a click away keeps the text and leaves the Text tool on; a box left empty adds nothing.
+function txtAddInline(v, x, y, boxW) {
   const fmt = txtLast();
-  let w = boxW || 0;
-  const body = `<div class="txt-slot"></div><label class="field"><textarea id="dlgInput" rows="4" class="txt-paper" placeholder="Type here"></textarea></label><label class="field txt-wfield"><span>Box width (pt)</span><input id="txtBoxW" type="number" min="0" step="1" inputmode="numeric" placeholder="Fits the text" value="${w || ''}"></label><p class="txt-hint">Ctrl+Enter adds the text. Drag with the Text tool to make a box the text wraps in.</p>`.replace('Ctrl+Enter adds the text. ', coarse() ? '' : isMac ? '⌘Return adds the text. ' : 'Ctrl+Enter adds the text. ');
-  const text = await dialog('Add text', body, [{ label: 'Cancel' }, { label: 'Add', primary: true, input: true }], (dlg) => {
-    const ta = $('#dlgInput', dlg);
-    const style = () => { Object.assign(ta.style, { font: txtCss(fmt.famPick === 'page' ? 'sans' : fmt.famPick, fmt, Math.min(28, Math.max(11, fmt.size))), color: fmt.color, textDecoration: fmt.underline ? 'underline' : 'none', textAlign: fmt.align }); };
-    $('.txt-slot', dlg).appendChild(txtBarEl(fmt, { family: true, align: true }, style, () => ta.focus())); icons();
-    $('#txtBoxW', dlg).addEventListener('input', (e) => { w = Math.max(0, +e.target.value || 0); });
-    style();
+  const m = { id: uid(), type: 'text', x, y, text: '', size: fmt.size, color: fmt.color, rot: totalRot(v), fam: 'sans', famPick: fmt.famPick, bold: fmt.bold, italic: fmt.italic, underline: fmt.underline, align: fmt.align, w: boxW || 0 };
+  txtOpenEditor(v, {
+    m, text: '', fmt, width: !!m.w, minWidth: 90, label: 'Add text', placeholder: 'Type here', opts: { family: true, align: true },
+    place: txtBoxPlace(v, m),
+    async done(text, f) {
+      S.txtFmt = { size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align, famPick: f.famPick }; saveSettings();
+      if (!text.trim()) return;
+      const fam = f.famPick === 'page' ? await txtPageFam(v) : f.famPick;
+      Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', fam, famPick: f.famPick });
+      await txtLayoutBox(m);
+      const before = snapshot();
+      marksOf(v.entry).push(m);
+      drawMarks(v); changed(before);
+    },
   });
-  if (!text) return;
-  const fam = fmt.famPick === 'page' ? await txtPageFam(v) : fmt.famPick;
-  S.txtFmt = { size: fmt.size, color: fmt.color, bold: fmt.bold, italic: fmt.italic, underline: fmt.underline, align: fmt.align, famPick: fmt.famPick }; saveSettings();
-  const m = { id: uid(), type: 'text', x, y, text, size: fmt.size, color: fmt.color, rot: totalRot(v), fam, famPick: fmt.famPick, bold: fmt.bold, italic: fmt.italic, underline: fmt.underline, align: fmt.align, w: w || 0 };
-  await txtLayoutBox(m);
-  const before = snapshot();
-  marksOf(v.entry).push(m);
-  drawMarks(v); changed(before); setTool('select');
 }
+TEST_HOOKS.txtEditing = () => !!txtEd;
 // Double-click a text box (Select or Edit PDF) to edit it in place. Two presses are watched here: the first press
 // redraws the marks and starts a move (which cancels the browser's own mouse events), so no dblclick arrives.
 let txtLastDown = null;

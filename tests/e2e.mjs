@@ -44,9 +44,9 @@ await test('mark up: highlight selected text, draw, box, text, note; undo and re
   await p.click('[data-cmd="tool_rect"]');
   await p.mouse.move(g.x + 90, g.y + 480); await p.mouse.down(); await p.mouse.move(g.x + 320, g.y + 560, { steps: 4 }); await p.mouse.up();
   await p.click('[data-rt="edit"]'); await p.click('[data-cmd="tool_text"]'); await p.mouse.click(g.x + 100, g.y + 620);
-  await p.fill('#dlgInput', 'Approved'); await p.click('#dialog .btn.primary');
+  await p.waitForSelector('.page .txt-editor'); await p.keyboard.type('Approved'); await p.keyboard.press('Escape');
   await p.click('[data-rt="markup"]'); await p.click('[data-cmd="tool_note"]'); await p.mouse.click(g.x + 400, g.y + 620);
-  await p.fill('#dlgInput', 'Check the numbers'); await p.click('#dialog .btn.primary');
+  await p.fill('.page-ask textarea', 'Check the numbers'); await p.click('.page-ask .btn.primary');
   eq(await marks(p), ['hl', 'ink', 'rect', 'text', 'note']);
   await p.keyboard.press('Control+z'); eq((await marks(p)).length, 4, 'undo');
   await p.keyboard.press('Control+Shift+z'); eq((await marks(p)).length, 5, 'redo');

@@ -100,7 +100,7 @@ export default async (h) => {
     eq(await p.$eval('.page[data-n="0"] svg.marks .mk', (g) => [g.getAttribute('role'), g.getAttribute('aria-label')]), ['img', 'Oval']);
     await p.waitForTimeout(100);
     eq(await p.textContent('#announce'), 'Oval selected. Arrow keys move it, Delete removes it.');
-    await run(p, 'tool_note'); await p.mouse.click(...(await at(p, 400, 600))); await p.fill('#dlgInput', 'Check the numbers'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(100);
+    await run(p, 'tool_note'); await p.mouse.click(...(await at(p, 400, 600))); await p.fill('.page-ask textarea', 'Check the numbers'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(100);
     eq(await p.$eval('.page[data-n="0"] svg.marks [data-type="note"]', (g) => g.getAttribute('aria-label')), 'Note: Check the numbers');
     await p.ctx.close();
   });
@@ -158,10 +158,10 @@ export default async (h) => {
     await run(p, 'cm_arrow'); await drag(p, [320, 200], [420, 150]);
     await run(p, 'cm_polygon'); for (const [x, y] of [[60, 120], [120, 120]]) { await p.mouse.click(...(await at(p, x, y))); await p.waitForTimeout(60); } await p.mouse.dblclick(...(await at(p, 90, 80))); await p.waitForTimeout(100);
     await run(p, 'tool_pen'); await drag(p, [200, 120], [260, 80]);
-    await run(p, 'tool_note'); await p.mouse.click(...(await at(p, 450, 120))); await p.fill('#dlgInput', 'See the budget'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(100);
-    await run(p, 'cm_typewriter'); await p.mouse.click(...(await at(p, 300, 120))); await p.fill('#dlgInput', 'Typed'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(100);
+    await run(p, 'tool_note'); await p.mouse.click(...(await at(p, 450, 120))); await p.fill('.page-ask textarea', 'See the budget'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(100);
+    await run(p, 'cm_typewriter'); await p.mouse.click(...(await at(p, 300, 120))); await p.fill('.page-ask textarea', 'Typed'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(100);
     await run(p, 'cm_stamp'); await p.waitForSelector('#dialog[open] [data-stamp="received"]'); await p.click('#dialog [data-stamp="received"]'); await p.waitForTimeout(100); await p.mouse.click(...(await at(p, 450, 300))); await p.waitForTimeout(100);
-    await run(p, 'cm_callout'); await drag(p, [100, 60], [160, 40]); await p.fill('#dlgInput', 'Look here'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(150);
+    await run(p, 'cm_callout'); await drag(p, [100, 60], [160, 40]); await p.fill('.page-ask textarea', 'Look here'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(150);
     const mine = (await all(p)).filter((m) => m.type !== 'cmReply');
     eq(mine.map((m) => m.type + (m.kind ? ':' + m.kind : '')), ['hl', 'cmMarkup:underline', 'rect', 'cmShape:cloud', 'cmShape:arrow', 'cmShape:polygon', 'ink', 'note', 'cmType', 'cmStamp', 'cmCallout']);
     // Hide all: nothing on the page; the file's own square too; saving is not changed

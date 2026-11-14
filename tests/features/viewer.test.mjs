@@ -164,7 +164,7 @@ export default async (h) => {
     await p.evaluate(() => { document.querySelector('#viewer').scrollTop = 0; }); await p.waitForTimeout(300);
     g = await p.locator('.page[data-n="0"]').boundingBox();
     await p.mouse.click(g.x + 200, g.y + 300, { button: 'right' }); await pick(p, 'Add comment here');
-    await p.fill('#dlgInput', 'Look here'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(200);
+    await p.fill('.page-ask textarea', 'Look here'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(200);
     const note = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().find((m) => m.type === 'note'));
     ok(note && note.text === 'Look here', 'note added');
     const [nx, ny] = await h.at(p, note.x, note.y);
