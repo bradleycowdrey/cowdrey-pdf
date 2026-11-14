@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 #[cfg(desktop)]
-use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 #[cfg(desktop)]
 use tauri::Wry;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
@@ -229,7 +229,7 @@ struct MenuSpec {
 #[derive(serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum ItemSpec {
-    Item { id: String, label: String, accel: Option<String>, checked: Option<bool> },
+    Item { id: String, label: String, accel: Option<String>, checked: Option<bool>, enabled: Option<bool> },
     Sep,
     Native { role: String },
 }
@@ -252,10 +252,14 @@ fn build_items(app: &AppHandle, specs: &[ItemSpec]) -> tauri::Result<Vec<Item>> 
                 "select_all" => out.push(Box::new(PredefinedMenuItem::select_all(app, None)?)),
                 _ => {}
             },
-            ItemSpec::Item { id, label, accel, checked } => match checked {
-                Some(on) => out.push(Box::new(CheckMenuItem::with_id(app, id, label, true, *on, accel.as_deref())?)),
-                None => out.push(Box::new(MenuItem::with_id(app, id, label, true, accel.as_deref())?)),
-            },
+            // A command that doesn't apply now (Save with no document) is greyed out, as the page's menus show it.
+            ItemSpec::Item { id, label, accel, checked, enabled } => {
+                let enabled = enabled.unwrap_or(true);
+                match checked {
+                    Some(on) => out.push(Box::new(CheckMenuItem::with_id(app, id, label, enabled, *on, accel.as_deref())?)),
+                    None => out.push(Box::new(MenuItem::with_id(app, id, label, enabled, accel.as_deref())?)),
+                }
+            }
         }
     }
     Ok(out)
@@ -306,6 +310,36 @@ fn set_menu(app: AppHandle, menus: Vec<MenuSpec>) -> Result<(), String> {
     Ok(())
 }
 
+/// Grey out or turn back on some of the page's menu items, without rebuilding the menu bar: `items` are
+/// [id, enabled] pairs, sent by the page for the items that changed since the last call.
+#[cfg(desktop)]
+#[tauri::command]
+fn set_menu_enabled(app: AppHandle, items: Vec<(String, bool)>) -> Result<(), String> {
+    fn walk(kinds: Vec<MenuItemKind<Wry>>, want: &std::collections::HashMap<String, bool>) -> tauri::Result<()> {
+        for kind in kinds {
+            match &kind {
+                MenuItemKind::Submenu(s) => walk(s.items()?, want)?,
+                MenuItemKind::MenuItem(i) => {
+                    if let Some(on) = want.get(i.id().0.as_str()) {
+                        i.set_enabled(*on)?;
+                    }
+                }
+                MenuItemKind::Check(i) => {
+                    if let Some(on) = want.get(i.id().0.as_str()) {
+                        i.set_enabled(*on)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    let Some(menu) = app.menu() else { return Ok(()) };
+    let want: std::collections::HashMap<String, bool> = items.into_iter().collect();
+    let kinds = menu.items().map_err(|e| e.to_string())?;
+    walk(kinds, &want).map_err(|e| e.to_string())
+}
+
 #[cfg(desktop)]
 fn window_menu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
     let items: Vec<Item> = vec![
@@ -313,7 +347,7 @@ fn window_menu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
         Box::new(PredefinedMenuItem::maximize(app, None)?),
         Box::new(PredefinedMenuItem::fullscreen(app, None)?),
         Box::new(PredefinedMenuItem::separator(app)?),
-        // Cmd+W closes the current tab (File menu), as in most tabbed apps.
+        // Cmd+W closes the document (File > Close); Cmd+Shift+W closes the window.
         Box::new(MenuItem::with_id(app, "app:closeWindow", "Close Window", true, Some("CmdOrCtrl+Shift+W"))?),
     ];
     submenu(app, "Window", &items)
@@ -330,7 +364,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, hold_quit])
+        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, set_menu_enabled, hold_quit])
         .on_menu_event(|app, event| {
             if event.id().0 == "app:quit" || event.id().0 == "app:closeWindow" {
                 flush_then_quit(app);

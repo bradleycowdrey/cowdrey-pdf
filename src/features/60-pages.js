@@ -720,6 +720,7 @@ function pg60OrgMove(from, to) {
 }
 cmd('pg60_organize', { label: 'Organize pages', rlabel: 'Organize', icon: 'layout-grid', enabled: has, pressed: pg60OrgOn, run: () => pg60Organize(!pg60OrgOn()) });
 FEATURE.onDocShown.push(() => { if (pg60OrgOn()) pg60Organize(false); });
+FEATURE.onDocClosed.push(() => { if (pg60OrgOn()) pg60Organize(false); });
 ribbonAdd('pages', 'View', ['pg60_organize'], 'Rotate');
 menuAdd('View', ['pg60_organize']);
 TEST_HOOKS.pg60Org = { on: pg60OrgOn, move: pg60OrgMove };

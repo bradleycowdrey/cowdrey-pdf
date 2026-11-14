@@ -36,11 +36,24 @@ const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: stor
 // Phones, and phones turned on their side (keep in step with the phone @media rule in template.html).
 const PHONE_MQ = '(max-width: 760px), (max-height: 500px) and (pointer: coarse)';
 const isPhone = () => matchMedia(PHONE_MQ).matches;
+// iPhone and iPad: WebKit zooms the whole window (title bar and ribbon too) into a text field under 16px when it gets
+// the focus, and leaves it so. The page is zoomed to the field instead (see the forms), so that zoom is turned off.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const ANDROID = /Android/i.test(navigator.userAgent); // Back closes what is open first (see "Back on Android")
+if (IOS) { const vm = document.querySelector('meta[name="viewport"]'); if (vm && !/maximum-scale/.test(vm.content)) vm.content += ', maximum-scale=1'; }
 const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a mouse: no Esc or Ctrl keys to mention
 let toastTimer;
 // Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
 const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
 let toolHint = '', toolJustSet = null; // the mode chip's hint, and the tool chosen in this task (see setTool)
+// A tool's how-to shown as a toast (on a phone): it goes once the page is tapped (the thing is placed) or the tool
+// changes, so it never covers what comes next.
+let hintToast = null;
+function hideHintToast() {
+  const t = $('#toast');
+  if (hintToast && t.classList.contains('show') && t.textContent === hintToast) { clearTimeout(toastTimer); t.classList.remove('show'); }
+  hintToast = null;
+}
 const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
 function toast(msg) {
   msg = touchWords(msg);
@@ -49,6 +62,7 @@ function toast(msg) {
   // (A phone's chip has room for the tool's name only: there the hint is also shown once, as a toast.)
   if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
+  hintToast = app.dataset.tool !== 'select' && toolHint && msg === touchWords(toolHint) ? msg : null;
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
   for (const b of document.querySelectorAll(TOAST_AVOID)) {
@@ -72,6 +86,7 @@ const FEATURE = {
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
+  onDocClosed: [], // () — when the document is closed (Close), before it goes: leave its own views and modes
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
   markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
   selActions: [],  // { label, icon, order, run() } — what can be done with text selected on the page (its bar and menu)
@@ -401,6 +416,7 @@ function goPage(n, instant) {
 viewer.addEventListener('scrollend', () => { const lock = navLock; if (lock) setTimeout(() => { if (navLock === lock) navLock = 0; }, 50); });
 for (const ev of ['wheel', 'touchstart', 'pointerdown']) viewer.addEventListener(ev, navUnlock, { passive: true });
 viewer.addEventListener('keydown', (e) => { if (/^(Arrow|Page|Home|End| )/.test(e.key)) navUnlock(); });
+viewer.addEventListener('click', () => hideHintToast(), true); // a tap on the page: the hint has been followed
 viewer.addEventListener('scroll', () => {
   if (!views.length || navLock) return;
   const mid = viewer.scrollTop + viewer.clientHeight / 3;
@@ -1112,7 +1128,7 @@ function setTool(t) {
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
   if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
-  if (t !== was) toolHint = TOOL_HINTS[t] || '';
+  if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; }
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
   // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).
@@ -1657,12 +1673,18 @@ async function teMarkFor(v, L, cm) {
 let phoneZoom = null; // { zoom, top, left, timer }
 async function phoneZoomTo(v, m) {
   if (!isPhone() || !views.includes(v)) return v;
+  const [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
+  return phoneZoomPx(v, lineFrame(m).size * scale, editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y });
+}
+// The same for anything on page v whose text is `px` high on screen now (a form field…), around the spot `at`:
+// zoomed so it is `want` px when it is under `min` px.
+async function phoneZoomPx(v, px, at, want = 18, min = 14) {
+  if (!isPhone() || !views.includes(v)) return v;
   if (phoneZoom && phoneZoom.timer) { clearTimeout(phoneZoom.timer); phoneZoom.timer = 0; }
-  const px = lineFrame(m).size * scale; if (px >= 14) return v;
-  const n = views.indexOf(v), [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
-  const at = editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y };
+  if (!(px > 0) || px >= min) return v;
+  const n = views.indexOf(v), r = v.el.getBoundingClientRect();
   if (!phoneZoom) phoneZoom = { zoom: S.zoom, top: viewer.scrollTop, left: viewer.scrollLeft, timer: 0 };
-  const z = Math.min(400, Math.ceil(scale * 100 * 18 / px));
+  const z = Math.min(400, Math.ceil(scale * 100 * want / px));
   const fx = (at.x - r.left) / r.width, fy = (at.y - r.top) / r.height;
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
@@ -1676,9 +1698,10 @@ async function phoneZoomTo(v, m) {
 }
 function phoneZoomBack() {
   if (!phoneZoom || phoneZoom.timer) return;
-  // A moment later, unless another line is opened in the meantime (it keeps this zoom).
+  // A moment later, unless another line or form field is opened in the meantime (it keeps this zoom).
   phoneZoom.timer = setTimeout(async () => {
-    const pz = phoneZoom; phoneZoom = null; if (!pz || lineEditor) { if (pz && lineEditor) phoneZoom = { ...pz, timer: 0 }; return; }
+    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input, textarea, select'));
+    const pz = phoneZoom; phoneZoom = null; if (!pz || keep) { if (pz && keep) phoneZoom = { ...pz, timer: 0 }; return; }
     await setZoom(pz.zoom); viewer.scrollTop = pz.top; viewer.scrollLeft = pz.left;
   }, 350);
 }
@@ -1774,7 +1797,7 @@ function openLineEditor(v, m, isNew) {
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
-  ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed) closeLineEditor(true); }, 0));
+  ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed && document.activeElement !== ed) closeLineEditor(true); }, 0));
 }
 // Where a click (or tap) on the page put the caret: { x, y, detail } on screen, set while the Edit tool handles it.
 // Opened from the keyboard (no click), the editor selects all of the line.
@@ -1936,8 +1959,9 @@ function closeLineEditor(commit) {
   if (!lineEditor) return false;
   const { ed, v, m, isNew, follow } = lineEditor; lineEditor = null;
   editingIds.delete(m.id);
-  const text = ed.textContent.replace(/[\r\n]+/g, ' ');
+  const text = ed.textContent.replace(/[\r\n]+/g, ' '), had = document.activeElement === ed;
   ed.remove();
+  if (had) viewer.focus({ preventScroll: true }); // the keys (Tab, the arrows, Delete) go on from the page
   phoneZoomBack();
   if (commit && text !== m.text) {
     const before = snapshot(), list = marksOf(v.entry);
@@ -3337,6 +3361,31 @@ async function renderDocs() {
     renderDocs();
   }; });
 }
+// Close (Ctrl/Cmd+W): back to the start screen. Changes not saved to a file are asked about first; either way they
+// stay in Recent, so the document can be opened again from there.
+async function closeDocument() {
+  if (!doc) return false;
+  closeLineEditor(true);
+  if (doc.dirty) {
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Recent either way.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    if (!a || (a === 'save' && !(await savePdf(false)))) return false;
+  }
+  clearTimeout(persistTimer); persistTimer = null;
+  try { await persistNow(); } catch (e) { console.warn(e); }
+  if (app.dataset.tool !== 'select') setTool('select');
+  pendingImage = null; selContent = null; closePopover();
+  if (!$('#findbar').hidden) closeFind();
+  findState.texts.clear();
+  for (const f of FEATURE.onDocClosed) { try { f(); } catch (e) { console.warn(e); } }
+  for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
+  pdfDocs.clear();
+  doc = null; selMark = null; undoStack.length = redoStack.length = 0;
+  pagesEl.innerHTML = ''; views = []; $('#drop').hidden = false;
+  store.set('current', null);
+  setTitle(); setSaved(true); updateStatus(); renderSide(); refreshRibbon();
+  const o = $('#drop [data-cmd="open"]') || $('#drop button'); if (o) o.focus({ preventScroll: true });
+  return true;
+}
 async function openStored(id) {
   if (doc && doc.id === id) return true;
   const all = await listDocs(); const rec = all.find((d) => d.id === id); if (!rec) return false;
@@ -3499,6 +3548,7 @@ function run(id) {
 cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFiles });
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
+cmd('closeDoc', { label: 'Close', icon: 'x', key: 'Mod-w', enabled: has, run: () => serial(closeDocument) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
 cmd('exportImage', { rlabel: 'Page as picture', label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
@@ -3550,7 +3600,7 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
+  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
@@ -4005,6 +4055,7 @@ function refreshRibbon() {
   $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
   rbRoving();
   scheduleMacMenu();
+  if (ANDROID) backLater();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
@@ -4023,7 +4074,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (mod) {
     const key = (e.shiftKey ? 'Shift-' : '') + (e.altKey ? 'Alt-' : '') + e.key.toLowerCase();
-    const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
+    const map = { 'o': 'open', 'w': 'closeDoc', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
     const id = map[key.replace('Shift-', 'shift-').replace('Alt-', 'alt-')];
     if (id && !(typing && ['z', 'shift-z', 'y'].includes(key.toLowerCase()))) { e.preventDefault(); run(id); }
     return;
@@ -4049,6 +4100,49 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
   if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
+
+/* ---------------- Back on Android ---------------- */
+// Back (the button or the gesture) closes what is on top, as Escape does: a dialog, a menu, the sidebar, an editor,
+// the find bar, a selection, then the tool. It leaves the app only when nothing is open. While something is open a
+// history entry stands for it, so Back takes that entry (and closes the top thing) instead of leaving; the entry is
+// put back while more is open, and taken away when everything was closed some other way.
+function backLayer() {
+  if ($('#dialog').open) return 'dialog';
+  if (!pop.hidden) return 'menu';
+  if (app.dataset.sidebar === 'open' && isPhone()) return 'sidebar';
+  if (lineEditor || $('#viewer :is(.txt-editor, .page-ask)')) return 'editor';
+  if (!$('#findbar').hidden) return 'find';
+  if (selContent || selMark) return 'selection';
+  if (doc && app.dataset.tool && app.dataset.tool !== 'select') return 'tool';
+  if (app.dataset.organize === '1') return 'organize';
+  return null;
+}
+function backClose() {
+  const l = backLayer(); if (!l) return;
+  if (l === 'dialog') { $('#dialog').dispatchEvent(new Event('cancel', { cancelable: true })); return; }
+  if (l === 'sidebar') { toggleSidebar(false); return; }
+  const esc = (el) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+  esc(document.activeElement || document.body);
+  // Still open (the focus was in a form field, which keeps its own Escape): from the page instead.
+  if (backLayer() === l && l !== 'editor') { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); esc(document.body); }
+}
+var backArmed = false, backSkip = false, backTimer = 0; // var: refreshRibbon can run before this line
+function backSync() {
+  if (backSkip) return;
+  const open = !!backLayer();
+  if (open && !backArmed) { history.pushState({ cowdreyBack: 1 }, ''); backArmed = true; }
+  else if (!open && backArmed && history.state && history.state.cowdreyBack) { backArmed = false; backSkip = true; history.back(); }
+}
+function backLater() { clearTimeout(backTimer); backTimer = setTimeout(backSync, 60); }
+if (ANDROID) {
+  window.addEventListener('popstate', () => {
+    if (backSkip) { backSkip = false; backLater(); return; } // our own entry, taken away
+    if (!backArmed) return;
+    backArmed = false; backClose(); backLater();
+  });
+  for (const t of ['click', 'keyup', 'focusin', 'pointerup']) document.addEventListener(t, backLater, true);
+  $('#dialog').addEventListener('close', backLater);
+}
 
 /* ---------------- theme ---------------- */
 function applyTheme() {
@@ -4143,15 +4237,21 @@ async function beforeQuit() {
   }
   NATIVE.core.invoke('quit_app').catch(() => {});
 }
-const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
+const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-w': 'CmdOrCtrl+W', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
 // The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
-// Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
-var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
-function macMenu() {
-  if (!MAC_APP) return;
+// Paste and Select All are the system's, for text fields. Checkmarks and greyed-out commands follow the app: the
+// whole menu bar is sent when its items change, and only the items that were turned on or off otherwise.
+var lastMenu = '', lastEnabled = null, menuTimer = null; // var: applyTheme can run before this line
+// Whether a command can be chosen now, as the in-app menus show it. Undo and Redo also edit text in a text field.
+function macEnabled(id) {
+  const c = C[id]; if (!c.enabled || c.enabled()) return true;
+  const el = document.activeElement;
+  return (id === 'undo' || id === 'redo') && !!el && (/INPUT|TEXTAREA/.test(el.tagName) || el.isContentEditable);
+}
+function macMenuSpec() {
   // Only a real switch is a check item: a command that opens a window (its name ends in …) never is (Apple's HIG).
-  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
-  const menus = MENUS.map(([title, ids]) => {
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, enabled: macEnabled(id), checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
+  return MENUS.map(([title, ids]) => {
     // About and Check for Updates live in the Cowdrey.PDF menu.
     let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates').map((id) => id === '-' ? { kind: 'sep' } : item(id));
     if (title === 'Edit') {
@@ -4162,11 +4262,29 @@ function macMenu() {
     items = items.filter((x, k, a) => x.kind !== 'sep' || (k > 0 && k < a.length - 1 && a[k - 1].kind !== 'sep')); // no separator at an end, or two together
     return { title, items };
   });
-  const json = JSON.stringify(menus);
-  if (json === lastMenu) return;
-  lastMenu = json;
-  MAC_APP.core.invoke('set_menu', { menus }).then(() => document.documentElement.classList.add('mac-app'), () => { lastMenu = ''; });
 }
+// What to send for a menu bar: { full: menus } when its items changed, { enabled: [[id, on]…] } when only some were
+// turned on or off, or null when nothing changed. (Pure, for tests: takes and gives back the state it compares to.)
+function macMenuDelta(menus, last) {
+  const items = menus.flatMap((m) => m.items).filter((x) => x.kind === 'item');
+  const enabled = Object.fromEntries(items.map((x) => [x.id, x.enabled !== false]));
+  const shape = JSON.stringify(menus, (k, v) => (k === 'enabled' ? undefined : v));
+  if (!last || shape !== last.shape) return { send: { full: menus }, state: { shape, enabled } };
+  const diff = Object.entries(enabled).filter(([id, on]) => last.enabled[id] !== on);
+  return { send: diff.length ? { enabled: diff } : null, state: { shape, enabled } };
+}
+TEST_HOOKS.macMenuSpec = macMenuSpec; TEST_HOOKS.macMenuDelta = macMenuDelta;
+function macMenu() {
+  if (!MAC_APP) return;
+  const { send, state } = macMenuDelta(macMenuSpec(), lastEnabled);
+  if (!send) return;
+  lastEnabled = state; lastMenu = state.shape;
+  const failed = () => { lastEnabled = null; lastMenu = ''; };
+  if (send.full) MAC_APP.core.invoke('set_menu', { menus: send.full }).then(() => document.documentElement.classList.add('mac-app'), failed);
+  else MAC_APP.core.invoke('set_menu_enabled', { items: send.enabled }).catch(() => { failed(); scheduleMacMenu(); }); // the whole bar instead
+}
+// Undo and Redo in the menu follow the focus too (a text field has its own undo).
+if (MAC_APP) { document.addEventListener('focusin', () => scheduleMacMenu()); document.addEventListener('focusout', () => scheduleMacMenu()); }
 function scheduleMacMenu() { if (!MAC_APP) return; clearTimeout(menuTimer); menuTimer = setTimeout(macMenu, 120); }
 if (NATIVE) {
   NATIVE.event.listen('open-files', () => serial(takeOpened));
