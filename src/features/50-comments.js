@@ -184,10 +184,11 @@ function cmEncode(font, str) {
   return font.encodeText([...str].map((c) => { try { font.encodeText(c); return c; } catch { return '?'; } }).join('')).toString();
 }
 function cmAnnotInfo(m, L) {
-  const { PDFHexString } = L, rgb = cmRgb(m.color);
+  const { PDFString } = L, rgb = cmRgb(m.color);
   const bbox = (pts) => { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
   const quadsOfRects = (rects) => rects.flatMap((r) => { const [a, b, c, d] = bbox([[r[0], r[1]], [r[2], r[3]]]); return [a, d, c, d, a, b, c, b]; });
-  const da = (size) => PDFHexString.fromText(`/Helv ${size} Tf ${rgb.map(cmNum).join(' ')} rg`);
+  // /DA is operators, so a plain (PDFDocEncoded) string; /DS says the same for readers that rebuild the look from it.
+  const da = (size) => ({ DA: PDFString.of(`/Helv ${cmNum(size)} Tf ${rgb.map(cmNum).join(' ')} rg`), DS: PDFString.of(`font: Helvetica ${cmNum(size)}pt; color: ${String(m.color || '#000000').toLowerCase()}`) });
   switch (m.type) {
     case 'hl': return { Subtype: 'Highlight', QuadPoints: quadsOfRects(m.rects), contents: m.text || '' };
     case 'ink': return { Subtype: 'Ink', InkList: [m.pts.flat()], BS: { W: m.w, S: 'S' } };
@@ -202,9 +203,9 @@ function cmAnnotInfo(m, L) {
     }
     case 'cmCallout': {
       const P = cmFrame(m.x, m.y, m.rot), [tu, td] = P.local(m.tx, m.ty), knee = P(Math.max(0, Math.min(m.bw, tu)), Math.max(0, Math.min(m.bh, td)));
-      return { Subtype: 'FreeText', IT: 'FreeTextCallout', CL: [m.tx, m.ty, ...knee], LE: 'OpenArrow', DA: da(m.size), BS: { W: m.lw, S: 'S' }, contents: m.text };
+      return { Subtype: 'FreeText', IT: 'FreeTextCallout', CL: [m.tx, m.ty, ...knee], LE: 'OpenArrow', ...da(m.size), BS: { W: m.lw, S: 'S' }, contents: m.text };
     }
-    case 'cmType': return { Subtype: 'FreeText', IT: 'FreeTextTypeWriter', DA: da(m.size), BS: { W: 0 }, contents: m.text };
+    case 'cmType': return { Subtype: 'FreeText', IT: 'FreeTextTypeWriter', ...da(m.size), BS: { W: 0 }, contents: m.text };
     case 'cmStamp': return { Subtype: 'Stamp', Name: m.name || 'Draft', contents: m.sub ? `${m.label} ${m.sub}` : m.label };
   }
   return null;
@@ -238,6 +239,9 @@ async function cmSave({ L, out, p, m, ctx }) {
     for (const [u, d] of [[0, -t.size * 0.3], [w, -t.size * 0.3], [0, t.size], [w, t.size]]) pts.push([x + c * u - s * d, y + s * u + c * d]); // d: up from the baseline
   }
   if (!pts.length) return;
+  // The Rect holds every point the annotation names too (readers ignore QuadPoints, vertices or a leader outside it).
+  for (const k of ['QuadPoints', 'Vertices', 'L', 'CL']) { const a = info[k]; if (Array.isArray(a)) for (let j = 0; j + 1 < a.length; j += 2) pts.push([a[j], a[j + 1]]); }
+  if (info.InkList) for (const a of info.InkList) for (let j = 0; j + 1 < a.length; j += 2) pts.push([a[j], a[j + 1]]);
   const pad = wMax / 2 + 2;
   const rect = [Math.min(...pts.map((q) => q[0])) - pad, Math.min(...pts.map((q) => q[1])) - pad, Math.max(...pts.map((q) => q[0])) + pad, Math.max(...pts.map((q) => q[1])) + pad];
   const ap = out.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: rect, Resources: { Font: { F1: fonts.F1.ref, F2: fonts.F2.ref, Helv: fonts.F1.ref }, ExtGState: gs } });
@@ -250,11 +254,61 @@ async function cmSave({ L, out, p, m, ctx }) {
   const who = cmAuthorOf(m); if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
   annot.set(PDFName.of('M'), PDFString.fromDate(m.at ? new Date(m.at) : new Date()));
   if (contents) annot.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
+  // Callouts and typewriter text keep where and how they were made, so they can be edited again after reopening.
+  if (m.type === 'cmCallout' || m.type === 'cmType') annot.set(PDFName.of('CowdreyPdfMark'), PDFHexString.fromText(JSON.stringify(Object.fromEntries(['type', 'x', 'y', 'rot', 'tx', 'ty', 'size', 'color', 'lw', 'bw', 'bh'].filter((k) => m[k] != null).map((k) => [k, m[k]])))));
   const ref = out.context.register(annot);
   let annots = p.node.lookup(PDFName.of('Annots'));
   if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
   annots.push(ref);
 }
+/* ---- callouts and typewriter text in an opened PDF (ours, or plain ones from another app): editable marks again ---- */
+const cmSrcDocs = new WeakMap(); // source bytes -> its pdf-lib document (read once, for the annotations' own entries)
+async function cmAnnotDict(entry, id) {
+  const b = doc.sources[entry.src], r = /^(\d+)R(\d*)$/.exec(String(id || ''));
+  if (!b || !r) return null;
+  const L = await loadPdfLib();
+  let d = cmSrcDocs.get(b);
+  if (!d) { d = L.PDFDocument.load(b, b.password ? { password: b.password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false }); cmSrcDocs.set(b, d); }
+  const o = (await d).context.lookup(L.PDFRef.of(+r[1], +(r[2] || 0)));
+  return o instanceof L.PDFDict ? { L, o } : null;
+}
+// The mark a FreeText annotation becomes, or null when its look can't be kept (rich text, a plain text box).
+async function cmMarkOfFreeText(v, a) {
+  let got = null; try { got = await cmAnnotDict(v.entry, a.id); } catch (e) { console.warn(e); }
+  if (!got) return null;
+  const { L, o } = got, N = (k) => L.PDFName.of(k);
+  const str = (k) => { const x = o.lookup(N(k)); return x && x.decodeText ? x.decodeText() : ''; };
+  const nm = str('NM'), it = String(o.get(N('IT')) || ''), ours = /^cpdf-/.test(nm);
+  const kind = /Callout/i.test(it) ? 'cmCallout' : /TypeWriter/i.test(it) ? 'cmType' : null;
+  if (!kind || (!ours && o.get(N('RC')))) return null;
+  let saved = null; try { saved = JSON.parse(str('CowdreyPdfMark')); } catch {}
+  const text = (a.contentsObj && a.contentsObj.str) || str('Contents') || ' ';
+  const da = a.defaultAppearanceData || {}, size = +da.fontSize || 12;
+  const color = da.fontColor && da.fontColor.length === 3 ? '#' + [...da.fontColor].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase() : '#111111';
+  let m;
+  if (saved && saved.type === kind) m = { ...saved };
+  else {
+    const rect = a.rect, rot = totalRot(v), lw = Math.max(1, Math.min(3, (a.borderStyle && a.borderStyle.width) || 1));
+    if (kind === 'cmCallout') {
+      const cl = o.lookup(N('CL')), c = cl instanceof L.PDFArray ? cl.asArray().map((n) => n.asNumber ? n.asNumber() : 0) : [];
+      const f = cmFrameFromBox(rect, rot);
+      m = { type: kind, x: f.x, y: f.y, rot, tx: c.length >= 2 ? c[0] : rect[0] - 20, ty: c.length >= 2 ? c[1] : rect[1] - 20, size, color, lw };
+    } else { const f = cmFrameFromBox([rect[0] + 2, rect[1], rect[2], rect[3] - size * .15 - 2], rot); m = { type: kind, x: f.x, y: f.y, rot, size, color }; }
+  }
+  m.id = ours && !Object.values(doc.marks).flat().some((x) => x && x.id === nm.slice(5)) ? nm.slice(5) : uid();
+  m.text = text; m.author = (a.titleObj && a.titleObj.str) || ''; m.at = cmPdfDate(str('M')) || Date.now();
+  if (kind === 'cmCallout') Object.assign(m, cmBoxSize(text, m.size));
+  return m;
+}
+FEATURE.editFreeText = async (v, a) => {
+  const m = await cmMarkOfFreeText(v, a); if (!m) return false;
+  const t = await askText(m.type === 'cmCallout' ? 'Edit callout' : 'Edit text', '', m.text, 'Save', false, true);
+  if (t == null || !t.trim()) return true;
+  const before = snapshot(); m.text = t;
+  if (m.type === 'cmCallout') Object.assign(m, cmBoxSize(t, m.size));
+  marksOf(v.entry).push({ id: uid(), type: 'ae', ref: a.id, rect: a.rect, subtype: a.subtype || '', deleted: true }, m);
+  changed(before); rerenderView(v); return true;
+};
 const cmMoveQuads = (m, o, dx, dy) => { if (o.quads) m.quads = o.quads.map((q) => q.map((n, k) => n + (k % 2 ? dy : dx))); };
 const cmMoveCallout = (m, o, dx, dy) => { m.tx = o.tx + dx; m.ty = o.ty + dy; };
 for (const t of ['cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']) FEATURE.markTypes[t] = { draw: cmDraw, save: cmSave, move: t === 'cmMarkup' ? cmMoveQuads : t === 'cmCallout' ? cmMoveCallout : undefined };

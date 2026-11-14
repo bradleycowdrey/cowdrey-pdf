@@ -201,4 +201,70 @@ export default async (h) => {
     }
     eq(got, { line: true, paragraph: true, text: true, note: true, callout: true, typewriter: true, bookmark: true });
   });
+
+  const annotsOf = (L, d, n = 0) => { const a = d.getPage(n).node.Annots(); return a ? a.asArray().map((r) => d.context.lookup(r)).filter((x) => String(x.get(L.PDFName.of('Subtype'))) !== '/Widget') : []; };
+  const numsOf = (L, x) => (x instanceof L.PDFArray ? x.asArray().map((n) => n.asNumber()) : []);
+  const typeIn = async (p, text) => { await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', text); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(150); };
+
+  await test('saved file: callout and typewriter /DA is a plain string; every comment\'s Rect holds its QuadPoints, vertices and leader', async () => {
+    const p = await open({ height: 1300 }); await openPdf(p);
+    await p.click('[data-rt="markup"]');
+    for (const [id, frac] of [['cm_underline', .5], ['cm_strike', .6], ['tool_highlight', .4]]) { await p.click(`[data-cmd="${id}"]`); await h.selectText(p, 0, id === 'cm_strike' ? 'The pelican count' : 'Cowdrey.PDF opens', frac); await p.waitForTimeout(150); }
+    await p.click('[data-cmd="cm_polygon"]'); for (const pt of [[60, 300], [160, 340], [120, 260]]) await p.mouse.click(...(await h.at(p, ...pt))); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
+    await p.click('[data-cmd="cm_callout"]'); await drag(p, [300, 400], [420, 330]); await typeIn(p, 'Callout words');
+    await p.click('[data-cmd="cm_typewriter"]'); await p.mouse.click(...(await h.at(p, 60, 200))); await typeIn(p, 'Typed note');
+    const L = pdfLib(), N = (k) => L.PDFName.of(k), d = await L.PDFDocument.load(await savedOf(p)), as = annotsOf(L, d);
+    const subs = as.map((a) => String(a.get(N('Subtype'))).slice(1));
+    for (const want of ['Underline', 'StrikeOut', 'Polygon', 'FreeText']) ok(subs.includes(want), want + ' saved: ' + subs);
+    const ft = as.filter((a) => String(a.get(N('Subtype'))) === '/FreeText');
+    eq(ft.length, 2, 'callout and typewriter');
+    for (const a of ft) {
+      const da = a.get(N('DA'));
+      ok(da instanceof L.PDFString, '/DA is a literal string, not ' + (da && da.constructor.name));
+      ok(/^\/Helv 12 Tf [\d.]+ [\d.]+ [\d.]+ rg$/.test(da.decodeText()), 'DA ' + da.decodeText());
+      ok(/^font: Helvetica 12pt; color: #[0-9a-f]{6}$/.test(a.get(N('DS')).decodeText()), 'DS');
+    }
+    for (const a of as) {
+      const [x0, y0, x1, y1] = numsOf(L, a.get(N('Rect'))), sub = String(a.get(N('Subtype')));
+      for (const k of ['QuadPoints', 'Vertices', 'CL', 'L']) {
+        const v = numsOf(L, a.get(N(k)));
+        for (let j = 0; j + 1 < v.length; j += 2) ok(v[j] >= x0 - .01 && v[j] <= x1 + .01 && v[j + 1] >= y0 - .01 && v[j + 1] <= y1 + .01, `${sub} ${k} point ${v[j]},${v[j + 1]} outside its Rect ${[x0, y0, x1, y1]}`);
+      }
+    }
+    // pdf.js reads the appearance strings without complaint
+    const warn = []; const orig = console.log; console.log = (...a) => { warn.push(a.join(' ')); };
+    try { const doc2 = await (await pdfjs()).getDocument({ data: new Uint8Array(await d.save()), verbosity: 1 }).promise; await (await doc2.getPage(1)).getAnnotations(); await doc2.loadingTask.destroy(); } finally { console.log = orig; }
+    ok(!warn.some((w) => /parseDefaultAppearance|Unknown command/.test(w)), warn.join('\n'));
+    await p.ctx.close();
+  });
+
+  await test('reopened: our callout and typewriter text can be edited again, keeping where they are and how they look', async () => {
+    const p = await open({ height: 1300 }); await openPdf(p);
+    await p.click('[data-rt="markup"]');
+    await p.click('[data-cmd="cm_callout"]'); await drag(p, [300, 400], [420, 330]); await typeIn(p, 'Callout words');
+    await p.click('[data-cmd="cm_typewriter"]'); await p.mouse.click(...(await h.at(p, 60, 200))); await typeIn(p, 'Typed note');
+    const L = pdfLib(), N = (k) => L.PDFName.of(k);
+    const first = await savedOf(p), rectOf = async (b) => Object.fromEntries(annotsOf(L, await L.PDFDocument.load(b)).filter((a) => String(a.get(N('Subtype'))) === '/FreeText').map((a) => [a.lookup(N('Contents')).decodeText(), numsOf(L, a.get(N('Rect'))).map((n) => Math.round(n))]));
+    const r1 = await rectOf(first);
+    const look = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().map(({ type, x, y, rot, tx, ty, size, color, lw }) => ({ type, x, y, rot, tx, ty, size, color, lw })));
+    await reopen(p, first); await p.waitForTimeout(500);
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+    for (const [pt, was, now] of [[[65, 195], 'Typed note', 'Typed again'], [[340, 380], 'Callout words', 'Callout changed']]) {
+      await p.mouse.dblclick(...(await h.at(p, ...pt)));
+      await p.waitForSelector('#dialog[open] #dlgInput', { timeout: 5000 });
+      eq(await p.inputValue('#dlgInput'), was, 'the words to edit');
+      await p.fill('#dlgInput', now); await p.click('#dialog .btn.primary'); await p.waitForTimeout(400);
+    }
+    await shot(p, 'reopened-freetext-edited.png');
+    const ms = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().map(({ type, x, y, rot, tx, ty, size, color, lw, text, deleted }) => ({ type, x, y, rot, tx, ty, size, color, lw, text, deleted })));
+    eq(ms.filter((m) => m.type === 'ae').map((m) => m.deleted), [true, true], 'the old annotations go');
+    const back = ms.filter((m) => m.type !== 'ae');
+    eq(back.map(({ text, ...k }) => k).sort((a, b) => a.type.localeCompare(b.type)), look.map((k) => ({ ...k, deleted: undefined })).sort((a, b) => a.type.localeCompare(b.type)), 'the same place and look');
+    const r2 = await rectOf(await savedOf(p));
+    eq(Object.keys(r2).sort(), ['Callout changed', 'Typed again'], 'saved once each, with the new words');
+    ok(Math.abs(r2['Typed again'][1] - r1['Typed note'][1]) <= 1 && Math.abs(r2['Typed again'][3] - r1['Typed note'][3]) <= 1 && r2['Typed again'][0] === r1['Typed note'][0], 'typewriter in place ' + r1['Typed note'] + ' → ' + r2['Typed again']);
+    const pick = (r) => [r[0], r[1], r[3]]; // wider words make the box wider to the right only
+    eq(pick(r2['Callout changed']), pick(r1['Callout words']), 'callout in place');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

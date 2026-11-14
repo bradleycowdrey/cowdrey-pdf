@@ -94,6 +94,7 @@ const FEATURE = {
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
   savePageLate: [], // the same, after every savePage hook (redaction among them): drawing that must not be cut
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
+  editFreeText: null, // async (v, a) -> true when a FreeText comment from the PDF was edited as a mark
   commitEdits: [], // async () — keep what is being typed in a feature's own editor, before saving, printing or exporting
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
@@ -1717,6 +1718,8 @@ function deleteContent() {
   selContent = null; changed(before); syncHiddenComments(); redrawPage(s.v.entry);
 }
 async function editComment(v, a, mark) {
+  // Callouts and typewriter text (ours, or plain ones) become editable marks; other text boxes can't keep their look.
+  if (a.annotationType === pdfjs.AnnotationType.FREETEXT && !mark && FEATURE.editFreeText && await FEATURE.editFreeText(v, a)) return;
   if (a.annotationType === pdfjs.AnnotationType.FREETEXT) { toast('This comment\u2019s words are part of how it looks. Delete it and add a Text box instead.'); return; }
   const now = mark && mark.contents != null ? mark.contents : (a.contentsObj && a.contentsObj.str) || '';
   const text = await askText('Comment', a.titleObj && a.titleObj.str ? `By ${a.titleObj.str}` : '', now, 'Save', false, true);
