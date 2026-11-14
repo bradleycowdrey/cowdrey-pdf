@@ -48,7 +48,7 @@ const txtCtx = document.createElement('canvas').getContext('2d');
 function txtMeasurer(page, m) {
   const cm = page && page._cmapValue, t0 = m.src[0].tm;
   const L = cm && cm.lines.find((l) => sameOrigin(l.tm, t0));
-  const loaded = L ? L.fontName : null, map = !m.std && !m.ocr && !m.type3 && loaded && cm.glyphs.get(loaded);
+  const loaded = m.loaded || (L ? L.fontName : null), map = !m.std && !m.ocr && !m.type3 && loaded && cm && cm.glyphs.get(loaded);
   const hsc = Math.hypot(t0[0], t0[1]) / (Math.hypot(t0[2], t0[3]) || 1);
   const own = `100px "${loaded}", ${cssFamily(m.fam)}`, fb = `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}100px ${cssFamily(m.fam)}`;
   return (s) => {
@@ -81,18 +81,66 @@ const txtJoin = (strs) => strs.reduce((a, s, k) => (k === 0 ? s : /-$/.test(a) ?
 // The block's frame: the first original line's origin (moved by dx, dy), its directions, and the size and leading now.
 function txtFrame(m) {
   const f = lineFrame(m.src[0]), k = m.size / f.size;
-  return { ...f, k, lead: m.lead0 * k, o: [f.o[0] + (m.dx || 0), f.o[1] + (m.dy || 0)] };
+  return { ...f, k, lead: txtLead(m, m.size), o: [f.o[0] + (m.dx || 0), f.o[1] + (m.dy || 0)] };
 }
+// Line spacing: as in the PDF (lead0, scaled with the size), or a multiple of single spacing (1.2 times the size).
+const TXT_SPACINGS = [1, 1.15, 1.5, 2];
+const txtLead = (m, size, spacing = m.spacing) => (+spacing ? +spacing * 1.2 * size : m.lead0 * size / m.size0);
 const txtOrigin = (F, i, x) => [F.o[0] + F.u[0] * x - F.v[0] * i * F.lead, F.o[1] + F.u[1] * x - F.v[1] * i * F.lead];
 const txtAlignK = (a) => ({ center: .5, right: 1 }[a] || 0);
 function txtRelayout(page, m) {
-  m.std = !!(m.bold !== m.base.bold || m.italic !== m.base.italic);
+  m.std = txtIsStd(m);
   m.lines = m.wrap ? txtWrap(m.text, m.wrap, txtMeasurer(page, m)) : m.text.split('\n');
+}
+/* ---- Font: the text's own font, another font the page uses, or a standard one (Helvetica, Times, Courier) ---- */
+// face: '' (the text's own), 'sans' | 'serif' | 'mono' (standard), or 'f:' + the name pdf.js loaded another of the
+// page's fonts as. A face from the page is written with that font where it has the letters (as the own font is).
+const TXT_STD_FACES = [['sans', 'Helvetica'], ['serif', 'Times'], ['mono', 'Courier']];
+const txtFontInfo = new Map(); // loaded name -> { font, codes, fam, bold, italic, ascent, descent, label }
+// A font's name as people know it: no subset tag, words apart ("ABCDEF+Carlito-Bold-8659" is "Carlito Bold").
+const txtFontLabel = (name) => baseName(name).replace(/[-_,+]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').trim() || 'As in the PDF';
+const txtStdFace = (face) => TXT_STD_FACES.some(([k]) => k === face);
+// Drawn in a standard font: a standard face, or bold or italic asked of a font that isn't.
+const txtIsStd = (m) => txtStdFace(m.face) || m.bold !== (m.loaded ? !!m.fbold : m.base.bold) || m.italic !== (m.loaded ? !!m.fitalic : m.base.italic);
+function txtApplyFace(m, face = '') {
+  if (!m.own0) m.own0 = { font: m.font, codes: m.codes, fam: m.fam, ocr: m.ocr, type3: m.type3, ascent: m.ascent, descent: m.descent };
+  const info = /^f:/.test(face) && txtFontInfo.get(face.slice(2));
+  Object.assign(m, m.own0); delete m.loaded; delete m.fbold; delete m.fitalic;
+  m.face = info || txtStdFace(face) ? face : '';
+  if (info) Object.assign(m, { font: info.font, codes: info.codes, fam: info.fam, ocr: false, type3: false, ascent: info.ascent, descent: info.descent, loaded: face.slice(2), fbold: info.bold, fitalic: info.italic });
+  else if (txtStdFace(face)) m.fam = face;
+  return m;
+}
+// A tpara as it would be with a format (for measuring while the editor is open).
+const txtFaced = (m, f) => { const t = txtApplyFace({ ...m }, f.face); Object.assign(t, { size: f.size, bold: f.bold, italic: f.italic, spacing: f.spacing || 0 }); t.std = txtIsStd(t); return t; };
+// The fonts the page's text uses (not a scan's invisible text, not drawn fonts), each once, by name.
+async function txtPageFonts(v) {
+  return v.page._txtFonts || (v.page._txtFonts = (async () => {
+    const cm = await contentMap(v.page), out = [], names = new Set();
+    for (const L of cm.lines) {
+      const k = L.fontName;
+      if (cm.invisible.has(k) || out.some((x) => x.loaded === k)) continue;
+      const fo = await fontObj(v.page, k) || {}, name = String(fo.name || '');
+      if (!name || fo.isType3Font || /glyphless/i.test(name)) continue;
+      const label = txtFontLabel(name);
+      if (names.has(label)) continue; names.add(label);
+      const codes = {}; for (const [u, gl] of cm.glyphs.get(k) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
+      const info = { loaded: k, font: name, label, codes, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), ascent: L.ascent, descent: L.descent };
+      txtFontInfo.set(k, info); out.push(info);
+    }
+    return out;
+  })().catch(() => []));
+}
+// The Font list for text in the PDF: its own font first, the page's other fonts, then the standard ones.
+function txtFaceOpts(v, m) {
+  const cm = v.page._cmapValue, src = m.src ? m.src[0] : m, L = cm && cm.lines.find((l) => sameOrigin(l.tm, src.tm));
+  const ownName = (m.own0 || m).font, own = ownName && !/glyphless/i.test(ownName) ? txtFontLabel(ownName) : 'As in the PDF';
+  return { own, base: m.base || { bold: !!m.bold, italic: !!m.italic }, fonts: txtPageFonts(v).then((list) => list.filter((x) => x.loaded !== (L && L.fontName) && x.label !== own)) };
 }
 const txtSrc = (t) => ({ tm: t.tm, width: t.width, ascent: t.ascent, descent: t.descent, quad: t.quad, font: t.font, bg: t.bg, ocr: !!t.ocr, orig: t.orig });
 function txtNewPara(tes, wrap, lead0) {
   const t = tes[0], size = lineFrame(t).size;
-  const base = { text: txtJoin(tes.map((x) => x.orig)), size, color: t.color, bold: !!t.bold, italic: !!t.italic, underline: false, align: 'left' };
+  const base = { text: txtJoin(tes.map((x) => x.orig)), size, color: t.color, bold: !!t.bold, italic: !!t.italic, underline: false, align: 'left', face: '', spacing: 0 };
   // The first line's text state (outline, spacing) carries over, as it does for a single edited line.
   // Spacing only when every line has the same (a line set tighter to fit is not the paragraph's spacing).
   const st = {}; for (const k of ['tr', 'lw', 'stroke']) if (t[k] != null) st[k] = t[k];
@@ -159,7 +207,7 @@ FEATURE.markTypes.tpara = {
       if (!line.trim()) return;
       const w = meas(line), x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0;
       const org = txtOrigin(F, i, x), [ox, oy] = toView(v, ...org);
-      const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
+      const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}:${m.fam}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, loaded: m.loaded, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
       const gl = svgEl('g', { transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` });
       gl.appendChild(svgEl('image', { x: ox, y: oy - im.asc, width: im.w, height: im.h, href: im.url }));
       if (m.underline) { const uy = oy + m.size * scale * .12; gl.appendChild(svgEl('line', { x1: ox, y1: uy, x2: ox + w * scale, y2: uy, stroke: m.color, 'stroke-width': Math.max(.75, m.size * scale * .06) })); }
@@ -286,13 +334,16 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   // Text in a colour of its own (not one of the swatches) shows that colour first, pressed, so the bar says what it is.
   const own = /^#[0-9a-f]{6}$/i.test(fmt.color || '') && !TXT_SWATCHES.some((c) => c.toLowerCase() === fmt.color.toLowerCase()) ? fmt.color : null;
   const btn = (k, icon, label, extra = '') => `<button type="button" class="txt-b" data-tf="${k}" ${extra} title="${label}" aria-label="${label}">${ic(icon)}</button>`;
+  const sel = (k, icon, label, html) => `<label class="txt-grp txt-sel" title="${label}">${ic(icon)}<select data-tf="${k}" aria-label="${label}">${html}</select></label>`;
   bar.innerHTML = [
+    opts.face ? sel('face', 'type', 'Font', `<option value="">${esc(opts.face.own)}</option>${TXT_STD_FACES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}`) : '',
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
     `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
+    opts.spacing ? sel('spacing', 'unfold-vertical', 'Line spacing', `<option value="0">As is</option>${TXT_SPACINGS.map((n) => `<option value="${n}">${n % 1 ? n : n.toFixed(1)}</option>`).join('')}`) : '',
   ].join('');
   const sync = () => {
     $('.txt-size', bar).textContent = txtRound(fmt.size);
@@ -302,6 +353,8 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
     for (const k of ['left', 'center', 'right']) { const b = $(`[data-tf="${k}"]`, bar); if (b) b.setAttribute('aria-pressed', (fmt.align || 'left') === k); }
     const s = $('[data-tf="fam"]', bar); if (s) s.value = fmt.famPick || fmt.fam || 'sans';
+    const fc = $('[data-tf="face"]', bar); if (fc) fc.value = fmt.face || '';
+    const sp = $('[data-tf="spacing"]', bar); if (sp) sp.value = String(+fmt.spacing || 0);
   };
   const ownSw = $('[data-own]', bar); if (ownSw) { ownSw.title = 'Colour now'; ownSw.setAttribute('aria-label', `Colour now (${own})`); }
   // Buttons keep the focus in the text being edited.
@@ -324,6 +377,22 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   pick.addEventListener('change', () => { refocus && refocus(); });
   const fam = $('[data-tf="fam"]', bar);
   if (fam) fam.addEventListener('change', () => { fmt.famPick = fam.value; onChange(fmt); refocus && refocus(); });
+  for (const k of ['face', 'spacing']) {
+    const el = $(`[data-tf="${k}"]`, bar); if (!el) continue;
+    el.addEventListener('change', () => {
+      fmt[k] = k === 'spacing' ? +el.value : el.value;
+      // A font of the page comes as it is (bold or not); back to the text's own font, its own bold and italic.
+      const info = k === 'face' && (/^f:/.test(el.value) ? txtFontInfo.get(el.value.slice(2)) : !el.value && opts.face.base);
+      if (info) { fmt.bold = !!info.bold; fmt.italic = !!info.italic; }
+      sync(); onChange(fmt); refocus && refocus();
+    });
+  }
+  // The page's other fonts join the Font list once they have been read (after the text's own font).
+  if (opts.face) opts.face.fonts.then((list) => {
+    const fc = $('[data-tf="face"]', bar); if (!fc || !list.length) return;
+    fc.options[0].insertAdjacentHTML('afterend', list.map((x) => `<option value="f:${esc(x.loaded)}">${esc(x.label)}</option>`).join(''));
+    fc.value = fmt.face || '';
+  });
   sync();
   return bar;
 }
@@ -341,9 +410,10 @@ function txtShowBar(v, target, fmt, opts, onChange, refocus) {
 // always inside what the viewer shows (above a phone's keyboard too).
 function txtPlaceBar(v, target) {
   const bar = txtBar; if (!bar || !target.isConnected) return;
-  const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
-  // Inside the page and inside what the viewer shows of it (a page zoomed wider than the screen).
-  const vr = viewer.getBoundingClientRect(), lo = Math.max(4, vr.left - pr.left + 4), hi = Math.min(pr.width, vr.right - pr.left) - bw - 4;
+  // Inside the page and inside what the viewer shows of it (a page zoomed wider than the screen): no wider than that.
+  const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), vr = viewer.getBoundingClientRect();
+  bar.style.maxWidth = Math.max(160, Math.min(pr.right, vr.right) - Math.max(pr.left, vr.left) - 8) + 'px';
+  const bw = bar.offsetWidth, bh = bar.offsetHeight, lo = Math.max(4, vr.left - pr.left + 4), hi = Math.min(pr.width, vr.right - pr.left) - bw - 4;
   const left = Math.max(lo, Math.min(er.left - pr.left, hi));
   const vv = window.visualViewport, vTop = Math.max(vr.top, vv ? vv.offsetTop : 0) + 4, vBot = Math.min(vr.bottom, vv ? vv.offsetTop + vv.height : innerHeight) - 4;
   // The nearest text above and below, in the bar's width (the lines being edited are left out).
@@ -408,22 +478,22 @@ function txtCloseEditor(commit) {
   if (commit) Promise.resolve(E.done(text, E.fmt)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
   else drawMarks(E.v);
 }
-const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans' });
-const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align'].every((k) => String(a[k]) === String(b[k]));
+const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans', face: m.face || '', spacing: +m.spacing || 0 });
+const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align', 'face', 'spacing'].every((k) => String(a[k] ?? (k === 'spacing' ? 0 : '')) === String(b[k] ?? (k === 'spacing' ? 0 : '')));
 const txtCss = (fam, f, px) => `${f.bold ? 'bold ' : ''}${f.italic ? 'italic ' : ''}${px}px ${cssFamily(fam)}`;
 
 // The editor types in the page's own font (as pdf.js loaded it) unless bold or italic changes it, so it wraps as the result will.
 function txtParaFont(v, m, f, px) {
-  const cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.src[0].tm));
-  const own = L && !m.ocr && !m.type3 && f.bold === m.base.bold && f.italic === m.base.italic && document.fonts.check(`${px}px "${L.fontName}"`);
-  return own ? `${px}px "${L.fontName}", ${cssFamily(m.fam)}` : txtCss(m.fam, f, px);
+  const t = txtFaced(m, f), cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.src[0].tm)), name = t.loaded || (L && L.fontName);
+  const own = name && !t.std && !t.ocr && !t.type3 && document.fonts.check(`${px}px "${name}"`);
+  return own ? `${px}px "${name}", ${cssFamily(t.fam)}` : txtCss(t.fam, f, px);
 }
 // How a paragraph's text fits the room its original lines had, at a format: { n (lines), over (runs past the last
 // original line) }. A paragraph never grows downwards silently: the editor warns, and committing asks.
 function txtParaFit(page, m, text, f) {
   if (!m.wrap) return { n: 1, over: false };
-  const t = { ...m, size: f.size, bold: f.bold, italic: f.italic, std: !!(f.bold !== m.base.bold || f.italic !== m.base.italic) };
-  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = m.lead0 * f.size / m.size0;
+  const t = txtFaced(m, f);
+  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = txtLead(m, f.size, f.spacing);
   return { n, over: (n - 1) * lead > (m.src.length - 1) * m.lead0 + .5 };
 }
 // The largest size, in half points down to 70% of the original size, at which it fits. null when none does.
@@ -463,9 +533,9 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       place(); requestAnimationFrame(place);
     },
     cleanup() { if (note) { note.remove(); note = null; } }, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
-    opts: { align: !!m.wrap },
+    opts: { align: !!m.wrap, spacing: !!m.wrap, face: txtFaceOpts(v, m) },
     place(ta, f) {
-      const F = txtFrame({ ...m, size: f.size }), px = f.size * scale, lh = F.lead * scale;
+      const F = txtFrame({ ...m, size: f.size, spacing: f.spacing || 0 }), px = f.size * scale, lh = F.lead * scale;
       const [ox, oy] = toView(v, ...F.o), [ax, ay] = toView(v, F.o[0] + F.u[0], F.o[1] + F.u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
       const base = (m.wrap ? lh : px * 1.25) / 2 + .35 * px;
       Object.assign(ta.style, { left: ox + 'px', top: (oy - base) + 'px', font: txtParaFont(v, m, f, px), lineHeight: (m.wrap ? lh : px * 1.25) + 'px', color: f.color, background: m.src[0].bg, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${base}px`, transform: `rotate(${ang}deg)` });
@@ -488,8 +558,8 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       for (const t of absorb) { const k = list.indexOf(t); if (k >= 0) list.splice(k, 1); }
       if (back) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); }
       else {
-        Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', runOver: !!fit.over });
-        txtRelayout(v.page, m);
+        Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', spacing: +f.spacing || 0, runOver: !!fit.over });
+        txtApplyFace(m, f.face); txtRelayout(v.page, m);
         if (isNew) list.push(m);
       }
       changed(before);
@@ -550,11 +620,14 @@ const txtCoreOpenLine = openLineEditor;
 openLineEditor = function (v, m, isNew) {
   txtCoreOpenLine(v, m, isNew);
   const le = lineEditor; if (!le || le.m !== m) return;
-  const base = { size: lineFrame(m).size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: false, align: 'left' };
+  const base = { size: lineFrame(m).size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: false, align: 'left', face: '', spacing: 0 };
   txtLine = { le, base, fmt: { ...base } };
-  txtShowBar(v, le.ed, txtLine.fmt, { align: false }, (f) => {
+  txtShowBar(v, le.ed, txtLine.fmt, { align: false, face: txtFaceOpts(v, m) }, (f) => {
     const px = f.size * scale, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, [, oy] = toView(v, m.tm[4], m.tm[5]);
-    Object.assign(le.ed.style, { font: lineFont(v, m, px, f.bold, f.italic), color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
+    // Another font: the page's (as pdf.js loaded it, unless bold or italic is asked of it), or a standard one.
+    const info = /^f:/.test(f.face) && txtFontInfo.get(f.face.slice(2)), fam = info ? info.fam : f.face;
+    const font = !f.face ? lineFont(v, m, px, f.bold, f.italic) : info && f.bold === info.bold && f.italic === info.italic ? `${px}px "${info.loaded}", ${cssFamily(fam)}` : txtCss(fam, f, px);
+    Object.assign(le.ed.style, { font, color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
   }, () => le.ed.focus({ preventScroll: true }));
 };
 const txtCoreCloseLine = closeLineEditor;
@@ -571,7 +644,7 @@ closeLineEditor = function (commit) {
   if (!le.isNew) { const k = list.indexOf(le.m); if (k >= 0) list.splice(k, 1); }
   const m = txtNewPara([le.m], 0, T.base.size * 1.2);
   Object.assign(m, { text, size: T.fmt.size, color: T.fmt.color, bold: T.fmt.bold, italic: T.fmt.italic, underline: T.fmt.underline });
-  txtRelayout(le.v.page, m);
+  txtApplyFace(m, T.fmt.face); txtRelayout(le.v.page, m);
   list.push(m);
   drawMarks(le.v); changed(before);
 };
@@ -826,6 +899,10 @@ addStyle(`
 .txt-size { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink); }
 .txt-bar .sw-row { gap: 4px; }
 @media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
+.txt-sel { gap: 4px; color: var(--ink-2); }
+.txt-sel svg { width: 15px; height: 15px; flex: none; }
+.txt-sel select { max-width: 150px; }
+@media (max-width: 760px) { .txt-sel select { max-width: 112px; } }
 .txt-bar select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; height: 30px; padding: 0 6px; }
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }

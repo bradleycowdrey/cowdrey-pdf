@@ -2,7 +2,7 @@
 // phone title, the phone's tool hint, the text format bar's place, its Font, alignment and line spacing, and the
 // Comment tab's groups.
 export default async (h) => {
-  const { test, eq, ok, open, openPdf, WORD } = h;
+  const { test, eq, ok, open, openPdf, savedOf, WORD } = h;
   const run = (p, id) => p.evaluate((i) => window.__cowdreyPdf.run(i), id).then(() => p.waitForTimeout(200));
   const clickLine = async (p, text, dx = 20) => {
     const s = p.locator('.page[data-n="0"] .textLayer span', { hasText: text }).first(); await s.scrollIntoViewIfNeeded();
@@ -86,5 +86,62 @@ export default async (h) => {
       ok(bar.t >= vr.t && bar.b <= vr.b && bar.l >= vr.l - .5 && bar.r <= vr.r + .5, 'in view: ' + JSON.stringify([bar, vr]));
       eq(p.errors, []); await p.ctx.close();
     }
+  });
+  // Saved text, as pdf.js reads it: [text, x, y, width, font family, font id] for each piece on page 1.
+  const savedItems = async (h, bytes) => {
+    const pdfjs = await import(h.path.join(h.root, 'desktop/node_modules/pdfjs-dist/legacy/build/pdf.mjs'));
+    const d = await pdfjs.getDocument({ data: new Uint8Array(bytes), standardFontDataUrl: h.path.join(h.root, 'desktop/node_modules/pdfjs-dist/standard_fonts/') }).promise;
+    const tc = await (await d.getPage(1)).getTextContent();
+    return tc.items.filter((i) => i.str.trim()).map((i) => [i.str, +i.transform[4].toFixed(1), +i.transform[5].toFixed(1), +i.width.toFixed(1), tc.styles[i.fontName].fontFamily, i.fontName]);
+  };
+  const baseFonts = (h, bytes) => h.PDFDocument.load(bytes).then((d) => { const L = h.require(h.path.join(h.root, 'desktop/node_modules/pdf-lib')); const fd = d.getPage(0).node.Resources().lookup(L.PDFName.of('Font')); return fd.entries().map(([, r]) => String(d.context.lookup(r).get(L.PDFName.of('BaseFont')))); });
+
+  await test('look: the text format bar\'s Font sets a line in a standard font or in another font the page has; the saved PDF uses it', async () => {
+    const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+    await run(p, 'tool_edit'); await clickLine(p, 'Prepared'); await p.waitForTimeout(400);
+    const list = await p.$$eval('.txt-bar [data-tf="face"] option', (o) => o.map((x) => x.textContent));
+    eq(list, ['Carlito Regular', 'Carlito Bold', 'Helvetica', 'Times', 'Courier'], 'its own font, the page\'s other font, the standard ones');
+    eq(await p.$eval('.txt-bar [data-tf="face"]', (s) => s.getAttribute('aria-label')), 'Font');
+    await p.selectOption('.txt-bar [data-tf="face"]', 'serif'); await p.waitForTimeout(200);
+    ok(/Times/.test(await p.$eval('.line-editor', (e) => getComputedStyle(e).fontFamily)), 'the editor shows it');
+    await p.keyboard.press('End'); await p.keyboard.type(' Today.'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+    // another font of the page: it comes bold, as it is
+    await clickLine(p, 'second phase'); await p.waitForTimeout(400);
+    await p.selectOption('.txt-bar [data-tf="face"]', { label: 'Carlito Bold' }); await p.waitForTimeout(200);
+    eq(await p.$eval('.txt-bar [data-tf="bold"]', (b) => b.getAttribute('aria-pressed')), 'true', 'Bold follows the font');
+    await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+    const out = await savedOf(p), it = await savedItems(h, out), by = (t) => it.find((i) => i[0].includes(t));
+    eq(by('Prepared')[0], 'Prepared by the delivery team on 3 March. Today.');
+    eq(by('Prepared')[4], 'serif', 'set in Times');
+    eq(by('second phase')[5], by('Project Pelican')[5], 'set in the page\'s own Carlito Bold (the heading\'s font)');
+    const names = await baseFonts(h, out);
+    ok(names.includes('/Times-Roman') && !names.some((n) => /Helvetica/.test(n)), 'Times added, no other substitute: ' + names);
+    // undo takes the font back
+    await p.evaluate(() => window.__cowdreyPdf.run('undo')); await p.waitForTimeout(200);
+    eq((await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().map((m) => m.face))), ['serif']);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('look: a paragraph\'s Font, alignment and Line spacing are kept in the saved PDF', async () => {
+    const { PDFDocument, rgb } = h.require(h.path.join(h.root, 'desktop/node_modules/pdf-lib'));
+    const pdf = await PDFDocument.create(), dir = '/usr/share/fonts/truetype/crosextra/';
+    let reg = await pdf.embedFont('Helvetica');
+    if (h.fs.existsSync(dir + 'Carlito-Regular.ttf')) { pdf.registerFontkit(h.require(h.path.join(h.root, 'desktop/node_modules/@pdf-lib/fontkit'))); reg = await pdf.embedFont(h.fs.readFileSync(dir + 'Carlito-Regular.ttf'), { subset: false }); }
+    const PARA = ['The pelican project moved into its second phase this spring,', 'with new stores joining the pilot and early results showing', 'steady growth in every region we measured over the quarter.', 'The team will report again in June.'];
+    const pg = pdf.addPage([612, 792]); PARA.forEach((t, k) => pg.drawText(t, { x: 72, y: 680 - k * 16, size: 12, font: reg, color: rgb(0.1, 0.1, 0.1) }));
+    const file = h.path.join(h.fs.mkdtempSync(h.path.join((await import('node:os')).tmpdir(), 'cpdf-look-')), 'para.pdf'); h.fs.writeFileSync(file, await pdf.save());
+    const p = await open(); await openPdf(p, file, 'Notes.pdf');
+    await run(p, 'txtParaMode');
+    const [x, y] = await h.at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor'); await p.waitForTimeout(400);
+    eq(await p.$$eval('.txt-bar [data-tf="spacing"] option', (o) => o.map((x) => x.textContent)), ['As is', '1.0', '1.15', '1.5', '2.0'], 'line spacing');
+    await p.selectOption('.txt-bar [data-tf="face"]', 'serif'); await p.click('.txt-bar [data-tf="center"]'); await p.selectOption('.txt-bar [data-tf="spacing"]', '1.5'); await p.waitForTimeout(200);
+    eq(await p.$eval('.txt-editor', (t) => [t.style.textAlign, Math.round(parseFloat(t.style.lineHeight) / parseFloat(getComputedStyle(t).fontSize) * 100) / 100]), ['center', 1.8], 'the editor shows it');
+    await p.keyboard.press('Control+Enter');
+    await p.waitForSelector('#dialog[open] h2:has-text("longer than the space it had")'); await p.click('#dialog .dlg-foot button:has-text("Let it run")'); await p.waitForTimeout(400);
+    const it = (await savedItems(h, await savedOf(p))).filter((i) => i[2] > 500);
+    eq(it.map((i) => i[2]), [680, 658.4, 636.8, 615.2], 'baselines 1.5 lines (21.6 pt) apart');
+    const mids = it.map((i) => i[1] + i[3] / 2); ok(Math.max(...mids) - Math.min(...mids) < 1.5, 'centred: ' + mids);
+    ok(it.every((i) => i[4] === 'serif'), 'in Times');
+    eq(p.errors, []); await p.ctx.close();
   });
 };

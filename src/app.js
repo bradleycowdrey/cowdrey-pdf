@@ -1374,7 +1374,7 @@ const teCache = new Map();
 function teImage(v, m) {
   const cm = v.page._cmapValue, ratio = Math.min(window.devicePixelRatio || 1, 2);
   const L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm));
-  const loaded = L ? L.fontName : null, map = !m.ocr && !m.type3 && loaded && cm.glyphs.get(loaded);
+  const loaded = m.loaded || (L ? L.fontName : null), map = !m.ocr && !m.type3 && loaded && cm && cm.glyphs.get(loaded);
   const key = [m.id, m.text, m.color, scale, ratio, loaded, m.tr, m.lw, m.stroke, m.tc, m.tw].join('|');
   if (teCache.has(key)) return teCache.get(key);
   const { size, u } = lineFrame(m), hsc = Math.hypot(m.tm[0], m.tm[1]) / (Math.hypot(m.tm[2], m.tm[3]) || 1);
