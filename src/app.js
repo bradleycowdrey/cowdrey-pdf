@@ -2619,8 +2619,20 @@ $('#findList').addEventListener('keydown', (e) => {
 });
 $('#findAll').onclick = () => findListShow($('#findList').hidden);
 for (const [id, k] of [['#findCase', 'matchCase'], ['#findWord', 'words']]) $(id).onclick = () => { findOpts[k] = !findOpts[k]; $(id).setAttribute('aria-pressed', findOpts[k]); runFind($('#findInput').value.trim()); };
-function openFind() { $('#findbar').hidden = false; $('#findInput').focus(); $('#findInput').select(); }
-function closeFind() { $('#findbar').hidden = true; findListShow(false); runFind(''); }
+// Closing Find gives the focus back to what opened it (a button, a menu's button…), or else to the page.
+let findReturn = null;
+function openFind() {
+  const a = document.activeElement;
+  if ($('#findbar').hidden) findReturn = a && a !== document.body && !$('#findbar').contains(a) && !pop.contains(a) ? a : (pop.hidden ? null : popAnchor);
+  $('#findbar').hidden = false; $('#findInput').focus(); $('#findInput').select();
+}
+function closeFind() {
+  const had = $('#findbar').contains(document.activeElement) || document.activeElement === document.body;
+  $('#findbar').hidden = true; findListShow(false); runFind('');
+  const back = findReturn && findReturn.isConnected && findReturn.offsetParent !== null && !findReturn.disabled ? findReturn : viewer;
+  findReturn = null;
+  if (had) back.focus({ preventScroll: true });
+}
 let findTimer;
 $('#findInput').addEventListener('input', (e) => { clearTimeout(findTimer); findTimer = setTimeout(() => runFind(e.target.value.trim()), 200); });
 $('#findInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') closeFind(); });

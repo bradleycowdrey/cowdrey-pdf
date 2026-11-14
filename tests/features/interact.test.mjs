@@ -107,4 +107,28 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     await p.keyboard.press('Escape'); await p.waitForTimeout(150);
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Closing Find (Esc or X) gives the focus back to what opened it; a Comments-list item keeps the focus in the list', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="home"]').catch(() => {});
+    const opener = await p.$('#ribbonBody [data-cmd="find"]');
+    if (opener) { await opener.focus(); await p.keyboard.press('Enter'); } else await p.keyboard.press('Control+f');
+    await p.fill('#findInput', 'pelican'); await p.keyboard.press('Enter'); await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    eq(await p.evaluate(() => document.activeElement.dataset.cmd || document.activeElement.id), opener ? 'find' : 'viewer', 'Esc');
+    await p.focus('#viewer'); await p.keyboard.press('Control+f'); await p.click('#findClose'); await p.waitForTimeout(150);
+    eq(await p.evaluate(() => document.activeElement.id), 'viewer', 'X');
+    // two notes, then the list
+    await run(p, 'tool_note');
+    for (const [x, y, t] of [[300, 500, 'First'], [350, 450, 'Second']]) { await p.mouse.click(...(await at(p, x, y))); await p.waitForSelector('.page-ask textarea'); await p.keyboard.type(t); await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    await run(p, 'cm_list'); await p.waitForSelector('#sidePanel .cm-go');
+    await p.focus('#sidePanel [data-cm-go="1"]'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
+    eq(await p.evaluate(() => [document.activeElement.matches('#sidePanel [data-cm-go]'), document.activeElement.textContent.includes('Second')]), [true, true], 'focus stays on the item');
+    eq(await p.$$eval('.page[data-n="0"] svg.marks .mk.sel', (g) => g.length), 1, 'its mark is selected');
+    await p.keyboard.press('Tab'); ok(await p.evaluate(() => document.activeElement.closest('#sidePanel') !== null), 'Tab carries on in the list');
+    await p.focus('#sidePanel [data-cm-go="1"]'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    eq(await p.evaluate(() => document.activeElement.id), 'viewer', 'Enter on the open one goes to the mark');
+    const x0 = (await all(p))[1].x; await p.keyboard.press('ArrowRight'); await p.waitForTimeout(100);
+    ok(Math.abs((await all(p))[1].x - x0 - 1) < .01, 'and the arrows move it');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

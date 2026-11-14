@@ -656,6 +656,9 @@ async function cmRenderPanel() {
   CM.items = items;
   if (selMark && items.some((it) => it.key === 'm:' + selMark.id)) CM.open = 'm:' + selMark.id; // the comment selected on the page
   const focusReply = document.activeElement && document.activeElement.matches && document.activeElement.matches('#sidePanel [data-cm-reply]');
+  // A list item with the focus keeps it through the redraw (by its comment, as the order may change).
+  const act = document.activeElement, goOld = act && act.matches && act.matches('#sidePanel [data-cm-go]') && CM.items && CM.items[+act.dataset.cmGo];
+  const keepGo = goOld ? goOld.key : (!act || act === document.body) && CM.focusGo;
   const opt = (v, t, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(t)}</option>`;
   const you = `<div class="cm-you"><span>Your name: <b>${S.author ? esc(S.author) : 'No name'}</b></span><button type="button" class="btn" data-cm-name>${S.author ? 'Change' : 'Set name'}</button></div>`;
   const bar = all.length ? `<div class="cm-filters">
@@ -668,7 +671,17 @@ async function cmRenderPanel() {
     ? '<p class="empty-note">No comments yet. Add them from the Comment tab: highlight, underline, shapes, callouts and stamps.</p>'
     : bar + head + (items.length ? `<ul class="cm-list">${items.map((it, k) => `<li class="cm-item${it.m && selMark && selMark.id === it.m.id ? ' on' : ''}"><button type="button" class="cm-go" data-cm-go="${k}"><span class="cm-dot" style="background:${esc(it.color)}"></span><span class="cm-body"><span class="cm-top"><b>${esc(it.label)}</b><span>Page ${it.n + 1}</span>${it.status ? `<span class="cm-status" data-status="${esc(it.status)}">${esc(it.status)}</span>` : ''}</span>${it.text ? `<span class="cm-snip">${esc(it.text.slice(0, 140))}</span>` : ''}${it.by || it.at ? `<span class="cm-by">${esc([it.by, cmWhen(it.at)].filter(Boolean).join(' · '))}</span>` : ''}</span></button><button type="button" class="icon-btn cm-del" data-cm-del="${k}" title="Delete comment" aria-label="Delete ${esc(it.label)} on page ${it.n + 1}">${ic('trash-2')}</button>${cmThreadHtml(it, k)}</li>`).join('')}</ul>` : '<p class="empty-note">No comments match these filters.</p>'));
   icons();
-  $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => { const it = items[+b.dataset.cmGo]; cmGoTo(it); if (CM.open !== it.key) { CM.open = it.key; cmRenderPanel(); } });
+  // Choosing a comment selects its mark and opens its thread; the focus stays in the list. Choosing the open one again
+  // takes the focus to the page, where the arrow keys move the mark.
+  $$('[data-cm-go]', panel).forEach((b) => b.onclick = () => {
+    const it = items[+b.dataset.cmGo], again = CM.open === it.key && !!(selMark && it.m && selMark.id === it.m.id);
+    CM.focusGo = again ? null : it.key;
+    cmGoTo(it);
+    if (again) { viewer.focus({ preventScroll: true }); return; }
+    if (CM.open !== it.key) { CM.open = it.key; cmRenderPanel(); }
+    b.focus({ preventScroll: true });
+  });
+  if (keepGo) { const k = items.findIndex((it) => it.key === keepGo), nb = k >= 0 && $(`[data-cm-go="${k}"]`, panel); if (nb) nb.focus({ preventScroll: true }); }
   $$('[data-cm-reply]', panel).forEach((ta) => {
     const it = items[+ta.dataset.cmReply], send = () => { const t = ta.value.trim(); if (!t) { ta.focus(); return; } delete CM.drafts[it.key]; cmAddReply(it, t); ta.value = ''; };
     ta.value = CM.drafts[it.key] || '';
