@@ -72,4 +72,19 @@ export default async (h) => {
     eq(await p.$eval('#toast', (t) => t.classList.contains('show')), false, 'gone with the tool');
     await p.ctx.close();
   });
+  await test('look: the text format bar never covers the line above the one being edited, and stays in view on a phone', async () => {
+    const rect = (p, sel, text) => p.evaluate(([s, t]) => { const e = [...document.querySelectorAll(s)].find((x) => !t || x.textContent.includes(t)); const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; }, [sel, text]);
+    const hit = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    for (const phone of [false, true]) {
+      const p = await open(phone ? { width: 390, height: 844, touch: true } : {}); await openPdf(p, WORD, 'Pelican report.pdf');
+      if (!phone) { await run(p, 'zoomIn'); await run(p, 'zoomIn'); await p.waitForTimeout(600); }
+      await run(p, 'tool_edit'); await clickLine(p, 'Budget'); await p.waitForTimeout(400);
+      const bar = await rect(p, '.txt-bar'), above = await rect(p, '.page[data-n="0"] .textLayer span', 'Prepared'), ed = await rect(p, '.line-editor');
+      ok(!hit(bar, above), `${phone ? 'phone' : 'desktop'}: the bar ${JSON.stringify(bar)} is clear of the line above ${JSON.stringify(above)}`);
+      ok(!hit(bar, ed), 'nor over the line being edited');
+      const vr = await rect(p, '#viewer');
+      ok(bar.t >= vr.t && bar.b <= vr.b && bar.l >= vr.l - .5 && bar.r <= vr.r + .5, 'in view: ' + JSON.stringify([bar, vr]));
+      eq(p.errors, []); await p.ctx.close();
+    }
+  });
 };

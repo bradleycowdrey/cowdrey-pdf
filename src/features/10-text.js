@@ -336,15 +336,37 @@ function txtShowBar(v, target, fmt, opts, onChange, refocus) {
   txtPlaceBar(v, target);
   return bar;
 }
+// It never covers the line above (the text just before what is being changed): it goes in the room between the two
+// when there is enough, else under what is being edited (in the room above the next line when there is enough), and
+// always inside what the viewer shows (above a phone's keyboard too).
 function txtPlaceBar(v, target) {
   const bar = txtBar; if (!bar || !target.isConnected) return;
   const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
   // Inside the page and inside what the viewer shows of it (a page zoomed wider than the screen).
   const vr = viewer.getBoundingClientRect(), lo = Math.max(4, vr.left - pr.left + 4), hi = Math.min(pr.width, vr.right - pr.left) - bw - 4;
   const left = Math.max(lo, Math.min(er.left - pr.left, hi));
-  const vt = vr.top;
-  let top = er.top - pr.top - bh - 10; if (top < 4 || pr.top + top < vt + 4) top = er.bottom - pr.top + 10;
-  bar.style.left = left + 'px'; bar.style.top = top + 'px';
+  const vv = window.visualViewport, vTop = Math.max(vr.top, vv ? vv.offsetTop : 0) + 4, vBot = Math.min(vr.bottom, vv ? vv.offsetTop + vv.height : innerHeight) - 4;
+  // The nearest text above and below, in the bar's width (the lines being edited are left out).
+  let prev = -Infinity, next = Infinity;
+  const x0 = pr.left + left, x1 = x0 + bw;
+  // (from the page's own lines when they have been read: the text layer is drawn again, later, after a zoom)
+  const cm = v.page && v.page._cmapValue;
+  const boxes = cm ? cm.lines.map((L) => { const pts = L.quad.map(([x, y]) => toView(v, x, y)), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]); return { left: pr.left + Math.min(...xs), right: pr.left + Math.max(...xs), top: pr.top + Math.min(...ys), bottom: pr.top + Math.max(...ys), width: 1, height: 1 }; })
+    : [...v.el.querySelectorAll('.textLayer span')].filter((sp) => sp.textContent.trim()).map((sp) => sp.getBoundingClientRect());
+  for (const r of boxes) {
+    if (!r.width || !r.height || r.right < x0 || r.left > x1) continue;
+    const mid = (r.top + r.bottom) / 2;
+    if (mid > er.top && mid < er.bottom) continue;
+    if (mid <= er.top) prev = Math.max(prev, r.bottom); else next = Math.min(next, r.top);
+  }
+  const gap = (room) => Math.max(2, Math.min(8, (room - bh) / 2));
+  const roomAbove = er.top - Math.max(prev, vTop), roomBelow = Math.min(next, vBot) - er.bottom;
+  let top;
+  if (roomAbove >= bh + 4) top = er.top - bh - gap(roomAbove);
+  else if (roomBelow >= bh + 4) top = er.bottom + gap(roomBelow);
+  else top = er.bottom + 6; // no room either side: over the next line, never the one before
+  top = Math.max(vTop, Math.min(top, vBot - bh)); // a phone: in view
+  bar.style.left = left + 'px'; bar.style.top = (top - pr.top) + 'px';
 }
 function txtHideBar() { if (txtBar) { txtBar.remove(); txtBar = null; } }
 const txtBarBusy = () => (txtBar && txtBar.contains(document.activeElement)) || txtBarDown;
@@ -778,10 +800,12 @@ TEST_HOOKS.txtWrap = txtWrap;
 
 addStyle(`
 .txt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 6px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; font: 13px/1 var(--font-ui); color-scheme: normal; }
-.txt-bar.floating { position: absolute; z-index: 8; box-shadow: 0 8px 28px rgba(0,0,0,.22); max-width: calc(100% - 8px); }
+.txt-bar.floating { position: absolute; z-index: 8; box-shadow: 0 8px 28px rgba(0,0,0,.3), 0 0 0 1px var(--line); max-width: calc(100% - 8px); }
 .txt-slot .txt-bar { margin: 4px 0 2px; }
 .txt-bar .txt-colgrp { display: none; }
-.txt-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), 0 0 0 2px var(--surface), 0 0 0 3px var(--line); }
+.txt-dot { --sw-edge: rgb(0 0 0 / .2); width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 2px var(--surface), 0 0 0 3px var(--line); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .txt-dot { --sw-edge: rgb(255 255 255 / .34); } }
+:root[data-theme="dark"] .txt-dot { --sw-edge: rgb(255 255 255 / .34); }
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   /* Phones: one row; the colours open from one button */
   .txt-bar.floating { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
