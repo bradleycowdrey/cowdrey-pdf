@@ -831,6 +831,30 @@ addStyle(`
 `);
 // pdf.js turns its form layer with the page using these rules from its viewer stylesheet (only part of it is built
 // in), so fields on a turned page sit where the page shows them.
+// Phones: a form field whose text is too small to read (under 16px, as at a phone's fit zoom) zooms the page in to it
+// when it gets the focus, so its text is 16px or more (WebKit then leaves the window as it is); the zoom goes back when
+// the focus leaves the form. The field is drawn again at the new size and takes the focus back.
+const FF_SMALL = '.annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select), :is(input, textarea, select).ff-ctl:not([type="checkbox"]):not([type="radio"])';
+let ffZooming = false;
+const ffFieldKey = (f) => f.dataset.elementId ? `[data-element-id="${CSS.escape(f.dataset.elementId)}"]` : f.dataset.field ? `.ff-ctl[data-field="${CSS.escape(f.dataset.field)}"]` : f.name ? `.annotationLayer [name="${CSS.escape(f.name)}"]` : null;
+viewer.addEventListener('focusin', async (e) => {
+  const f = e.target.closest && e.target.closest(FF_SMALL);
+  if (!f || ffZooming || !isPhone() || !coarse()) return;
+  const px = parseFloat(getComputedStyle(f).fontSize), v = views.find((x) => x.el.contains(f));
+  if (!v || !(px > 0) || px >= 16) return;
+  const key = ffFieldKey(f), r = f.getBoundingClientRect();
+  ffZooming = true;
+  try {
+    const nv = await phoneZoomPx(v, px, { x: r.left + Math.min(r.width / 2, 60), y: r.top + r.height / 2 }, 17, 16);
+    if (nv === v && f.isConnected) return;
+    let g = null;
+    for (let k = 0; k < 40 && !g; k++) { g = key && nv.el.querySelector(key); if (!g) await new Promise((res) => setTimeout(res, 50)); }
+    if (g && document.activeElement !== g) { g.focus({ preventScroll: true }); }
+    if (g) { const b = g.getBoundingClientRect(), vr = viewer.getBoundingClientRect(); if (b.top < vr.top + 8 || b.bottom > vr.bottom - 8 || b.left < vr.left || b.right > vr.right) g.scrollIntoView({ block: 'center', inline: 'nearest' }); }
+  } finally { ffZooming = false; }
+}, true);
+viewer.addEventListener('focusout', (e) => { if (!ffZooming && e.target.closest && e.target.closest(FF_SMALL)) phoneZoomBack(); }, true);
+
 addStyle(`
 .page .annotationLayer { transform-origin: 0 0; }
 .page .annotationLayer[data-main-rotation="90"], .page .annotationLayer [data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }

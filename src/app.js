@@ -36,6 +36,10 @@ const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: stor
 // Phones, and phones turned on their side (keep in step with the phone @media rule in template.html).
 const PHONE_MQ = '(max-width: 760px), (max-height: 500px) and (pointer: coarse)';
 const isPhone = () => matchMedia(PHONE_MQ).matches;
+// iPhone and iPad: WebKit zooms the whole window (title bar and ribbon too) into a text field under 16px when it gets
+// the focus, and leaves it so. The page is zoomed to the field instead (see the forms), so that zoom is turned off.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+if (IOS) { const vm = document.querySelector('meta[name="viewport"]'); if (vm && !/maximum-scale/.test(vm.content)) vm.content += ', maximum-scale=1'; }
 const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a mouse: no Esc or Ctrl keys to mention
 let toastTimer;
 // Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
@@ -1632,12 +1636,18 @@ async function teMarkFor(v, L, cm) {
 let phoneZoom = null; // { zoom, top, left, timer }
 async function phoneZoomTo(v, m) {
   if (!isPhone() || !views.includes(v)) return v;
+  const [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
+  return phoneZoomPx(v, lineFrame(m).size * scale, editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y });
+}
+// The same for anything on page v whose text is `px` high on screen now (a form field…), around the spot `at`:
+// zoomed so it is `want` px when it is under `min` px.
+async function phoneZoomPx(v, px, at, want = 18, min = 14) {
+  if (!isPhone() || !views.includes(v)) return v;
   if (phoneZoom && phoneZoom.timer) { clearTimeout(phoneZoom.timer); phoneZoom.timer = 0; }
-  const px = lineFrame(m).size * scale; if (px >= 14) return v;
-  const n = views.indexOf(v), [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
-  const at = editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y };
+  if (!(px > 0) || px >= min) return v;
+  const n = views.indexOf(v), r = v.el.getBoundingClientRect();
   if (!phoneZoom) phoneZoom = { zoom: S.zoom, top: viewer.scrollTop, left: viewer.scrollLeft, timer: 0 };
-  const z = Math.min(400, Math.ceil(scale * 100 * 18 / px));
+  const z = Math.min(400, Math.ceil(scale * 100 * want / px));
   const fx = (at.x - r.left) / r.width, fy = (at.y - r.top) / r.height;
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
@@ -1651,9 +1661,10 @@ async function phoneZoomTo(v, m) {
 }
 function phoneZoomBack() {
   if (!phoneZoom || phoneZoom.timer) return;
-  // A moment later, unless another line is opened in the meantime (it keeps this zoom).
+  // A moment later, unless another line or form field is opened in the meantime (it keeps this zoom).
   phoneZoom.timer = setTimeout(async () => {
-    const pz = phoneZoom; phoneZoom = null; if (!pz || lineEditor) { if (pz && lineEditor) phoneZoom = { ...pz, timer: 0 }; return; }
+    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input, textarea, select'));
+    const pz = phoneZoom; phoneZoom = null; if (!pz || keep) { if (pz && keep) phoneZoom = { ...pz, timer: 0 }; return; }
     await setZoom(pz.zoom); viewer.scrollTop = pz.top; viewer.scrollLeft = pz.left;
   }, 350);
 }

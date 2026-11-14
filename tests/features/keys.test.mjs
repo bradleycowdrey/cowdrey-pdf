@@ -148,4 +148,22 @@ export default async (h) => {
     await shot(d, 'desktop-dark-line-editor.png');
     await d.ctx.close();
   });
+
+  await test('iPhone: a small form field zooms the page so its text is 16px or more, keeps the focus, and the zoom goes back after', async () => {
+    const p = await open({ width: 390, height: 844, touch: true, ua: IPHONE }); await openPdf(p);
+    ok((await p.$eval('meta[name="viewport"]', (m) => m.content)).includes('maximum-scale=1'), 'WebKit does not zoom the window');
+    const z0 = await p.evaluate(() => window.__cowdreyPdf.views()[0].el.getBoundingClientRect().width);
+    const f = p.locator('.annotationLayer input[name="name"]');
+    ok(parseFloat(await f.evaluate((e) => getComputedStyle(e).fontSize)) < 16, 'small at fit');
+    const b = await f.boundingBox(); await p.touchscreen.tap(b.x + 20, b.y + b.height / 2);
+    await p.waitForFunction(() => { const a = document.activeElement; return a && a.name === 'name' && parseFloat(getComputedStyle(a).fontSize) >= 16; }, null, { timeout: 5000 });
+    const r = await p.evaluate(() => { const a = document.activeElement, b = a.getBoundingClientRect(), v = document.querySelector('#viewer').getBoundingClientRect(); return [b.top >= v.top && b.bottom <= v.bottom, b.height]; });
+    ok(r[0] && r[1] >= 16, 'in view and tall enough ' + JSON.stringify(r));
+    await p.keyboard.type('Ada'); await shot(p, 'iphone-dark-form-zoom.png');
+    await p.evaluate(() => document.activeElement.blur()); await p.waitForTimeout(1200);
+    const z1 = await p.evaluate(() => window.__cowdreyPdf.views()[0].el.getBoundingClientRect().width);
+    ok(Math.abs(z1 - z0) < 2, `zoom back ${z0} ${z1}`);
+    eq(await p.$eval('.annotationLayer input[name="name"]', (e) => e.value), 'Ada');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
