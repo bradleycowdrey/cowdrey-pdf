@@ -687,9 +687,9 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
 /* ---- commands, ribbon, menu ---- */
 cmd('ffProps', { label: 'Properties…', icon: 'sliders-horizontal', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffPropsSelected });
 cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffDeleteSelected });
-cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-text', enabled: has, run: ffRecognize });
+cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-search', enabled: has, run: ffRecognize });
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });
-cmd('ffFlatten', { label: 'Flatten form', icon: 'layers', enabled: has, pressed: ffFlat, run: ffFlatten });
+cmd('ffFlatten', { label: 'Flatten form', icon: 'layers-2', enabled: has, pressed: ffFlat, run: ffFlatten });
 ribbonAdd('forms', 'Add fields', Object.keys(FF_KINDS).map((k) => 'ff_' + k));
 ribbonAdd('forms', 'Fields', ['ff_edit', 'ffProps', 'ffDelete']);
 ribbonAdd('forms', 'Form', ['ffRecognize', 'ffClear', 'ffFlatten']);

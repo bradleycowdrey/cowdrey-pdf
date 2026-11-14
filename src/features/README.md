@@ -26,6 +26,8 @@ Plug in through:
   movable with the Select tool). `save` draws the mark into the pdf-lib page `p` of document `out` (`L` is the
   pdf-lib module). Make every change with `const before = snapshot(); …; changed(before)` so undo and saving work.
 - `FEATURE.savePage.push(async ({ L, out, p, entry, n, entries, marks, ctx }) => …)` — per page, after its marks.
+  `FEATURE.savePageLate` takes the same hooks, run after every `savePage` hook (redaction rewrites the page there),
+  for drawing that must not be cut by it.
   `FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => …)` — once, before the file is written.
   Document-wide settings (a watermark, headers and footers…) go in `docMarks()`, a list of `{ id, type, … }`
   objects stored, undone and restored with the marks (change them inside `snapshot()`/`changed()` too).

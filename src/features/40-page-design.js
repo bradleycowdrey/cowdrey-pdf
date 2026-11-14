@@ -5,7 +5,7 @@
    into the page's own coordinates and draws it with pdf-lib, behind the content (a stream put first) or in front.
    Page numbers follow page n of the saved file, so they follow reordering and extraction. */
 const PD_TYPES = { pd_background: 'Background', pd_watermark: 'Watermark', pd_headfoot: 'Header & footer', pd_bates: 'Bates numbering' };
-const PD_ICONS = { pd_background: 'paint-bucket', pd_watermark: 'stamp', pd_headfoot: 'panel-top', pd_bates: 'hash' };
+const PD_ICONS = { pd_background: 'paint-roller', pd_watermark: 'droplets', pd_headfoot: 'panel-top', pd_bates: 'hash' };
 const PD_ORDER = ['pd_background', 'pd_watermark', 'pd_headfoot', 'pd_bates'];
 const PD_SLOTS = [['tl', 'Top left'], ['tc', 'Top centre'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['bc', 'Bottom centre'], ['br', 'Bottom right']];
 const PD_FONTS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']];
@@ -44,9 +44,10 @@ function pdTiles(W, H, a, stepX, stepY, reach) {
 }
 // What to draw on page n of N, a W×H page as seen: { under: [...], over: [...] } of
 // { kind: 'rect' | 'text' | 'image', x, y (bottom left / baseline start), angle (degrees, anticlockwise), … }.
-function pdLayout(n, N, W, H, measure, date = new Date()) {
+// `list` is the settings to draw (the document's, or a dialog's preview of them).
+function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
   const under = [], over = [];
-  for (const m of pdItems()) {
+  for (const m of list) {
     const pages = pdPages(m, N), k = pages.indexOf(n);
     if (k < 0) continue;
     const op = Math.max(0, Math.min(100, m.opacity ?? 100)) / 100;
@@ -154,7 +155,7 @@ addStyle(`
 .pd-form .field input[type="range"] { padding: 0; border: 0; background: none; accent-color: var(--accent); height: 36px; }
 .pd-form .pd-check { flex-direction: row; align-items: center; gap: 8px; align-self: end; height: 36px; margin: 6px 0; color: var(--ink); }
 .pd-form .pd-check input { width: auto; accent-color: var(--accent); }
-.pd-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 17px; padding: 2px; gap: 2px; margin: 4px 0 6px; }
+.pd-seg { justify-self: start; display: inline-flex; border: 1px solid var(--line); border-radius: 17px; padding: 2px; gap: 2px; margin: 4px 0 6px; }
 .pd-seg label { position: relative; }
 .pd-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .pd-seg span { display: block; padding: 5px 14px; border-radius: 15px; color: var(--ink-2); font-weight: 500; }
@@ -176,6 +177,28 @@ addStyle(`
 .pd-row .pd-what strong { color: var(--ink); font-weight: 600; }
 .pd-row .pd-what span { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-row .btn { height: 30px; padding: 0 12px; }
+dialog.pd-dialog { width: min(760px, calc(100vw - 32px)); }
+/* The page stays in view behind these dialogs: a light dim, no blur. */
+dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(18, 12, 15, .18); }
+.pd-dialog .dlg-foot { flex-wrap: wrap; }
+.pd-dialog .dlg-foot .pd-rm { margin-right: auto; }
+.pd-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0 20px; align-items: start; }
+.pd-main { min-width: 0; }
+.pd-prev { margin: 8px 0; position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pd-prev-page { position: relative; width: 100%; aspect-ratio: 612 / 792; background: #fff; border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 2px 10px rgba(0, 0, 0, .18); overflow: hidden; }
+.pd-prev-page canvas { display: block; width: 100%; height: 100%; }
+.pd-prev-page svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
+.pd-prev-page svg text { white-space: pre; }
+.pd-prev .pd-pv-under { mix-blend-mode: multiply; }
+.pd-prev figcaption { font-size: 12px; color: var(--ink-3); }
+@media (max-width: 640px) {
+  .pd-wrap { grid-template-columns: minmax(0, 1fr); }
+  .pd-prev { order: -1; z-index: 2; top: -6px; margin: 0 0 4px; padding: 10px 0 8px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .pd-prev-page { width: auto; height: 160px; max-width: 100%; }
+}
+@media (max-width: 560px) {
+  .pd-form { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 520px) {
   .pd-slots { grid-template-columns: minmax(0, 1fr); }
   .pd-row { flex-wrap: wrap; }
@@ -197,7 +220,9 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
     } else p.drawText(it.text, { x, y, size: it.size, font: ctx.pdFonts.get((it.font || 'sans') + (it.bold ? 'b' : '')), color: pdRgb(L, it.color), opacity: it.opacity, rotate });
   }
 }
-FEATURE.savePage.push(async ({ L, out, p, n, entries, ctx }) => {
+// Drawn after every other savePage hook, so applying redactions (which rewrites what is already in the page) never
+// cuts letters out of it; page design from an earlier save is taken out when the file is opened (see pdReadBack).
+FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   const items = pdItems(); if (!items.length) return;
   ctx.pdFonts ||= new Map();
   for (const m of items) {
@@ -261,18 +286,27 @@ function pdStripPage(L, out, p) {
 let pdOpening = Promise.resolve();
 async function pdReadBack(d) {
   const pd = pdfDocs.get(0), src = d.sources[0];
-  if (!pd || !src || src.password) return;
+  if (!pd || !src) return;
   let raw;
   try { const md = await pd.getMetadata(), c = md && md.info && md.info.Custom; raw = c && (c instanceof Map ? c.get(PD_KEY) : c[PD_KEY]); } catch { return; }
   if (typeof raw !== 'string') return;
   let list; try { list = JSON.parse(raw); } catch { return; }
   if (!Array.isArray(list)) return;
   const L = await loadPdfLib();
-  const out = await L.PDFDocument.load(src, { ignoreEncryption: true, updateMetadata: false });
-  if (out.isEncrypted) return;
+  // A PDF opened with its password is read with it, and the copy without the drawing is protected again the same way
+  // (same password, same restrictions, as saving does), so it stays a protected source like the one opened.
+  const pw = src.password;
+  const out = await L.PDFDocument.load(src, pw ? { password: pw, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false });
+  if (out.isEncrypted && !pw) return;
   for (const p of out.getPages()) pdStripPage(L, out, p);
   out.getInfoDict().delete(L.PDFName.of(PD_KEY));
+  if (pw) {
+    let flags = null; try { const f = await pd.getPermissions(); flags = f ? [...f] : null; } catch {}
+    const F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
+    out.encrypt({ userPassword: pw, ownerPassword: flags ? uid() + uid() : pw, permissions: { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) } });
+  }
   const bytes = await out.save();
+  if (pw) bytes.password = pw;
   const npd = await loadProtected(bytes, d.name);
   if (!npd) return;
   if (doc !== d || pdfDocs.get(0) !== pd) { try { npd.destroy(); } catch {} return; }
@@ -351,20 +385,64 @@ function pdCheck(type, m) {
   if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim())) return 'Type a header or footer in at least one place';
   return null;
 }
+// A small picture of one page in the dialog, with the settings being changed drawn on it (by pdLayout, as on the page
+// and in the saved PDF) and drawn again on every change. It shows the page in view, or the first page they go on.
+function pdPreview(dlg, type, m, existing) {
+  const box = $('[data-preview]', dlg), page = box && $('.pd-prev-page', box);
+  if (!page) return () => {};
+  const cv = $('canvas', page), under = $('.pd-pv-under', page), over = $('.pd-pv-over', page), cap = $('figcaption', box);
+  const shots = new Map(); let shown = -1;
+  const shot = async (n) => {
+    const e = doc.pages[n], pg = await pageOf(e), rotation = (pg.rotate + e.rot) % 360;
+    const v1 = pg.getViewport({ scale: 1, rotation }), v = pg.getViewport({ scale: 440 / Math.max(v1.width, v1.height), rotation });
+    const c = document.createElement('canvas'); c.width = Math.round(v.width); c.height = Math.round(v.height);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    await pg.render({ canvas: c, canvasContext: g, viewport: v }).promise;
+    return { c, W: v1.width, H: v1.height };
+  };
+  const paint = () => {
+    const sh = shots.get(shown); if (!sh) return;
+    const list = [...pdItems().filter((x) => !existing || x.id !== existing.id), { ...m, type }].sort((a, b) => PD_ORDER.indexOf(a.type) - PD_ORDER.indexOf(b.type));
+    const { under: u, over: o } = pdLayout(shown, doc.pages.length, sh.W, sh.H, pdMeasure, new Date(), list);
+    pdPaint(under, u, 1, sh.H); pdPaint(over, o, 1, sh.H);
+  };
+  return async () => {
+    const N = doc.pages.length, pages = pdPages(m, N), n = !pages.length || pages.includes(current) ? Math.min(current, N - 1) : pages[0];
+    if (n < 0) return;
+    if (n !== shown) {
+      shown = n; cap.textContent = `Page ${n + 1} of ${N}`;
+      if (!shots.has(n)) { try { shots.set(n, await shot(n)); } catch { return; } }
+      if (shown !== n) return;
+      const sh = shots.get(n);
+      cv.width = sh.c.width; cv.height = sh.c.height; cv.getContext('2d').drawImage(sh.c, 0, 0);
+      page.style.aspectRatio = `${sh.W} / ${sh.H}`;
+      for (const s of [under, over]) s.setAttribute('viewBox', `0 0 ${sh.W} ${sh.H}`);
+    }
+    paint();
+  };
+}
+const pdPreviewHtml = '<figure class="pd-prev" data-preview><div class="pd-prev-page"><canvas width="1" height="1" aria-hidden="true"></canvas><svg class="pd-pv-under" aria-hidden="true"></svg><svg class="pd-pv-over" aria-hidden="true"></svg></div><figcaption></figcaption></figure>';
 const PD_VERB = { pd_watermark: ['Add watermark', 'Watermark added', 'Watermark updated', 'Edit watermark'], pd_background: ['Add background', 'Background added', 'Background updated', 'Edit background'], pd_headfoot: ['Add header & footer', 'Header & footer added', 'Header & footer updated', 'Edit header & footer'], pd_bates: ['Add Bates numbers', 'Bates numbers added', 'Bates numbers updated', 'Edit Bates numbering'] };
 async function pdEdit(type, existing) {
   if (!has()) return;
   const m = existing ? JSON.parse(JSON.stringify(existing)) : { ...pdDefaults[type](), ...(pdLastUsed[type] || {}), type };
   let err = null;
+  // Changing one that is there already: it can also be removed, or another one added next to it.
+  const actions = existing ? [{ label: 'Remove', value: 'rm' }, { label: 'Add another', value: 'add' }, { label: 'Cancel' }, { label: 'Save changes', value: 'ok', primary: true }]
+    : [{ label: 'Cancel' }, { label: PD_VERB[type][0], value: 'ok', primary: true }];
   do {
     const title = existing ? PD_VERB[type][3] : PD_TYPES[type];
-    const res = await dialog(title, pdBody(type, m), [{ label: 'Cancel' }, { label: existing ? 'Save changes' : PD_VERB[type][0], value: 'ok', primary: true }], (dlg) => {
+    const res = await dialog(title, `<div class="pd-wrap"><div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
       // The dialog element is reused: listen on its body, which is new for each dialog.
       const body = $('.dlg-body', dlg);
+      dlg.classList.add('pd-dialog');
+      if (existing) $('.dlg-foot [data-a="0"]', dlg).classList.add('pd-rm');
       let focusSlot = null;
+      const preview = pdPreview(dlg, type, m, existing);
       const sync = () => {
         pdRead(dlg, m);
         const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
+        preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
       body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
@@ -375,10 +453,13 @@ async function pdEdit(type, existing) {
       const file = $('[data-file]', dlg);
       if (file) file.onchange = async () => {
         const f = file.files[0]; if (!f) return;
-        try { Object.assign(m, await pdPicture(f)); const im = $('[data-pic]', dlg); im.src = m.data; im.hidden = false; } catch { toast('That picture could not be read'); }
+        try { Object.assign(m, await pdPicture(f)); const im = $('[data-pic]', dlg); im.src = m.data; im.hidden = false; sync(); } catch { toast('That picture could not be read'); }
       };
       sync();
     });
+    $('#dialog').classList.remove('pd-dialog');
+    if (res === 'rm') return pdRemove(existing.id);
+    if (res === 'add') return pdEdit(type);
     if (res !== 'ok') return;
     err = pdCheck(type, m);
     if (err) toast(err);
@@ -406,13 +487,14 @@ function pdSummary(m) {
   if (m.type === 'pd_headfoot') return [PD_SLOTS.filter(([k]) => m[k]).map(([k]) => m[k]).join(' / '), pages].join(' · ');
   return [pdBates(m, m.start), PD_SLOTS.find(([k]) => k === m.slot)[1].toLowerCase(), pages].join(' · ');
 }
-async function pdManage() {
+// Everything added (or, given a type, each one of that type, with a button to add another).
+async function pdManage(type) {
   if (!has()) return;
   let edit = null;
-  await dialog('Page design', '<div class="pd-list" data-list></div>', [{ label: 'Close', primary: true }], (dlg) => {
+  const res = await dialog(type ? PD_TYPES[type] : 'Page design', '<div class="pd-list" data-list></div>', type ? [{ label: 'Add another', value: 'add' }, { label: 'Close', primary: true }] : [{ label: 'Close', primary: true }], (dlg) => {
     const box = $('[data-list]', dlg);
     const draw = () => {
-      const items = pdItems();
+      const items = pdItems().filter((m) => !type || m.type === type);
       box.innerHTML = items.length ? items.map((m) => `<div class="pd-row" data-id="${m.id}"><span class="pd-ic">${ic(PD_ICONS[m.type])}</span><div class="pd-what"><strong>${PD_TYPES[m.type]}</strong><span title="${esc(pdSummary(m))}">${esc(pdSummary(m))}</span></div><button type="button" class="btn" data-edit="${m.id}">Edit</button><button type="button" class="btn" data-remove="${m.id}">Remove</button></div>`).join('')
         : '<p>Nothing added yet. Add a watermark, background, header & footer or Bates numbers from the Edit tab.</p>';
       icons();
@@ -425,13 +507,20 @@ async function pdManage() {
     draw();
   });
   if (edit) await pdEdit(edit.type, edit);
+  else if (res === 'add') await pdEdit(type);
+}
+// The ribbon buttons open what is there already: the one of that kind to change, a list when there are several.
+function pdOpen(type) {
+  const ex = pdItems().filter((m) => m.type === type);
+  return ex.length === 1 ? pdEdit(type, ex[0]) : ex.length ? pdManage(type) : pdEdit(type);
 }
 
-cmd('pd_watermark', { label: 'Watermark…', icon: 'stamp', enabled: has, run: () => pdEdit('pd_watermark') });
-cmd('pd_background', { label: 'Background…', icon: 'paint-bucket', enabled: has, run: () => pdEdit('pd_background') });
-cmd('pd_headfoot', { label: 'Header & footer…', icon: 'panel-top', enabled: has, run: () => pdEdit('pd_headfoot') });
-cmd('pd_bates', { label: 'Bates numbering…', icon: 'hash', enabled: has, run: () => pdEdit('pd_bates') });
-cmd('pd_manage', { label: 'Manage page design…', icon: 'layers', enabled: has, run: pdManage });
+cmd('pd_watermark', { label: 'Watermark…', icon: PD_ICONS.pd_watermark, enabled: has, run: () => pdOpen('pd_watermark') });
+cmd('pd_background', { label: 'Background…', icon: PD_ICONS.pd_background, enabled: has, run: () => pdOpen('pd_background') });
+cmd('pd_headfoot', { label: 'Header & footer…', icon: PD_ICONS.pd_headfoot, enabled: has, run: () => pdOpen('pd_headfoot') });
+cmd('pd_bates', { label: 'Bates numbering…', icon: PD_ICONS.pd_bates, enabled: has, run: () => pdOpen('pd_bates') });
+cmd('pd_manage', { label: 'Manage page design…', icon: 'layout-template', enabled: has, run: () => pdManage() });
 ribbonAdd('edit', 'Page design', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 menuAdd('Edit', ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage']);
 TEST_HOOKS.pdItems = () => pdItems();
+TEST_HOOKS.cmdIcon = (id) => C[id] && C[id].icon;

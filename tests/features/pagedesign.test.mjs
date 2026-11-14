@@ -11,8 +11,10 @@ export default async (h) => {
   };
   const run = (p, id) => p.evaluate((i) => window.__cowdreyPdf.run(i), id);
   const items = (p) => p.evaluate(() => window.__cowdreyPdf.pdItems());
+  // Adds one; when there is one of that kind already, the button opens it, and "Add another" starts a new one.
   const add = async (p, id, fill = {}, select = {}) => {
     await run(p, id); await p.waitForSelector('#dialog[open] .pd-form');
+    if (/^Edit/.test(await p.textContent('#dialog h2'))) { await p.click('#dialog .dlg-foot button:has-text("Add another")'); await p.waitForFunction(() => !/^Edit/.test(document.querySelector('#dialog[open] h2').textContent)); await p.waitForSelector('#dialog[open] .pd-form'); }
     for (const [k, v] of Object.entries(select)) await p.selectOption(`#dialog [data-k="${k}"]`, v);
     for (const [k, v] of Object.entries(fill)) await p.fill(`#dialog [data-k="${k}"]`, String(v));
     await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(300);
@@ -199,5 +201,184 @@ export default async (h) => {
     }
     eq(await ph.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await ph.ctx.close();
+  });
+
+  const title = (p) => p.textContent('#dialog[open] h2');
+  const foot = (p) => p.$$eval('#dialog[open] .dlg-foot button', (b) => b.map((x) => x.textContent));
+  const openProtected = async (p, bytes) => {
+    const opening = p.evaluate(async (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return window.__cowdreyPdf.openBytes(u, 'Secret.pdf'); }, Buffer.from(bytes).toString('base64'));
+    await p.waitForSelector('#dialog[open] #dlgInput'); await p.fill('#dlgInput', 'pelican'); await p.click('#dialog .btn.primary');
+    await opening; await h.waitPages(p); await p.waitForTimeout(400);
+  };
+
+  await h.test('page design: the Watermark, Background, Header & footer and Bates buttons open the one already there; Add another and Remove', async () => {
+    const p = await open(); await openPdf(p);
+    await add(p, 'pd_watermark', { text: 'ONE' });
+    // a second press opens it for changing, not a blank one that stacks a copy
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-form');
+    eq(await title(p), 'Edit watermark'); eq(await p.inputValue('#dialog [data-k="text"]'), 'ONE');
+    eq(await foot(p), ['Remove', 'Add another', 'Cancel', 'Save changes']);
+    await p.fill('#dialog [data-k="text"]', 'TWO'); await p.click('#dialog .dlg-foot button:has-text("Save changes")'); await p.waitForTimeout(300);
+    eq((await items(p)).map((m) => m.text), ['TWO'], 'changed, not added');
+    // Add another starts a new one next to it
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-form');
+    await p.click('#dialog .dlg-foot button:has-text("Add another")');
+    await p.waitForFunction(() => document.querySelector('#dialog[open] h2') && document.querySelector('#dialog[open] h2').textContent === 'Watermark');
+    eq(await foot(p), ['Cancel', 'Add watermark']);
+    await p.fill('#dialog [data-k="text"]', 'THREE'); await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(300);
+    eq((await items(p)).map((m) => m.text), ['TWO', 'THREE']);
+    // with two, the button lists them, with Add another
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-row');
+    eq(await title(p), 'Watermark'); eq(await p.$$eval('#dialog .pd-row', (r) => r.length), 2);
+    eq(await foot(p), ['Add another', 'Close']);
+    await p.click('#dialog .pd-row:last-child [data-edit]'); await p.waitForSelector('#dialog[open] .pd-form');
+    eq(await p.inputValue('#dialog [data-k="text"]'), 'THREE');
+    await p.click('#dialog .dlg-foot button:has-text("Remove")'); await p.waitForTimeout(300);
+    eq((await items(p)).map((m) => m.text), ['TWO'], 'removed from its own dialog');
+    // the same for the other three
+    await add(p, 'pd_background', { color: '#ffe066' }); await add(p, 'pd_headfoot', { tl: 'Acme' }); await add(p, 'pd_bates', { prefix: 'X-' });
+    for (const [id, t, k, v] of [['pd_background', 'Edit background', 'color', '#ffe066'], ['pd_headfoot', 'Edit header & footer', 'tl', 'Acme'], ['pd_bates', 'Edit Bates numbering', 'prefix', 'X-']]) {
+      await run(p, id); await p.waitForSelector('#dialog[open] .pd-form');
+      eq([await title(p), await p.inputValue(`#dialog [data-k="${k}"]`)], [t, v]);
+      await p.click('#dialog .dlg-foot button:has-text("Remove")'); await p.waitForTimeout(250);
+    }
+    eq((await items(p)).map((m) => m.type), ['pd_watermark']);
+    await p.keyboard.press('Control+z'); await p.waitForTimeout(200);
+    eq((await items(p)).map((m) => m.type), ['pd_watermark', 'pd_bates'], 'undo brings a removed one back');
+    // after saving and reopening, the button opens the saved one
+    await reopen(p, await savedOf(p)); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await p.waitForTimeout(300);
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-form');
+    eq([await title(p), await p.inputValue('#dialog [data-k="text"]')], ['Edit watermark', 'TWO']);
+    await p.click('#dialog .dlg-foot button:has-text("Save changes")'); await p.waitForTimeout(300);
+    eq((await items(p)).filter((m) => m.type === 'pd_watermark').length, 1, 'still one watermark');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await h.test('page design: the dialogs show a live preview of the page, and the page stays visible behind them', async () => {
+    const p = await open(); await openPdf(p);
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-form');
+    await p.waitForFunction(() => { const c = document.querySelector('#dialog .pd-prev canvas'); return c && c.width > 100; });
+    const prev = (cls) => p.$$eval(`#dialog .pd-prev svg.${cls} text`, (t) => t.map((x) => [x.textContent, x.getAttribute('transform') || '', x.getAttribute('fill-opacity'), x.getAttribute('font-size')]));
+    const ink = await p.evaluate(() => { const c = document.querySelector('#dialog .pd-prev canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 100) n++; return n; });
+    ok(ink > 200, 'the page is drawn in the preview: ' + ink);
+    eq(await p.textContent('#dialog .pd-prev figcaption'), 'Page 1 of 3');
+    let o = await prev('pd-pv-over');
+    eq(o.map((x) => x[0]), ['CONFIDENTIAL']); ok(/rotate\(-45 /.test(o[0][1]), o[0][1]); eq(o[0][2], '0.3');
+    await p.fill('#dialog [data-k="text"]', 'DRAFT'); await p.fill('#dialog [data-k="rotation"]', '0'); await p.fill('#dialog [data-k="size"]', '20');
+    await p.$eval('#dialog [data-k="opacity"]', (e) => { e.value = 80; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    o = await prev('pd-pv-over');
+    eq(o.map((x) => [x[0], x[1], x[2], x[3]]), [['DRAFT', '', '0.8', '20']], 'follows text, rotation, opacity and size');
+    await p.selectOption('#dialog [data-k="layout"]', 'tile'); await p.selectOption('#dialog [data-k="front"]', 'behind');
+    ok((await prev('pd-pv-under')).length > 4 && !(await prev('pd-pv-over')).length, 'tiled behind');
+    await p.fill('#dialog [data-k="range"]', '3');
+    await p.waitForFunction(() => document.querySelector('#dialog .pd-prev figcaption').textContent === 'Page 3 of 3');
+    const bd = await p.$eval('#dialog', (d) => { const s = getComputedStyle(d, '::backdrop'); return [s.backdropFilter, s.backgroundColor]; });
+    eq(bd[0], 'none', 'no blur'); ok(+bd[1].match(/[\d.]+\)$/)[0].slice(0, -1) <= .2, 'a light dim: ' + bd[1]);
+    await p.click('#dialog .dlg-foot button:has-text("Cancel")'); await p.waitForTimeout(200);
+    eq(await items(p), [], 'the preview adds nothing');
+    ok(!(await p.$eval('#dialog', (d) => d.classList.contains('pd-dialog'))), 'other dialogs keep their own look');
+    // header & footer: tokens filled in; background: a fill behind
+    await run(p, 'pd_headfoot'); await p.waitForSelector('#dialog[open] .pd-form');
+    await p.fill('#dialog [data-k="tl"]', 'Acme <<pages>>');
+    await p.waitForFunction(() => [...document.querySelectorAll('#dialog .pd-prev svg.pd-pv-over text')].some((t) => t.textContent === 'Page 1 of 3'));
+    eq((await prev('pd-pv-over')).map((x) => x[0]).sort(), ['Acme 3', 'Page 1 of 3']);
+    await p.click('#dialog [data-x]'); await p.waitForTimeout(150);
+    await run(p, 'pd_background'); await p.waitForSelector('#dialog[open] .pd-form');
+    await p.waitForFunction(() => document.querySelector('#dialog .pd-prev svg.pd-pv-under rect'));
+    eq(await p.$eval('#dialog .pd-prev svg.pd-pv-under rect', (r) => r.getAttribute('fill').toLowerCase()), '#fff3bf');
+    await p.click('#dialog [data-x]'); await p.waitForTimeout(150);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await h.test('page design: on a phone the dialogs are one column, with the preview on top, and no choice is cut off', async () => {
+    for (const theme of ['dark', 'light']) {
+      const ph = await open({ width: 390, height: 844, touch: true }); await openPdf(ph);
+      await ph.evaluate((t) => window.__cowdreyPdf.run('theme_' + t), theme);
+      for (const id of ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates']) {
+        await run(ph, id); await ph.waitForSelector('#dialog[open] .pd-form');
+        await ph.waitForFunction(() => { const c = document.querySelector('#dialog .pd-prev canvas'); return c && c.width > 100; });
+        const r = await ph.evaluate(() => {
+          const g = document.createElement('canvas').getContext('2d'), bad = [];
+          for (const el of document.querySelectorAll('#dialog .pd-form select, #dialog .pd-form input[type="text"], #dialog .pd-form input[type="number"]')) {
+            if (!el.offsetParent) continue;
+            const cs = getComputedStyle(el); g.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+            const text = el.tagName === 'SELECT' ? el.options[el.selectedIndex].text : el.value || el.placeholder;
+            const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - (el.tagName === 'SELECT' ? 20 : 0);
+            if (g.measureText(text).width > room) bad.push(text);
+          }
+          const cols = [...document.querySelectorAll('#dialog .pd-form')].filter((f) => f.offsetParent).map((f) => getComputedStyle(f).gridTemplateColumns.split(' ').length);
+          const pv = document.querySelector('#dialog .pd-prev').getBoundingClientRect(), form = document.querySelector('#dialog .pd-main').getBoundingClientRect();
+          return { bad, cols: [...new Set(cols)], above: pv.bottom <= form.top + 1, fits: document.querySelector('#dialog').getBoundingClientRect().right <= innerWidth, sideways: document.querySelector('#dialog .dlg-body').scrollWidth > document.querySelector('#dialog .dlg-body').clientWidth };
+        });
+        eq(r, { bad: [], cols: [1], above: true, fits: true, sideways: false }, id);
+        await ph.screenshot({ path: `/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pagedesign/phone-${theme}-${id}.png` });
+        await ph.click('#dialog [data-x]'); await ph.waitForTimeout(150);
+      }
+      eq(ph.errors, []); await ph.ctx.close();
+    }
+  });
+
+  await h.test('page design: applying redactions never cuts letters out of a watermark, header or Bates number added here', async () => {
+    // A page with a word right under the middle of the watermark, which is turned 45°.
+    const src = await L.PDFDocument.create(), f = await src.embedFont(L.StandardFonts.Helvetica);
+    for (let k = 0; k < 3; k++) { const pg = src.addPage([612, 792]); pg.drawText(`Quarterly report, page ${k + 1}`, { x: 72, y: 700, size: 20, font: f }); pg.drawText('Account pelican 4471 is closed.', { x: 230, y: 400, size: 12, font: f }); }
+    const file = path.join(root, 'tests/fixtures/.pd-redact.pdf'); fs.writeFileSync(file, await src.save());
+    const p = await open(); await openPdf(p, file, 'Redact.pdf'); fs.unlinkSync(file);
+    await add(p, 'pd_watermark', {});
+    await add(p, 'pd_watermark', { text: 'CONFIDENTIAL', size: 40 }, { layout: 'tile' });
+    await add(p, 'pd_headfoot', { tl: 'Pelican header' });
+    await add(p, 'pd_bates', { prefix: 'CASE-' });
+    // the watermark's pieces of text, as pdf.js reads them (tiles at the page edges can come in parts)
+    const count = (t) => t.map((x) => x.filter((s) => /^[CONFIDETAL]+$/.test(s)).sort());
+    const before = count(await texts(await savedOf(p)));
+    ok(before.every((x) => x.filter((s) => s === 'CONFIDENTIAL').length > 4), 'tiled: ' + before);
+    await p.click('[data-rt="protect"]');
+    await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'pelican'); await p.click('#dialog .dlg-foot button:has-text("Mark all")'); await p.waitForTimeout(300);
+    // and a box over the middle of page 1, where the watermark crosses it
+    await p.click('[data-cmd="protRedArea"]');
+    const [a, b] = await h.at(p, 250, 450), [c, d] = await h.at(p, 360, 350);
+    await p.mouse.move(a, b); await p.mouse.down(); await p.mouse.move(c, d, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(150);
+    await p.click('[data-cmd="protRedApply"]'); await p.click('#dialog .dlg-foot button:has-text("Apply")'); await p.waitForTimeout(500);
+    eq(await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'redact' && m.applied).length), 4, 'three matches and the box');
+    const out = await savedOf(p), t = await texts(out);
+    ok(t.every((x) => !/pelican/i.test(x.filter((s) => s !== 'Pelican header').join(' ')) && x.join(' ').includes('closed')), 'redacted: ' + JSON.stringify(t));
+    eq(count(t), before, 'every letter of the watermark kept');
+    for (let k = 0; k < 3; k++) ok(t[k].includes('Pelican header') && t[k].includes(`Page ${k + 1} of 3`) && t[k].includes(`CASE-${String(k + 1).padStart(6, '0')}`), `page ${k + 1}: ${JSON.stringify(t[k])}`);
+    eq(p.errors.filter((e) => !/annotation-comment/.test(e)), []); await p.ctx.close();
+  });
+
+  await h.test('page design: on a PDF with a password, a watermark added earlier can be changed or removed after reopening', async () => {
+    const C = require(path.join(root, 'desktop/node_modules/@cantoo/pdf-lib'));
+    const p = await open(); await openProtected(p, fs.readFileSync(path.join(root, 'tests/fixtures/protected.pdf')));
+    await add(p, 'pd_watermark', { text: 'SECRET' });
+    const build = () => p.evaluate(async () => { const b = await window.__cowdreyPdf.buildPdf(); return b && Array.from(b); });
+    let out = build(); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .dlg-foot button:has-text("Keep password")');
+    const kept = Buffer.from(await out);
+    await openProtected(p, kept); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await p.waitForTimeout(300);
+    eq((await items(p)).map((m) => m.text), ['SECRET'], 'read back with the password');
+    ok(!(await pageText(p)).includes('SECRET'), 'taken out of the page');
+    eq(await overlay(p, 0), ['SECRET'], 'drawn once, from its settings');
+    await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open] .pd-form');
+    eq(await title(p), 'Edit watermark');
+    await p.click('#dialog .dlg-foot button:has-text("Remove")'); await p.waitForTimeout(300);
+    out = build(); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .dlg-foot button:has-text("Keep password")');
+    const again = Buffer.from(await out);
+    await L.PDFDocument.load(again).then(() => { throw new Error('opened without the password'); }, () => {});
+    eq((await C.PDFDocument.load(again, { password: 'pelican' })).getPageCount(), 3, 'still protected');
+    const d = await pdfjs.getDocument({ data: new Uint8Array(again), password: 'pelican', verbosity: 0 }).promise;
+    const t = (await (await d.getPage(1)).getTextContent()).items.map((x) => x.str).join(' '); await d.loadingTask.destroy();
+    ok(!t.includes('SECRET') && t.includes('Quarterly report, page 1'), t);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await h.test('icons: each command on the ribbon has its own icon where the meaning differs', async () => {
+    const p = await open();
+    const ids = ['pd_watermark', 'pd_background', 'pd_headfoot', 'pd_bates', 'pd_manage', 'cm_stamp', 'cm_fill', 'cm_area', 'ffFlatten', 'ffRecognize', 'protFlatten', 'protRedApply', 'tool_erase', 'ocr', 'docProps', 'exportText', 'pg60_crop', 'zoom100', 'about'];
+    const icons = await p.evaluate((l) => l.map((id) => window.__cowdreyPdf.cmdIcon(id)), ids);
+    ok(icons.every(Boolean), JSON.stringify(Object.fromEntries(ids.map((id, k) => [id, icons[k]]))));
+    eq(new Set(icons).size, icons.length, 'distinct: ' + JSON.stringify(Object.fromEntries(ids.map((id, k) => [id, icons[k]]))));
+    const known = await p.evaluate((l) => l.filter((n) => !window.lucide.icons[n.replace(/(^|-)([a-z0-9])/g, (_, a, b) => b.toUpperCase())]), icons);
+    eq(known, [], 'every icon is in Lucide');
+    await p.ctx.close();
   });
 };

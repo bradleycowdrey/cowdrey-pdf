@@ -43,6 +43,7 @@ const FEATURE = {
   markTypes: {},   // type -> { draw(v, m, svg) -> SVG element, save: async ({ L, out, p, m, entry, ctx }), under?: true (drawn and saved before other marks), move?(m, orig, dx, dy) }
   tools: {},       // tool id -> { down(e, v), move?(e, v) } — pointer handling on the page while the tool is chosen
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
+  savePageLate: [], // the same, after every savePage hook (redaction among them): drawing that must not be cut
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
@@ -1595,6 +1596,7 @@ async function buildPdf(only) {
       }
     }
     for (const h of FEATURE.savePage) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
+    for (const h of FEATURE.savePageLate) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
   if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written

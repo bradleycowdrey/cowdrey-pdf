@@ -443,7 +443,7 @@ FEATURE.tools.cmstamp = {
 
 /* ---- commands and the Comment tab ---- */
 const cmTool = (id, label, icon, tool, hint) => cmd(id, { label, icon, enabled: has, pressed: () => app.dataset.tool === tool, run: () => { setTool(tool); if (hint) toast(hint); } });
-cmTool('cm_area', 'Area highlight', 'scan', 'cmarea', 'Drag over the part of the page to highlight');
+cmTool('cm_area', 'Area highlight', 'square-dashed-mouse-pointer', 'cmarea', 'Drag over the part of the page to highlight');
 cmTool('cm_oval', 'Oval', 'circle', 'cmoval');
 cmTool('cm_line', 'Line', 'slash', 'cmline');
 cmTool('cm_arrow', 'Arrow', 'move-up-right', 'cmarrow');

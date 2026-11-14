@@ -947,7 +947,7 @@ const protHasPending = () => protRedMarks(false).length > 0;
 cmd('protRedText', { label: 'Mark text', icon: 'text-select', enabled: has, pressed: () => app.dataset.tool === 'protredtext', run: () => { if (protMarkSelection()) return; setTool('protredtext'); toast('Select the text to redact'); } });
 cmd('protRedArea', { label: 'Mark area', icon: 'box-select', enabled: has, pressed: () => app.dataset.tool === 'protredarea', run: () => { setTool('protredarea'); toast('Drag over the area to redact'); } });
 cmd('protRedSearch', { label: 'Search and redact…', icon: 'search-check', enabled: has, run: protSearch });
-cmd('protRedApply', { label: 'Apply redactions…', icon: 'eraser', enabled: () => has() && protHasPending(), run: protApply });
+cmd('protRedApply', { label: 'Apply redactions…', icon: 'file-check-2', enabled: () => has() && protHasPending(), run: protApply });
 cmd('protPassword', { label: 'Set password…', icon: 'lock', enabled: has, pressed: () => !!(protSec() && protSec().mode === 'set'), run: protPassword });
 cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: has, run: protRemoveSecurity });
 cmd('protFlatten', { label: 'Flatten…', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
