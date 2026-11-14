@@ -802,9 +802,18 @@ async function protDecodeImage(L, out, s0) {
 }
 const protCanvasJpeg = (c, q) => new Promise((res) => c.toBlob(async (b) => res(b ? new Uint8Array(await b.arrayBuffer()) : null), 'image/jpeg', q));
 function protScaled(c, w, h) { const t = document.createElement('canvas'); t.width = w; t.height = h; const g = t.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(c, 0, 0, w, h); return t; }
+// Compress is the only change to a PDF opened on its own (its pages as they were, nothing marked or filled in).
+function protOnlyCompress() {
+  if (!doc || doc.sources.length !== 1 || doc.sources[0].password || doc.sources[0].ownerOnly) return false;
+  if (Object.entries(doc.marks).some(([k, l]) => (l || []).some((m) => k !== '__doc' || m.type !== 'protcompress'))) return false;
+  const pd = pdfDocs.get(0);
+  if (!pd || (pd.annotationStorage && pd.annotationStorage.size)) return false;
+  return doc.pages.length === pd.numPages && doc.pages.every((e, n) => e.src === 0 && e.i === n && !e.rot);
+}
 async function protCompress(L, out, pages, opt) {
   const { PDFName, PDFDict, PDFRawStream, PDFStream, PDFRef, PDFNumber } = L, N = PDFName.of;
   let images = 0;
+  const was = [], put = (ref, o) => { was.push([ref, out.context.lookup(ref), o]); out.context.assign(ref, o); }; // to put back if it gains nothing
   if (opt.dpi) {
     // The largest size each picture is drawn at, in points.
     const placed = new Map();
@@ -845,10 +854,10 @@ async function protCompress(L, out, pages, opt) {
         const sW = sm.dict.lookup(N('Width')); if (smc && smRef instanceof PDFRef && sW instanceof PDFNumber && sW.asNumber() > tw) {
           const g = protScaled(smc, tw, tht).getContext('2d').getImageData(0, 0, tw, tht).data, gray = new Uint8Array(tw * tht);
           for (let i = 0; i < gray.length; i++) gray[i] = g[i * 4];
-          out.context.assign(smRef, out.context.flateStream(gray, { Type: 'XObject', Subtype: 'Image', Width: tw, Height: tht, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+          put(smRef, out.context.flateStream(gray, { Type: 'XObject', Subtype: 'Image', Width: tw, Height: tht, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
         }
       }
-      out.context.assign(ref, ns); images++;
+      put(ref, ns); images++;
     }
   }
   // Streams stored without compression are compressed.
@@ -857,10 +866,34 @@ async function protCompress(L, out, pages, opt) {
     if (/^\/(Metadata|XRef|ObjStm)$/.test(String(o.dict.lookup(N('Type')) || '')) || o.getContents().length < 64) continue;
     const ns = out.context.flateStream(o.getContents(), {});
     for (const [k, v] of o.dict.entries()) if (k.asString() !== '/Length') ns.dict.set(k, v);
-    out.context.assign(ref, ns);
+    put(ref, ns);
   }
-  // Saved with object streams (smaller cross-reference data, many small objects packed together).
-  const save = out.save.bind(out); out.save = (o = {}) => save({ useObjectStreams: true, ...o });
+  // Saved with object streams (smaller cross-reference data, many small objects packed together). A file is never
+  // made bigger: when the compressed file isn't smaller, what was there is put back and that is saved, and you're told.
+  const save = out.save.bind(out);
+  out.save = async (o = {}) => {
+    const opts = { useObjectStreams: true, ...o }, orig = protOnlyCompress() ? doc.sources[0] : null;
+    const said = () => { if (!protMeasuring) toast('Compressing would not make this PDF smaller, so it was saved as it was'); };
+    let res;
+    if (!was.length) res = await save(opts);
+    else {
+      // Both are sized unencrypted (saving encrypts the streams in place), then the smaller is saved.
+      const sec = out.context.security; let packed, plain;
+      out.context.security = undefined;
+      try {
+        packed = await save(opts);
+        for (const [ref, old] of [...was].reverse()) out.context.assign(ref, old);
+        plain = await save(opts);
+      } finally { out.context.security = sec; }
+      const gain = plain.length > packed.length;
+      if (gain) for (const [ref, , now] of was) out.context.assign(ref, now);
+      res = sec ? await save(opts) : gain ? packed : plain;
+      if (!gain && !orig) said();
+    }
+    // Nothing else changed and it would only grow: the file as it was opened.
+    if (orig && res.length >= orig.length && !protMeasuring) { said(); return new Uint8Array(orig); }
+    return res;
+  };
   return images;
 }
 
@@ -1034,23 +1067,22 @@ async function protCompressDlg() {
         if (n !== ask) return;
         if (before == null || after == null) { out.textContent = 'The size can’t be worked out.'; return; }
         const pc = Math.round((1 - after / before) * 100), none = after >= before * .98;
-        // Balanced gains next to nothing: once, see whether Smallest does better and choose it if so.
+        // Balanced gains next to nothing: once, see whether Smallest does better and say so (it is never chosen for you:
+        // its pictures are coarser).
         if (none && lv === '150' && !tried) {
           tried = true;
           const small = await protMeasure(PROT_LEVELS['96']);
           if (n !== ask) return;
           if (small != null && small <= before * .95) {
-            const r96 = $('input[name=level][value="96"]', dlg); r96.checked = true; upd();
-            if (document.activeElement && document.activeElement.name === 'level') r96.focus();
             const spc = Math.round((1 - small / before) * 100);
-            out.textContent = `Now ${protSize(before)}. Balanced would save less than 2%. Smallest saves ${spc}% (${protSize(small)}), so it is selected.`;
-            out.dataset.before = before; out.dataset.after = small; out.classList.remove('none');
+            out.textContent = `Now ${protSize(before)}. Balanced would save less than 2%. Smallest would save ${spc}% (${protSize(small)}, pictures at 96 ppi).`;
+            out.dataset.before = before; out.dataset.after = after; out.classList.add('none');
             return;
           }
         }
         // Compress stays the main button; the note says how little it would gain.
         out.textContent = none
-          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.`
+          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%, and it is never made bigger.`
           : `Now ${protSize(before)}. Compressed: ${protSize(after)} (${pc}% smaller).`;
         out.dataset.before = before; out.dataset.after = after; out.classList.toggle('none', none);
       } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }

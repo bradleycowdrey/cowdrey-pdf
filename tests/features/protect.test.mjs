@@ -343,7 +343,7 @@ export default async (h) => {
     } finally { fs.unlinkSync(file); }
   });
 
-  await test('Protect: when Balanced gains next to nothing but Smallest does, Compress chooses Smallest and says so', async () => {
+  await test('Protect: when Balanced gains next to nothing but Smallest does, Balanced stays chosen and the note says what Smallest would save', async () => {
     const jpg = await makeJpeg(600, 600, .92);
     const d0 = await L.PDFDocument.create(), pg = d0.addPage([612, 792]);
     const im = await d0.embedJpg(jpg); pg.drawImage(im, { x: 100, y: 300, width: 288, height: 288 }); // 150 pixels per inch already
@@ -352,14 +352,14 @@ export default async (h) => {
     try {
       const p = await open(); await openPdf(p, file, 'Picture.pdf');
       await run(p, 'protCompress');
-      await p.waitForFunction(() => /selected|Compressed|compact/.test((document.querySelector('#protSize') || {}).textContent || ''), null, { timeout: 30000 });
+      await p.waitForFunction(() => /Smallest would save|Compressed|compact/.test((document.querySelector('#protSize') || {}).textContent || ''), null, { timeout: 30000 });
       const t = await p.textContent('#protSize');
-      ok(/Balanced would save less than 2%\. Smallest saves \d+% \(.+\), so it is selected\./.test(t), t);
-      ok(await p.isChecked('#dialog input[name=level][value="96"]'), 'Smallest chosen');
+      ok(/Balanced would save less than 2%\. Smallest would save \d+% \(.+, pictures at 96 ppi\)\./.test(t), t);
+      ok(await p.isChecked('#dialog input[name=level][value="150"]'), 'Balanced stays chosen: coarser pictures are never chosen for you');
       eq(await p.$$eval('#dialog .dlg-foot .btn.primary', (b) => b.map((x) => x.textContent)), ['Compress']);
       await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr2/fix-pages/compress-smallest.png' });
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(200);
-      eq(await p.evaluate(() => (window.__cowdreyPdf.doc.marks.__doc || []).filter((m) => m.type === 'protcompress').map((m) => m.level)), ['96']);
+      eq(await p.evaluate(() => (window.__cowdreyPdf.doc.marks.__doc || []).filter((m) => m.type === 'protcompress').map((m) => m.level)), ['150']);
       noErrors(p); await p.ctx.close();
     } finally { fs.unlinkSync(file); }
   });

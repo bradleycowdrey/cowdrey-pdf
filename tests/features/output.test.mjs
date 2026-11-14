@@ -267,4 +267,32 @@ export default async (h) => {
     eq(pick(r2['Callout changed']), pick(r1['Callout words']), 'callout in place');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  const compressAt = async (p, lv) => {
+    await p.evaluate(() => window.__cowdreyPdf.run('protCompress'));
+    await p.waitForFunction(() => /^Now /.test((document.querySelector('#protSize') || {}).textContent || ''), null, { timeout: 30000 });
+    ok(await p.isChecked('#dialog input[name=level][value="150"]'), 'Balanced is chosen to begin with');
+    await p.click(`#dialog input[name=level][value="${lv}"]`); await p.waitForTimeout(300);
+    await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(200);
+  };
+  await test('Compress never makes a file bigger: an already compact PDF is saved as it was, and you are told', async () => {
+    const size0 = h.fs.statSync(WORD).size;
+    for (const lv of ['150', 'keep']) {
+      const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+      await compressAt(p, lv);
+      const out = await savedOf(p);
+      ok(out.length <= size0, `${lv}: ${size0} → ${out.length}`);
+      ok(/would not make this PDF smaller/.test(await p.evaluate(() => document.body.textContent)), 'said so');
+      await p.ctx.close();
+    }
+    // With an edit, compressing still never gives a bigger file than not compressing.
+    const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+    await editLine(p, 0, 'Budget', 'Budget: 45,500 dollars, on track.');
+    const plain = (await savedOf(p)).length;
+    await compressAt(p, '150');
+    const packed = (await savedOf(p)).length;
+    ok(packed <= plain, `compressed ${packed} vs not ${plain}`);
+    await p.ctx.close();
+  });
 };
