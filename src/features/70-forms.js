@@ -533,17 +533,31 @@ async function ffFlatten() {
 }
 
 /* ---- saving ---- */
-// Put the form in order before pdf-lib reads it: entries for widgets deleted from the pages go, and fields whose
-// widgets are on the pages are listed (pages copied into a new PDF lose the list).
+// Put the form in order before pdf-lib reads it: entries for widgets deleted from the pages (or on a deleted page)
+// go, and fields whose widgets are on the pages are listed (pages copied in from another PDF are not on its list).
 function ffFixAcroForm(L, out, pages) {
   const { PDFName, PDFArray, PDFDict, PDFRef } = L, c = out.context;
+  const hasWidget = pages.some((p) => { const a = p.node.lookup(PDFName.of('Annots')); return a instanceof PDFArray && a.asArray().some((r) => { const d = c.lookup(r); return d instanceof PDFDict && String(d.get(PDFName.of('Subtype'))) === '/Widget'; }); });
+  if (!out.catalog.get(PDFName.of('AcroForm')) && !hasWidget) return; // no form: don't add one
   const af = out.catalog.getOrCreateAcroForm().dict;
   let fields = af.lookup(PDFName.of('Fields'));
   if (!(fields instanceof PDFArray)) { fields = c.obj([]); af.set(PDFName.of('Fields'), fields); }
+  // Each widget on a page names that page (a copied page's widgets named a copy of the page they came from).
+  const onPage = new Set(pages.map((p) => p.ref.tag)), shown = new Set();
+  for (const p of pages) {
+    const annots = p.node.lookup(PDFName.of('Annots')); if (!(annots instanceof PDFArray)) continue;
+    for (const r of annots.asArray()) {
+      const d = c.lookup(r); if (!(d instanceof PDFDict) || String(d.get(PDFName.of('Subtype'))) !== '/Widget') continue;
+      if (r instanceof PDFRef) shown.add(r.tag);
+      if (d.get(PDFName.of('P'))) d.set(PDFName.of('P'), p.ref);
+    }
+  }
+  // A widget whose page was deleted
+  const offPage = (r, d) => { const P = d.get(PDFName.of('P')); return String(d.get(PDFName.of('Subtype'))) === '/Widget' && P instanceof PDFRef && !onPage.has(P.tag) && !(r instanceof PDFRef && shown.has(r.tag)); };
   const clean = (arr) => {
     for (let k = arr.size() - 1; k >= 0; k--) {
       const r = arr.get(k), d = r instanceof PDFRef ? c.lookup(r) : r;
-      if (!(d instanceof PDFDict)) { arr.remove(k); continue; }
+      if (!(d instanceof PDFDict) || offPage(r, d)) { arr.remove(k); continue; }
       const kids = d.lookup(PDFName.of('Kids'));
       if (kids instanceof PDFArray && kids.size()) { clean(kids); if (!kids.size()) arr.remove(k); }
     }
@@ -650,10 +664,10 @@ async function ffSaveNew(L, out, form, list) {
   }
 }
 FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
+  ffFixAcroForm(L, out, pages); // always: pages moved, deleted or copied in change which fields the PDF has
   const news = ctx.ffNew || [], mods = ffMods(), flat = ffFlat();
   if (!news.length && !mods.length && !flat) return;
   const { PDFName, PDFHexString } = L;
-  ffFixAcroForm(L, out, pages);
   const form = out.getForm();
   for (const md of mods) {
     const f = form.getFields().find((x) => x.getName() === md.name); if (!f) continue;

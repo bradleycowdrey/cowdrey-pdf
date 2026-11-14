@@ -78,6 +78,7 @@ await test('pages: rotate, move, duplicate, delete, insert blank; saved PDF foll
   const p = await open(); await openPdf(p);
   const run = (id) => p.evaluate((i) => window.__cowdreyPdf.run(i), id).then(() => p.waitForTimeout(250));
   await run('rotR'); await run('down'); await run('dup'); await run('blank');
+  await p.waitForFunction(() => window.__cowdreyPdf.doc.pages.length === 5, null, { timeout: 10000 }); // the blank page is made with pdf-lib, which may still be loading
   const order = await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => `${e.src}:${e.i}:${e.rot}`));
   eq(order, ['0:1:0', '0:0:90', '0:0:90', '1:0:0', '0:2:0']);
   await run('delPage');

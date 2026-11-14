@@ -1328,9 +1328,137 @@ function parseRange(s, max) {
 }
 
 /* ---------------- saving ----------------
-   With the pages unchanged, the original PDF is kept (bookmarks, forms, links, metadata) and the mark-up is added
-   to it. Otherwise a new PDF is assembled from the pages in their new order. Highlights, drawings, boxes, text and
+   The original PDF is kept (bookmarks, forms, links, metadata) and the mark-up is added to it. When pages were
+   deleted, moved or added, its pages are put in the new order and pages from other PDFs are copied in. Highlights, drawings, boxes, text and
    signatures are drawn into the page so every reader shows them; notes are real PDF comments. */
+// The page for each entry, in order. Pages of `base` (a loaded source used as the saved PDF) are its own pages; others
+// are copied with one copyPages call per source, so the copies share fonts and pictures. A page used twice is copied
+// again in a later call, so each use is a page of its own.
+async function savePagesFor(out, loaded, entries, base) {
+  const bySrc = new Map(), got = new Map();
+  for (const e of entries) { const m = bySrc.get(e.src) || new Map(); m.set(e.i, (m.get(e.i) || 0) + 1); bySrc.set(e.src, m); }
+  for (const [k, counts] of bySrc) {
+    const own = k === base ? out.getPages() : null;
+    for (let r = 0; ; r++) {
+      const idx = [...counts].filter(([, n]) => n > r).map(([i]) => i); if (!idx.length) break;
+      const pgs = r === 0 && own ? idx.map((i) => own[i]) : await out.copyPages(loaded[k], idx);
+      idx.forEach((i, j) => { const key = k + ':' + i; if (!got.has(key)) got.set(key, []); got.get(key).push(pgs[j]); });
+    }
+  }
+  return entries.map((e) => got.get(e.src + ':' + e.i).shift());
+}
+// Makes `list` the document's pages, in that order, directly under the page tree's root. What a page took from the
+// tree above it (resources, size, rotation) is written on the page first. Pages left out are deleted.
+function saveSetPageTree(L, out, list) {
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFNumber } = L, c = out.context, N = (k) => PDFName.of(k);
+  for (const p of list) for (const k of ['Resources', 'MediaBox', 'CropBox', 'Rotate']) {
+    if (p.node.get(N(k))) continue;
+    const v = p.node.getInheritableAttribute(N(k)); if (v) p.node.set(N(k), v);
+  }
+  const rootRef = out.catalog.get(N('Pages')), root = out.catalog.Pages(), keep = new Set(list.map((p) => p.ref.tag)), seen = new Set();
+  const walk = (node) => {
+    const kids = node.lookup(N('Kids')); if (!(kids instanceof PDFArray)) return;
+    for (const r of kids.asArray()) {
+      if (!(r instanceof PDFRef) || seen.has(r.tag)) continue; seen.add(r.tag);
+      const d = c.lookup(r); if (!(d instanceof PDFDict)) continue;
+      if (d.get(N('Kids'))) { walk(d); c.delete(r); } else if (!keep.has(r.tag)) c.delete(r);
+    }
+  };
+  walk(root);
+  root.set(N('Kids'), c.obj(list.map((p) => p.ref))); root.set(N('Count'), PDFNumber.of(list.length));
+  for (const p of list) p.node.set(N('Parent'), rootRef);
+  out.pageCount = undefined; out.pageCache.invalidate();
+}
+// Bookmarks and named destinations that go to a page no longer in the PDF are removed (a bookmark with bookmarks
+// under it stays, without a target). `keep` holds the tags of the saved pages.
+function saveDropDeadDests(L, out, keep) {
+  const { PDFName, PDFArray, PDFDict, PDFRef, PDFNumber, PDFString, PDFHexString } = L, c = out.context, N = (k) => PDFName.of(k);
+  const look = (o) => o instanceof PDFRef ? c.lookup(o) : o;
+  const keyOf = (o) => o instanceof PDFName ? o.decodeText() : o instanceof PDFString || o instanceof PDFHexString ? o.decodeText() : null;
+  const gone = (d) => {
+    d = look(d); if (d instanceof PDFDict) d = look(d.get(N('D')));
+    if (!(d instanceof PDFArray) || !d.size()) return false;
+    const pg = d.get(0); return pg instanceof PDFRef && !keep.has(pg.tag);
+  };
+  // Named destinations, read before any is removed so bookmarks that use them can be checked.
+  const named = new Map(), cat = out.catalog;
+  const old = look(cat.get(N('Dests')));
+  if (old instanceof PDFDict) for (const [k, v] of old.entries()) named.set(k.decodeText(), v);
+  const names = look(cat.get(N('Names'))), tree = names instanceof PDFDict ? look(names.get(N('Dests'))) : null;
+  const leaves = (node, fn, seen = new Set()) => {
+    if (!(node instanceof PDFDict) || seen.has(node)) return; seen.add(node);
+    const arr = look(node.get(N('Names'))); if (arr instanceof PDFArray) fn(arr);
+    const kids = look(node.get(N('Kids'))); if (kids instanceof PDFArray) for (const r of kids.asArray()) leaves(look(r), fn, seen);
+  };
+  leaves(tree, (arr) => { for (let k = 0; k + 1 < arr.size(); k += 2) { const n = keyOf(look(arr.get(k))); if (n != null) named.set(n, arr.get(k + 1)); } });
+  const target = (d) => { d = look(d); const n = keyOf(d); return n != null ? named.get(n) : d; };
+  // Bookmarks
+  const outlines = look(cat.get(N('Outlines')));
+  const seen = new Set();
+  const prune = (parent) => { // returns how many bookmarks show under `parent` when it is open
+    const kids = []; let r = parent.get(N('First'));
+    while (r instanceof PDFRef && !seen.has(r.tag)) { seen.add(r.tag); const it = c.lookup(r); if (!(it instanceof PDFDict)) break; kids.push([r, it]); r = it.get(N('Next')); }
+    const kept = []; let shown = 0;
+    for (const [ref, it] of kids) {
+      const was = it.lookup(N('Count')), open = !(was instanceof PDFNumber) || was.asNumber() > 0;
+      const under = prune(it);
+      const a = look(it.get(N('A')));
+      const d = it.get(N('Dest')) || (a instanceof PDFDict && String(a.get(N('S'))) === '/GoTo' ? a.get(N('D')) : null);
+      if (d && gone(target(d))) {
+        if (!it.get(N('First'))) { c.delete(ref); continue; }
+        it.delete(N('Dest')); if (a) it.delete(N('A'));
+      }
+      if (it.get(N('First'))) it.set(N('Count'), PDFNumber.of(open ? under : -under)); else it.delete(N('Count'));
+      kept.push([ref, it]); shown += 1 + (open ? under : 0);
+    }
+    kept.forEach(([, it], j) => {
+      if (j) it.set(N('Prev'), kept[j - 1][0]); else it.delete(N('Prev'));
+      if (j < kept.length - 1) it.set(N('Next'), kept[j + 1][0]); else it.delete(N('Next'));
+    });
+    if (kept.length) { parent.set(N('First'), kept[0][0]); parent.set(N('Last'), kept[kept.length - 1][0]); }
+    else { parent.delete(N('First')); parent.delete(N('Last')); }
+    return shown;
+  };
+  if (outlines instanceof PDFDict) {
+    const shown = prune(outlines);
+    if (outlines.get(N('First'))) outlines.set(N('Count'), PDFNumber.of(shown)); else cat.delete(N('Outlines'));
+  }
+  // Named destinations themselves
+  if (old instanceof PDFDict) for (const [k, v] of old.entries()) if (gone(v)) old.delete(k);
+  const fixTree = (node, seen = new Set()) => { // returns [first, last] name of what is left under node, or null
+    if (!(node instanceof PDFDict) || seen.has(node)) return null; seen.add(node);
+    let lo = null, hi = null;
+    const arr = look(node.get(N('Names')));
+    if (arr instanceof PDFArray) {
+      for (let k = arr.size() - 2; k >= 0; k -= 2) if (gone(arr.get(k + 1))) { arr.remove(k + 1); arr.remove(k); }
+      if (arr.size()) { lo = arr.get(0); hi = arr.get(arr.size() - 2); }
+    }
+    const kids = look(node.get(N('Kids')));
+    if (kids instanceof PDFArray) for (let k = kids.size() - 1; k >= 0; k--) {
+      const got = fixTree(look(kids.get(k)), seen);
+      if (!got) { kids.remove(k); continue; }
+      if (!hi) hi = got[1]; lo = got[0];
+    }
+    if (!lo) return null;
+    if (node.get(N('Limits'))) node.set(N('Limits'), c.obj([lo, hi]));
+    return [lo, hi];
+  };
+  if (tree instanceof PDFDict && !fixTree(tree)) { tree.delete(N('Kids')); tree.set(N('Names'), c.obj([])); }
+}
+// Objects nothing in the saved PDF refers to any more (deleted pages and what only they used) are dropped.
+function saveDropUnused(L, out) {
+  const { PDFRef, PDFDict, PDFArray } = L, seen = new Set(), stack = [];
+  const visit = (o) => {
+    if (!o) return;
+    if (o instanceof PDFRef) { if (seen.has(o.tag)) return; seen.add(o.tag); const t = out.context.lookup(o); if (t) stack.push(t); return; }
+    if (o instanceof PDFDict) { for (const [, v] of o.entries()) visit(v); return; }
+    if (o instanceof PDFArray) { for (const v of o.asArray()) visit(v); return; }
+    if (o.dict instanceof PDFDict) visit(o.dict);
+  };
+  const t = out.context.trailerInfo; visit(t.Root); visit(t.Info); visit(t.Encrypt);
+  while (stack.length) visit(stack.pop());
+  for (const [ref] of out.context.enumerateIndirectObjects()) if (!seen.has(ref.tag)) out.context.delete(ref);
+}
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
   const L = await loadPdfLib();
@@ -1366,10 +1494,22 @@ async function buildPdf(only) {
   const same = !only && entries.length === loaded[s0].getPageCount() && entries.every((e, n) => e.src === s0 && e.i === n);
   let out, pages;
   if (same) { out = loaded[s0]; pages = out.getPages(); }
-  else {
+  else if (only || !entries.length) {
+    // Extract: a new PDF with copies of the pages (one copy per source, so pages share their fonts and pictures).
     out = await PDFDocument.create();
-    pages = [];
-    for (const e of entries) { const [p] = await out.copyPages(loaded[e.src], [e.i]); out.addPage(p); pages.push(p); }
+    pages = await savePagesFor(out, loaded, entries, -1);
+    for (const p of pages) out.addPage(p);
+  } else {
+    // Pages deleted, moved, added or merged: the opened file is kept (bookmarks, form, metadata, attachments) and its
+    // pages are put in the new order. Pages from other PDFs are copied in, one copy per source.
+    const n0 = entries.filter((e) => e.src === 0).length, count = new Map();
+    for (const e of entries) count.set(e.src, (count.get(e.src) || 0) + 1);
+    const base = n0 ? 0 : [...count].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+    out = loaded[base];
+    const list = await savePagesFor(out, loaded, entries, base);
+    saveSetPageTree(L, out, list);
+    pages = out.getPages();
+    saveDropDeadDests(L, out, new Set(pages.map((p) => p.ref.tag)));
   }
   const font = await out.embedFont(StandardFonts.Helvetica);
   const col = (hex) => { const n = parseInt(hex.slice(1), 16); return rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); };
@@ -1416,7 +1556,8 @@ async function buildPdf(only) {
     for (const h of FEATURE.savePage) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
-  out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
+  if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written
+  if (!out.getTitle()) out.setTitle(doc.name); out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
   const ownerOnlyKey = doc.sources.findIndex((s0) => s0.ownerOnly);
   if (!(pw && doc.keepPassword) && ownerOnlyKey >= 0 && out.encrypt) {
