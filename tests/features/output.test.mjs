@@ -170,7 +170,7 @@ export default async (h) => {
     }
     { // a paragraph
       const p = await open(); await openPdf(p);
-      await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));
+      await p.evaluate(() => window.__cowdreyPdf.run('txtEditParas'));
       const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'pelican count' }).first().boundingBox();
       await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.txt-editor');
       await p.keyboard.press('Control+a'); await p.keyboard.type('Zebras everywhere');
