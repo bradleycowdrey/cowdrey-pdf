@@ -182,7 +182,21 @@ function setTitle() {
   const k = name.length <= 14 ? 0 : cut >= 0 ? 11 - cut : Math.min(8, Math.floor(name.length / 3)); // from the last word, when it is short
   t.innerHTML = `<span class="dt-a">${esc(name.slice(0, name.length - k))}</span>${k ? `<span class="dt-b">${esc(name.slice(-k))}</span>` : ''}`;
   t.title = name; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF';
+  fitTitle();
 }
+// A name too long for the title bar loses letters from its middle: the ellipsis is put in here, right after the last
+// letter that fits, so the kept end follows it with no gap (the browser's own ellipsis stops at a whole letter and
+// leaves the rest of the width empty).
+function fitTitle() {
+  const t = $('#docTitle'), a = $('.dt-a', t), b = $('.dt-b', t); if (!a || !b) return;
+  const full = a.dataset.full ?? a.textContent; a.dataset.full = full; a.textContent = full;
+  if (a.scrollWidth <= a.clientWidth) return;
+  let lo = 1, hi = full.length - 1;
+  while (lo < hi) { const k = (lo + hi + 1) >> 1; a.textContent = full.slice(0, k).trimEnd() + '…'; if (a.scrollWidth <= a.clientWidth) lo = k; else hi = k - 1; }
+  a.textContent = full.slice(0, lo).trimEnd() + '…';
+}
+window.addEventListener('resize', () => fitTitle());
+document.fonts && document.fonts.ready.then(() => fitTitle());
 // `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
 // Documents with changes says they are kept there.
 function setSaved(saved, opened) {
@@ -1109,7 +1123,11 @@ function setTool(t) {
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
   if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
-  if (t !== was) toolHint = TOOL_HINTS[t] || '';
+  if (t !== was) {
+    // The hint for the tool being left goes with it (on a phone it shows as a toast over the page).
+    const m = $('#toast'); if (toolHint && m.classList.contains('show') && m.textContent === touchWords(toolHint)) { m.classList.remove('show'); clearTimeout(toastTimer); }
+    toolHint = TOOL_HINTS[t] || '';
+  }
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
   // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).

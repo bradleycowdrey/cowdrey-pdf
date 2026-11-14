@@ -189,6 +189,7 @@ dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: non
 .pd-dialog .dlg-foot .pd-rm { margin-right: auto; }
 .pd-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0 20px; align-items: start; }
 .pd-main { min-width: 0; }
+.pd-top { grid-column: 1 / -1; min-width: 0; }
 .pd-prev { margin: 8px 0; position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pd-prev-page { position: relative; width: 100%; aspect-ratio: 612 / 792; background: #fff; border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 2px 10px rgba(0, 0, 0, .18); overflow: hidden; }
 .pd-prev-page canvas { display: block; width: 100%; height: 100%; }
@@ -375,15 +376,20 @@ function pdBody(type, m) {
     <div class="pd-form pd-wide" data-show="kind=image"${m.kind !== 'image' ? ' hidden' : ''}>${pdPicField(m, 'Picture')}${F.sel('fit', 'Size', m.fit, [['stretch', 'Fill the page'], ['fit', 'Fit inside the page']])}</div>
     ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range)}</div>
     <p class="pd-note">The background goes behind everything on the page.</p>`;
-  if (type === 'pd_headfoot') return `<div class="pd-slots">${PD_SLOTS.map(([k, t]) => F.text(k, t, m[k])).join('')}</div>
-    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
-    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p>
-    <div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
+  if (type === 'pd_headfoot') return `<div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
     ${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>`;
   return `<div class="pd-form">${F.text('prefix', 'Prefix', m.prefix)}${F.text('suffix', 'Suffix', m.suffix)}${F.num('start', 'Start number', m.start, 0, 999999999999)}${F.num('digits', 'Digits', m.digits, 1, 12)}
     <div class="pd-sample pd-wide" data-sample></div>
     ${F.sel('slot', 'Position', m.slot, PD_SLOTS)}${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>
     <p class="pd-note">Numbers run across the saved PDF's pages in order.</p>`;
+}
+// What goes across the whole dialog, above the settings and the preview (under the preview on a phone): the six places of a header and footer, so
+// each field is wide enough to show what is in it ("Page <<page>> of <<pages>>").
+function pdTop(type, m) {
+  if (type !== 'pd_headfoot') return '';
+  return `<div class="pd-top"><div class="pd-slots">${PD_SLOTS.map(([k, t]) => pdField.text(k, t, m[k])).join('')}</div>
+    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
+    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p></div>`;
 }
 function pdCheck(type, m) {
   if (m.range && m.range.trim() && !parseRange(m.range, doc.pages.length).length) return 'Check the pages: use numbers like 1-3, 5';
@@ -442,7 +448,7 @@ async function pdEdit(type, existing) {
     : [{ label: 'Cancel' }, { label: PD_VERB[type][0], value: 'ok', primary: true }];
   do {
     const title = existing ? PD_VERB[type][3] : PD_TYPES[type];
-    const res = await dialog(title, `<div class="pd-wrap"><div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
+    const res = await dialog(title, `<div class="pd-wrap">${pdTop(type, m)}<div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
       // The dialog element is reused: listen on its body, which is new for each dialog.
       const body = $('.dlg-body', dlg);
       dlg.classList.add('pd-dialog');
@@ -454,7 +460,7 @@ async function pdEdit(type, existing) {
         const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
         // A field that was typed over or split is marked, and the dialog can't be confirmed until it is fixed.
         let bad = false;
-        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; el.title = el.value; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
         const pb = $('.dlg-foot .btn.primary', dlg); if (pb && type === 'pd_headfoot') pb.disabled = bad;
         const note = $('[data-pd-err]', dlg); if (note) note.hidden = !bad;
         preview().catch(() => {});

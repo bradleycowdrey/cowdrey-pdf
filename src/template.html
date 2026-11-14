@@ -108,13 +108,26 @@ button { font: inherit; color: inherit; }
 .rb-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rb-more:disabled { opacity: .4; cursor: default; background: none; }
 @media (pointer: coarse) { .rb-more { width: 28px; } }
+/* a split button is one shape: hovered, open or pressed, the tint covers its arrow too (the half under the pointer
+   a little darker, with a hairline between the halves) */
+.rb-split { border-radius: 6px; }
+.rb-split > .rb, .rb-split > .rb:hover, .rb-split > .rb[aria-pressed="true"], .rb-split > .rb-more, .rb-split > .rb-more:hover { background: none; }
+.rb-split:hover:not(:has(> .rb:disabled)), .rb-split:has(> .rb-more[aria-expanded="true"]) { background: var(--hover); }
+.rb-split:has(> .rb[aria-pressed="true"]) { background: var(--accent-soft); }
+.rb-split:has(> .rb[aria-pressed="true"]) > .rb-more { color: var(--accent); }
+.rb-split > .rb:hover:not(:disabled), .rb-split > .rb-more:hover:not(:disabled), .rb-split > .rb-more[aria-expanded="true"] { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.rb-split:hover:not(:has(> .rb:disabled)) > .rb-more { box-shadow: inset 1px 0 0 var(--line); }
 .rb[data-rmenu] > span svg { width: 12px; height: 12px; vertical-align: -2px; margin-left: 1px; }
 .rb[data-rmenu][aria-expanded="true"] { background: var(--hover); }
 .rb[data-on] { background: var(--accent-soft); color: var(--accent); }
 .pop-sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 8px; }
 .r-swatches .sw-more svg { width: 10px; height: 10px; }
-.swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
-.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+/* --sw-edge: a hairline inside each swatch, so a colour close to the bar's own (black on the dark theme, white on the
+   light one) still reads as a colour, pressed or not */
+.swatch { --sw-edge: rgb(0 0 0 / .2); width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 2px var(--accent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .swatch { --sw-edge: rgb(255 255 255 / .34); } }
+:root[data-theme="dark"] .swatch { --sw-edge: rgb(255 255 255 / .34); }
 /* compact ribbon groups (wide screens): small buttons in two rows, with names (r-rows) or as icons (r-icons) */
 @media (min-width: 761px) {
   .r-rows .r-items, .r-icons .r-items { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 26px); gap: 2px 2px; align-content: center; }
@@ -296,7 +309,6 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .sw-more svg { width: 14px; height: 14px; stroke-width: 3; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
 .sw-more input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .sw-more:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
-.swatch[data-color="#111111"]:not([aria-pressed="true"]), .swatch[data-c="#111111"]:not([aria-pressed="true"]) { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 1px var(--line); } /* black stays visible on the dark theme, and does not look pressed */
 .sig-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0; }
 .sig-row[hidden], .sig-row [hidden] { display: none; }
 .sig-row .field { flex: 1; margin: 0; }
