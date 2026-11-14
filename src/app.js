@@ -73,6 +73,7 @@ const FEATURE = {
   onDocShown: [],  // (doc) — when a document is shown
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
   markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
+  selActions: [],  // { label, icon, order, run() } — what can be done with text selected on the page (its bar and menu)
 };
 function addStyle(css) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }
 const TEST_HOOKS = {}; // features add functions for the tests here; they appear on window.__cowdreyPdf
@@ -967,6 +968,46 @@ function highlightSelection() {
   return any;
 }
 document.addEventListener('pointerup', () => { if (app.dataset.tool === 'highlight') setTimeout(highlightSelection, 0); });
+/* ---- text selected with the Select tool: a small bar over it (Highlight, Underline, Strikethrough, Redact, Copy),
+   the same actions as in its right-click menu. It shows once the selection is made (the button or finger let go). */
+FEATURE.selActions.push(
+  { label: 'Highlight', icon: 'highlighter', order: 10, run: () => highlightSelection() },
+  { label: 'Copy', icon: 'copy', key: 'Mod-c', order: 90, run: () => { document.execCommand('copy'); getSelection().removeAllRanges(); toast('Copied'); } },
+);
+const selActionList = () => [...FEATURE.selActions].sort((a, b) => a.order - b.order);
+let selBar = null;
+function pageSelection() {
+  const sel = getSelection(); if (!sel || sel.isCollapsed || !String(sel).trim() || !doc) return null;
+  const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+  return el && el.closest('.page .textLayer') ? sel : null;
+}
+function hideSelBar() { if (selBar) { selBar.remove(); selBar = null; } }
+function showSelBar() {
+  hideSelBar();
+  const sel = app.dataset.tool === 'select' && !TL.down && !$('#dialog').open && pageSelection(); if (!sel) return;
+  const r = sel.getRangeAt(0).getBoundingClientRect(), w = $('#viewer').getBoundingClientRect();
+  if (!r.width || r.bottom < w.top || r.top > w.bottom) return;
+  const acts = selActionList(), bar = selBar = document.createElement('div');
+  bar.className = 'sel-bar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Selected text');
+  bar.innerHTML = acts.map((a, k) => `<button type="button" data-sa="${k}" title="${esc(a.label)}" aria-label="${esc(a.label)}">${ic(a.icon)}</button>`).join('');
+  document.body.appendChild(bar); icons();
+  bar.addEventListener('mousedown', (e) => e.preventDefault()); // the text stays selected
+  bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+  bar.addEventListener('click', (e) => { const b = e.target.closest('[data-sa]'); if (!b) return; hideSelBar(); acts[+b.dataset.sa].run(); });
+  // Above the selection (below it on touch screens, where the system's own menu sits above), inside the viewer.
+  const bw = bar.offsetWidth, bh = bar.offsetHeight, below = coarse() || r.top - bh - 8 < w.top;
+  bar.style.left = Math.max(w.left + 4, Math.min(r.left + r.width / 2 - bw / 2, w.right - bw - 4)) + 'px';
+  bar.style.top = Math.max(w.top + 4, Math.min(below ? r.bottom + 8 : r.top - bh - 8, w.bottom - bh - 4)) + 'px';
+}
+let selBarT = 0;
+const selBarSoon = (ms) => { clearTimeout(selBarT); selBarT = setTimeout(showSelBar, ms); };
+document.addEventListener('pointerup', (e) => { if (!e.target.closest || !e.target.closest('.sel-bar')) selBarSoon(60); });
+// A finger's selection handles move with no pointer events: the bar follows the selection once it rests.
+document.addEventListener('selectionchange', () => { if (!pageSelection()) { clearTimeout(selBarT); hideSelBar(); } else if (!TL.down) selBarSoon(350); });
+document.addEventListener('pointerdown', (e) => { if (selBar && !selBar.contains(e.target)) hideSelBar(); }, true);
+$('#viewer').addEventListener('scroll', hideSelBar, { passive: true });
+document.addEventListener('keydown', (e) => { if (selBar && e.key === 'Escape') hideSelBar(); }, true);
+TEST_HOOKS.selBar = () => selBar && $$('button', selBar).map((b) => b.getAttribute('aria-label'));
 // Touch: a finger dragged over text with a text tool (Highlight, Underline…) selects that text, as a mouse would (the
 // page does not scroll then: see touch-action in template.html). Letting go marks it up.
 const TEXT_TOOLS = new Set(['highlight', 'cmunderline', 'cmstrike', 'cmsquiggly', 'protredtext']);
@@ -3147,7 +3188,8 @@ function pageMenu(v, cx, cy, anchor) {
   const b = v.el.getBoundingClientRect(), [x, y] = toPdf(v, cx - b.left, cy - b.top), n = views.indexOf(v);
   const text = String(getSelection() || '').trim();
   return openCtx([
-    text && { label: 'Copy', icon: 'copy', key: 'Mod-c', run: () => document.execCommand('copy') }, text && '-',
+    // text selected: mark it up from here, as from its bar
+    ...(text ? [...selActionList().map((a) => ({ label: a.label, icon: a.icon, key: a.key, run: a.run })), '-'] : []),
     { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', disabled: !markClip, run: () => pasteMark(null, v, x, y) },
     { label: 'Add comment here', icon: 'message-square-plus', run: () => addNote(v, x, y) },
     '-',

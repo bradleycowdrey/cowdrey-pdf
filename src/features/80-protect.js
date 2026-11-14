@@ -136,6 +136,7 @@ FEATURE.tools.protredarea = {
   },
 };
 // Mark for redaction: the text selected on the page.
+FEATURE.selActions.push({ label: 'Mark for redaction', icon: 'eraser', order: 40, run: () => protMarkSelection() });
 function protMarkSelection() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !doc) return false;

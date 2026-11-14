@@ -284,6 +284,7 @@ function cmMarkupSelection(kind) {
   changed(before);
   return true;
 }
+FEATURE.selActions.push({ label: 'Underline', icon: 'underline', order: 20, run: () => cmMarkupSelection('underline') }, { label: 'Strikethrough', icon: 'strikethrough', order: 30, run: () => cmMarkupSelection('strike') });
 // A selection made on the page with one of these tools is marked up when the button is let go.
 const cmMarkupKind = () => { const t = app.dataset.tool || ''; return t.startsWith('cm') && CM_MARKUP[t.slice(2)] ? t.slice(2) : null; };
 document.addEventListener('pointerdown', (e) => { CM.selDown = !!(e.target.closest && e.target.closest('#pages')); }, true);

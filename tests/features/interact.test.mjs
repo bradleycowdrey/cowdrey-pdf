@@ -56,4 +56,40 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     eq(p.errors, []); await p.ctx.close();
   });
 
+
+  await test('Selecting text with Select shows a bar (Highlight, Underline, Strikethrough, Redact, Copy); the right-click menu has the same', async () => {
+    const p = await open(); await openPdf(p);
+    eq(await tool(p), 'select');
+    await selectText(p, 0, 'Cowdrey.PDF opens'); await p.waitForTimeout(250);
+    eq(await p.evaluate(() => window.__cowdreyPdf.selBar()), ['Highlight', 'Underline', 'Strikethrough', 'Mark for redaction', 'Copy']);
+    const bar = await p.$eval('.sel-bar', (b) => { const r = b.getBoundingClientRect(); return [r.width > 100, r.height < 60]; }); eq(bar, [true, true], 'small');
+    await p.click('.sel-bar [aria-label="Underline"]'); await p.waitForTimeout(200);
+    eq((await all(p)).map((m) => [m.type, m.kind]), [['cmMarkup', 'underline']]);
+    ok(!(await p.$('.sel-bar')), 'gone once used');
+    eq(await undoLabel(p), 'Undo Text mark-up');
+    // right-click over a selection
+    await selectText(p, 0, 'The pelican count'); await p.waitForTimeout(200);
+    const s = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'The pelican count' }).first().boundingBox();
+    await p.mouse.click(s.x + 4, s.y + s.height / 2, { button: 'right' }); await p.waitForSelector('#popover:not([hidden])');
+    const items = await p.$$eval('#popover .mi span:nth-child(2)', (e) => e.map((x) => x.textContent));
+    eq(items.slice(0, 5), ['Highlight', 'Underline', 'Strikethrough', 'Mark for redaction', 'Copy']);
+    await p.click('#popover .mi:has-text("Highlight")'); await p.waitForTimeout(200);
+    eq((await all(p)).map((m) => m.type), ['cmMarkup', 'hl']);
+    // not with another tool: the Highlight tool marks the selection itself
+    await run(p, 'tool_pen'); await p.evaluate(() => getSelection().removeAllRanges());
+    eq(await p.evaluate(() => window.__cowdreyPdf.selBar()), null);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Phone: a selection made by touch shows the bar once it rests; Redact marks the text', async () => {
+    const p = await open({ width: 390, height: 844, touch: true }); await openPdf(p);
+    // as a long press does: the selection changes with no pointer events
+    await p.evaluate(() => { const s = [...document.querySelectorAll('.page[data-n="0"] .textLayer span')].find((x) => /Cowdrey.PDF opens/.test(x.textContent)); const r = document.createRange(); r.setStart(s.firstChild, 0); r.setEnd(s.firstChild, 11); getSelection().removeAllRanges(); getSelection().addRange(r); });
+    await p.waitForTimeout(600);
+    eq((await p.evaluate(() => window.__cowdreyPdf.selBar())).length, 5, 'bar shown');
+    const fits = await p.$eval('.sel-bar', (b) => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }); ok(fits, 'inside the screen');
+    await p.tap('.sel-bar [aria-label="Mark for redaction"]'); await p.waitForTimeout(200);
+    eq((await all(p)).map((m) => m.type), ['redact']);
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
