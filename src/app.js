@@ -1991,7 +1991,7 @@ function parseCMap(txt) {
 }
 function pageFonts(L, out, pageNode) {
   const { PDFName, PDFDict, PDFArray, PDFRawStream, PDFNumber, decodePDFRawStream } = L;
-  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getUnencodedContents ? st.getUnencodedContents() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
   const fonts = new Map();
   const res = pageNode.Resources && pageNode.Resources();
   const fd = res && res.lookup(PDFName.of('Font'));

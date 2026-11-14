@@ -279,7 +279,7 @@ function pdStripPage(L, out, p) {
   const { PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = L, node = p.node;
   const raw = node.get(PDFName.of('Contents')), r = raw && out.context.lookup(raw);
   const parts = r instanceof PDFArray ? r.asArray() : raw ? [raw] : [];
-  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getUnencodedContents ? st.getUnencodedContents() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
   let src = parts.map((x) => { const st = out.context.lookup(x); return st ? text(st) : ''; }).join('\n');
   if (!src.includes(PD_KEY)) return false;
   const spans = pdTaggedSpans(src); if (!spans.length) return false;
