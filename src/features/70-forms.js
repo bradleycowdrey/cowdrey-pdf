@@ -139,7 +139,8 @@ function ffFillLayer(v) {
 /* ---- drawing new fields (they look as they will once saved) ---- */
 function ffDraw(v, m, svg) {
   ffHookSvg(v, svg);
-  const flat = ffFlat(), filling = !flat && !ffDesign() && FF_FILLABLE.has(m.kind);
+  // A thumbnail shows the field as it will print: no name tag, no handles, no tint (v.thumb).
+  const flat = ffFlat() || !!v.thumb, filling = !flat && !ffDesign() && FF_FILLABLE.has(m.kind);
   const [X0, Y0, X1, Y1] = ffBox(m);
   const pts = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]].map(([x, y]) => toView(v, x, y));
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -159,7 +160,7 @@ function ffDraw(v, m, svg) {
     return g;
   }
   if (m.kind === 'radio') {
-    inner.appendChild(svgEl('rect', { class: 'ff-hit', x: 0, y: 0, width: lw, height: lh }));
+    inner.appendChild(svgEl('rect', { class: 'ff-hit', x: 0, y: 0, width: lw, height: lh, fill: flat ? 'transparent' : 'rgba(174, 23, 71, .06)' }));
     const r = Math.min(lw, lh) / 2 - .5 * s;
     inner.appendChild(svgEl('circle', { cx: lw / 2, cy: lh / 2, r, fill: '#fff', stroke: '#000', 'stroke-width': s }));
     if (m.val) inner.appendChild(svgEl('circle', { cx: lw / 2, cy: lh / 2, r: r * .45, fill: '#000' }));
@@ -188,15 +189,15 @@ function ffDraw(v, m, svg) {
   g.appendChild(inner);
   // The field's name, while a form tool is chosen (not part of the PDF)
   if (!flat) g.appendChild(ffTag(x, y, m.name));
-  if (selMark && selMark.id === m.id) for (const [k, [hx, hy]] of pts.entries()) {
-    const hd = svgEl('rect', { class: 'ff-handle', x: hx - 5, y: hy - 5, width: 10, height: 10, rx: 2 });
+  if (!v.thumb && selMark && selMark.id === m.id) for (const [k, [hx, hy]] of pts.entries()) {
+    const hd = svgEl('rect', { class: 'ff-handle ui-only', x: hx - 5, y: hy - 5, width: 10, height: 10, rx: 2 });
     hd.addEventListener('pointerdown', (e) => ffResize(e, v, m, k));
     g.appendChild(hd);
   }
   return g;
 }
 function ffTag(x, y, name) {
-  const t = svgEl('g', { class: 'ff-tag', transform: `translate(${x} ${Math.max(0, y - 15)})` });
+  const t = svgEl('g', { class: 'ff-tag ui-only', transform: `translate(${x} ${Math.max(0, y - 15)})` });
   t.appendChild(svgEl('rect', { x: 0, y: 0, width: String(name).length * 6.3 + 8, height: 14, rx: 3 }));
   const tx = svgEl('text', { x: 4, y: 10.5 }); tx.textContent = name; t.appendChild(tx);
   return t;

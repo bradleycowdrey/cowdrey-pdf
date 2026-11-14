@@ -2614,9 +2614,10 @@ async function drawThumb(t) {
   t.dataset.sig = sig;
 }
 // Draws the page's layers (made by the same code as on the big page, at the thumbnail's scale) onto `g`.
-async function thumbOverlays(e, n, page, vp, g) {
+// design: false leaves out the page design (watermark, header…), for a preview that draws its own.
+async function thumbOverlays(e, n, page, vp, g, { design = true } = {}) {
   const marks = doc.marks[pageKey(e)] || [];
-  if (!marks.length && !(doc.marks.__doc || []).length) return;
+  if (!marks.length && !(design && (doc.marks.__doc || []).length)) return;
   if (marks.some((m) => m.type === 'te') && !page._cmapValue) { try { page._cmapValue = await contentMap(page); } catch {} }
   const el = document.createElement('div');
   el.dataset.n = n; el.setAttribute('aria-hidden', 'true');
@@ -2627,13 +2628,14 @@ async function thumbOverlays(e, n, page, vp, g) {
     // Drawn at the thumbnail's scale. What is selected stays so (features keep their own state, a crop under way…);
     // a selection's outline is a page style, which a picture of the layer does not have.
     const keep = scale; scale = vp.scale;
-    try { drawMarks(v); for (const f of FEATURE.thumbLayers) { try { f(v); } catch (err) { console.warn(err); } } }
+    try { drawMarks(v); if (design) for (const f of FEATURE.thumbLayers) { try { f(v); } catch (err) { console.warn(err); } } }
     finally { scale = keep; }
     // In the page's order: what goes under the text (blended with it), the mark-up, then what goes over everything.
     const layers = [...el.querySelectorAll(':scope > svg')].sort((a, b) => thumbZ(a) - thumbZ(b));
     for (const svg of layers) {
       if (!svg.childElementCount) continue;
       const copy = svg.cloneNode(true);
+      thumbInline(svg, copy);
       copy.setAttribute('xmlns', NS); copy.setAttribute('width', g.canvas.width); copy.setAttribute('height', g.canvas.height);
       copy.setAttribute('viewBox', `0 0 ${vp.width} ${vp.height}`);
       const img = new Image();
@@ -2646,6 +2648,31 @@ async function thumbOverlays(e, n, page, vp, g) {
   } finally { el.remove(); }
 }
 const thumbZ = (svg) => (svg.classList.contains('pd-under') ? 1 : svg.classList.contains('marks') ? 4 : 5);
+/* A layer drawn as a picture has none of the page's styles. So each shape gets the look the page gives it written onto
+   it, and what the page hides, or what only helps while editing (class ui-only: a field's name tag, handles, a link's
+   outline), is left out. Inside clip paths and other definitions nothing is changed. */
+const THUMB_PROPS = ['white-space', 'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-dasharray', 'opacity', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'mix-blend-mode'];
+const THUMB_DEFS = /^(defs|clipPath|mask|pattern|linearGradient|radialGradient|filter|marker|symbol|title|desc|style|metadata)$/;
+function thumbInline(svg, copy) {
+  const from = [...svg.querySelectorAll('*')], to = [...copy.querySelectorAll('*')], gone = [];
+  for (let k = 0; k < from.length; k++) {
+    const a = from[k], b = to[k]; if (!b) break;
+    if (a.closest('defs, clipPath, mask, pattern, linearGradient, radialGradient, filter, marker, symbol') || THUMB_DEFS.test(a.localName)) continue;
+    if (a.classList.contains('ui-only')) { gone.push(b); continue; }
+    const cs = getComputedStyle(a);
+    if (cs.display === 'none') { gone.push(b); continue; }
+    const st = [];
+    for (const p of THUMB_PROPS) {
+      const val = cs.getPropertyValue(p); if (!val) continue;
+      if ((p === 'mix-blend-mode' || p === 'white-space') && val === 'normal') continue;
+      if (p === 'stroke-dasharray' && val === 'none') continue;
+      st.push(`${p}:${val}`);
+    }
+    b.setAttribute('style', st.join(';'));
+    b.removeAttribute('class');
+  }
+  for (const b of gone) b.remove();
+}
 // After a change, undo or redo, the thumbnails whose page changed are drawn again (a moment later, once).
 let thumbTimer;
 function thumbsLater() { clearTimeout(thumbTimer); thumbTimer = setTimeout(thumbsRefresh, 300); }

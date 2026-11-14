@@ -93,8 +93,9 @@ async function lnkHit(v, x, y) {
 // with the Select tool and the outlines of the PDF's own links.
 FEATURE.markTypes.link = {
   draw(v, m) {
+    if (v.thumb) return null; // only shown with the Link tool, never in a thumbnail
     const b = lnkScreenBox(v, lnkRect(m));
-    return svgEl('rect', { class: 'lnk-box', x: b.left, y: b.top, width: b.width, height: b.height, rx: 2 });
+    return svgEl('rect', { class: 'lnk-box ui-only', x: b.left, y: b.top, width: b.width, height: b.height, rx: 2 });
   },
   move(m, o, dx, dy) { m.x1 = o.x1 + dx; m.x2 = o.x2 + dx; m.y1 = o.y1 + dy; m.y2 = o.y2 + dy; },
 };
