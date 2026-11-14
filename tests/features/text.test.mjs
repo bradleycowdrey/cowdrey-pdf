@@ -195,6 +195,30 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('text: on a rotated page a paragraph is edited, centred and saved along the page\'s own lines', async () => {
+    const p = await open(); await openPdf(p, file, 'Notes.pdf');
+    await p.evaluate(() => window.__cowdreyPdf.run('rotR')); await p.waitForTimeout(500);
+    await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode')); await p.waitForTimeout(300);
+    const [x, y] = await at(p, 120, 667); await p.mouse.click(x, y); await p.waitForSelector('.txt-editor');
+    eq(await p.inputValue('.txt-editor'), PARA.join(' '), 'the whole paragraph');
+    await p.click('.txt-bar [data-tf="center"]');
+    await p.keyboard.press('End'); await p.keyboard.type(' Added at the end of the paragraph, which wraps again.');
+    await shot(p, 'rotated-editing.png');
+    await p.keyboard.press('Control+Enter'); await p.waitForTimeout(300);
+    const [m] = await allMarks(p);
+    eq([m.type, m.align], ['tpara', 'center']);
+    ok(m.lines.length >= 5, 'wrapped again: ' + JSON.stringify(m.lines));
+    const out = await savedOf(p), d = await PDFDocument.load(out);
+    eq(d.getPage(0).getRotation().angle % 360, 90, 'the page stays rotated');
+    await reopen(p, out);
+    const it = (await items(p, 0)).filter((i) => i.y < 690 && i.y > 570);
+    const text = it.map((i) => i.s).join(' ');
+    ok(text.includes('wraps again') && !/June\.$/.test(text.trim()), text);
+    ok(it.every((i) => Math.abs(i.x + i.w / 2 - (72 + m.wrap / 2)) < 2), 'centred in the block: ' + JSON.stringify(it));
+    await shot(p, 'rotated-saved.png');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('text: the format bar fits a phone screen', async () => {
     const p = await open({ width: 390, height: 844, touch: true }); await openPdf(p, file, 'Notes.pdf');
     await p.evaluate(() => window.__cowdreyPdf.run('txtParaMode'));

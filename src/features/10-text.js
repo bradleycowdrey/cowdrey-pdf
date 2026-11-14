@@ -354,6 +354,12 @@ const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic:
 const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align'].every((k) => String(a[k]) === String(b[k]));
 const txtCss = (fam, f, px) => `${f.bold ? 'bold ' : ''}${f.italic ? 'italic ' : ''}${px}px ${cssFamily(fam)}`;
 
+// The editor types in the page's own font (as pdf.js loaded it) unless bold or italic changes it, so it wraps as the result will.
+function txtParaFont(v, m, f, px) {
+  const cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.src[0].tm));
+  const own = L && !m.ocr && !m.type3 && f.bold === m.base.bold && f.italic === m.base.italic && document.fonts.check(`${px}px "${L.fontName}"`);
+  return own ? `${px}px "${L.fontName}", ${cssFamily(m.fam)}` : txtCss(m.fam, f, px);
+}
 // A paragraph (tpara) in the editor. isNew: the block isn't a mark yet; absorb: te marks it replaces.
 function txtEditPara(v, m, isNew, absorb = []) {
   const fmt = txtFmtOf(m);
@@ -364,7 +370,7 @@ function txtEditPara(v, m, isNew, absorb = []) {
       const F = txtFrame({ ...m, size: f.size }), px = f.size * scale, lh = F.lead * scale;
       const [ox, oy] = toView(v, ...F.o), [ax, ay] = toView(v, F.o[0] + F.u[0], F.o[1] + F.u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
       const base = (m.wrap ? lh : px * 1.25) / 2 + .35 * px;
-      Object.assign(ta.style, { left: ox + 'px', top: (oy - base) + 'px', font: txtCss(m.fam, f, px), lineHeight: (m.wrap ? lh : px * 1.25) + 'px', color: f.color, background: m.src[0].bg, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${base}px`, transform: `rotate(${ang}deg)` });
+      Object.assign(ta.style, { left: ox + 'px', top: (oy - base) + 'px', font: txtParaFont(v, m, f, px), lineHeight: (m.wrap ? lh : px * 1.25) + 'px', color: f.color, background: m.src[0].bg, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${base}px`, transform: `rotate(${ang}deg)` });
       if (m.wrap) ta.style.width = (m.wrap * scale + 3) + 'px';
     },
     done(text, f) {
