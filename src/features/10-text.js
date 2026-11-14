@@ -265,7 +265,8 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   bar.innerHTML = [
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
-    `<span class="txt-grp">${TXT_SWATCHES.map((c) => `<button type="button" class="swatch txt-sw" data-tf="color" data-c="${c}" style="background:${c}" title="Colour" aria-label="Colour ${c}"></button>`).join('')}<input type="color" data-tf="pick" title="More colours" aria-label="More colours"></span>`,
+    `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
+    `<span class="txt-grp txt-cols">${TXT_SWATCHES.map((c) => `<button type="button" class="swatch txt-sw" data-tf="color" data-c="${c}" style="background:${c}" title="Colour" aria-label="Colour ${c}"></button>`).join('')}<input type="color" data-tf="pick" title="More colours" aria-label="More colours"></span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
   ].join('');
@@ -273,6 +274,7 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     $('.txt-size', bar).textContent = txtRound(fmt.size);
     $$('[data-tf="color"]', bar).forEach((b) => b.setAttribute('aria-pressed', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
     $('[data-tf="pick"]', bar).value = /^#[0-9a-f]{6}$/i.test(fmt.color) ? fmt.color : '#111111';
+    $('.txt-dot', bar).style.background = fmt.color;
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
     for (const k of ['left', 'center', 'right']) { const b = $(`[data-tf="${k}"]`, bar); if (b) b.setAttribute('aria-pressed', (fmt.align || 'left') === k); }
     const s = $('[data-tf="fam"]', bar); if (s) s.value = fmt.famPick || fmt.fam || 'sans';
@@ -286,7 +288,8 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     const k = b.dataset.tf, step = fmt.size < 12 ? .5 : 1;
     if (k === 'smaller') fmt.size = Math.max(4, txtRound(fmt.size - step));
     else if (k === 'bigger') fmt.size = Math.min(200, txtRound(fmt.size + step));
-    else if (k === 'color') fmt.color = b.dataset.c;
+    else if (k === 'colors') { const o = bar.classList.toggle('txt-show-cols'); b.setAttribute('aria-expanded', o); refocus && refocus(); return; }
+    else if (k === 'color') { fmt.color = b.dataset.c; bar.classList.remove('txt-show-cols'); $('.txt-colbtn', bar).setAttribute('aria-expanded', 'false'); }
     else if (k === 'bold' || k === 'italic' || k === 'underline') fmt[k] = !fmt[k];
     else if (k === 'left' || k === 'center' || k === 'right') fmt.align = k;
     sync(); onChange(fmt); refocus && refocus();
@@ -312,7 +315,8 @@ function txtPlaceBar(v, target) {
   const bar = txtBar; if (!bar || !target.isConnected) return;
   const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
   const left = Math.max(4, Math.min(er.left - pr.left, pr.width - bw - 4));
-  let top = er.top - pr.top - bh - 10; if (top < 4) top = er.bottom - pr.top + 10;
+  const vt = viewer.getBoundingClientRect().top;
+  let top = er.top - pr.top - bh - 10; if (top < 4 || pr.top + top < vt + 4) top = er.bottom - pr.top + 10;
   bar.style.left = left + 'px'; bar.style.top = top + 'px';
 }
 function txtHideBar() { if (txtBar) { txtBar.remove(); txtBar = null; } }
@@ -450,6 +454,11 @@ async function txtStartPara(v, L) {
     tes.push(te || await txtTeFor(v, l, cm));
   }
   const m = txtNewPara(tes, B.wrap, B.lead);
+  // The block is as wide as its widest line measured the way it is drawn again (kerning and spacing make that a
+  // little wider than in the PDF at times), so each line that fitted still fits and only real overflow re-wraps.
+  const meas = txtMeasurer(v.page, m), f0 = lineFrame(m.src[0]);
+  const left = (s) => (s.tm[4] - f0.o[0]) * f0.u[0] + (s.tm[5] - f0.o[1]) * f0.u[1];
+  m.wrap = Math.max(m.wrap, ...m.src.map((s) => left(s) + meas(s.orig))) + Math.max(1, f0.size * .1);
   m.text = txtJoin(tes.map((t) => t.text));
   txtRelayout(v.page, m);
   txtEditPara(v, m, true, absorb);
@@ -489,7 +498,7 @@ openLineEditor = function (v, m, isNew) {
   txtLine = { le, base, fmt: { ...base } };
   txtShowBar(v, le.ed, txtLine.fmt, { align: false }, (f) => {
     const px = f.size * scale, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, [, oy] = toView(v, m.tm[4], m.tm[5]);
-    Object.assign(le.ed.style, { font: txtCss(m.fam, f, px), color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
+    Object.assign(le.ed.style, { font: lineFont(v, m, px, f.bold, f.italic), color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
   }, () => le.ed.focus({ preventScroll: true }));
 };
 const txtCoreCloseLine = closeLineEditor;
@@ -731,6 +740,19 @@ addStyle(`
 .txt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 6px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; font: 13px/1 var(--font-ui); color-scheme: normal; }
 .txt-bar.floating { position: absolute; z-index: 8; box-shadow: 0 8px 28px rgba(0,0,0,.22); max-width: calc(100% - 8px); }
 .txt-slot .txt-bar { margin: 4px 0 2px; }
+.txt-bar .txt-colgrp { display: none; }
+.txt-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), 0 0 0 2px var(--surface), 0 0 0 3px var(--line); }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  /* Phones: one row; the colours open from one button */
+  .txt-bar.floating { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
+  .txt-bar.floating::-webkit-scrollbar { display: none; }
+  .txt-bar.floating .txt-grp { flex: none; }
+  .txt-bar.floating .txt-colgrp { display: inline-flex; }
+  .txt-bar.floating .txt-cols { display: none; }
+  .txt-bar.floating.txt-show-cols .txt-cols { display: inline-flex; }
+  .txt-bar.floating.txt-show-cols .txt-grp:not(.txt-cols):not(.txt-colgrp) { display: none; }
+  .txt-bar.floating .txt-sw { width: 26px; height: 26px; }
+}
 .txt-grp { display: inline-flex; align-items: center; gap: 2px; padding-right: 6px; border-right: 1px solid var(--line); }
 .txt-grp:last-child { border-right: 0; padding-right: 0; }
 .txt-b { border: 0; background: none; color: var(--ink); width: 30px; height: 30px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; padding: 0; }

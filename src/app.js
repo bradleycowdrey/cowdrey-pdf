@@ -240,8 +240,10 @@ async function renderView(v) {
   const pd = pdfDocs.get(v.entry.src);
   const canvasMap = new Map(); // pdf.js draws form widgets' looks (a checkbox ticked or not) here, for the form layer
   try {
-    v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage });
+    const skip = await imageSkip(v); if (stale()) return;
+    v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage, operationsFilter: skip.filter });
     await v.task.promise;
+    v.imgSig = skip.sig; v.imgHidden = skip.hidden;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); }
   v.task = null;
   if (stale()) return;
@@ -271,11 +273,43 @@ async function renderView(v) {
       al.addEventListener('change', () => setSaved(false));
     }
   } catch (e) { console.warn('annotation layer', e); }
+  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
   if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   if (stale()) return;
   drawMarks(v);
   for (const f of FEATURE.afterRender) { try { f(v); } catch (e) { console.warn(e); } }
   if (findState.q) paintFind(v);
+}
+// Pictures moved or deleted with Edit PDF are left out when the page is drawn (so nothing has to be painted over
+// them, which would also hide what is drawn on top of them, such as text over a background picture).
+const imageSig = (v) => marksOf(v.entry).filter((m) => m.type === 'ie').map((m) => m.n).sort((a, b) => a - b).join(',');
+async function imageSkip(v) {
+  const sig = imageSig(v), hidden = new Set();
+  if (!sig) return { sig, hidden, filter: null };
+  let cm; try { cm = await contentMap(v.page); } catch { return { sig, hidden, filter: null }; }
+  const raws = new Set();
+  for (const n of sig.split(',').map(Number)) { const im = cm.images[n]; if (im && im.raw != null) { raws.add(im.raw); hidden.add(n); } }
+  const O = pdfjs.OPS, skipAt = new Set(); let seen = 0, k = -1;
+  const filter = (i, ol) => {
+    for (; seen <= i && seen < ol.fnArray.length; seen++) { const fn = ol.fnArray[seen]; if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) { k++; if (raws.has(k)) skipAt.add(seen); } }
+    return !skipAt.has(i);
+  };
+  return { sig, hidden, filter };
+}
+// The page drawn again, off screen, once the pictures to leave out change; then swapped in.
+async function repaintCanvas(v) {
+  const old = v.el.querySelector(':scope > canvas.pdf'); if (!old || v.repainting) return;
+  v.repainting = true;
+  const token = v.token, ratio = Math.min(window.devicePixelRatio || 1, 2), pd = pdfDocs.get(v.entry.src);
+  try {
+    const skip = await imageSkip(v);
+    const c = document.createElement('canvas'); c.className = 'pdf'; c.width = old.width; c.height = old.height;
+    await v.page.render({ annotationCanvasMap: new Map(), canvas: c, canvasContext: c.getContext('2d'), viewport: v.viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage, operationsFilter: skip.filter }).promise;
+    if (v.token !== token || !old.isConnected) return;
+    old.replaceWith(c); old.width = old.height = 0;
+    v.imgSig = skip.sig; v.imgHidden = skip.hidden;
+  } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); } finally { v.repainting = false; }
+  if (v.token === token) { if (imageSig(v) !== v.imgSig) repaintCanvas(v); else drawMarks(v); }
 }
 // Pages far from view give their drawing back, so a long PDF does not use more memory the further you scroll:
 // pages within KEEP_NEAR pages of those in view (and within a screen or two of it) stay drawn; the rest keep only
@@ -448,6 +482,7 @@ function drawMarks(v) {
   }
   svg.setAttribute('viewBox', `0 0 ${v.viewport.width} ${v.viewport.height}`);
   svg.innerHTML = '';
+  if (v.rendered && v.imgSig != null && imageSig(v) !== v.imgSig) repaintCanvas(v);
   const rotNow = totalRot(v);
   const all = marksOf(v.entry);
   const under = (x) => CONTENT_TYPES.has(x.type) || !!(FEATURE.markTypes[x.type] && FEATURE.markTypes[x.type].under);
@@ -490,12 +525,39 @@ function drawMarks(v) {
 }
 function redrawPage(entry) { for (const v of views) if (v.entry === entry && v.rendered) drawMarks(v); }
 function snapshot() { return JSON.stringify({ pages: doc.pages, marks: doc.marks }); }
-function changed(before) {
+// Each step of undo has a name ("Undo Watermark"): the one given, or worked out from what changed.
+function changed(before, what) {
   if (kbPlace) kbPlaced();
-  undoStack.push(before); if (undoStack.length > 100) undoStack.shift();
+  let name = what; if (!name) { try { name = changeName(before); } catch { name = ''; } }
+  undoStack.push({ s: before, what: name || 'Change' }); if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
   setSaved(false); persist(); refreshRibbon();
 }
+const CHANGE_NAMES = { te: 'Text edit', tpara: 'Text edit', ie: 'Picture', erase: 'Erase', ae: 'Comment', hl: 'Highlight', ink: 'Drawing', rect: 'Rectangle', text: 'Text box', note: 'Note', img: 'Picture', pic: 'Picture', link: 'Link', lnkx: 'Link', redact: 'Redaction', cmMarkup: 'Text mark-up', cmShape: 'Shape', cmCallout: 'Callout', cmType: 'Typewriter text', cmStamp: 'Stamp', cmReply: 'Reply', ff: 'Form field', ffmod: 'Form field', ffflat: 'Flatten form', file: 'Attachment', docinfo: 'Document properties', bookmarks: 'Bookmarks', protsec: 'Security', pd_watermark: 'Watermark', pd_background: 'Background', pd_headfoot: 'Header & footer', pd_bates: 'Bates numbering' };
+const MOVE_KEYS = new Set(['x', 'y', 'x1', 'y1', 'x2', 'y2', 'pts', 'rects', 'quads', 'mat', 'tx', 'ty', 'dx', 'dy', 'rect']);
+function changeName(before) {
+  const o = JSON.parse(before), a = o.pages, b = doc.pages;
+  if (a.length !== b.length) return a.length < b.length ? 'Insert pages' : 'Delete pages';
+  const key = (e) => e.src + ':' + e.i;
+  if (a.some((e, k) => key(e) !== key(b[k]))) return 'Move pages';
+  for (let k = 0; k < a.length; k++) { const x = a[k], y = b[k]; if ((x.rot || 0) !== (y.rot || 0)) return 'Rotate pages'; if (JSON.stringify(x.crop || null) !== JSON.stringify(y.crop || null)) return 'Crop'; }
+  const flat = (marks) => { const m = new Map(); for (const list of Object.values(marks || {})) for (const x of list || []) if (x && x.id) m.set(x.id, x); return m; };
+  const was = flat(o.marks), now = flat(doc.marks);
+  const nameOf = (m) => (m.type === 'cmShape' && m.kind ? m.kind[0].toUpperCase() + m.kind.slice(1) : CHANGE_NAMES[m.type] || (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].label) || 'Change');
+  const low = (n) => n.replace(/^[A-Z](?![A-Z])/, (c) => c.toLowerCase());
+  for (const [id, m] of now) {
+    const p = was.get(id);
+    if (!p) return m.type === 'ie' && m.deleted ? 'Delete picture' : m.type === 'ae' && m.deleted ? 'Delete comment' : nameOf(m);
+    if (JSON.stringify(p) === JSON.stringify(m)) continue;
+    if (m.deleted && !p.deleted) return 'Delete ' + low(nameOf(m));
+    const diff = Object.keys({ ...p, ...m }).filter((k) => JSON.stringify(p[k]) !== JSON.stringify(m[k]));
+    return diff.length && diff.every((k) => MOVE_KEYS.has(k)) ? 'Move ' + low(nameOf(m)) : nameOf(m);
+  }
+  for (const [id, m] of was) if (!now.has(id)) return (m.type === 'te' || m.type === 'tpara') ? 'Text edit' : 'Delete ' + low(nameOf(m));
+  return 'Change';
+}
+const undoName = () => (undoStack.length ? undoStack[undoStack.length - 1].what : '');
+const redoName = () => (redoStack.length ? redoStack[redoStack.length - 1].what : '');
 function restore(s, layout) {
   const o = JSON.parse(s); doc.pages = o.pages; doc.marks = o.marks; selMark = null; selContent = null;
   syncHiddenComments();
@@ -503,13 +565,15 @@ function restore(s, layout) {
   if (!layout && S.side === 'outline') renderSide(); // bookmarks are kept with the marks
   setSaved(false); persist(); refreshRibbon();
 }
-function undo() { if (!undoStack.length) return; const now = snapshot(); const prev = undoStack.pop(); redoStack.push(now); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); }
-function redo() { if (!redoStack.length) return; const now = snapshot(); const next = redoStack.pop(); undoStack.push(now); restore(next, true); }
+function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
+function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
   if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
-  if (tool === 'edit') return onEditDown(e, v);
+  // A click on the page takes the focus off the ribbon, so Space or typing never runs the tool's button again.
+  if (tool !== 'select') { const a = document.activeElement; if (!a || !(a === viewer || viewer.contains(a))) viewer.focus({ preventScroll: true }); }
+  if (tool === 'edit') return editDownBusy(e, v);
   if (tool === 'erase') return startErase(e, v);
   if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
   const hit = e.target.closest('.mk');
@@ -750,6 +814,8 @@ function setTool(t) {
   if (t in COLOR_TOOLS) S.colorTool = t;
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
+  // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
+  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
   if (t === 'edit' && was !== 'edit') toast(coarse() ? 'Tap text to change it, or a picture or comment to move it. Undo takes a change back.' : `Click text to change it, or a picture or comment to move it. Esc keeps a change; ${fmtKey('Mod-z')} undoes it.`);
   if (t === 'erase' && was !== 'erase') toast('Drag over anything to erase it');
   refreshRibbon();
@@ -803,7 +869,7 @@ function contentMap(page) {
       page.getAnnotations({ intent: 'display' }).catch(() => []),
     ]);
     const O = pdfjs.OPS, glyphs = new Map(), images = [], stack = [], invisible = new Set();
-    let font = null, ctm = [1, 0, 0, 1, 0, 0], mode = 0;
+    let font = null, ctm = [1, 0, 0, 1, 0, 0], mode = 0, raw = -1;
     for (let i = 0; i < ops.fnArray.length; i++) {
       const fn = ops.fnArray[i], a = ops.argsArray[i];
       if (fn === O.setFont) font = a[0];
@@ -819,9 +885,10 @@ function contentMap(page) {
       else if (fn === O.paintFormXObjectBegin) { stack.push([ctm, mode]); if (a && a[0]) ctm = mul(a[0], ctm); }
       else if (fn === O.paintFormXObjectEnd) [ctm, mode] = stack.pop() || [ctm, mode];
       else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) {
+        raw++;
         const quad = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(ctm, x, y));
         const [x0, y0, x1, y1] = quadBox(quad);
-        if (x1 - x0 > 2 && y1 - y0 > 2) images.push({ n: images.length, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad, mat: ctm.slice() });
+        if (x1 - x0 > 2 && y1 - y0 > 2) images.push({ n: images.length, raw, objId: fn === O.paintImageXObject ? a[0] : null, inline: fn === O.paintInlineImageXObject ? a[0] : null, quad, mat: ctm.slice() });
       }
     }
     // Lines: neighbouring pieces of text on one baseline, in one font and size, joined.
@@ -948,7 +1015,7 @@ function drawContentMark(v, m, svg) {
   }
   if (m.type === 'ie') {
     const g = svgEl('g', { class: 'mk' });
-    g.appendChild(poly(m.quad, m.bg));
+    if (!(v.imgHidden && v.imgHidden.has(m.n))) g.appendChild(poly(m.quad, m.bg));
     if (!m.deleted && m.data) {
       // The picture's top-left, top-right and bottom-left corners on screen give the SVG matrix.
       const o = toView(v, ...apply(m.mat, 0, 1)), x = toView(v, ...apply(m.mat, 1, 1)), y = toView(v, ...apply(m.mat, 0, 0));
@@ -978,6 +1045,44 @@ function rerenderView(v) { v.rendered = false; v.token = (v.token || 0) + 1; v.e
 
 // The Edit tool.
 let selContent = null; // { v, kind: 'image' | 'annot', im?, a?, mark? }
+// The first click on a page can take a moment while its text is read. Meanwhile the cursor shows it is busy, and
+// keys typed are kept and given to the editor once it opens (nothing typed goes to the ribbon or is lost).
+let editKeys = null;
+async function editDownBusy(e, v) {
+  if (editKeys) editReady();
+  const keys = editKeys = [];
+  const kh = (ev) => {
+    if (editKeys !== keys || ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
+    if (typingIn(ev.target) || (ev.target.closest && ev.target.closest('dialog'))) return;
+    if (ev.key.length === 1 || /^(Backspace|Delete|Enter|Escape|Home|End|ArrowLeft|ArrowRight)$/.test(ev.key)) { keys.push(ev.key); ev.preventDefault(); ev.stopPropagation(); }
+  };
+  keys.off = () => window.removeEventListener('keydown', kh, true);
+  window.addEventListener('keydown', kh, true);
+  app.dataset.busy = '';
+  try { await onEditDown(e, v); } finally { if (editKeys === keys) editReady(); }
+}
+// The editor is open (or nothing will open): hand it the keys typed while waiting.
+function editReady() {
+  const keys = editKeys; if (!keys) return;
+  editKeys = null; keys.off(); delete app.dataset.busy;
+  const el = document.activeElement;
+  if (!keys.length || !el || !el.matches('.line-editor, .txt-editor')) return;
+  const field = el.tagName === 'TEXTAREA', sel = getSelection();
+  for (const k of keys) {
+    if (!el.isConnected || document.activeElement !== el) break;
+    if (k.length === 1) document.execCommand('insertText', false, k);
+    else if (k === 'Backspace') document.execCommand('delete');
+    else if (k === 'Delete') document.execCommand('forwardDelete');
+    else if (k === 'Enter' || k === 'Escape') el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    else if (field) {
+      const n = el.value.length, a = el.selectionStart, b = el.selectionEnd;
+      const to = k === 'End' ? n : k === 'Home' ? 0 : k === 'ArrowRight' ? (a !== b ? b : Math.min(n, b + 1)) : (a !== b ? a : Math.max(0, a - 1));
+      el.setSelectionRange(to, to);
+    } else if (k === 'End' || k === 'Home') { sel.selectAllChildren(el); k === 'End' ? sel.collapseToEnd() : sel.collapseToStart(); }
+    else if (!sel.isCollapsed) k === 'ArrowRight' ? sel.collapseToEnd() : sel.collapseToStart();
+    else sel.modify('move', k === 'ArrowRight' ? 'forward' : 'backward', 'character');
+  }
+}
 async function onEditDown(e, v) {
   e.preventDefault();
   closeLineEditor(true);
@@ -1000,7 +1105,7 @@ async function onEditDown(e, v) {
   if (hit.kind === 'text') { selectContent(null); return editLine(v, hit.L, hit.mark); }
   selectContent({ v, ...hit });
   if (hit.kind === 'image') return startImageDrag(e, v, selContent, 'move');
-  if (hit.kind === 'annot' && e.detail === 2) return editComment(v, hit.a, hit.mark);
+  if (hit.kind === 'annot' && e.detail === 2) { editReady(); return editComment(v, hit.a, hit.mark); }
 }
 function selectContent(s) {
   selContent = s;
@@ -1115,7 +1220,77 @@ async function editLine(v, L, mark) {
     const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
     m = { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : fg, codes, ocr, type3: !!fo.isType3Font };
   }
+  await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
   openLineEditor(v, m, !mark);
+}
+// The line editor types in the PDF's own font. pdf.js loads each font with its letters moved to other code points,
+// so a copy of the font is made whose character map gives each letter (as typed) the glyph pdf.js drew it with.
+// Until that copy is ready, or for bold or italic the font isn't, the editor uses the closest standard font.
+const ownFaces = new Map(); // page font name + page -> Promise<family | null>
+function ownFace(page, name, map) {
+  const key = name + '@' + (page._pageIndex ?? page.pageNumber);
+  if (!ownFaces.has(key)) ownFaces.set(key, (async () => {
+    const fo = await fontObj(page, name);
+    const data = fo && fo.data; if (!data || !data.length || fo.isType3Font) return null;
+    const out = remapCmap(data instanceof Uint8Array ? data : new Uint8Array(data), [...map].filter(([, g]) => g.inFont && g.fc).map(([u, g]) => [u.codePointAt(0), g.fc.codePointAt(0)]));
+    if (!out) return null;
+    const family = 'cpdf-own-' + ownFaces.size;
+    const face = new FontFace(family, out); await face.load(); document.fonts.add(face);
+    return family;
+  })().catch(() => null));
+  return ownFaces.get(key);
+}
+// A font file (TrueType or OpenType) with its character map replaced: each [code point, old code point] pair takes
+// the glyph the old code point had. Returns null when the file can't be read.
+function remapCmap(buf, pairs) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength), n = dv.getUint16(4);
+  let rec = -1;
+  for (let i = 0; i < n; i++) if (String.fromCharCode(buf[12 + 16 * i], buf[13 + 16 * i], buf[14 + 16 * i], buf[15 + 16 * i]) === 'cmap') rec = 12 + 16 * i;
+  if (rec < 0) return null;
+  const off = dv.getUint32(rec + 8), old = new Map(), put = (c, g) => { if (g && !old.has(c)) old.set(c, g); };
+  for (let k = 0, subs = dv.getUint16(off + 2); k < subs; k++) {
+    const so = off + dv.getUint32(off + 8 + 8 * k), fmt = dv.getUint16(so);
+    if (fmt === 4) {
+      const sx2 = dv.getUint16(so + 6), ends = so + 14, starts = ends + sx2 + 2, deltas = starts + sx2, ranges = deltas + sx2;
+      for (let i = 0; i < sx2 / 2; i++) {
+        const e = dv.getUint16(ends + 2 * i), st = dv.getUint16(starts + 2 * i), d = dv.getUint16(deltas + 2 * i), ro = dv.getUint16(ranges + 2 * i);
+        for (let c = st; c <= e && c !== 0xFFFF; c++) { if (!ro) put(c, (c + d) & 0xFFFF); else { const g = dv.getUint16(ranges + 2 * i + ro + 2 * (c - st)); put(c, g ? (g + d) & 0xFFFF : 0); } }
+      }
+    } else if (fmt === 12) {
+      for (let i = 0, ng = dv.getUint32(so + 12); i < ng; i++) { const a = dv.getUint32(so + 16 + 12 * i), b = dv.getUint32(so + 20 + 12 * i), g = dv.getUint32(so + 24 + 12 * i); for (let c = a; c <= b && c - a < 65536; c++) put(c, g + c - a); }
+    } else if (fmt === 0) { for (let c = 0; c < 256; c++) put(c, buf[so + 6 + c]); }
+    else if (fmt === 6) { const first = dv.getUint16(so + 6); for (let i = 0, cnt = dv.getUint16(so + 8); i < cnt; i++) put(first + i, dv.getUint16(so + 10 + 2 * i)); }
+  }
+  const nm = new Map(); for (const [u, fc] of pairs) if (u < 0xFFFF && old.has(fc) && !nm.has(u)) nm.set(u, old.get(fc));
+  if (!nm.size) return null;
+  // A format 4 map: one segment per letter, then the closing segment.
+  const codes = [...nm.keys()].sort((a, b) => a - b), seg = codes.length + 1, len = 16 + 8 * seg;
+  const t = new DataView(new ArrayBuffer(12 + len));
+  t.setUint16(2, 1); t.setUint16(4, 3); t.setUint16(6, 1); t.setUint32(8, 12);
+  const es = Math.floor(Math.log2(seg)), sr = 2 * 2 ** es;
+  t.setUint16(12, 4); t.setUint16(14, len); t.setUint16(18, seg * 2); t.setUint16(20, sr); t.setUint16(22, es); t.setUint16(24, seg * 2 - sr);
+  const E = 26, S = E + 2 * seg + 2, D = S + 2 * seg;
+  codes.forEach((c, i) => { t.setUint16(E + 2 * i, c); t.setUint16(S + 2 * i, c); t.setUint16(D + 2 * i, (nm.get(c) - c) & 0xFFFF); });
+  t.setUint16(E + 2 * codes.length, 0xFFFF); t.setUint16(S + 2 * codes.length, 0xFFFF); t.setUint16(D + 2 * codes.length, 1);
+  // The new table goes at the end of the file; the table directory points to it.
+  const at = (buf.length + 3) & ~3, outB = new Uint8Array(at + ((t.byteLength + 3) & ~3));
+  outB.set(buf); outB.set(new Uint8Array(t.buffer), at);
+  const ov = new DataView(outB.buffer); let sum = 0;
+  for (let i = 0; i < outB.length - at; i += 4) sum = (sum + ov.getUint32(at + i)) >>> 0;
+  ov.setUint32(rec + 4, sum); ov.setUint32(rec + 8, at); ov.setUint32(rec + 12, t.byteLength);
+  return outB;
+}
+function lineFont(v, m, px, bold = !!m.bold, italic = !!m.italic) {
+  const std = `${bold ? 'bold ' : ''}${italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`;
+  if (m.ocr || m.type3 || bold !== !!m.bold || italic !== !!m.italic) return std;
+  const fam = v.page._ownFace && v.page._ownFace[m.id];
+  return fam ? `${px}px "${fam}", ${cssFamily(m.fam)}` : std;
+}
+// Gets the page's font ready for the line editor; calls back once it is (if it wasn't already).
+function lineFace(v, m, ready) {
+  const cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm)), map = L && cm.glyphs.get(L.fontName);
+  if (!map || m.ocr || m.type3) return Promise.resolve(null);
+  return ownFace(v.page, L.fontName, map).then((fam) => { if (fam) { (v.page._ownFace ||= {})[m.id] = fam; ready && ready(); } return fam; });
 }
 function openLineEditor(v, m, isNew) {
   const { size, u } = lineFrame(m), px = size * scale;
@@ -1126,10 +1301,11 @@ function openLineEditor(v, m, isNew) {
   try { ed.contentEditable = 'plaintext-only'; } catch { ed.contentEditable = 'true'; }
   if (ed.contentEditable !== 'plaintext-only') ed.contentEditable = 'true';
   ed.textContent = m.text;
-  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale + 4) + 'px', font: `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}${px}px ${cssFamily(m.fam)}`, color: m.color, background: m.bg, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` });
+  Object.assign(ed.style, { left: ox + 'px', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', minWidth: (m.width * scale + 4) + 'px', font: lineFont(v, m, px), color: m.color, background: m.bg, transformOrigin: `0 ${asc}px`, transform: `rotate(${ang}deg)` });
   v.el.appendChild(ed);
   editingIds.add(m.id); drawMarks(v);
   lineEditor = { ed, v, m, isNew };
+  if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
   const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
   ed.addEventListener('keydown', (e) => {
@@ -1235,9 +1411,9 @@ function tokenizeContent(s) {
   return out;
 }
 // Walks a content stream with a text and graphics state, and calls back with each text-showing and image operator.
-function walkContent(s, fontWidth, onShow, onImage) {
+function walkContent(s, fontWidth, onShow, onImage, ctm0) {
   const toks = tokenizeContent(s);
-  let ctm = [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, tr = 0;
+  let ctm = ctm0 || [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, tr = 0;
   const gstack = [], ops = []; let operands = [], opStart = null, arrStack = [], bi = null;
   for (const t of toks) {
     if (t.t === 'op') {
@@ -1350,6 +1526,32 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   const cut = [], removed = new Set(), hidden = new Set();
   const xo = (() => { const res = node.Resources && node.Resources(); const x = res && res.lookup(PDFName.of('XObject')); return x instanceof PDFDict ? x : null; })();
   const isImage = (name) => { const o = xo && xo.lookup(PDFName.of(name)); return o && o.dict && String(o.dict.lookup(PDFName.of('Subtype'))) === '/Image'; };
+  const samePic = (q) => { const b = quadBox(q); return pics.find((m) => !removed.has(m.id) && quadBox(m.quad).every((n, k) => Math.abs(n - b[k]) < .75)); };
+  // A picture inside a form (a page background often is): the form is copied without it, and the page draws the copy.
+  let formN = 0;
+  const formCut = (dict, name, ctm, depth) => {
+    const st = dict && dict.lookup(PDFName.of(name));
+    if (!st || !st.dict || depth > 5 || String(st.dict.lookup(PDFName.of('Subtype'))) !== '/Form') return null;
+    const M = st.dict.lookup(PDFName.of('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = out.context.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
+    const R = st.dict.lookup(PDFName.of('Resources')), fx = (R instanceof PDFDict && R.lookup(PDFName.of('XObject'))) || dict;
+    const fxo = fx instanceof PDFDict ? fx : null;
+    let fsrc = text(st); const fcut = [], ids = [];
+    walkContent(fsrc, fontWidth, null, (im) => {
+      const o = !im.inline && fxo && fxo.lookup(PDFName.of(im.name)), sub = im.inline ? '/Image' : o && o.dict && String(o.dict.lookup(PDFName.of('Subtype')));
+      if (sub === '/Image') { const m = samePic([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); } }
+      else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
+    }, mul(fm, ctm));
+    if (!ids.length) return null;
+    fcut.sort((a, b) => b[0] - a[0]);
+    for (const [a, b, keep] of fcut) fsrc = fsrc.slice(0, a) + keep + fsrc.slice(b);
+    const entries = {}; for (const [k, val] of st.dict.entries()) { const n = k.asString().slice(1); if (!['Length', 'Filter', 'DecodeParms'].includes(n)) entries[n] = val; }
+    const bytes = new Uint8Array(fsrc.length); for (let i = 0; i < fsrc.length; i++) bytes[i] = fsrc.charCodeAt(i) & 255;
+    const ref = out.context.register(out.context.flateStream(bytes, entries));
+    let key;
+    if (depth === 0) key = node.newXObject('CPDFFm', ref).toString();
+    else { key = `/CPDFFm${++formN}x${Date.now() % 100000}`; fxo.set(PDFName.of(key.slice(1)), ref); }
+    return { key, ids };
+  };
   try {
     walkContent(src, fontWidth, (op) => {
       // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
@@ -1363,16 +1565,17 @@ async function saveContentEdits(L, out, p, marks, ctx) {
         cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id); break;
       }
     }, (im) => {
-      if (!im.inline && !isImage(im.name)) return;
-      const q = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)), b = quadBox(q);
-      for (const m of pics) { const mb = quadBox(m.quad); if (b.every((n, k) => Math.abs(n - mb[k]) < .75)) { cut.push([im.start, im.end, ' ']); removed.add(m.id); break; } }
+      if (!pics.length) return;
+      if (!im.inline && !isImage(im.name)) { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
+      const m = samePic([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
+      if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
     });
   } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); }
   if (cut.length) {
     cut.sort((a, b) => b[0] - a[0]);
     for (const [a, b, keep] of cut) src = src.slice(0, a) + (keep || ' ') + src.slice(b);
     const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
-    node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
+    node.set(PDFName.of('Contents'), out.context.obj([out.context.register(out.context.flateStream(bytes))])); // an array, as pdf-lib expects once the page has new resources
   }
   // 2. Anything not found there (text inside a form, an erased area) is clipped out.
   // Invisible OCR text was removed, but what shows is the scan under it: that is clipped and covered too.
@@ -2353,8 +2556,9 @@ cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInpu
 cmd('exportImage', { label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
 cmd('exportText', { label: 'Export text (.txt)', icon: 'file-text', enabled: has, run: exportText });
 cmd('print', { label: 'Print…', icon: 'printer', key: 'Mod-p', enabled: has, run: printDoc });
-cmd('undo', { label: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
-cmd('redo', { label: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
+cmd('undo', { get label() { return undoStack.length ? 'Undo ' + undoName() : 'Undo'; }, rlabel: 'Undo', icon: 'undo-2', key: 'Mod-z', enabled: () => undoStack.length > 0, run: undo });
+cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Redo'; }, rlabel: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
+TEST_HOOKS.cmdLabel = (id) => C[id].label;
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
@@ -2726,6 +2930,7 @@ function refreshRibbon() {
   if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
   $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });
+  $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
   scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
@@ -2760,8 +2965,15 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!pop.hidden) closePopover(); else if (app.dataset.sidebar === 'open' && isPhone()) toggleSidebar(false); else if (!$('#findbar').hidden) closeFind(); else if (selContent) selectContent(null); else { setTool('select'); pendingImage = null; selectMark(null); } }
   // Arrow keys move a selected mark (tab lists and menus handle their own arrows before this).
   if (/^Arrow/.test(e.key) && !e.altKey && selMark) { e.preventDefault(); nudgeMark(e.key, e.shiftKey); return; }
-  if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
-  if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
+  // The arrows turn the page only from the page itself: on a button, swatch, tab or menu they stay with it.
+  const a = document.activeElement;
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && a && a.matches && a.matches('[data-color]')) { // colour swatches: move along the row
+    const bs = $$('[data-color]', a.parentElement), n = bs[(bs.indexOf(a) + (e.key === 'ArrowRight' ? 1 : -1) + bs.length) % bs.length];
+    e.preventDefault(); if (n) n.focus(); return;
+  }
+  const onPage = !a || a === document.body || a === viewer || (viewer.contains(a) && !a.closest('button, a, [role], [tabindex]:not(#viewer)'));
+  if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
+  if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
 
 /* ---------------- theme ---------------- */

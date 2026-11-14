@@ -167,6 +167,7 @@ button { font: inherit; color: inherit; }
 .marks text { user-select: none; }
 .app[data-tool="edit"] .marks { cursor: default; }
 .app[data-tool="erase"] .marks { cursor: crosshair; }
+.app[data-busy] .marks, .app[data-busy] .marks * { cursor: progress !important; }
 .marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
 .marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
 .marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
