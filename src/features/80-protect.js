@@ -348,6 +348,14 @@ async function protHitShot(f) {
 /* ----- apply ----- */
 // A mark's rough extent, to find what overlaps a redaction.
 function protMarkBox(m) {
+  // Comments (Comment tab): text mark-up by its quads, boxes by their corners
+  const fr = typeof cmFrame === 'function' && 'rot' in m ? cmFrame(m.x, m.y, m.type === 'cmStamp' ? m.rot + (m.tilt || 0) : m.rot) : null;
+  const tw = (t, size) => size * .55 * Math.max(1, ...String(t || '').split('\n').map((l) => l.length));
+  const cpts = m.quads ? m.quads.flatMap((q) => [[q[0], q[1]], [q[2], q[3]], [q[4], q[5]], [q[6], q[7]]])
+    : fr && m.type === 'cmStamp' ? [fr(-m.bw / 2, -m.bh / 2), fr(m.bw / 2, m.bh / 2), fr(-m.bw / 2, m.bh / 2), fr(m.bw / 2, -m.bh / 2)]
+    : fr && m.type === 'cmCallout' ? [fr(0, 0), fr(m.bw, 0), fr(m.bw, m.bh), fr(0, m.bh), [m.tx, m.ty]]
+    : fr && m.type === 'cmType' ? [fr(0, 0), fr(tw(m.text, m.size), 0), fr(0, m.size * 1.2 * String(m.text || '').split('\n').length), fr(tw(m.text, m.size), m.size * 1.2 * String(m.text || '').split('\n').length)] : null;
+  if (cpts) return quadBox(cpts);
   const pts = m.rects ? m.rects.flatMap((r) => [[r[0], r[1]], [r[2], r[3]]]) : m.pts ? m.pts : 'x1' in m ? [[m.x1, m.y1], [m.x2, m.y2]]
     : m.type === 'note' ? [[m.x, m.y - 22], [m.x + 22, m.y]] : m.type === 'img' ? [[m.x, m.y], [m.x + m.w, m.y + m.h]] : m.type === 'text' ? [[m.x, m.y - m.size * 1.2 * m.text.split('\n').length], [m.x + m.size * .55 * Math.max(...m.text.split('\n').map((l) => l.length)), m.y]] : null;
   return pts && pts.length ? quadBox(pts) : null;
@@ -357,7 +365,7 @@ async function protApply() {
   if (!pend.length) { toast('Mark text or an area for redaction first'); return; }
   const last = S.protRedact || { fill: '#000000', label: '' };
   const swatches = ['#000000', '#FFFFFF', '#E03131'];
-  const r = await protAsk('Apply redactions', `<p>${pend.length === 1 ? 'The marked area is' : `The ${pend.length} marked areas are`} covered with a box. When you save, the text, pictures and drawings under ${pend.length === 1 ? 'it' : 'them'} are taken out of the PDF for good, and comments over ${pend.length === 1 ? 'it' : 'them'} are removed.</p>
+  const r = await protAsk('Apply redactions', `<p>${pend.length === 1 ? 'The marked area is' : `The ${pend.length} marked areas are`} covered with a box, and comments over ${pend.length === 1 ? 'it' : 'them'} are removed now. When you save, the text, pictures and drawings under ${pend.length === 1 ? 'it' : 'them'} are taken out of the PDF for good.</p>
     <div class="prot-fill"><span>Box colour</span>${swatches.map((c) => `<button type="button" class="prot-sw" data-sw="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${last.fill.toUpperCase() === c}"></button>`).join('')}<input type="color" name="fill" value="${esc(last.fill)}" aria-label="Other colour"></div>
     <label class="field"><span>Text on the box (optional)</span><input name="label" type="text" autocomplete="off" placeholder="For example: Redacted" value="${esc(last.label || '')}"></label>`,
   [{ label: 'Cancel' }, { label: 'Apply', value: 'apply', primary: true }], (dlg, upd) => {
@@ -378,6 +386,8 @@ async function protApply() {
       const x = list[k]; if (x.type === 'redact' || CONTENT_TYPES.has(x.type)) continue;
       const b = protMarkBox(x); if (b && boxes.some((bb) => protOverlap(bb, b))) list.splice(k, 1);
     }
+    // and the replies to a comment that went
+    for (let k = list.length - 1; k >= 0; k--) { const x = list[k]; if (x.type === 'cmReply' && x.to && !list.some((y) => y.id === x.to)) list.splice(k, 1); }
     // So do comments from other apps (they are deleted the way the Edit tool deletes them).
     try {
       const cm = await contentMap(await pageOf(e));

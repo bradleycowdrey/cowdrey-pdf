@@ -270,4 +270,20 @@ export default async (h) => {
     for (let k = 1; k < ys.length; k++) ok(Math.abs(ys[k - 1] - ys[k] - 31) < .6, 'lines 31 pt apart, as before: ' + ys);
     eq(p.errors, []); await p.ctx.close();
   });
+  await test('applying redaction takes the comments over it off the screen at once', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="markup"]'); await p.click('[data-cmd="cm_underline"]'); await H.selectText(p, 0, 'Cowdrey.PDF opens', .4); await p.waitForTimeout(200);
+    const [{ type, id: uid }] = await all(p); eq(type, 'cmMarkup');
+    ok(await p.$(`.page[data-n="0"] svg.marks [data-id="${uid}"]`), 'drawn');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_select'));
+    await p.evaluate(() => window.__cowdreyPdf.run('protRedSearch')); await p.fill('#dialog input[name=text]', 'Cowdrey');
+    await H.answer(p, 'Find'); await H.answer(p, 'Mark'); await p.waitForTimeout(300);
+    await p.evaluate(() => window.__cowdreyPdf.run('protRedApply')); await p.waitForSelector('#dialog[open] input[name=label]');
+    ok((await p.textContent('#dialog')).includes('comments over them are removed now'), await p.textContent('#dialog p'));
+    await H.answer(p, 'Apply'); await p.waitForTimeout(500);
+    eq((await all(p)).filter((m) => m.type !== 'redact').map((m) => m.type), [], 'the underline is gone from the page now');
+    ok(!(await p.$(`.page[data-n="0"] svg.marks [data-id="${uid}"]`)), 'not drawn');
+    await shot(p, 'redaction-applied-comments-gone.png');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
