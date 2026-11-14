@@ -2913,7 +2913,10 @@ async function buildPdf(only) {
     for (const h of FEATURE.savePageLate) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
-  if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written
+  // Deleted pages, content streams an edit replaced (the old words would still be readable in the file) and anything
+  // else nothing refers to are not written, in every save path.
+  if (out.flush) await out.flush(); // fonts and pictures are written now, so one that is not used is dropped too
+  saveDropUnused(L, out);
   if (out.getTitle() === undefined) out.setTitle(doc.name); // keep the PDF's own title (or the one set in Document properties)
   out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
