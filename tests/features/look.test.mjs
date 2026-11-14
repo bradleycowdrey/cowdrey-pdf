@@ -55,9 +55,9 @@ export default async (h) => {
 
   await test('look: a phone title cut in the middle has no gap before the kept end', async () => {
     const p = await open({ width: 390, height: 844, touch: true }); await openPdf(p, WORD, 'pdfelement-guide-for-everyone.pdf');
-    const r = await p.evaluate(() => { const a = document.querySelector('#docTitle .dt-a'), b = document.querySelector('#docTitle .dt-b'); return { a: a.textContent, b: b.textContent, gap: b.getBoundingClientRect().left - a.getBoundingClientRect().right, fits: a.scrollWidth <= a.clientWidth, title: document.querySelector('#docTitle').title }; });
-    ok(r.a.endsWith('…'), 'cut: ' + r.a); ok(Math.abs(r.gap) < 1, 'no gap: ' + r.gap); ok(r.fits, 'no second ellipsis');
-    eq(r.title, 'pdfelement-guide-for-everyone');
+    const r = await p.evaluate(() => { const a = document.querySelector('#docTitle .dt-a'), b = document.querySelector('#docTitle .dt-b'); return { cut: a.classList.contains('dt-cut') && getComputedStyle(a, '::after').content, gap: b.getBoundingClientRect().left - a.getBoundingClientRect().right, fits: a.scrollWidth <= a.clientWidth, title: document.querySelector('#docTitle').title, text: document.querySelector('#docTitle').textContent }; });
+    eq(r.cut, '"…"', 'cut in the middle'); ok(Math.abs(r.gap) < 1, 'no gap: ' + r.gap); ok(r.fits, 'no second ellipsis');
+    eq([r.title, r.text], ['pdfelement-guide-for-everyone', 'pdfelement-guide-for-everyone'], 'the whole name is read out');
     // a wider screen shows it all again
     await p.setViewportSize({ width: 1200, height: 844 }); await p.waitForTimeout(300);
     eq(await p.$eval('#docTitle', (t) => t.textContent), 'pdfelement-guide-for-everyone');

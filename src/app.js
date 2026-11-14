@@ -186,14 +186,16 @@ function setTitle() {
 }
 // A name too long for the title bar loses letters from its middle: the ellipsis is put in here, right after the last
 // letter that fits, so the kept end follows it with no gap (the browser's own ellipsis stops at a whole letter and
-// leaves the rest of the width empty).
+// leaves the rest of the width empty). The letters left out stay in the text, hidden, so the name is read out whole.
 function fitTitle() {
   const t = $('#docTitle'), a = $('.dt-a', t), b = $('.dt-b', t); if (!a || !b) return;
-  const full = a.dataset.full ?? a.textContent; a.dataset.full = full; a.textContent = full;
+  const full = a.textContent, cut = (k) => { a.classList.toggle('dt-cut', k < full.length); a.innerHTML = k < full.length ? `${esc(full.slice(0, k))}<span class="dt-x">${esc(full.slice(k))}</span>` : esc(full); };
+  cut(full.length);
   if (a.scrollWidth <= a.clientWidth) return;
   let lo = 1, hi = full.length - 1;
-  while (lo < hi) { const k = (lo + hi + 1) >> 1; a.textContent = full.slice(0, k).trimEnd() + '…'; if (a.scrollWidth <= a.clientWidth) lo = k; else hi = k - 1; }
-  a.textContent = full.slice(0, lo).trimEnd() + '…';
+  while (lo < hi) { const k = (lo + hi + 1) >> 1; cut(k); if (a.scrollWidth <= a.clientWidth) lo = k; else hi = k - 1; }
+  while (lo > 1 && /\s/.test(full[lo - 1])) lo--; // no space before the ellipsis
+  cut(lo);
 }
 window.addEventListener('resize', () => fitTitle());
 document.fonts && document.fonts.ready.then(() => fitTitle());
