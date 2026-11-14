@@ -105,7 +105,7 @@ async function txtTeFor(v, L, cm) {
   const name = String(fo.name || ''), { bg, fg } = sampleColors(v, L.quad);
   const codes = {}; for (const [u, gl] of cm.glyphs.get(L.fontName) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
   const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
-  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
+  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name) || Math.abs(L.tm[2] / (L.tm[3] || 1)) > .1, bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
 }
 const txtCovered = (entry, L) => marksOf(entry).some((m) => m.type === 'tpara' && m.src.some((s) => sameOrigin(s.tm, L.tm)));
 FEATURE.lineTaken = txtCovered; // a line in a rewritten paragraph is not moved by the line before it
@@ -689,9 +689,17 @@ async function txtReplaceItem(entry, it, cm, re, rep, from = 0, limit = Infinity
   if (!n) return 0;
   const list = marksOf(entry);
   if (it.kind === 'para') { it.m.text = text; txtRelayout(await pageOf(entry), it.m); return n; }
-  if (it.te) { if (text === it.te.orig) list.splice(list.indexOf(it.te), 1); else it.te.text = text; return n; }
-  const v = await txtViewOf(entry), te = await txtTeFor(v, it.L, cm);
-  te.text = text; list.push(te); it.te = te;
+  // A run moved along by an earlier replacement on its line is already a mark: that one changes.
+  it.te ||= list.find((m) => m.type === 'te' && sameOrigin(m.tm, it.L.tm));
+  const v = await txtViewOf(entry);
+  let te = it.te;
+  if (te) te.text = text;
+  else { te = await txtTeFor(v, it.L, cm); te.text = text; list.push(te); it.te = te; }
+  // The line keeps its alignment (a centred title stays centred, on the page), and what follows it moves along.
+  v.page._cmapValue ||= cm;
+  const f = teFollowers(v, te); await f.ready;
+  teAlign(v, te, f);
+  if (te.text === te.orig && !te.dx && list.includes(te)) list.splice(list.indexOf(te), 1);
   return n;
 }
 const txtRS = { q: '', with: '', matchCase: false, whole: false, at: null };
