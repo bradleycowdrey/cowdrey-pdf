@@ -131,6 +131,34 @@ export default async (h) => {
     eq(errs(p), []); await p.ctx.close();
   });
 
+  await test('Pictures: an added picture is picked with Edit PDF, flipped and cropped; the saved PDF clips it', async () => {
+    const p = await open(); await openPdf(p);
+    await p.setInputFiles('#imageInput', { name: 'two.png', mimeType: 'image/png', buffer: await png(p, 100, 50, '#0000ff') });
+    await p.waitForTimeout(300);
+    const [ix, iy] = await at(p, 100, 700); await p.mouse.click(ix, iy); await p.waitForTimeout(300);
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+    const [cx, cy] = await at(p, 137, 681); await p.mouse.click(cx, cy); await p.waitForTimeout(300);
+    eq((await sel(p)).kind, 'mark', 'Edit PDF selects the added picture');
+    ok(await p.isVisible('.pic-bar'), 'toolbar');
+    await bar(p, 'picFlipV');
+    near((await sel(p)).mat, [75, 0, 0, -37.5, 100, 700], 'mirrored top to bottom');
+    await bar(p, 'picCrop');
+    const [hx, hy] = await at(p, 175, 662.5), [tx, ty] = await at(p, 137.5, 681.25);
+    await p.mouse.move(hx, hy); await p.mouse.down(); await p.mouse.move(tx, ty, { steps: 6 }); await p.mouse.up();
+    await bar(p, 'picCropApply');
+    const [m] = await all(p);
+    eq(m.type, 'pic'); near(m.crop, [0, 0, .5, .5], 'crop');
+    ok(await p.$('.marks image[clip-path]'), 'clipped on screen');
+    await reopen(p, await savedOf(p));
+    const ops = await p.evaluate(() => window.__cowdreyPdf.picOps(0));
+    const o = ops.find((x) => Math.abs(x.mat[0] - 75) < .6 && Math.abs(x.mat[3] + 37.5) < .6);
+    ok(o, 'saved placement ' + JSON.stringify(ops));
+    near(o.clip, [100, 681.3, 137.5, 700], 'saved clip');
+    const c = await pixel(p, 118, 690); ok(c[2] > 200 && c[0] < 60, 'kept part drawn ' + c);
+    ok((await pixel(p, 160, 670)).every((x) => x > 240), 'cropped-off part is blank');
+    eq(errs(p), []); await p.ctx.close();
+  });
+
   await test('Pictures: the toolbar fits a phone screen and the crop can be cancelled with Escape', async () => {
     const p = await open({ width: 390, height: 844, touch: false }); await openPdf(p, WORD, 'Pelican report.pdf');
     await pickPicture(p);
