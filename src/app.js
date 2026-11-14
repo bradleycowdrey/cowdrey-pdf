@@ -3387,11 +3387,17 @@ function refreshRibbon() {
   }
   const sw = $('#ribbonBody [data-color]') && swatchNow(); $$('#ribbonBody [data-color]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.color === sw));
   // A group of commands that only work on a selection (a picture…) shows only while they can be used.
-  let shift = false;
+  let shift = false, appeared = null;
   $$('#ribbonBody .r-group').forEach((g) => {
     const bs = $$('[data-cmd]', g); if (!bs.length || !bs.every((b) => C[b.dataset.cmd].contextual)) return;
-    const hide = bs.every((b) => b.disabled); if (g.hidden !== hide) { g.hidden = hide; shift = true; }
+    g.classList.add('r-ctx');
+    const hide = bs.every((b) => b.disabled); if (g.hidden !== hide) { g.hidden = hide; shift = true; if (!hide) appeared = g; }
   });
+  // One that appears is scrolled into view, whole (it comes last, so it may start past the edge).
+  if (appeared) {
+    const row = $('#ribbonBody'), r = row.getBoundingClientRect(), b = appeared.getBoundingClientRect();
+    if (b.right > r.right - 8 || b.left < r.left) row.scrollTo({ left: Math.max(0, Math.min(row.scrollLeft + b.left - r.left - 16, row.scrollLeft + b.right - r.right + 16)), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
   if (shift) ribbonEdges();
   $('#saveBtn').disabled = !has();
   $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });

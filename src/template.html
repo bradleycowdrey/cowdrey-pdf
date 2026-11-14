@@ -89,6 +89,9 @@ button { font: inherit; color: inherit; }
 .r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); flex: none; }
 .r-group[hidden] { display: none; }
 .r-group:last-child { border-right: 0; }
+/* a group for what is selected (Picture…): tinted, like a context tab */
+.r-group.r-ctx { border-radius: 8px; border-right: 0; background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 0 2px 0 var(--accent); }
+.r-group.r-ctx .r-label { color: var(--accent); font-weight: 600; }
 .r-items { display: flex; gap: 2px; align-items: center; flex: 1; }
 .r-label { font-size: 11px; line-height: 1.3; color: var(--ink-3); margin-top: 1px; white-space: nowrap; }
 .rb { border: 0; background: none; border-radius: 6px; padding: 3px 6px; display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; align-self: stretch; gap: 2px; min-width: 52px; max-width: 92px; flex: none; cursor: pointer; color: var(--ink); font-size: 12px; }

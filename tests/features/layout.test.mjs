@@ -76,4 +76,16 @@ export default async (h) => {
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.src > 0)), [false, true, false, true, false], 'and one after page 1');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('layout: the Picture group is tinted as a context group and scrolls into view, whole, when a picture is chosen', async () => {
+    for (const o of [{}, { width: 1100, height: 900 }]) {
+      const p = await open(o); await openPdf(p, h.WORD, 'Pelican report.pdf');
+      await p.click('[data-rt="edit"]'); await run(p, 'tool_edit');
+      const [cx, cy] = await p.evaluate(([x, y]) => { const v = window.__cowdreyPdf.views()[0]; const [vx, vy] = v.viewport.convertToViewportPoint(x, y); const r = v.el.getBoundingClientRect(); return [r.left + vx, r.top + vy]; }, [460, 480]);
+      await p.mouse.click(cx, cy); await p.waitForTimeout(900);
+      const g = await p.$eval('#ribbonBody [data-cmd="picRotL"]', (b) => { const g = b.closest('.r-group'), r = g.getBoundingClientRect(), row = document.querySelector('#ribbonBody').getBoundingClientRect(); return [g.hidden, g.classList.contains('r-ctx'), r.left >= row.left - 1 && r.right <= row.right + 1]; });
+      eq(g, [false, true, true], `shown, tinted and in view at ${o.width || 1440}px`);
+      await p.ctx.close();
+    }
+  });
 };
