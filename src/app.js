@@ -1889,12 +1889,16 @@ function openPopover(anchor, html) {
 function closePopover() { pop.hidden = true; $$('.menubar > button').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 pop.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd); });
 document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar')) closePopover(); });
-$('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" data-menu="${k}" aria-haspopup="menu" aria-expanded="false">${t}</button>`).join('');
-$$('#menubar > button').forEach((b) => b.addEventListener('click', () => {
-  const open = b.getAttribute('aria-expanded') === 'true';
-  closePopover(); if (open) return;
-  b.setAttribute('aria-expanded', 'true'); openPopover(b, menuHtml(MENUS[+b.dataset.menu][1]));
-}));
+// Drawn again when a feature adds a menu (menuAdd).
+function renderMenubar() {
+  $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" data-menu="${k}" aria-haspopup="menu" aria-expanded="false">${t}</button>`).join('');
+  $$('#menubar > button').forEach((b) => b.addEventListener('click', () => {
+    const open = b.getAttribute('aria-expanded') === 'true';
+    closePopover(); if (open) return;
+    b.setAttribute('aria-expanded', 'true'); openPopover(b, menuHtml(MENUS[+b.dataset.menu][1]));
+  }));
+}
+renderMenubar();
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
@@ -1915,7 +1919,7 @@ function ribbonAdd(tab, group, ids, before) {
 // Adds commands to a menu (made before Help if missing), after a separator.
 function menuAdd(title, ids) {
   let m = MENUS.find(([t]) => t === title);
-  if (!m) { m = [title, []]; MENUS.splice(MENUS.findIndex(([t]) => t === 'Help'), 0, m); }
+  if (!m) { m = [title, []]; MENUS.splice(MENUS.findIndex(([t]) => t === 'Help'), 0, m); renderMenubar(); }
   if (m[1].length && m[1][m[1].length - 1] !== '-') m[1].push('-');
   for (const id of ids) if (!m[1].includes(id)) m[1].push(id);
 }
