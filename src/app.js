@@ -1997,8 +1997,12 @@ function pageOp(fn, layout = true) {
 }
 const rotatePage = (d) => pageOp(() => { const e = doc.pages[current]; e.rot = (e.rot + d + 360) % 360; });
 const rotateAll = (d) => pageOp(() => doc.pages.forEach((e) => { e.rot = (e.rot + d + 360) % 360; }));
-const deletePage = () => pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); });
-const movePage = (d) => pageOp(() => { const t = current + d; if (t < 0 || t >= doc.pages.length) return; const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; });
+// Page moves and deletes are read out (the pages change under a screen reader's cursor without a word otherwise).
+// `idx`: the pages moved (indexes before the move); `to`: where the first of them is now.
+function pagesMoved(idx, to, together = true) { if (doc) announce(idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`); }
+function pagesDeleted(n) { if (doc) announce(`${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted. ${doc.pages.length} left.`); }
+const deletePage = () => { const n = current; pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); }); pagesDeleted([n]); };
+const movePage = (d) => { const t = current + d, n = current; if (!doc || t < 0 || t >= doc.pages.length) return; pageOp(() => { const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; }); pagesMoved([n], t); };
 const duplicatePage = () => pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; });
 async function insertBlank() {
   const L = await loadPdfLib();
@@ -2597,7 +2601,7 @@ async function renderSide() {
       e.preventDefault(); t.classList.remove('drag-over');
       const from = +e.dataTransfer.getData('text/plain'), to = +t.dataset.n;
       if (Number.isNaN(from) || from === to) return;
-      pageOp(() => { const [x] = doc.pages.splice(from, 1); doc.pages.splice(to, 0, x); current = to; });
+      pageOp(() => { const [x] = doc.pages.splice(from, 1); doc.pages.splice(to, 0, x); current = to; }); pagesMoved([from], to);
     };
   });
   markThumb();
@@ -3454,7 +3458,8 @@ function applyTheme() {
   if (S.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
   app.dataset.darkpage = S.darkPage ? 'on' : 'off';
   $('#themeBtn').innerHTML = ic({ system: 'sun-moon', light: 'sun', dark: 'moon' }[S.theme]);
-  $('#themeBtn').title = { system: 'Appearance: match system', light: 'Appearance: light', dark: 'Appearance: dark' }[S.theme];
+  $('#themeBtn').title = { system: 'Theme: match system', light: 'Theme: light', dark: 'Theme: dark' }[S.theme];
+  $('#themeBtn').setAttribute('aria-label', $('#themeBtn').title); // its name says the theme now
   icons();
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
@@ -3545,7 +3550,8 @@ const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': '
 var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
 function macMenu() {
   if (!MAC_APP) return;
-  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed ? !!C[id].pressed() : null });
+  // Only a real switch is a check item: a command that opens a window (its name ends in …) never is (Apple's HIG).
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
   const menus = MENUS.map(([title, ids]) => {
     // About and Check for Updates live in the Cowdrey.PDF menu.
     let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates').map((id) => id === '-' ? { kind: 'sep' } : item(id));
@@ -3554,6 +3560,7 @@ function macMenu() {
       while (rest.length && rest[0].kind === 'sep') rest.shift();
       items = [item('undo'), item('redo'), { kind: 'sep' }, { kind: 'native', role: 'cut' }, { kind: 'native', role: 'copy' }, { kind: 'native', role: 'paste' }, { kind: 'native', role: 'select_all' }, { kind: 'sep' }, ...rest];
     }
+    items = items.filter((x, k, a) => x.kind !== 'sep' || (k > 0 && k < a.length - 1 && a[k - 1].kind !== 'sep')); // no separator at an end, or two together
     return { title, items };
   });
   const json = JSON.stringify(menus);

@@ -259,7 +259,7 @@ function pg60RotateMany(idx, d) {
 function pg60DeleteMany(idx) {
   const gone = new Set(idx);
   pageOp(() => { doc.pages = doc.pages.filter((_, n) => !gone.has(n)); current = Math.max(0, Math.min(idx[0], doc.pages.length - 1)); });
-  pg60SetSel([]);
+  pg60SetSel([]); pagesDeleted(idx);
   toast(`Deleted ${pg60Plural(idx.length, 'page')}`);
 }
 // Asks before deleting: which pages (a range, starting with idx), with the count on the button. Enter deletes.
@@ -292,6 +292,7 @@ function pg60MoveMany(idx, d) {
     pg60Sel = new Set(a.map((x, n) => (x.sel ? n : -1)).filter((n) => n >= 0));
     current = Math.min(...pg60Sel);
   });
+  const now = [...pg60Sel].sort((a, b) => a - b); pagesMoved(idx, current, now.every((n, k) => n === now[0] + k));
 }
 // Moves the chosen pages so they stand together before page `to` (an index before the move).
 function pg60MoveTo(idx, to) {
@@ -303,6 +304,7 @@ function pg60MoveTo(idx, to) {
     pg60Sel = new Set(moving.map((_, k) => before.length + k));
     current = before.length;
   });
+  pagesMoved(idx, current);
 }
 function pg60DupMany(idx) {
   const set = new Set(idx);

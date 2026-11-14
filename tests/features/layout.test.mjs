@@ -1,7 +1,7 @@
 // Layout, organize and labels: the sidebar tabs, the phone title bar and mode chip, Organize, the contextual
 // Picture group, Fill in, Combine, menus, announcements and landmarks.
 export default async (h) => {
-  const { test, eq, ok, open, openPdf } = h;
+  const { test, eq, ok, open, openPdf, macApp, fixture, waitPages } = h;
   const run = (p, id) => p.evaluate((i) => window.__cowdreyPdf.run(i), id).then(() => p.waitForTimeout(200));
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
 
@@ -116,5 +116,50 @@ export default async (h) => {
     const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('#ribbonBody [data-cmd="merge"]')]);
     ok(fc.isMultiple(), 'asks for several PDFs');
     await p.ctx.close();
+  });
+
+  await test('layout: the theme button\'s name says the theme in use', async () => {
+    const p = await open(); await openPdf(p);
+    const name = () => p.$eval('#themeBtn', (b) => [b.getAttribute('aria-label'), b.title]);
+    await p.evaluate(() => window.__cowdreyPdf.run('theme_dark'));
+    eq(await name(), ['Theme: dark', 'Theme: dark']);
+    await p.click('#themeBtn'); eq(await name(), ['Theme: match system', 'Theme: match system']);
+    await p.click('#themeBtn'); eq(await name(), ['Theme: light', 'Theme: light']);
+    await p.ctx.close();
+  });
+
+  await test('layout: the Mac menu bar has check items only for real switches (never a … command) and no separator at an end or twice', async () => {
+    const p = await open({ init: macApp({ files: [{ name: 'Report.pdf', path: '/Users/me/Report.pdf', content: fixture('sample.pdf') }] }) });
+    await waitPages(p); await p.waitForTimeout(400);
+    await p.evaluate(() => window.__cowdreyPdf.run('sidebar')); await p.waitForTimeout(400); // the menu is built again
+    const menus = await p.evaluate(() => window.__calls.filter(([c]) => c === 'set_menu').pop()[1].menus);
+    const items = menus.flatMap((m) => m.items);
+    eq(items.filter((x) => x.kind === 'item' && /…$/.test(x.label) && x.checked !== null).map((x) => x.label), [], 'no … item is a check item');
+    ok(items.some((x) => x.id === 'cmd:sidebar' && typeof x.checked === 'boolean'), 'Sidebar is still a check item');
+    for (const m of menus) {
+      const k = m.items.map((x) => x.kind);
+      ok(k[0] !== 'sep' && k[k.length - 1] !== 'sep' && !k.some((x, i) => x === 'sep' && k[i - 1] === 'sep'), `${m.title}: ${k.join(' ')}`);
+    }
+    eq(menus[menus.length - 1].title, 'Help');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('layout: moving and deleting pages is read out (the live region), from the keys and the menus', async () => {
+    const p = await open(); await openPdf(p);
+    const said = async () => { await p.waitForTimeout(120); return p.textContent('#announce'); };
+    await p.focus('#sidePanel .thumb[data-n="0"]'); await p.keyboard.press('Alt+ArrowDown'); await p.waitForTimeout(300);
+    eq(await said(), 'Page 1 moved to 2');
+    await p.click('#sidePanel .thumb[data-n="0"]'); await p.click('#sidePanel .thumb[data-n="1"]', { modifiers: ['Shift'] });
+    await p.focus('#sidePanel .thumb[data-n="1"]'); await p.keyboard.press('Alt+ArrowDown'); await p.waitForTimeout(300);
+    eq(await said(), '2 pages moved to 2-3');
+    await p.click('#sidePanel .thumb[data-n="0"]', { button: 'right' }); await p.click('#popover .mi:has-text("Move to end")'); await p.waitForTimeout(300);
+    eq(await said(), 'Page 1 moved to 3');
+    await p.evaluate(() => window.__cowdreyPdf.run('delPage')); await p.waitForTimeout(300);
+    ok(/^Page \d deleted\. 2 left\.$/.test(await said()), await said());
+    await p.evaluate(() => { window.__cowdreyPdf.run('undo'); }); await p.waitForTimeout(400);
+    await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([0, 1])); await p.evaluate(() => window.__cowdreyPdf.run('pg60_delete'));
+    await p.waitForSelector('#dialog[open]'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(300);
+    eq(await said(), '2 pages deleted. 1 left.');
+    eq(p.errors, []); await p.ctx.close();
   });
 };
