@@ -479,7 +479,7 @@ cmd('cm_fill', {
     refreshRibbon(); toast(S.cmFill ? 'Shapes are filled' : 'Shapes are outlines');
   },
 });
-cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (matchMedia('(max-width: 760px)').matches) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
+cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (isPhone()) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
 ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Add');
 ribbonAdd('markup', 'Shapes', ['cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud'], 'Add');
 ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add');
@@ -610,7 +610,7 @@ async function cmRenderPanel() {
 function cmGoTo(it) {
   goPage(it.n);
   if (it.m) { setTool('select'); selectMark({ key: pageKey(it.entry), id: it.m.id, entry: it.entry }); }
-  if (matchMedia('(max-width: 760px)').matches) toggleSidebar(false);
+  if (isPhone()) toggleSidebar(false);
 }
 function cmDelete(it) {
   const before = snapshot(), list = marksOf(it.entry);

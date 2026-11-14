@@ -574,7 +574,7 @@ addText = function (v, x, y) {
 async function txtAddDialog(v, x, y, boxW) {
   const fmt = txtLast();
   let w = boxW || 0;
-  const body = `<div class="txt-slot"></div><label class="field"><textarea id="dlgInput" rows="4" class="txt-paper" placeholder="Type here"></textarea></label><label class="field txt-wfield"><span>Box width (pt)</span><input id="txtBoxW" type="number" min="0" step="1" inputmode="numeric" placeholder="Fits the text" value="${w || ''}"></label><p class="txt-hint">Ctrl+Enter adds the text. Drag with the Text tool to make a box the text wraps in.</p>`.replace('Ctrl+Enter', isMac ? '⌘Return' : 'Ctrl+Enter');
+  const body = `<div class="txt-slot"></div><label class="field"><textarea id="dlgInput" rows="4" class="txt-paper" placeholder="Type here"></textarea></label><label class="field txt-wfield"><span>Box width (pt)</span><input id="txtBoxW" type="number" min="0" step="1" inputmode="numeric" placeholder="Fits the text" value="${w || ''}"></label><p class="txt-hint">Ctrl+Enter adds the text. Drag with the Text tool to make a box the text wraps in.</p>`.replace('Ctrl+Enter adds the text. ', coarse() ? '' : isMac ? '⌘Return adds the text. ' : 'Ctrl+Enter adds the text. ');
   const text = await dialog('Add text', body, [{ label: 'Cancel' }, { label: 'Add', primary: true, input: true }], (dlg) => {
     const ta = $('#dlgInput', dlg);
     const style = () => { Object.assign(ta.style, { font: txtCss(fmt.famPick === 'page' ? 'sans' : fmt.famPick, fmt, Math.min(28, Math.max(11, fmt.size))), color: fmt.color, textDecoration: fmt.underline ? 'underline' : 'none', textAlign: fmt.align }); };
