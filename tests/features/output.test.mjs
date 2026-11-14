@@ -289,6 +289,8 @@ export default async (h) => {
     const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
     await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
     await editLine(p, 0, 'Budget', 'Budget: 45,500 dollars, on track.');
+    // Both saves at the same moment: a different modification date can deflate a byte longer or shorter.
+    await p.clock.setFixedTime(new Date('2026-06-01T12:00:00Z'));
     const plain = (await savedOf(p)).length;
     await compressAt(p, '150');
     const packed = (await savedOf(p)).length;

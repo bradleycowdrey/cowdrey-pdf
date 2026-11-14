@@ -57,7 +57,7 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
-  await test('Edit PDF: the format bar has few Tab stops: the swatches are one radio group and the size can be typed', async () => {
+  await test('Edit PDF: the format bar has few Tab stops: the swatches and the alignment are radio groups and the size can be typed', async () => {
     const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
     await editLine(p);
     const stops = [];
@@ -66,7 +66,8 @@ export default async (h) => {
       const a = await p.evaluate(() => { const e = document.activeElement; return e.classList.contains('line-editor') ? 'TEXT' : e.dataset.tf || e.getAttribute('aria-label'); });
       if (a === 'TEXT') break; stops.push(a);
     }
-    eq(stops, ['face', 'size', 'color', 'pick', 'bold', 'italic', 'underline'], 'Tab stops');
+    eq(stops, ['face', 'size', 'color', 'pick', 'bold', 'italic', 'underline', 'left'], 'Tab stops');
+    eq(await p.$eval('.txt-bar .txt-aligns', (g) => g.getAttribute('role')), 'radiogroup');
     eq(await p.$eval('.txt-bar .txt-cols', (g) => g.getAttribute('role')), 'radiogroup');
     eq(await p.$$eval('.txt-bar [data-tf="color"]', (b) => b.filter((x) => x.tabIndex === 0).length), 1, 'one swatch in the Tab order');
     // Arrow keys move along the swatches and pick the colour
@@ -84,9 +85,15 @@ export default async (h) => {
     eq(await p.inputValue('.txt-bar .txt-size'), '11.5');
     // Up and Down in the box step the size, as Bigger and Smaller do
     await p.keyboard.press('Tab'); await p.keyboard.press('Tab'); await p.keyboard.press('ArrowUp'); eq(await p.inputValue('.txt-bar .txt-size'), '12');
+    await p.keyboard.press('Escape');
+    // The alignment is the last Tab stop; the arrow keys choose another, which becomes the Tab stop
+    await p.keyboard.press('Shift+Tab'); eq(await p.evaluate(() => document.activeElement.dataset.tf), 'left');
+    await p.keyboard.press('ArrowRight');
+    eq(await p.evaluate(() => { const e = document.activeElement; return [e.dataset.tf, e.getAttribute('aria-checked'), e.tabIndex]; }), ['center', 'true', 0], 'Centre is checked and the Tab stop');
+    eq(await p.$$eval('.txt-bar .txt-aligns [data-tf]', (b) => b.filter((x) => x.tabIndex === 0).length), 1, 'one alignment in the Tab order');
     await p.keyboard.press('Escape'); await p.keyboard.press('End'); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
     const m = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().find((x) => x.type === 'tpara'));
-    eq(m && m.size, 12, 'the line has the typed size');
+    eq(m && [m.size, m.align], [12, 'center'], 'the line has the typed size and the alignment');
     eq(p.errors, []); await p.ctx.close();
   });
 

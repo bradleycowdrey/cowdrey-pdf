@@ -5993,12 +5993,15 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
     `<span class="txt-grp txt-cols sw-row" role="radiogroup" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
-    opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
+    opts.align ? `<span class="txt-grp txt-aligns" role="radiogroup" aria-label="Alignment">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
     opts.spacing ? sel('spacing', 'unfold-vertical', 'Line spacing', `<option value="0">As is</option>${TXT_SPACINGS.map((n) => `<option value="${n}">${n % 1 ? n : n.toFixed(1)}</option>`).join('')}`) : '',
   ].join('');
   // The swatches are one radio group: one Tab stop (the colour now), the arrow keys move along it.
   const sws = $$('[data-tf="color"]', bar);
   sws.forEach((b) => { b.removeAttribute('aria-pressed'); b.setAttribute('role', 'radio'); });
+  // So is the alignment: one Tab stop (the alignment now), the arrow keys choose another.
+  const als = ['left', 'center', 'right'].map((k) => $(`[data-tf="${k}"]`, bar)).filter(Boolean);
+  als.forEach((b) => b.setAttribute('role', 'radio'));
   const sync = () => {
     const sz = $('.txt-size', bar); if (document.activeElement !== sz) sz.value = txtRound(fmt.size);
     sws.forEach((b) => b.setAttribute('aria-checked', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
@@ -6007,7 +6010,7 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     $('[data-tf="pick"]', bar).value = /^#[0-9a-f]{6}$/i.test(fmt.color) ? fmt.color : '#111111';
     $('.txt-dot', bar).style.background = fmt.color;
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
-    for (const k of ['left', 'center', 'right']) { const b = $(`[data-tf="${k}"]`, bar); if (b) b.setAttribute('aria-pressed', (fmt.align || 'left') === k); }
+    als.forEach((b) => { const on = (fmt.align || 'left') === b.dataset.tf; b.setAttribute('aria-checked', on); b.tabIndex = on ? 0 : -1; });
     const s = $('[data-tf="fam"]', bar); if (s) s.value = fmt.famPick || fmt.fam || 'sans';
     const fc = $('[data-tf="face"]', bar); if (fc) fc.value = fmt.face || '';
     const sp = $('[data-tf="spacing"]', bar); if (sp) sp.value = String(+fmt.spacing || 0);
@@ -6029,11 +6032,12 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     sync(); onChange(fmt); refocus && refocus();
   });
   bar.addEventListener('keydown', (e) => {
-    const k = sws.indexOf(e.target), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
-    if (k < 0 || !(d || e.key === 'Home' || e.key === 'End')) return;
+    const grp = sws.includes(e.target) ? sws : als.includes(e.target) ? als : null, d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!grp || !(d || e.key === 'Home' || e.key === 'End')) return;
     e.preventDefault(); e.stopPropagation();
-    const n = sws[e.key === 'Home' ? 0 : e.key === 'End' ? sws.length - 1 : (k + d + sws.length) % sws.length];
-    fmt.color = n.dataset.c; sync(); n.focus(); onChange(fmt);
+    const k = grp.indexOf(e.target), n = grp[e.key === 'Home' ? 0 : e.key === 'End' ? grp.length - 1 : (k + d + grp.length) % grp.length];
+    if (grp === sws) fmt.color = n.dataset.c; else fmt.align = n.dataset.tf;
+    sync(); n.focus(); onChange(fmt);
   });
   const size = $('.txt-size', bar);
   const setSize = (n) => { if (!(n > 0)) { sync(); return; } fmt.size = Math.max(4, Math.min(200, txtRound(n))); sync(); onChange(fmt); };
@@ -6646,7 +6650,7 @@ addStyle(`
 .txt-grp:last-child { border-right: 0; padding-right: 0; }
 .txt-b { border: 0; background: none; color: var(--ink); width: 30px; height: 30px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
 .txt-b:hover { background: var(--hover); }
-.txt-b[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.txt-b[aria-pressed="true"], .txt-b[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); }
 .txt-b [data-lucide], .txt-b svg { width: 16px; height: 16px; }
 @media (pointer: coarse) { .txt-b { width: 44px; height: 44px; } .txt-bar select { height: 44px; } } /* a finger's 44px */
 .txt-bar .txt-size { width: 44px; height: 26px; box-sizing: border-box; padding: 0 2px; text-align: center; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; -moz-appearance: textfield; }
