@@ -166,4 +166,27 @@ export default async (h) => {
     eq(await p.$eval('.annotationLayer input[name="name"]', (e) => e.value), 'Ada');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Android: Back closes the top thing first (dialog, sidebar, tool) and leaves only when nothing is open', async () => {
+    const p = await open({ width: 390, height: 844, touch: true, ua: ANDROID }); await openPdf(p);
+    const st = () => p.evaluate(() => ({ ours: !!(history.state && history.state.cowdreyBack), tool: document.querySelector('#app, .app').dataset.tool, side: document.querySelector('.app').dataset.sidebar, dlg: document.querySelector('#dialog').open }));
+    const back = async () => { await p.evaluate(() => history.back()); await p.waitForTimeout(250); };
+    eq((await st()).ours, false, 'nothing open: Back leaves');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_rect')); await p.waitForTimeout(150);
+    await p.evaluate(() => window.__cowdreyPdf.run('sidebar')); await p.waitForTimeout(250);
+    let s = await st(); eq([s.ours, s.tool, s.side], [true, 'rect', 'open']);
+    const len = await p.evaluate(() => history.length);
+    await back(); s = await st(); eq([s.ours, s.tool, s.side], [true, 'rect', 'on'], 'sidebar first, then still armed for the tool');
+    eq(await p.evaluate(() => history.length), len, 'one entry, reused');
+    await back(); s = await st(); eq([s.ours, s.tool], [false, 'select'], 'then the tool');
+    // A dialog.
+    p.evaluate(() => window.__cowdreyPdf.run('extract')); await p.waitForSelector('#dialog[open]'); await p.waitForTimeout(150);
+    eq((await st()).ours, true);
+    await back(); s = await st(); eq([s.dlg, s.ours], [false, false], 'dialog closed');
+    // Closed some other way: the entry goes, so the next Back leaves at once.
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_pen')); await p.waitForTimeout(150); eq((await st()).ours, true);
+    await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+    s = await st(); eq([s.ours, s.tool], [false, 'select'], 'entry taken away');
+    ok(await p.$('.page canvas.pdf'), 'still in the app'); eq(p.errors, []); await p.ctx.close();
+  });
 };

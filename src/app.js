@@ -39,6 +39,7 @@ const isPhone = () => matchMedia(PHONE_MQ).matches;
 // iPhone and iPad: WebKit zooms the whole window (title bar and ribbon too) into a text field under 16px when it gets
 // the focus, and leaves it so. The page is zoomed to the field instead (see the forms), so that zoom is turned off.
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const ANDROID = /Android/i.test(navigator.userAgent); // Back closes what is open first (see "Back on Android")
 if (IOS) { const vm = document.querySelector('meta[name="viewport"]'); if (vm && !/maximum-scale/.test(vm.content)) vm.content += ', maximum-scale=1'; }
 const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a mouse: no Esc or Ctrl keys to mention
 let toastTimer;
@@ -3931,6 +3932,7 @@ function refreshRibbon() {
   $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
   rbRoving();
   scheduleMacMenu();
+  if (ANDROID) backLater();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
@@ -3975,6 +3977,49 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
   if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
+
+/* ---------------- Back on Android ---------------- */
+// Back (the button or the gesture) closes what is on top, as Escape does: a dialog, a menu, the sidebar, an editor,
+// the find bar, a selection, then the tool. It leaves the app only when nothing is open. While something is open a
+// history entry stands for it, so Back takes that entry (and closes the top thing) instead of leaving; the entry is
+// put back while more is open, and taken away when everything was closed some other way.
+function backLayer() {
+  if ($('#dialog').open) return 'dialog';
+  if (!pop.hidden) return 'menu';
+  if (app.dataset.sidebar === 'open' && isPhone()) return 'sidebar';
+  if (lineEditor || $('#viewer :is(.txt-editor, .page-ask)')) return 'editor';
+  if (!$('#findbar').hidden) return 'find';
+  if (selContent || selMark) return 'selection';
+  if (doc && app.dataset.tool && app.dataset.tool !== 'select') return 'tool';
+  if (app.dataset.organize === '1') return 'organize';
+  return null;
+}
+function backClose() {
+  const l = backLayer(); if (!l) return;
+  if (l === 'dialog') { $('#dialog').dispatchEvent(new Event('cancel', { cancelable: true })); return; }
+  if (l === 'sidebar') { toggleSidebar(false); return; }
+  const esc = (el) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+  esc(document.activeElement || document.body);
+  // Still open (the focus was in a form field, which keeps its own Escape): from the page instead.
+  if (backLayer() === l && l !== 'editor') { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); esc(document.body); }
+}
+var backArmed = false, backSkip = false, backTimer = 0; // var: refreshRibbon can run before this line
+function backSync() {
+  if (backSkip) return;
+  const open = !!backLayer();
+  if (open && !backArmed) { history.pushState({ cowdreyBack: 1 }, ''); backArmed = true; }
+  else if (!open && backArmed && history.state && history.state.cowdreyBack) { backArmed = false; backSkip = true; history.back(); }
+}
+function backLater() { clearTimeout(backTimer); backTimer = setTimeout(backSync, 60); }
+if (ANDROID) {
+  window.addEventListener('popstate', () => {
+    if (backSkip) { backSkip = false; backLater(); return; } // our own entry, taken away
+    if (!backArmed) return;
+    backArmed = false; backClose(); backLater();
+  });
+  for (const t of ['click', 'keyup', 'focusin', 'pointerup']) document.addEventListener(t, backLater, true);
+  $('#dialog').addEventListener('close', backLater);
+}
 
 /* ---------------- theme ---------------- */
 function applyTheme() {
