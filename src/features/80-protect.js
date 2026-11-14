@@ -214,15 +214,33 @@ async function protFind(rx) {
       }
       const quads = [];
       for (const [it, [j0, j1]] of byItem) {
-        const st = tc.styles[it.fontName] || {}, a = xOf(it), { u, v, o, size } = lineFrame({ tm: it.transform });
+        const a = xOf(it), { u, v, o } = lineFrame({ tm: it.transform });
         const P = (x, y) => [o[0] + u[0] * x + v[0] * y, o[1] + u[1] * x + v[1] * y];
-        const y0 = (st.descent ?? -.2) * size, y1 = (st.ascent ?? .8) * size, x0 = a[j0], x1 = a[j1 + 1];
+        const [y0, y1] = protGlyphBand(tc, it), x0 = a[j0], x1 = a[j1 + 1];
         quads.push([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)]);
       }
       if (quads.length) found.push({ entry, quads, text: mt[0] });
     }
   }
   return found;
+}
+// How far a piece of text reaches below and above its baseline, for a redaction box: the font's descent and ascent
+// clamped to the letters (a font's ascent often leaves room for accents), and never into the line above or below.
+const protGlyphExt = (st) => [Math.max(st.descent ?? -.2, -.22), Math.min(st.ascent ?? .8, .9)];
+function protGlyphBand(tc, it) {
+  const f = lineFrame({ tm: it.transform }), size = f.size, ext = protGlyphExt(tc.styles[it.fontName] || {});
+  let y0 = ext[0] * size, y1 = ext[1] * size;
+  for (const jt of tc.items) {
+    if (jt === it || !jt.str || !jt.str.trim() || !jt.transform) continue;
+    const g = lineFrame({ tm: jt.transform }); if (g.u[0] * f.u[0] + g.u[1] * f.u[1] < .99) continue; // same direction only
+    const dx = g.o[0] - f.o[0], dy = g.o[1] - f.o[1], along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+    if (along > it.width || along + jt.width < 0 || Math.abs(perp) < size * .3 || Math.abs(perp) > size * 2.5) continue; // not side by side
+    const e = protGlyphExt(tc.styles[jt.fontName] || {});
+    // Stop where the neighbour's letters start, but always cover this line's capitals and most of its descenders.
+    if (perp > 0) { const top = perp + e[0] * g.size; if (top < y1) y1 = Math.max(size * .72, top); }
+    else { const bot = perp + e[1] * g.size; if (bot > y0) y0 = Math.min(-size * .14, bot); }
+  }
+  return [y0, y1];
 }
 async function protSearch() {
   const last = S.protSearch || {};
@@ -905,9 +923,14 @@ async function protCompressDlg() {
         const after = await protMeasure(PROT_LEVELS[lv]);
         if (n !== ask) return;
         if (before == null || after == null) { out.textContent = 'The size can’t be worked out.'; return; }
-        const pc = Math.round((1 - after / before) * 100);
-        out.textContent = `Now ${protSize(before)}. Compressed: ${protSize(after)}${pc > 0 ? ` (${pc}% smaller)` : ''}.`;
-        out.dataset.before = before; out.dataset.after = after;
+        const pc = Math.round((1 - after / before) * 100), none = after >= before * .98;
+        out.textContent = none
+          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.${lv === '96' ? ' Keep it as it is.' : ' Try Smallest, or keep it as it is.'}`
+          : `Now ${protSize(before)}. Compressed: ${protSize(after)} (${pc}% smaller).`;
+        out.dataset.before = before; out.dataset.after = after; out.classList.toggle('none', none);
+        // With nothing to gain, Cancel is the main button.
+        const on = $('.dlg-foot [data-a]:last-child', dlg), cancel = [...$$('.dlg-foot [data-a]', dlg)].find((b) => b.textContent === 'Cancel');
+        if (on && cancel) { on.classList.toggle('primary', !none); cancel.classList.toggle('primary', none); }
       } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }
     };
     $$('input[name=level]', dlg).forEach((x) => x.addEventListener('change', show));
@@ -937,4 +960,5 @@ menuAdd('Protect', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply
 menuAdd('Protect', ['protPassword', 'protUnsecure']);
 menuAdd('Protect', ['protFlatten', 'protCompress', 'protClean']);
 TEST_HOOKS.protFind = async (opts) => (await protFind(protRegex(opts))).map((f) => f.text);
+TEST_HOOKS.protFindQuads = async (opts) => (await protFind(protRegex(opts))).map((f) => f.quads);
 TEST_HOOKS.protMeasure = (opt) => protMeasure(opt);

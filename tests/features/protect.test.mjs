@@ -196,6 +196,49 @@ export default async (h) => {
     noErrors(p); await p.ctx.close();
   });
 
+  await test('Protect: a redaction box from text stays off the line above on tight leading', async () => {
+    const d0 = await L.PDFDocument.create(), pg = d0.addPage([612, 792]);
+    const dir = '/usr/share/fonts/truetype/crosextra/';
+    let font; // a font with a tall ascent and deep descent (about 1.22 em), as many designer fonts have
+    if (fs.existsSync(dir + 'Carlito-Bold.ttf')) { d0.registerFontkit(require(path.join(root, 'desktop/node_modules/@pdf-lib/fontkit'))); font = await d0.embedFont(fs.readFileSync(dir + 'Carlito-Bold.ttf')); }
+    else font = await d0.embedFont(L.StandardFonts.HelveticaBold);
+    pg.drawText('Welcome to', { x: 72, y: 700, size: 40, font }); pg.drawText('PDFelement here', { x: 72, y: 660, size: 40, font }); // 40 pt on 40 pt
+    const file = tmp('tight.pdf', await d0.save());
+    try {
+      const p = await open(); await openPdf(p, file, 'Tight.pdf');
+      const [quads] = await p.evaluate(() => window.__cowdreyPdf.protFindQuads({ text: 'PDFelement', wholeWords: true }));
+      const ys = quads[0].map((q) => q[1]), top = Math.max(...ys), bottom = Math.min(...ys);
+      ok(top <= 700 - .22 * 40 + .01, 'stays below the letters of the line above: top ' + top);
+      ok(top >= 660 + .72 * 40 - .01 && bottom <= 660 - .14 * 40 + .01, `still covers the word: ${bottom} – ${top}`);
+      // applied: the line above keeps its words
+      await p.click('[data-rt="protect"]');
+      await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'PDFelement'); await answer(p, 'Mark all'); await p.waitForTimeout(300);
+      await p.click('[data-cmd="protRedApply"]'); await answer(p, 'Apply'); await p.waitForTimeout(500);
+      await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr1/fix-features/redact-tight.png' });
+      const t = await textOf(await savedOf(p));
+      ok(t.includes('Welcome to') && !t.includes('PDFelement') && t.includes('here'), t);
+      noErrors(p); await p.ctx.close();
+    } finally { fs.unlinkSync(file); }
+  });
+
+  await test('Protect: compress says when a PDF is already compact, and Cancel is the main button then', async () => {
+    const d0 = await L.PDFDocument.create(), pg = d0.addPage([612, 792]);
+    pg.drawText('Only a little text', { x: 72, y: 720, size: 18, font: await d0.embedFont(L.StandardFonts.Helvetica) });
+    const file = tmp('small.pdf', await d0.save());
+    try {
+      const p = await open(); await openPdf(p, file, 'Small.pdf');
+      await run(p, 'protCompress');
+      await p.waitForFunction(() => /^Now /.test((document.querySelector('#protSize') || {}).textContent || ''), null, { timeout: 30000 });
+      const t = await p.textContent('#protSize');
+      ok(/already compact: compressing would save less than 2%/.test(t), t);
+      eq(await p.$eval('#dialog .dlg-foot .btn.primary', (b) => b.textContent), 'Cancel');
+      await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr1/fix-features/compress-compact.png' });
+      await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(150);
+      eq(await p.evaluate(() => window.__cowdreyPdf.doc.marks.__doc || []), [], 'nothing set');
+      noErrors(p); await p.ctx.close();
+    } finally { fs.unlinkSync(file); }
+  });
+
   await test('Protect: compress makes a PDF with a large picture smaller, and shows the sizes', async () => {
     const W = 1200, raw = new Uint8Array(W * W * 3);
     let seed = 7; const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
