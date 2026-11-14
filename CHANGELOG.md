@@ -2,6 +2,22 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 0.3.0
+
+**A full PDF editor.** Cowdrey.PDF now covers most of what PDFelement does, still free and on your device. A ribbon (Home, Edit, Comment, Pages, Forms, Protect, Export) holds every tool.
+
+- **Edit PDF:** the caret goes where you click; double-click a word, triple-click a line. Paragraph mode reflows whole paragraphs. A format bar sets font, size, colour, bold, italic, underline, alignment and line spacing. Edits keep the line's own font, weight, spacing and place in the reading order, centred titles stay centred, and the old words are taken out of the saved file for good. Find and replace, and Replace all.
+- **Pictures:** add, move, resize, rotate, flip, crop, replace, save as PNG, delete. **Links:** add, change, delete.
+- **Comment:** highlight, underline, strikethrough, squiggly, area highlight, pen, shapes, clouds, lines and arrows, notes, text boxes, callouts, typewriter, stamps and a handwritten signature. Select text to get a mark-up bar. A Comments panel with replies, status, filters, sorting, hide, export and import.
+- **Pages:** insert, replace, extract, split, combine, crop, rotate, reorder, duplicate, delete (with Undo), blank pages, and an Organize grid. Watermark, background, header & footer and Bates numbering, with a live preview, that can be changed or removed later.
+- **Forms:** 8 kinds of field, field properties, recognize form, fill in, clear and flatten.
+- **Protect:** redact text, areas and search results (with a review list); passwords and permissions; remove hidden information; compress (never makes a file bigger).
+- **More:** OCR for scanned pages (on the device, offline in the apps), bookmarks, document properties, attachments, page labels, Read aloud and Read mode, new PDFs from pictures or the clipboard, export to pictures and text.
+- **View:** hand tool, Fit page, Fit width, Actual size, two-page and single-page layouts, pinch and Ctrl+wheel zoom, right-click menus everywhere.
+- **Keyboard and access:** every editor and tool works from the keyboard (Tab through a page's text in Edit PDF, Enter to edit), ribbon groups are toolbars, dialogs start on their first field, screen readers hear page moves and deletes, forced colours are supported.
+- **Phones and the apps:** 44px touch targets, a two-row format bar, Android Back closes what's open, the Mac menu greys out what doesn't apply, Cmd/Ctrl+W closes a document.
+- 293 end-to-end tests, run on real-world PDFs.
+
 ## 0.2.0
 
 **Edit what's already in a PDF.** The new Edit PDF tool (Mark up tab) changes the PDF's own content:

@@ -787,7 +787,7 @@ button { font: inherit; color: inherit; }
 .side-panel { flex: 1; overflow: auto; padding: 0 10px 16px; }
 .thumbs { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 4px; }
 .thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--ink-3); font-size: 12px; }
-.thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; }
+.thumb canvas { display: block; box-shadow: var(--page-shadow); background: #fff; max-width: 150px; height: auto; }
 .thumb[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .thumb.drag-over { outline: 2px dashed var(--accent); }
 .thumb.ctx-for { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -819,13 +819,14 @@ button { font: inherit; color: inherit; }
 .annotationLayer { z-index: 3; }
 .annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { background: rgba(174, 23, 71, .07); color: #111; }
 .marks { position: absolute; inset: 0; z-index: 4; overflow: visible; pointer-events: none; }
-.app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
+/* :where() keeps these general rules light (0,3,0), so each tool's own cursor below (and in features) wins. */
+.app[data-tool]:where(:not([data-tool="select"]):not([data-tool="highlight"])) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
 .marks .mk { pointer-events: auto; cursor: pointer; }
 .app[data-tool="select"] .marks .mk-ontext { pointer-events: none; } /* text mark-up stays on its text: a drag there selects text */
 /* Touch: with a drawing or placing tool a finger draws on the page instead of scrolling it; with the text tools
    (Highlight, Underline…) a finger selects text; with Select a finger drags a mark. */
-.app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
+.app[data-tool]:where(:not([data-tool="select"]):not([data-tool="edit"])) .marks,
 .app:is([data-tool="highlight"], [data-tool="cmunderline"], [data-tool="cmstrike"], [data-tool="cmsquiggly"], [data-tool="protredtext"]) .page .textLayer,
 .app[data-tool="select"] .marks .mk { touch-action: none; }
 /* The text tools select the words under a comment or shape, as if it were not there. */
@@ -845,8 +846,10 @@ button { font: inherit; color: inherit; }
 .app[data-tool="edit"] .marks { cursor: default; }
 .app[data-tool="erase"] .marks { cursor: crosshair; }
 .app[data-busy] .marks, .app[data-busy] .marks * { cursor: progress !important; }
-.marks .content-hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
+.marks .content-hints { pointer-events: none; fill: none; stroke: color-mix(in srgb, var(--brand) 40%, transparent); stroke-width: 1; stroke-dasharray: 2 3; }
+.marks .content-hover { fill: color-mix(in srgb, var(--accent) 10%, transparent); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 2; pointer-events: none; }
 .marks .content-sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
+.kb-block { position: absolute; z-index: 5; pointer-events: none; border-radius: 3px; outline: 2px solid var(--accent); outline-offset: 0; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
 .marks .content-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
 .sel-bar { position: fixed; z-index: 40; display: flex; gap: 2px; padding: 4px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
 .sel-bar button { border: 0; background: none; color: var(--ink); width: 32px; height: 32px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
@@ -878,6 +881,7 @@ button { font: inherit; color: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mode-chip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0 2px 0 10px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: 12px; line-height: 24px; }
 .mode-chip[hidden] { display: none; }
+.sb-page[hidden] { display: none; } /* no document: no "Page [ ] of 0" */
 .mode-chip .mode-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mode-chip .mode-name { font-weight: 600; }
 .mode-chip .mode-stop { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
@@ -1057,6 +1061,11 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .swatch, .sw-row .swatch, .pop-sw .swatch { width: 32px; height: 32px; }
   .sw-more svg, .r-swatches .sw-more svg { width: 16px; height: 16px; }
   .r-swatches .r-items { gap: 4px; }
+  /* menu rows and dialog buttons: 44px for a finger too (a mouse keeps the compact sizes) */
+  #popover .mi, .popover .mi { min-height: 44px; }
+  .dlg-head .icon-btn { width: 44px; height: 44px; margin: -5px -10px -5px 0; }
+  .dlg-foot .btn { height: 44px; padding: 0 18px; border-radius: 22px; }
+  dialog input:is([type="checkbox"], [type="radio"]) { width: 22px; height: 22px; }
 }
 @media (pointer: coarse) and (min-width: 761px) { .r-swatches .r-items { grid-template-columns: repeat(8, 32px); grid-template-rows: 32px; } }
 /* Forced colours (Windows High Contrast): colours stay on swatches and on the page itself; what is pressed, chosen
@@ -1149,7 +1158,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   </div>
   <footer class="statusbar">
     <button class="icon-btn sb-pages" type="button" data-cmd="sidebar" title="Pages and outline" aria-label="Pages and outline"><i data-lucide="panel-left"></i></button>
-    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> <span id="pageOf">of </span><span id="pageCount">0</span><span id="pageEnd"></span></span>
+    <span class="sb-page" hidden>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> <span id="pageOf">of </span><span id="pageCount">0</span><span id="pageEnd"></span></span>
     <span class="mode-chip" id="modeChip" role="status" hidden><span class="mode-text"></span><button class="mode-stop" type="button" title="Stop (Esc)" aria-label="Stop and go back to Select"><i data-lucide="x"></i></button></span>
     <span class="sb-spacer"></span>
     <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>
@@ -1266,6 +1275,8 @@ const FEATURE = {
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
   savePageLate: [], // the same, after every savePage hook (redaction among them): drawing that must not be cut
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
+  editFreeText: null, // async (v, a) -> true when a FreeText comment from the PDF was edited as a mark
+  commitEdits: [], // async () — keep what is being typed in a feature's own editor, before saving, printing or exporting
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
   onDocClosed: [], // () — when the document is closed (Close), before it goes: leave its own views and modes
@@ -1527,7 +1538,7 @@ async function renderView(v) {
       }
     }
   } catch (e) { console.warn('annotation layer', e); }
-  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
+  if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; if (!stale()) editHints(v); }).catch(() => {}); // read ahead for Edit PDF
   if (marksOf(v.entry).some((m) => m.type === 'te')) { try { v.page._cmapValue = await contentMap(page); } catch {} }
   if (stale()) return;
   drawMarks(v);
@@ -1644,6 +1655,7 @@ viewer.addEventListener('scroll', () => {
 }, { passive: true });
 function updateStatus() {
   $('#pageCount').textContent = doc ? doc.pages.length : 0;
+  $('.sb-page').hidden = !doc;
   if (document.activeElement !== $('#pageJump')) $('#pageJump').value = doc && doc.pages.length ? current + 1 : '';
   refreshRibbon();
 }
@@ -1801,6 +1813,7 @@ function drawMarks(v) {
   }
   // A thumbnail is a picture of the layer, without the page's styles: no selection box or handles in it.
   if (v.thumb) return;
+  editHints(v, svg);
   drawSelection(v, svg);
   drawMarkBox(v, svg);
 }
@@ -1919,6 +1932,8 @@ function restore(s, layout) {
 function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
 function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
+// The same, kept on the page: a drag that runs past the page's edge draws up to the edge, never onto the canvas.
+function pagePoint(e, v) { const r = v.el.getBoundingClientRect(); return [Math.max(0, Math.min(r.width, e.clientX - r.left)), Math.max(0, Math.min(r.height, e.clientY - r.top))]; }
 let markDown = null; // { id, t }: the last press on a note or text box
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
@@ -2106,7 +2121,7 @@ function startInk(e, v) {
   const before = snapshot();
   const m = { id: uid(), type: 'ink', pts: [toPdf(v, ...localPoint(e, v))], color: toolColor('pen'), w: S.width };
   marksOf(v.entry).push(m);
-  const move = (ev) => { m.pts.push(toPdf(v, ...localPoint(ev, v))); drawMarks(v); };
+  const move = (ev) => { m.pts.push(toPdf(v, ...pagePoint(ev, v))); drawMarks(v); };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (m.pts.length < 2) m.pts.push(m.pts[0]); drawMarks(v); changed(before); selectNew(v, m); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
@@ -2116,7 +2131,7 @@ function startRect(e, v) {
   const [x, y] = toPdf(v, ...localPoint(e, v));
   const m = { id: uid(), type: 'rect', x1: x, y1: y, x2: x, y2: y, color: toolColor('rect'), w: S.width };
   marksOf(v.entry).push(m);
-  const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...localPoint(ev, v)); drawMarks(v); };
+  const move = (ev) => { [m.x2, m.y2] = toPdf(v, ...pagePoint(ev, v)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.abs(m.x2 - m.x1) < 3 && Math.abs(m.y2 - m.y1) < 3) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
@@ -2379,7 +2394,8 @@ function setTool(t) {
   if (t !== 'select') selectMark(null);
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
-  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
+  if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; editHints(v); }).catch(() => {}); }), 0);
+  if (was === 'edit' && t !== 'edit') { $$('.marks .content-hints, .marks .content-hover').forEach((n) => n.remove()); $$('svg.marks').forEach((s) => { s.style.cursor = ''; }); } // the hover's cursor goes too
   if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; } // the hint for the tool being left goes with it
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
@@ -2781,7 +2797,7 @@ async function onEditDown(e, v) {
   const own = e.target.closest && e.target.closest('.mk');
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
   const seq = downSeq.get(e) ?? editSeq;
-  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomTo(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
+  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomAt(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
   if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return markOnText(om) ? undefined : startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
@@ -2888,6 +2904,8 @@ function deleteContent() {
   selContent = null; changed(before); syncHiddenComments(); redrawPage(s.v.entry);
 }
 async function editComment(v, a, mark) {
+  // Callouts and typewriter text (ours, or plain ones) become editable marks; other text boxes can't keep their look.
+  if (a.annotationType === pdfjs.AnnotationType.FREETEXT && !mark && FEATURE.editFreeText && await FEATURE.editFreeText(v, a)) return;
   if (a.annotationType === pdfjs.AnnotationType.FREETEXT) { toast('This comment\u2019s words are part of how it looks. Delete it and add a Text box instead.'); return; }
   const now = mark && mark.contents != null ? mark.contents : (a.contentsObj && a.contentsObj.str) || '';
   const text = await askText('Comment', a.titleObj && a.titleObj.str ? `By ${a.titleObj.str}` : '', now, 'Save', false, true);
@@ -2907,9 +2925,19 @@ async function editLine(v, L, mark, seq = editSeq) {
   const m = mark || await teMarkFor(v, L, cm);
   await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
   if (seq !== editSeq) return;
-  v = await phoneZoomTo(v, m);
+  v = await phoneZoomAt(v, m);
   if (seq !== editSeq) return;
   openLineEditor(v, m, !mark);
+}
+// phoneZoomTo for a line opened by a tap: the caret's place in the text is read from the tap before the zoom moves
+// the page, and kept for the editor (where the tap lands after the zoom is only known once it is laid out).
+async function phoneZoomAt(v, m) {
+  if (!isPhone() || !editAt) return phoneZoomTo(v, m);
+  if (!v.page._cmapValue) v.page._cmapValue = await contentMap(v.page);
+  const at = editAt, k = clickOffset(v, m, at);
+  const nv = await phoneZoomTo(v, m);
+  if (k != null && editAt === at) at.k = k;
+  return nv;
 }
 // A te mark for a line of the page, not yet in the page's list: its text, font, colours and the original's text state.
 async function teMarkFor(v, L, cm) {
@@ -2941,10 +2969,11 @@ async function phoneZoomPx(v, px, at, want = 18, min = 14) {
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
   // The tap's spot stays under the finger (as far as the page can scroll), so the caret goes where it was tapped.
+  await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); // laid out at the new size
   let b = nv.el.getBoundingClientRect();
   viewer.scrollLeft += b.left + fx * b.width - at.x; viewer.scrollTop += b.top + fy * b.height - at.y;
   b = nv.el.getBoundingClientRect();
-  if (editAt) editAt = { ...editAt, x: b.left + fx * b.width, y: b.top + fy * b.height };
+  if (editAt) Object.assign(editAt, { x: b.left + fx * b.width, y: b.top + fy * b.height });
   renderView(nv);
   return nv;
 }
@@ -3043,7 +3072,7 @@ function openLineEditor(v, m, isNew) {
   lineEditor = { ed, v, m, isNew, follow: teFollowers(v, m) };
   if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
-  placeCaret(ed, editAt && { ...editAt, k: clickOffset(v, m, editAt) });
+  placeCaret(ed, editAt && { ...editAt, k: editAt.k ?? clickOffset(v, m, editAt) });
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
@@ -3249,20 +3278,41 @@ function startErase(e, v) {
   };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
-// Hover feedback for the Edit tool: what a click would edit is outlined.
-let hoverTimer = 0;
+// Hover feedback for the Edit tool: what a click would edit is outlined. Once a frame, for the last place the
+// pointer moved to (so where it stops is always the one shown), and an answer that comes after a newer one is dropped.
+let hoverSeq = 0, hoverRaf = 0;
 function onEditHover(e, v) {
   if (app.dataset.tool !== 'edit' || lineEditor) return;
-  const t = Date.now(); if (t - hoverTimer < 40) return; hoverTimer = t;
-  const [x, y] = toPdf(v, ...localPoint(e, v));
-  contentAt(v, x, y).then((hit) => {
-    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
-    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
-    svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
-    if (!hit) return;
-    const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark ? matQuad(hit.mark.mat) : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
-    svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  const pt = localPoint(e, v);
+  cancelAnimationFrame(hoverRaf);
+  hoverRaf = requestAnimationFrame(() => {
+    const my = ++hoverSeq, [x, y] = toPdf(v, ...pt);
+    contentAt(v, x, y).then((hit) => { if (my === hoverSeq && app.dataset.tool === 'edit' && !lineEditor) editHoverShow(v, hit); });
   });
+}
+// While Edit PDF is on, every line of text and picture that can be edited has a faint outline (under the marks), so
+// it shows at once what a click can change; the one under the pointer is outlined more strongly (above).
+function editHints(v, svg = v.el.querySelector('svg.marks')) {
+  if (!svg) return;
+  svg.querySelectorAll('.content-hints').forEach((n) => n.remove());
+  const cm = v.page && v.page._cmapValue; if (app.dataset.tool !== 'edit' || !cm || v.thumb) return;
+  const own = marksOf(v.entry), g = svgEl('g', { class: 'content-hints', 'aria-hidden': 'true' });
+  const poly = (q) => g.appendChild(svgEl('polygon', { points: q.map(([qx, qy]) => toView(v, qx, qy).map((n) => n.toFixed(1)).join(',')).join(' ') }));
+  for (const im of cm.images) {
+    const mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+    if (!(mark && mark.deleted)) poly(mark ? matQuad(mark.mat) : im.quad);
+  }
+  for (const L of cm.lines) poly(L.quad);
+  svg.insertBefore(g, svg.firstChild);
+}
+TEST_HOOKS.editHints = () => views.map((v) => v.el.querySelectorAll('svg.marks .content-hints polygon').length);
+function editHoverShow(v, hit) {
+  const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+  svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+  svg.style.cursor = !hit ? 'default' : hit.kind === 'text' ? 'text' : hit.kind === 'image' ? 'move' : 'pointer';
+  if (!hit) return;
+  const q = hit.kind === 'text' ? hit.L.quad : hit.kind === 'image' ? (hit.mark ? matQuad(hit.mark.mat) : hit.im.quad) : [[hit.a.rect[0], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[1]], [hit.a.rect[2], hit.a.rect[3]], [hit.a.rect[0], hit.a.rect[3]]];
+  svg.appendChild(svgEl('polygon', { class: 'content-hover', points: q.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
 }
 
 /* Saving content edits. A small reader for page content streams: it finds where each piece of text and each picture
@@ -3988,6 +4038,7 @@ function saveDropUnused(L, out) {
 }
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
+  await commitEditing();
   const L = await loadPdfLib();
   // Only protected files whose pages are still in the document count.
   const used = new Set(doc.pages.map((e) => e.src));
@@ -4085,7 +4136,10 @@ async function buildPdf(only) {
     for (const h of FEATURE.savePageLate) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
   for (const h of FEATURE.saveDoc) await h({ L, out, pages, entries, ctx: editCtx });
-  if (!same) saveDropUnused(L, out); // deleted pages (and what only they used) are not written
+  // Deleted pages, content streams an edit replaced (the old words would still be readable in the file) and anything
+  // else nothing refers to are not written, in every save path.
+  if (out.flush) await out.flush(); // fonts and pictures are written now, so one that is not used is dropped too
+  saveDropUnused(L, out);
   if (out.getTitle() === undefined) out.setTitle(doc.name); // keep the PDF's own title (or the one set in Document properties)
   out.setProducer('Cowdrey.PDF ' + VERSION + ' (bradcowdrey.com)'); out.setModificationDate(new Date());
   void PDFString;
@@ -4408,7 +4462,10 @@ async function renderSide() {
   // A list box: one Tab stop (the page in view), arrows move, Shift+arrows choose several, Enter goes to the page.
   const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
   const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
-  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
+  // Each thumbnail has its page's size and shape from the start (the big page's, or else the first page's), so the
+  // list does not jump as they are drawn: the longer side 182 px (as drawn), at most 150 px wide.
+  const box = (n) => { const vp = (views[n] || views[0] || {}).viewport, w = vp ? vp.width : 612, hh = vp ? vp.height : 792; return `width:${Math.min(150, 182 * w / Math.max(w, hh)).toFixed(1)}px;aspect-ratio:${w.toFixed(1)} / ${hh.toFixed(1)}`; };
+  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1" style="${box(n)}"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
   thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target).then(followThumbAgain); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
@@ -4792,9 +4849,12 @@ function showDialog(title, body, actions, setup) {
     // Start on the first field you type in (with a mouse and keyboard; a touch screen would open its keyboard), or else
     // on the first field, or else on the main button, never on the close button: what's typed at once isn't lost.
     // (not a field that belongs to a choice not made: focusing "Pages [1-3]" would choose it)
-    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return !(l && $('input[type="radio"]:not(:checked)', l)); });
-    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    // (and not one that is hidden: focus() on it does nothing, so the browser's own pick, the close button, would stay)
+    const shown = (f) => f.getClientRects().length && !f.closest('[hidden]');
+    const fine = matchMedia('(pointer: fine)').matches, texty = $$(`.dlg-body :is(${DLG_TEXTY})`, dlg).find((f) => { const l = f.closest('label'); return shown(f) && !(l && $('input[type="radio"]:not(:checked)', l)); });
+    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $$('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg).find(shown) || $('.dlg-body [role="tab"][aria-selected="true"]', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
     if (first && (document.activeElement === $('[data-x]', dlg) || !dlg.contains(document.activeElement))) { first.focus(); if (fine && first === texty && first.select) first.select(); }
+    if (document.activeElement === $('[data-x]', dlg)) { const b = $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn', dlg); if (b) b.focus(); }
     // Enter in a one-line field presses the main button (fields with their own Enter, like lists, say so first).
     dlg.onkeydown = (e) => {
       if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || !e.target.matches(`:is(${DLG_TEXTY}):not(textarea)`)) return;
@@ -4825,9 +4885,21 @@ function about() {
 const C = {};
 const has = () => !!doc && doc.pages.length > 0;
 function cmd(id, o) { C[id] = o; }
+// Whatever is still being typed (a line, a paragraph or text box, a note, callout or typewriter text, a form field
+// made here, a bookmark's name) is kept first, so a save, print or export has it.
+async function commitEditing() {
+  closeLineEditor(true);
+  const a = document.activeElement;
+  if (a && a.matches && a.matches('.ff-ctl')) a.dispatchEvent(new Event('change'));
+  if (pageAskOpen) pageAskOpen.finish();
+  for (const h of FEATURE.commitEdits) { try { await h(); } catch (e) { console.warn(e); } }
+  await new Promise((r) => setTimeout(r, 0)); // what waited on an editor (a note, a callout) is added now
+}
+const COMMIT_FIRST = new Set(['save', 'saveCopy', 'share', 'print', 'exportImage', 'exportText']);
 function run(id) {
   const c = C[id]; if (!c) return;
   if (id !== 'undo' && id !== 'redo') closeLineEditor(true); // keep what's being typed before saving, rotating…
+  if (COMMIT_FIRST.has(id) && !(c.enabled && !c.enabled())) { closePopover(); return commitEditing().then(() => c.run()); }
   if (c.enabled && !c.enabled()) return; closePopover(); c.run();
 }
 cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFiles });
@@ -4844,8 +4916,9 @@ cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Re
 TEST_HOOKS.cmdLabel = (id) => C[id].label;
 TEST_HOOKS.cmdEnabled = (id) => !C[id].enabled || !!C[id].enabled();
 TEST_HOOKS.cmdShown = (id) => shown(id);
+TEST_HOOKS.cmdMenu = (id) => (C[id] && (C[id].menu || C[id].sub)) || [];
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
-cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
+cmd('deleteMark', { label: 'Delete selected', rlabel: 'Delete', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
 cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
 cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
@@ -4881,7 +4954,7 @@ function shortcutsDialog() {
   const byKey = new Map();
   for (const c of Object.values(C)) if (c.key) { const l = c.label.replace(/…$/, ''); (byKey.get(c.key) || byKey.set(c.key, []).get(c.key)).push(c.key === 'Mod-d' && l === 'Duplicate' ? 'Duplicate selection' : l); }
   const rows = [...byKey].map(([k, ls]) => [ls.length > 1 ? `${ls[0]}, or ${ls.slice(1).join(', or ').replace(/^./, (x) => x.toLowerCase())} when nothing is selected` : ls[0], fmtKey(k) + (k === 'Mod-Shift-z' ? ' or ' + fmtKey('Mod-y') : '')]);
-  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Finish or cancel a tool', 'Esc']);
+  rows.push(['Delete selection', 'Delete'], ['Nudge selection', 'Arrows (Shift: 10 pt)'], ['Place the chosen note, stamp, text or signature in view', 'Enter'], ['Edit PDF: go to the next line or picture', 'Tab or arrows'], ['Edit PDF: edit that line or select that picture', 'Enter'], ['Finish or cancel a tool', 'Esc']);
   const row = ([l, k]) => `<span>${esc(l)}</span><span style="color:var(--ink-3);text-align:right">${esc(k)}</span>`;
   return dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${rows.map(row).join('')}</div>`, [{ label: 'Close', primary: true }]);
 }
@@ -4894,7 +4967,7 @@ const MENUS = [
   ['File', ['open', 'openRecent', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect (the Comment tab's Add has it too)
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -4908,7 +4981,7 @@ const menuIcon = (icon) => icon ? ic(icon) : '<span></span>', menuChk = (on) => 
 function menuHtml(ids) {
   let html = '', group = false;
   for (const id of ids.filter(shown)) {
-    const radio = /^theme_/.test(id) ? 'Appearance' : /^vw_lay_/.test(id) ? 'Page layout' : false;
+    const radio = (C[id] && C[id].radio) || (/^theme_/.test(id) ? 'Appearance' : /^vw_lay_/.test(id) ? 'Page layout' : false);
     if (radio !== group) { html += (group ? '</div>' : '') + (radio ? `<div role="group" aria-label="${radio}">` : ''); group = radio; }
     if (id === '-') { html += '<div class="msep"></div>'; continue; }
     const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
@@ -4992,14 +5065,14 @@ function moreMenuHtml(menus = MENUS, keep = () => true) {
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
   }).join('');
 }
-/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). What only
-   the menus had is on it too: File (at the start of the tab row) lists the File menu, then what the other menus have
-   that no ribbon tab shows; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its
-   menus in the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
+/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). Every
+   command in the menus has a home on a ribbon tab too (a test checks), so File (at the start of the tab row) lists
+   the File menu alone; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its menus in
+   the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
 if (!MAC_APP) app.dataset.menubar = 'ribbon';
 function fileMenuHtml() {
-  const file = MENUS.find(([t]) => t === 'File'), rest = MENUS.filter(([t]) => t !== 'File' && t !== 'Help');
-  return menuHtml(file ? file[1] : []) + moreMenuHtml(rest, (id) => !/^theme_/.test(id)); // the theme: its own button
+  const file = MENUS.find(([t]) => t === 'File');
+  return menuHtml(file ? file[1] : []);
 }
 const helpMenuHtml = () => menuHtml((MENUS.find(([t]) => t === 'Help') || ['', []])[1]);
 function menuButton(b, html) {
@@ -5142,9 +5215,9 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'sidebar', 'darkPage'], 'rows', 'keep']]],
-  edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab
+  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', 'sidebar', 'darkPage'], 'rows', 'keep']]],
+  edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase', 'deleteMark']], ['Add', ['tool_text', 'image']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_pen', 'tool_note']] /* Highlight: in Text mark-up */, ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab, and in Add
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
@@ -5257,7 +5330,7 @@ function phoneFold(groups) {
     }
     let list = Array.isArray(ids) ? members(ids) : [], name = label;
     // groups of small buttons side by side (Text box, Add) are one button, named after the last of them
-    while (look === 'rows' && groups[k + 1] && groups[k + 1][2] === 'rows' && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
+    while (look === 'rows' && !keep && groups[k + 1] && groups[k + 1][2] === 'rows' && !groups[k + 1][3] && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
     if (!look || keep || list.length < 2) { out.push(groups[k]); continue; }
     const label2 = name, face = () => list.find(on) || (list.includes(foldLast[label2]) ? foldLast[label2] : list[0]);
     cmd('fold:' + name, look === 'icons'
@@ -5270,7 +5343,7 @@ function phoneFold(groups) {
 // The Style button's list: the colours (as on the Comment tab), then the group's own commands; one with `sub` (a list
 // of command ids) shows them under its name.
 matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
-Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+Object.assign(TEST_HOOKS, { menus: () => MENUS, ribbon: () => RIBBON, S, docMarks: () => docMarks() });
 // A menu as the menu bar lists it (the Mac app's window shows the bar if macOS turns its menus down), opened under File.
 TEST_HOOKS.openMenu = (title) => { const m = MENUS.find(([t]) => t === title); closePopover(); openPopover($('#fileBtn'), menuHtml(m[1])); };
 function foldStyleHtml(ids) {
@@ -5388,6 +5461,85 @@ function refreshRibbon() {
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
+/* ---------------- Edit PDF from the keyboard ---------------- */
+// With Edit PDF on and the page focused, Tab (or Enter, F2) shows an outline on the first line or picture in view;
+// Tab and the arrow keys move it through the page's lines and pictures in reading order, Enter opens the line (caret
+// at its end, as a click there would) or selects the picture, Escape leaves. Tab past the last goes on as usual.
+let kbEdit = null, kbEditLast = null; // { v, blocks, i, el } while the outline shows; { entry, i } of the last one
+async function kbEditBlocks(v) {
+  const cm = await contentMap(v.page); v.page._cmapValue = cm;
+  const own = marksOf(v.entry), out = [];
+  for (const L of cm.lines) if (L.str.trim()) out.push({ kind: 'line', L, quad: L.quad, label: 'Line: ' + L.str.trim() });
+  for (const im of cm.images) {
+    const mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+    if (!(mark && mark.deleted)) out.push({ kind: 'image', im, mark, quad: mark ? matQuad(mark.mat) : im.quad, label: 'Picture' });
+  }
+  for (const b of out) { const pts = b.quad.map(([x, y]) => toView(v, x, y)), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]); b.box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }
+  // reading order: top to bottom, then left to right along a row
+  return out.sort((a, b) => { const ha = a.box[3] - a.box[1], hb = b.box[3] - b.box[1], mid = (b.box[1] + b.box[3]) / 2; return (mid > a.box[1] && mid < a.box[3]) || ((a.box[1] + a.box[3]) / 2 > b.box[1] && (a.box[1] + a.box[3]) / 2 < b.box[3]) ? a.box[0] - b.box[0] : (a.box[1] + ha / 2) - (b.box[1] + hb / 2); });
+}
+function kbEditShow(i) {
+  const k = kbEdit; if (!k) return;
+  k.i = i; kbEditLast = { entry: k.v.entry, i };
+  const b = k.blocks[i], el = k.el || (k.el = document.createElement('div'));
+  el.className = 'kb-block'; el.setAttribute('aria-hidden', 'true');
+  Object.assign(el.style, { left: b.box[0] - 3 + 'px', top: b.box[1] - 3 + 'px', width: b.box[2] - b.box[0] + 6 + 'px', height: b.box[3] - b.box[1] + 6 + 'px' });
+  if (el.parentNode !== k.v.el) k.v.el.appendChild(el);
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  announce(b.label);
+}
+function kbEditEnd() { if (kbEdit && kbEdit.el) kbEdit.el.remove(); kbEdit = null; }
+async function kbEditStart(v) {
+  const k = kbEdit = { v, blocks: [], i: -1, el: null, loading: true };
+  const blocks = await kbEditBlocks(v);
+  if (kbEdit !== k) return;
+  k.blocks = blocks; k.loading = false;
+  if (!blocks.length) { announce('No text or pictures to edit on this page'); return; }
+  // the one edited last, else the first in view
+  const vr = viewer.getBoundingClientRect(), pr = v.el.getBoundingClientRect();
+  let i = kbEditLast && kbEditLast.entry === v.entry && kbEditLast.i < blocks.length ? kbEditLast.i : blocks.findIndex((b) => pr.top + b.box[3] > vr.top && pr.top + b.box[1] < vr.bottom);
+  kbEditShow(Math.max(0, i));
+}
+// Opens the block as a click on it would: a line at its end (the caret goes there), a picture in its middle.
+function kbEditOpen() {
+  const k = kbEdit; if (!k || k.i < 0) return;
+  const b = k.blocks[k.i], v = k.v; kbEditEnd();
+  let x, y;
+  if (b.kind === 'line') { const t = b.L.tm, { u, size } = lineFrame(b.L), w = b.L.width - .5, up = size * .3; [x, y] = toView(v, t[4] + u[0] * w - u[1] * up, t[5] + u[1] * w + u[0] * up); }
+  else { x = (b.box[0] + b.box[2]) / 2; y = (b.box[1] + b.box[3]) / 2; }
+  const r = v.el.getBoundingClientRect(), cx = r.left + x, cy = r.top + y;
+  const hit = document.elementFromPoint(cx, cy), target = hit && v.el.contains(hit) && hit.closest('svg.marks') ? hit : v.el.querySelector('svg.marks');
+  if (!target) return;
+  const o = { clientX: cx, clientY: cy, bubbles: true, cancelable: true, pointerId: 78, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 };
+  target.dispatchEvent(new PointerEvent('pointerdown', o));
+  window.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+}
+// The keys; true when the key was used.
+function kbEditKey(e) {
+  const a = document.activeElement;
+  if (!doc || app.dataset.tool !== 'edit' || lineEditor || a !== viewer || e.altKey || e.ctrlKey || e.metaKey) { if (kbEdit && (!doc || app.dataset.tool !== 'edit')) kbEditEnd(); return false; }
+  const k = kbEdit;
+  if (!k) {
+    if (e.key === 'Tab' && e.shiftKey) return false;
+    if (!['Tab', 'Enter', 'F2'].includes(e.key)) return false;
+    const v = views[current]; if (!v || !v.rendered) return false;
+    e.preventDefault(); kbEditStart(v); return true;
+  }
+  if (k.loading) { if (e.key === 'Tab' || e.key === 'Enter' || /^Arrow/.test(e.key)) { e.preventDefault(); return true; } return false; }
+  const n = k.blocks.length;
+  if (e.key === 'Escape') { e.preventDefault(); kbEditEnd(); announce('Left the page'); return true; }
+  if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); if (n) kbEditOpen(); return true; }
+  const step = e.key === 'Tab' ? (e.shiftKey ? -1 : 1) : { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+  if (e.key === 'Home' || e.key === 'End') { if (!n) return false; e.preventDefault(); kbEditShow(e.key === 'Home' ? 0 : n - 1); return true; }
+  if (!step) return false;
+  const i = k.i + step;
+  if (i < 0 || i >= n) { if (e.key === 'Tab') { kbEditEnd(); return false; } e.preventDefault(); return true; } // Tab goes on; arrows stop
+  e.preventDefault(); kbEditShow(i); return true;
+}
+// A click, a scroll of another page or a new tool takes the outline away.
+document.addEventListener('pointerdown', (e) => { if (kbEdit && e.isTrusted) kbEditEnd(); }, true);
+viewer.addEventListener('focusout', () => setTimeout(() => { if (kbEdit && document.activeElement !== viewer) kbEditEnd(); }, 0));
+
 /* ---------------- keys ---------------- */
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open) return;
@@ -5409,6 +5561,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
+  if (kbEditKey(e)) return;
   if (e.key === 'Enter' && doc && keyPlaces(app.dataset.tool)) {
     // on the page, or still on the button that chose the tool (Enter there would only choose it again)
     const a = document.activeElement, c = a && a.dataset && C[a.dataset.cmd];
@@ -5579,6 +5732,9 @@ const TXT_SPACINGS = [1, 1.15, 1.5, 2];
 const txtLead = (m, size, spacing = m.spacing, size0 = m.size0) => (+spacing ? +spacing * 1.2 * size : m.lead0 * Math.max(1, size / size0));
 const txtOrigin = (F, i, x) => [F.o[0] + F.u[0] * x - F.v[0] * i * F.lead, F.o[1] + F.u[1] * x - F.v[1] * i * F.lead];
 const txtAlignK = (a) => ({ center: .5, right: 1 }[a] || 0);
+// Where a line of width w starts in its block: aligned in the block's width (wrap), or, for a line edited on its own,
+// in the line's original box (box: centred on its middle, or ending where it ended).
+const txtLineX = (m, w) => m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : m.box ? (m.box - w) * txtAlignK(m.align) : 0;
 function txtRelayout(page, m) {
   m.std = txtIsStd(m);
   m.lines = m.wrap ? txtWrap(m.text, m.wrap, txtMeasurer(page, m)) : m.text.split('\n');
@@ -5588,8 +5744,11 @@ function txtRelayout(page, m) {
 // page's fonts as. A face from the page is written with that font where it has the letters (as the own font is).
 const TXT_STD_FACES = [['sans', 'Helvetica'], ['serif', 'Times'], ['mono', 'Courier']];
 const txtFontInfo = new Map(); // loaded name -> { font, codes, fam, bold, italic, ascent, descent, label }
-// A font's name as people know it: no subset tag, words apart ("ABCDEF+Carlito-Bold-8659" is "Carlito Bold").
-const txtFontLabel = (name) => baseName(name).replace(/[-_,+]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').trim() || 'As in the PDF';
+// A font's name as people know it: no subset tag, words apart, a weight in one word ("ABCDEF+Carlito-Bold-8659" is
+// "Carlito Bold", "DMSans-SemiBold" is "DM Sans SemiBold").
+const txtFontLabel = (name) => baseName(name).replace(/^[A-Z]{6}\+/, '').replace(/[-_,+]+/g, ' ').replace(/([A-Z]+)([A-Z][a-z]{3,})/g, '$1 $2').replace(/([a-z])([A-Z])/g, '$1 $2')
+  .replace(/\b(Semi|Demi|Extra|Ultra) (Bold|Light|Condensed|Expanded)\b/g, '$1$2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').replace(/\s+/g, ' ').trim() || 'As in the PDF';
+TEST_HOOKS.fontLabel = txtFontLabel;
 const txtStdFace = (face) => TXT_STD_FACES.some(([k]) => k === face);
 // Drawn in a standard font: a standard face, or bold or italic asked of a font that isn't.
 const txtIsStd = (m) => txtStdFace(m.face) || m.bold !== (m.loaded ? !!m.fbold : m.base.bold) || m.italic !== (m.loaded ? !!m.fitalic : m.base.italic);
@@ -5696,7 +5855,7 @@ FEATURE.markTypes.tpara = {
     g.appendChild(txtPoly(v, [top, [top[0] + F.u[0] * wmax, top[1] + F.u[1] * wmax], [top[0] + F.u[0] * wmax - F.v[0] * dn, top[1] + F.u[1] * wmax - F.v[1] * dn], [top[0] - F.v[0] * dn, top[1] - F.v[1] * dn]], 'transparent'));
     m.lines.forEach((line, i) => {
       if (!line.trim()) return;
-      const w = meas(line), x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0;
+      const w = meas(line), x = txtLineX(m, w);
       const org = txtOrigin(F, i, x), [ox, oy] = toView(v, ...org);
       const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}:${m.fam}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, loaded: m.loaded, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
       const gl = svgEl('g', { transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` });
@@ -5738,7 +5897,7 @@ async function txtDrawPara(L, out, p, m, ctx) {
       try { r.hex = sf.encodeText(r.chars.join('')); r.w = sf.widthOfTextAtSize(r.chars.join(''), 1); } catch { const s = txtSafe(r.chars.join('')); r.hex = sf.encodeText(s); r.w = sf.widthOfTextAtSize(s, 1); }
     }
     for (const r of runs) w += (r.w + r.chars.length * (m.tc || 0)) * hs;
-    const x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0, org = txtOrigin(F, i, x);
+    const x = txtLineX(m, w), org = txtOrigin(F, i, x);
     const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
@@ -5829,16 +5988,22 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   bar.innerHTML = [
     opts.face ? sel('face', 'type', 'Font', `<option value="">${esc(opts.face.own)}</option>${TXT_STD_FACES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}`) : '',
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
-    `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
+    // The size can be typed; Smaller and Bigger are for the mouse and fingers (Up and Down in the box do the same).
+    `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller', 'tabindex="-1"')}<input type="number" class="txt-size" data-tf="size" min="4" max="200" step="0.5" inputmode="decimal" title="Size in points" aria-label="Font size">${btn('bigger', 'plus', 'Bigger', 'tabindex="-1"')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
-    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
+    `<span class="txt-grp txt-cols sw-row" role="radiogroup" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
     opts.spacing ? sel('spacing', 'unfold-vertical', 'Line spacing', `<option value="0">As is</option>${TXT_SPACINGS.map((n) => `<option value="${n}">${n % 1 ? n : n.toFixed(1)}</option>`).join('')}`) : '',
   ].join('');
+  // The swatches are one radio group: one Tab stop (the colour now), the arrow keys move along it.
+  const sws = $$('[data-tf="color"]', bar);
+  sws.forEach((b) => { b.removeAttribute('aria-pressed'); b.setAttribute('role', 'radio'); });
   const sync = () => {
-    $('.txt-size', bar).textContent = txtRound(fmt.size);
-    $$('[data-tf="color"]', bar).forEach((b) => b.setAttribute('aria-pressed', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
+    const sz = $('.txt-size', bar); if (document.activeElement !== sz) sz.value = txtRound(fmt.size);
+    sws.forEach((b) => b.setAttribute('aria-checked', b.dataset.c.toLowerCase() === String(fmt.color).toLowerCase()));
+    const on = sws.find((b) => b.getAttribute('aria-checked') === 'true') || sws[0];
+    sws.forEach((b) => { b.tabIndex = b === on ? 0 : -1; });
     $('[data-tf="pick"]', bar).value = /^#[0-9a-f]{6}$/i.test(fmt.color) ? fmt.color : '#111111';
     $('.txt-dot', bar).style.background = fmt.color;
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
@@ -5863,6 +6028,22 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     else if (k === 'left' || k === 'center' || k === 'right') fmt.align = k;
     sync(); onChange(fmt); refocus && refocus();
   });
+  bar.addEventListener('keydown', (e) => {
+    const k = sws.indexOf(e.target), d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (k < 0 || !(d || e.key === 'Home' || e.key === 'End')) return;
+    e.preventDefault(); e.stopPropagation();
+    const n = sws[e.key === 'Home' ? 0 : e.key === 'End' ? sws.length - 1 : (k + d + sws.length) % sws.length];
+    fmt.color = n.dataset.c; sync(); n.focus(); onChange(fmt);
+  });
+  const size = $('.txt-size', bar);
+  const setSize = (n) => { if (!(n > 0)) { sync(); return; } fmt.size = Math.max(4, Math.min(200, txtRound(n))); sync(); onChange(fmt); };
+  size.addEventListener('change', () => setSize(parseFloat(size.value)));
+  size.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); const step = fmt.size < 12 ? .5 : 1; setSize(txtRound(fmt.size + (e.key === 'ArrowUp' ? step : -step))); size.value = txtRound(fmt.size); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); setSize(parseFloat(size.value)); refocus && refocus(); }
+    else if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation(); // typing a size is not a shortcut
+  });
+  size.addEventListener('pointerdown', (e) => e.stopPropagation());
   const pick = $('[data-tf="pick"]', bar);
   pick.addEventListener('input', () => { fmt.color = pick.value; sync(); onChange(fmt); });
   pick.addEventListener('change', () => { refocus && refocus(); });
@@ -5937,7 +6118,7 @@ function txtPlaceBar(v, target) {
 // The keys of an editor with its bar: Tab and Shift+Tab go round the text and the bar (Escape in the bar goes back
 // to the text), and Ctrl/Cmd+B, I and U press Bold, Italic and Underline, as in a word processor.
 const TXT_FMT_KEYS = { b: 'bold', i: 'italic', u: 'underline' };
-const txtBarStops = (bar) => $$('button, select, input:not([type="hidden"])', bar).filter((b) => !b.disabled && b.getClientRects().length);
+const txtBarStops = (bar) => $$('button, select, input:not([type="hidden"])', bar).filter((b) => !b.disabled && b.tabIndex >= 0 && b.getClientRects().length);
 function txtFmtKey(e, bar) {
   const k = (isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && TXT_FMT_KEYS[(e.key || '').toLowerCase()];
   const b = k && $(`[data-tf="${k}"]`, bar); if (!b) return false;
@@ -5999,9 +6180,12 @@ function txtCloseEditor(commit, done = false) {
   const text = E.ta.value.replace(/\r/g, '');
   E.ta.remove();
   if (had) viewer.focus({ preventScroll: true }); // the keys go on working on the page
-  if (commit) Promise.resolve(E.done(text, E.fmt, done)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
-  else drawMarks(E.v);
+  if (commit) { const w = Promise.resolve(E.done(text, E.fmt, done)).catch((e) => console.warn(e)).finally(() => { txtPending.delete(w); drawMarks(E.v); }); txtPending.add(w); return w; }
+  drawMarks(E.v);
 }
+// A paragraph or text box being typed, or still being kept (closed a moment ago), is in the PDF before a save.
+const txtPending = new Set();
+FEATURE.commitEdits.push(async () => { txtCloseEditor(true); await Promise.all([...txtPending]); });
 const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans', face: m.face || '', spacing: +m.spacing || 0 });
 const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align', 'face', 'spacing'].every((k) => String(a[k] ?? (k === 'spacing' ? 0 : '')) === String(b[k] ?? (k === 'spacing' ? 0 : '')));
 const txtCss = (fam, f, px) => `${f.bold ? 'bold ' : ''}${f.italic ? 'italic ' : ''}${px}px ${cssFamily(fam)}`;
@@ -6047,7 +6231,7 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
           e.stopPropagation();
           const s = txtParaFitSize(v.page, m, ta.value.replace(/\r/g, ''), f);
           if (s == null) { toast('Even at 70% of its size it would not fit. Shorten the text, or let it run.'); return; }
-          f.size = s; if (txtBar) { const z = $('.txt-size', txtBar); if (z) z.textContent = txtRound(s); }
+          f.size = s; if (txtBar) { const z = $('.txt-size', txtBar); if (z) z.value = txtRound(s); }
           refit(); txtPlaceBar(v, ta);
         };
         v.el.appendChild(note);
@@ -6057,7 +6241,7 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       place(); requestAnimationFrame(place);
     },
     cleanup() { if (note) { note.remove(); note = null; } }, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
-    opts: { align: !!m.wrap, spacing: !!m.wrap, face: txtFaceOpts(v, m) },
+    opts: { align: !!(m.wrap || m.box), spacing: !!m.wrap, face: txtFaceOpts(v, m) },
     place(ta, f) {
       const F = txtFrame({ ...m, size: f.size, spacing: f.spacing || 0 }), px = f.size * scale, lh = F.lead * scale;
       const [ox, oy] = toView(v, ...F.o), [ax, ay] = toView(v, F.o[0] + F.u[0], F.o[1] + F.u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
@@ -6166,12 +6350,13 @@ openLineEditor = function (v, m, isNew) {
   const le = lineEditor; if (!le || le.m !== m) return;
   const base = { size: lineFrame(m).size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: false, align: 'left', face: '', spacing: 0 };
   txtLine = { le, base, fmt: { ...base } };
-  txtShowBar(v, le.ed, txtLine.fmt, { align: false, face: txtFaceOpts(v, m) }, (f) => {
+  // Alignment too: the line keeps its own box, and aligns in it (its text centred on the box's middle, or ending at its right).
+  txtShowBar(v, le.ed, txtLine.fmt, { align: true, face: txtFaceOpts(v, m) }, (f) => {
     const px = f.size * scale, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, [, oy] = toView(v, m.tm[4], m.tm[5]);
     // Another font: the page's (as pdf.js loaded it, unless bold or italic is asked of it), or a standard one.
     const info = /^f:/.test(f.face) && txtFontInfo.get(f.face.slice(2)), fam = info ? info.fam : f.face;
     const font = !f.face ? lineFont(v, m, px, f.bold, f.italic) : info && f.bold === info.bold && f.italic === info.italic ? `${px}px "${info.loaded}", ${cssFamily(fam)}` : txtCss(fam, f, px);
-    Object.assign(le.ed.style, { font, color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
+    Object.assign(le.ed.style, { font, color: f.color, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
   }, () => le.ed.focus({ preventScroll: true }));
 };
 const txtCoreCloseLine = closeLineEditor;
@@ -6190,7 +6375,7 @@ closeLineEditor = function (commit) {
   const before = snapshot(), list = marksOf(le.v.entry);
   if (!le.isNew) { const k = list.indexOf(le.m); if (k >= 0) list.splice(k, 1); }
   const m = txtNewPara([le.m], 0, T.base.size * 1.2);
-  Object.assign(m, { text, size: T.fmt.size, color: T.fmt.color, bold: T.fmt.bold, italic: T.fmt.italic, underline: T.fmt.underline });
+  Object.assign(m, { text, size: T.fmt.size, color: T.fmt.color, bold: T.fmt.bold, italic: T.fmt.italic, underline: T.fmt.underline, align: T.fmt.align || 'left', box: le.m.width });
   txtApplyFace(m, T.fmt.face); txtRelayout(le.v.page, m);
   list.push(m);
   drawMarks(le.v); changed(before);
@@ -6218,18 +6403,23 @@ onEditDown = async function (e, v) {
 };
 // Paragraph mode: hovering outlines the whole paragraph.
 const txtCoreHover = onEditHover;
+// As the core's: once a frame, for where the pointer is now, and late answers dropped (the same hoverSeq and hoverRaf).
 onEditHover = function (e, v) {
   if (txtEd) return;
   if (!S.txtPara || app.dataset.tool !== 'edit' || lineEditor) return txtCoreHover(e, v);
-  const t = Date.now(); if (t - (v._txtHover || 0) < 60) return; v._txtHover = t;
-  const [x, y] = toPdf(v, ...localPoint(e, v));
-  contentMap(v.page).then((cm) => {
-    const svg = v.el.querySelector('svg.marks'); if (!svg) return;
-    svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
-    const L = cm.lines.find((l) => inQuad(l.quad, x, y));
-    if (!L || txtCovered(v.entry, L)) return txtCoreHover(e, v);
-    svg.style.cursor = 'text';
-    for (const l of txtBlock(cm, L, v.entry).lines) svg.appendChild(svgEl('polygon', { class: 'content-hover', points: l.quad.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+  const pt = localPoint(e, v);
+  cancelAnimationFrame(hoverRaf);
+  hoverRaf = requestAnimationFrame(() => {
+    const my = ++hoverSeq, [x, y] = toPdf(v, ...pt);
+    contentMap(v.page).then((cm) => {
+      if (my !== hoverSeq || !S.txtPara || app.dataset.tool !== 'edit' || lineEditor || txtEd) return;
+      const svg = v.el.querySelector('svg.marks'); if (!svg) return;
+      svg.querySelectorAll('.content-hover').forEach((n) => n.remove());
+      const L = cm.lines.find((l) => inQuad(l.quad, x, y));
+      if (!L || txtCovered(v.entry, L)) return txtCoreHover(e, v);
+      svg.style.cursor = 'text';
+      for (const l of txtBlock(cm, L, v.entry).lines) svg.appendChild(svgEl('polygon', { class: 'content-hover', points: l.quad.map(([qx, qy]) => toView(v, qx, qy).join(',')).join(' ') }));
+    });
   });
 };
 // Add text: click for text that fits, or drag across to make a box the text wraps in.
@@ -6409,15 +6599,23 @@ async function txtReplaceDialog() {
 
 /* ---- commands, ribbon, keys, styles ---- */
 const TXT_REPLACE_KEY = isMac ? 'Mod-Alt-f' : 'Mod-h';
-cmd('txtParaMode', { label: 'Edit as paragraphs', icon: 'pilcrow', enabled: has, pressed: () => !!S.txtPara, run: () => {
-  S.txtPara = !S.txtPara; saveSettings();
-  if (app.dataset.tool !== 'edit') setTool('edit'); else refreshRibbon();
-  toast(S.txtPara ? 'Click a paragraph to edit it as one block' : 'Click a line to edit it');
-} });
+// Lines or paragraphs: a setting of Edit PDF (kept for next time), chosen in its button's menu (a choice of one), not
+// a second tool. Choosing one turns Edit PDF on.
+const txtEditHint = TOOL_HINTS.edit;
+Object.defineProperty(TOOL_HINTS, 'edit', { get: () => S.txtPara ? txtEditHint.replace(/^Click text/, 'Click a paragraph') : txtEditHint });
+function txtSetPara(on) {
+  const was = !!S.txtPara; S.txtPara = on; saveSettings();
+  if (app.dataset.tool !== 'edit') setTool('edit'); else { closeLineEditor(true); toolHint = TOOL_HINTS.edit; refreshRibbon(); modeChip(); }
+  if (was !== on) toast(on ? 'Click a paragraph to edit it as one block' : 'Click a line to edit it');
+}
+cmd('txtEditLines', { label: 'Edit lines', icon: 'text', radio: 'Edit text', enabled: has, pressed: () => !S.txtPara, run: () => txtSetPara(false) });
+cmd('txtEditParas', { label: 'Edit paragraphs', icon: 'pilcrow', radio: 'Edit text', enabled: has, pressed: () => !!S.txtPara, run: () => txtSetPara(true) });
+C.tool_edit.menu = ['txtEditLines', 'txtEditParas'];
+C.tool_edit.tip = 'Edit PDF: click text to change it, or a picture to move it (the arrow chooses lines or paragraphs)';
 cmd('txtReplace', { label: 'Replace text…', icon: 'replace', key: TXT_REPLACE_KEY, enabled: has, run: txtReplaceDialog });
-ribbonAdd('edit', 'Edit the PDF', ['txtParaMode', 'txtReplace']);
+{ const g = RIBBON.edit[1].find(([n]) => n === 'Edit the PDF')[1], k = g.indexOf('deleteMark'); g.splice(k < 0 ? g.length : k, 0, 'txtReplace'); }
 { const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('find') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtReplace'); else menuAdd('Edit', ['txtReplace']); }
-{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('tool_erase') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtParaMode'); else menuAdd('Edit', ['txtParaMode']); }
+{ const em = MENUS.find(([t]) => t === 'Edit'), i = em ? em[1].indexOf('tool_edit') : -1; if (i >= 0) em[1].splice(i + 1, 0, 'txtEditLines', 'txtEditParas'); else menuAdd('Edit', ['txtEditLines', 'txtEditParas']); }
 setTimeout(() => { try { ACCEL['Mod-Alt-f'] = 'CmdOrCtrl+Alt+F'; ACCEL['Mod-h'] = 'CmdOrCtrl+H'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey)) return;
@@ -6435,11 +6633,10 @@ addStyle(`
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .txt-dot { --sw-edge: rgb(255 255 255 / .34); } }
 :root[data-theme="dark"] .txt-dot { --sw-edge: rgb(255 255 255 / .34); }
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  /* Phones: one row; the colours open from one button */
-  .txt-bar.floating { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
-  .txt-bar.floating::-webkit-scrollbar { display: none; }
+  /* Phones: the bar wraps to a second row, so every control is in view; the colours open from one button */
+  .txt-bar.floating { justify-content: center; row-gap: 2px; }
   .txt-bar.floating .txt-grp { flex: none; }
-  .txt-bar.floating .txt-colgrp { display: inline-flex; }
+  .txt-bar.floating .txt-colgrp { display: inline-flex; border-right: 0; }
   .txt-bar.floating .txt-cols { display: none; }
   .txt-bar.floating.txt-show-cols .txt-cols { display: inline-flex; }
   .txt-bar.floating.txt-show-cols .txt-grp:not(.txt-cols):not(.txt-colgrp) { display: none; }
@@ -6452,7 +6649,9 @@ addStyle(`
 .txt-b[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .txt-b [data-lucide], .txt-b svg { width: 16px; height: 16px; }
 @media (pointer: coarse) { .txt-b { width: 44px; height: 44px; } .txt-bar select { height: 44px; } } /* a finger's 44px */
-.txt-size { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink); }
+.txt-bar .txt-size { width: 44px; height: 26px; box-sizing: border-box; padding: 0 2px; text-align: center; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; -moz-appearance: textfield; }
+.txt-bar .txt-size::-webkit-inner-spin-button, .txt-bar .txt-size::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+@media (pointer: coarse) { .txt-bar .txt-size { height: 36px; font-size: 16px; } } /* 16px: the phone does not zoom in to type */
 .txt-bar .sw-row { gap: 4px; }
 @media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
 .txt-sel { gap: 4px; color: var(--ink-2); }
@@ -6936,7 +7135,7 @@ async function vwAttach(files) {
   if (!isPhone() && !S.sidebar) toggleSidebar(true);
 }
 TEST_HOOKS.attachFiles = (files) => vwAttach(files);
-cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click() });
+cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click(), menu: ['vw_attach', 'vw_files'] }); // its arrow: the Attachments panel
 cmd('vw_files', { label: 'Attachments', icon: 'paperclip', enabled: has, pressed: () => S.side === 'files' && (isPhone() ? app.dataset.sidebar === 'open' : S.sidebar), run: () => { setSide('files'); if (isPhone() || !S.sidebar) toggleSidebar(true); } });
 FEATURE.saveDoc.push(async ({ out }) => {
   for (const m of vwAdded()) {
@@ -6963,6 +7162,7 @@ setTimeout(async () => {
   const em = MENUS.find(([t]) => t === 'Edit')[1], j = em.indexOf('image'); // Edit: after Add picture
   em.splice(j < 0 ? em.length : j + 1, 0, 'vw_attach');
 }
+ribbonAdd('edit', 'Add', ['vw_attach']); // as in the Edit menu, after Picture; its arrow lists Attachments too
 addStyle(`
 .app[data-tool="hand"] .viewer, .app.vw-space .viewer { cursor: grab; user-select: none; -webkit-user-select: none; }
 .app[data-tool="hand"] .viewer :is(.page, .page *), .app.vw-space .viewer :is(.page, .page *) { cursor: grab !important; user-select: none !important; -webkit-user-select: none !important; }
@@ -7064,12 +7264,23 @@ async function bmHeading(n) {
       line.items.push(i); line.size = Math.max(line.size, s);
     }
     lines.sort((a, b) => b.y - a.y);
-    const head = lines.find((l) => l.size >= median * 1.15);
-    if (!head) return null;
-    head.items.sort((a, b) => a.transform[4] - b.transform[4]);
-    let text = '', end = null;
-    for (const i of head.items) { if (end != null && i.transform[4] > end + size(i) * .15 && !/\s$/.test(text)) text += ' '; text += i.str; end = i.transform[4] + (i.width || 0); }
-    text = text.replace(/\s+/g, ' ').trim();
+    const k = lines.findIndex((l) => l.size >= median * 1.15);
+    if (k < 0) return null;
+    const head = lines[k];
+    // A heading wrapped over lines: the lines right under it at the same size (within 5%) are part of it.
+    const parts = [head];
+    for (let j = k + 1; j < lines.length; j++) {
+      const l = lines[j], prev = parts[parts.length - 1];
+      if (Math.abs(l.size - head.size) > head.size * .05 || prev.y - l.y > head.size * 1.6) break;
+      parts.push(l);
+    }
+    const lineText = (l) => {
+      l.items.sort((a, b) => a.transform[4] - b.transform[4]);
+      let t = '', end = null;
+      for (const i of l.items) { if (end != null && i.transform[4] > end + size(i) * .15 && !/\s$/.test(t)) t += ' '; t += i.str; end = i.transform[4] + (i.width || 0); }
+      return t;
+    };
+    const text = parts.map(lineText).join(' ').replace(/\s+/g, ' ').trim();
     return text ? (text.length > 80 ? text.slice(0, 79).trim() + '…' : text) : null;
   } catch { return null; }
 }
@@ -7137,7 +7348,7 @@ async function bmGo(id) {
   const n = bmPageOf(at.item.key);
   if (n >= 0) goPage(n);
   else if (at.item.url) openExternal(at.item.url);
-  else toast('This bookmark’s page was deleted');
+  else toast(at.item.key == null ? 'This bookmark has no destination' : 'This bookmark’s page was deleted');
 }
 
 /* ---- the panel ---- */
@@ -7151,10 +7362,10 @@ async function bmRender(panel = $('#sidePanel')) {
   const row = (b, depth) => {
     const kids = b.items && b.items.length, n = bmPageOf(b.key), sel = b.id === BM.sel;
     return `<li role="treeitem" data-bm="${b.id}" aria-selected="${sel}"${kids ? ` aria-expanded="${!!b.open}"` : ''}>
-      <div class="bm-row${n < 0 && !b.url ? ' bm-gone' : ''}" draggable="true" tabindex="${sel || (!BM.sel && b === tree[0]) ? 0 : -1}" style="padding-left:${4 + depth * 14}px">
+      <div class="bm-row${n < 0 && !b.url && b.key != null ? ' bm-gone' : ''}" draggable="true" tabindex="${sel || (!BM.sel && b === tree[0]) ? 0 : -1}" style="padding-left:${4 + depth * 14}px">
         ${kids ? `<button type="button" class="bm-tw" tabindex="-1" aria-label="${b.open ? 'Collapse' : 'Expand'}">${ic(b.open ? 'chevron-down' : 'chevron-right')}</button>` : '<span class="bm-tw"></span>'}
         <span class="bm-t" title="${esc(b.title)}">${esc(b.title)}</span>
-        <span class="bm-pg"${n < 0 ? ` title="${b.url ? esc(b.url) : 'Its page was deleted'}"` : ''}>${n >= 0 ? n + 1 : b.url ? ic('external-link') : '–'}</span>
+        <span class="bm-pg"${n < 0 ? ` title="${b.url ? esc(b.url) : b.key == null ? 'No destination' : 'Its page was deleted'}"` : ''}>${n >= 0 ? n + 1 : b.url ? ic('external-link') : '–'}</span>
       </div>
       ${kids && b.open ? `<ul role="group">${b.items.map((c) => row(c, depth + 1)).join('')}</ul>` : ''}
     </li>`;
@@ -7235,6 +7446,7 @@ function bmWire(panel) {
   };
 }
 // Rename in place: Enter or leaving the field keeps the name, Esc leaves it as it was.
+FEATURE.commitEdits.push(async () => { if (BM.renaming && BM.finishRename) await BM.finishRename(true); }); // a name being typed is kept before a save
 function bmRename(id) {
   const panel = $('#sidePanel'), li = id && $(`[data-bm="${id}"]`, panel); if (!li) return;
   BM.sel = id;
@@ -7249,7 +7461,8 @@ function bmRename(id) {
     else await bmRender();
     bmFocus($('#sidePanel'), id);
   };
-  inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } };
+  BM.finishRename = finish;
+  inp.onkeydown = (e) => { if (!((e.metaKey || e.ctrlKey) && /^[sp]$/i.test(e.key))) e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } };
   inp.onblur = () => finish(true);
   inp.onclick = (e) => e.stopPropagation(); inp.ondblclick = (e) => e.stopPropagation();
   inp.focus(); inp.select();
@@ -7310,6 +7523,7 @@ FEATURE.outlinePanel = (panel) => bmRender(panel);
 FEATURE.onDocShown.push(() => { BM.sel = null; BM.renaming = null; BM.cache = null; });
 cmd('bmAdd', { label: 'Add bookmark', icon: 'bookmark-plus', key: 'Mod-b', enabled: has, run: () => bmAdd(false) });
 { const vm = MENUS.find(([t]) => t === 'View'), i = vm ? vm[1].indexOf('sidebar') : -1; if (i >= 0) vm[1].splice(i + 1, 0, 'bmAdd'); else menuAdd('View', ['bmAdd']); }
+ribbonAdd('home', 'Edit', ['bmAdd']);
 setTimeout(() => { try { ACCEL['Mod-b'] = 'CmdOrCtrl+B'; scheduleMacMenu(); } catch {} }, 0);
 document.addEventListener('keydown', (e) => {
   if ($('#dialog').open || !(isMac ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b') return;
@@ -8161,8 +8375,8 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
       if (m.kind === 'image' && m.data) {
         let w = W, h = H;
         if (m.fit === 'fit') { const r = Math.min(W / m.iw, H / m.ih); w = m.iw * r; h = m.ih * r; }
-        under.push({ kind: 'image', data: m.data, x: (W - w) / 2, y: (H - h) / 2, w, h, angle: 0, opacity: op });
-      } else under.push({ kind: 'rect', x: 0, y: 0, w: W, h: H, color: m.color, opacity: op, angle: 0 });
+        under.push({ kind: 'image', data: m.data, x: (W - w) / 2, y: (H - h) / 2, w, h, angle: 0, opacity: op, art: 'Watermark' });
+      } else under.push({ kind: 'rect', x: 0, y: 0, w: W, h: H, color: m.color, opacity: op, angle: 0, art: 'Watermark' });
     } else if (m.type === 'pd_watermark') {
       const to = m.front === 'behind' ? under : over;
       const a = (+m.rotation || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
@@ -8170,12 +8384,12 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
       if (m.kind === 'image') {
         if (!m.data) continue;
         w = W * Math.max(1, +m.scale || 50) / 100; h = w * m.ih / m.iw;
-        item = (cx, cy) => ({ kind: 'image', data: m.data, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, w, h, angle: +m.rotation || 0, opacity: op });
+        item = (cx, cy) => ({ kind: 'image', data: m.data, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, w, h, angle: +m.rotation || 0, opacity: op, art: 'Watermark' });
       } else {
         const text = pdClean(m.text || ''), size = Math.max(1, +m.size || 48);
         if (!text.trim()) continue;
         w = measure(text, m.font, m.bold, size); h = size * .7;
-        item = (cx, cy) => ({ kind: 'text', text, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, angle: +m.rotation || 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: op });
+        item = (cx, cy) => ({ kind: 'text', text, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, angle: +m.rotation || 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: op, art: 'Watermark' });
       }
       const centres = m.layout === 'tile' ? pdTiles(W, H, a, m.kind === 'image' ? w * 1.4 : w + h * 3, m.kind === 'image' ? h * 1.6 : h * 4.5, Math.hypot(w, h) / 2) : [[W / 2, H / 2]];
       for (const [cx, cy] of centres) to.push(item(cx, cy));
@@ -8190,7 +8404,7 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
         const tw = measure(text, m.font, m.bold, size), side = (+m.mSide || 0) * PD_MM;
         const x = s[1] === 'l' ? side : s[1] === 'r' ? W - side - tw : (W - tw) / 2;
         const y = s[0] === 't' ? H - (+m.mTop || 0) * PD_MM - size * .75 : (+m.mBottom || 0) * PD_MM + size * .22;
-        over.push({ kind: 'text', text, x, y, angle: 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: 1 });
+        over.push({ kind: 'text', text, x, y, angle: 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: 1, art: s[0] === 't' ? 'Header' : 'Footer' });
       }
     }
   }
@@ -8317,8 +8531,13 @@ dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: non
 /* saving */
 const PD_STD = { sans: ['Helvetica', 'HelveticaBold'], serif: ['TimesRoman', 'TimesRomanBold'], mono: ['Courier', 'CourierBold'] };
 function pdRgb(L, hex) { const n = parseInt(String(hex || '#000000').slice(1), 16) || 0; return L.rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); }
+// Each run of items of one kind is marked as a pagination artifact of that kind (Watermark, Header, Footer), which
+// other editors look for to update or remove them, and tagged as ours (see pdTag).
 async function pdDrawItems(L, out, p, items, map, r, ctx) {
+  let tag = null;
   for (const it of items) {
+    const art = it.art || 'Watermark';
+    if (art !== tag) { if (tag) pdTag(L, out, p, false); tag = art; pdTag(L, out, p, true, tag); }
     const [x, y] = map(it.x, it.y), rotate = L.degrees((it.angle + r) % 360);
     if (it.kind === 'rect') p.drawRectangle({ x, y, width: it.w, height: it.h, color: pdRgb(L, it.color), opacity: it.opacity, rotate });
     else if (it.kind === 'image') {
@@ -8327,6 +8546,7 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
       p.drawImage(im, { x, y, width: it.w, height: it.h, opacity: it.opacity, rotate });
     } else p.drawText(it.text, { x, y, size: it.size, font: ctx.pdFonts.get((it.font || 'sans') + (it.bold ? 'b' : '')), color: pdRgb(L, it.color), opacity: it.opacity, rotate });
   }
+  if (tag) pdTag(L, out, p, false);
 }
 // Drawn after every other savePage hook, so applying redactions (which rewrites what is already in the page) never
 // cuts letters out of it; page design from an earlier save is taken out when the file is opened (see pdReadBack).
@@ -8345,19 +8565,20 @@ FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   if (under.length) {
     // Behind the content: drawn in a stream of its own, which then goes first in the page's list of streams.
     p.getContentStream(false);
-    pdTag(L, out, p, true); await pdDrawItems(L, out, p, under, map, r, ctx); pdTag(L, out, p, false);
+    await pdDrawItems(L, out, p, under, map, r, ctx);
     const contents = p.node.Contents(), ref = p.contentStreamRef, at = contents ? contents.indexOf(ref) : -1;
     if (at > 0) { contents.remove(at); contents.insert(0, ref); }
     p.getContentStream(false); // what's drawn next goes on top again
   }
-  if (over.length) { pdTag(L, out, p, true); await pdDrawItems(L, out, p, over, map, r, ctx); pdTag(L, out, p, false); }
+  if (over.length) await pdDrawItems(L, out, p, over, map, r, ctx);
 });
 /* Kept in the saved PDF, so it can be changed or removed when the file is opened again: what is drawn is marked as
    an artifact tagged /CowdreyPdfPD, and the settings are a JSON string in the document's Info under the same key.
    Opening such a file takes the tagged drawing out of the pages and puts the settings back in docMarks(). */
 const PD_KEY = 'CowdreyPdfPD';
-function pdTag(L, out, p, on) {
-  p.pushOperators(on ? L.PDFOperator.of('BDC', [L.PDFName.of('Artifact'), out.context.obj({ Type: 'Pagination', [PD_KEY]: 1 })]) : L.PDFOperator.of('EMC'));
+function pdTag(L, out, p, on, sub = 'Watermark') {
+  const place = sub === 'Header' ? { Attached: ['Top'] } : sub === 'Footer' ? { Attached: ['Bottom'] } : {};
+  p.pushOperators(on ? L.PDFOperator.of('BDC', [L.PDFName.of('Artifact'), out.context.obj({ Type: 'Pagination', Subtype: sub, ...place, [PD_KEY]: 1 })]) : L.PDFOperator.of('EMC'));
 }
 // ASCII only (\uXXXX for the rest), with \ ( ) escaped for a PDF literal string.
 const pdPdfString = (L, json) => L.PDFString.of(json.replace(/[\u007f-\uffff]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/[\\()]/g, '\\$&'));
@@ -8838,10 +9059,11 @@ function cmEncode(font, str) {
   return font.encodeText([...str].map((c) => { try { font.encodeText(c); return c; } catch { return '?'; } }).join('')).toString();
 }
 function cmAnnotInfo(m, L) {
-  const { PDFHexString } = L, rgb = cmRgb(m.color);
+  const { PDFString } = L, rgb = cmRgb(m.color);
   const bbox = (pts) => { const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
   const quadsOfRects = (rects) => rects.flatMap((r) => { const [a, b, c, d] = bbox([[r[0], r[1]], [r[2], r[3]]]); return [a, d, c, d, a, b, c, b]; });
-  const da = (size) => PDFHexString.fromText(`/Helv ${size} Tf ${rgb.map(cmNum).join(' ')} rg`);
+  // /DA is operators, so a plain (PDFDocEncoded) string; /DS says the same for readers that rebuild the look from it.
+  const da = (size) => ({ DA: PDFString.of(`/Helv ${cmNum(size)} Tf ${rgb.map(cmNum).join(' ')} rg`), DS: PDFString.of(`font: Helvetica ${cmNum(size)}pt; color: ${String(m.color || '#000000').toLowerCase()}`) });
   switch (m.type) {
     case 'hl': return { Subtype: 'Highlight', QuadPoints: quadsOfRects(m.rects), contents: m.text || '' };
     case 'ink': return { Subtype: 'Ink', InkList: [m.pts.flat()], BS: { W: m.w, S: 'S' } };
@@ -8856,9 +9078,9 @@ function cmAnnotInfo(m, L) {
     }
     case 'cmCallout': {
       const P = cmFrame(m.x, m.y, m.rot), [tu, td] = P.local(m.tx, m.ty), knee = P(Math.max(0, Math.min(m.bw, tu)), Math.max(0, Math.min(m.bh, td)));
-      return { Subtype: 'FreeText', IT: 'FreeTextCallout', CL: [m.tx, m.ty, ...knee], LE: 'OpenArrow', DA: da(m.size), BS: { W: m.lw, S: 'S' }, contents: m.text };
+      return { Subtype: 'FreeText', IT: 'FreeTextCallout', CL: [m.tx, m.ty, ...knee], LE: 'OpenArrow', ...da(m.size), BS: { W: m.lw, S: 'S' }, contents: m.text };
     }
-    case 'cmType': return { Subtype: 'FreeText', IT: 'FreeTextTypeWriter', DA: da(m.size), BS: { W: 0 }, contents: m.text };
+    case 'cmType': return { Subtype: 'FreeText', IT: 'FreeTextTypeWriter', ...da(m.size), BS: { W: 0 }, contents: m.text };
     case 'cmStamp': return { Subtype: 'Stamp', Name: m.name || 'Draft', contents: m.sub ? `${m.label} ${m.sub}` : m.label };
   }
   return null;
@@ -8892,6 +9114,9 @@ async function cmSave({ L, out, p, m, ctx }) {
     for (const [u, d] of [[0, -t.size * 0.3], [w, -t.size * 0.3], [0, t.size], [w, t.size]]) pts.push([x + c * u - s * d, y + s * u + c * d]); // d: up from the baseline
   }
   if (!pts.length) return;
+  // The Rect holds every point the annotation names too (readers ignore QuadPoints, vertices or a leader outside it).
+  for (const k of ['QuadPoints', 'Vertices', 'L', 'CL']) { const a = info[k]; if (Array.isArray(a)) for (let j = 0; j + 1 < a.length; j += 2) pts.push([a[j], a[j + 1]]); }
+  if (info.InkList) for (const a of info.InkList) for (let j = 0; j + 1 < a.length; j += 2) pts.push([a[j], a[j + 1]]);
   const pad = wMax / 2 + 2;
   const rect = [Math.min(...pts.map((q) => q[0])) - pad, Math.min(...pts.map((q) => q[1])) - pad, Math.max(...pts.map((q) => q[0])) + pad, Math.max(...pts.map((q) => q[1])) + pad];
   const ap = out.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: rect, Resources: { Font: { F1: fonts.F1.ref, F2: fonts.F2.ref, Helv: fonts.F1.ref }, ExtGState: gs } });
@@ -8904,11 +9129,61 @@ async function cmSave({ L, out, p, m, ctx }) {
   const who = cmAuthorOf(m); if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
   annot.set(PDFName.of('M'), PDFString.fromDate(m.at ? new Date(m.at) : new Date()));
   if (contents) annot.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
+  // Callouts and typewriter text keep where and how they were made, so they can be edited again after reopening.
+  if (m.type === 'cmCallout' || m.type === 'cmType') annot.set(PDFName.of('CowdreyPdfMark'), PDFHexString.fromText(JSON.stringify(Object.fromEntries(['type', 'x', 'y', 'rot', 'tx', 'ty', 'size', 'color', 'lw', 'bw', 'bh'].filter((k) => m[k] != null).map((k) => [k, m[k]])))));
   const ref = out.context.register(annot);
   let annots = p.node.lookup(PDFName.of('Annots'));
   if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
   annots.push(ref);
 }
+/* ---- callouts and typewriter text in an opened PDF (ours, or plain ones from another app): editable marks again ---- */
+const cmSrcDocs = new WeakMap(); // source bytes -> its pdf-lib document (read once, for the annotations' own entries)
+async function cmAnnotDict(entry, id) {
+  const b = doc.sources[entry.src], r = /^(\d+)R(\d*)$/.exec(String(id || ''));
+  if (!b || !r) return null;
+  const L = await loadPdfLib();
+  let d = cmSrcDocs.get(b);
+  if (!d) { d = L.PDFDocument.load(b, b.password ? { password: b.password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false }); cmSrcDocs.set(b, d); }
+  const o = (await d).context.lookup(L.PDFRef.of(+r[1], +(r[2] || 0)));
+  return o instanceof L.PDFDict ? { L, o } : null;
+}
+// The mark a FreeText annotation becomes, or null when its look can't be kept (rich text, a plain text box).
+async function cmMarkOfFreeText(v, a) {
+  let got = null; try { got = await cmAnnotDict(v.entry, a.id); } catch (e) { console.warn(e); }
+  if (!got) return null;
+  const { L, o } = got, N = (k) => L.PDFName.of(k);
+  const str = (k) => { const x = o.lookup(N(k)); return x && x.decodeText ? x.decodeText() : ''; };
+  const nm = str('NM'), it = String(o.get(N('IT')) || ''), ours = /^cpdf-/.test(nm);
+  const kind = /Callout/i.test(it) ? 'cmCallout' : /TypeWriter/i.test(it) ? 'cmType' : null;
+  if (!kind || (!ours && o.get(N('RC')))) return null;
+  let saved = null; try { saved = JSON.parse(str('CowdreyPdfMark')); } catch {}
+  const text = (a.contentsObj && a.contentsObj.str) || str('Contents') || ' ';
+  const da = a.defaultAppearanceData || {}, size = +da.fontSize || 12;
+  const color = da.fontColor && da.fontColor.length === 3 ? '#' + [...da.fontColor].map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase() : '#111111';
+  let m;
+  if (saved && saved.type === kind) m = { ...saved };
+  else {
+    const rect = a.rect, rot = totalRot(v), lw = Math.max(1, Math.min(3, (a.borderStyle && a.borderStyle.width) || 1));
+    if (kind === 'cmCallout') {
+      const cl = o.lookup(N('CL')), c = cl instanceof L.PDFArray ? cl.asArray().map((n) => n.asNumber ? n.asNumber() : 0) : [];
+      const f = cmFrameFromBox(rect, rot);
+      m = { type: kind, x: f.x, y: f.y, rot, tx: c.length >= 2 ? c[0] : rect[0] - 20, ty: c.length >= 2 ? c[1] : rect[1] - 20, size, color, lw };
+    } else { const f = cmFrameFromBox([rect[0] + 2, rect[1], rect[2], rect[3] - size * .15 - 2], rot); m = { type: kind, x: f.x, y: f.y, rot, size, color }; }
+  }
+  m.id = ours && !Object.values(doc.marks).flat().some((x) => x && x.id === nm.slice(5)) ? nm.slice(5) : uid();
+  m.text = text; m.author = (a.titleObj && a.titleObj.str) || ''; m.at = cmPdfDate(str('M')) || Date.now();
+  if (kind === 'cmCallout') Object.assign(m, cmBoxSize(text, m.size));
+  return m;
+}
+FEATURE.editFreeText = async (v, a) => {
+  const m = await cmMarkOfFreeText(v, a); if (!m) return false;
+  const t = await askText(m.type === 'cmCallout' ? 'Edit callout' : 'Edit text', '', m.text, 'Save', false, true);
+  if (t == null || !t.trim()) return true;
+  const before = snapshot(); m.text = t;
+  if (m.type === 'cmCallout') Object.assign(m, cmBoxSize(t, m.size));
+  marksOf(v.entry).push({ id: uid(), type: 'ae', ref: a.id, rect: a.rect, subtype: a.subtype || '', deleted: true }, m);
+  changed(before); rerenderView(v); return true;
+};
 const cmMoveQuads = (m, o, dx, dy) => { if (o.quads) m.quads = o.quads.map((q) => q.map((n, k) => n + (k % 2 ? dy : dx))); };
 const cmMoveCallout = (m, o, dx, dy) => { m.tx = o.tx + dx; m.ty = o.ty + dy; };
 for (const t of ['cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']) FEATURE.markTypes[t] = { draw: cmDraw, save: cmSave, move: t === 'cmMarkup' ? cmMoveQuads : t === 'cmCallout' ? cmMoveCallout : undefined };
@@ -8956,7 +9231,7 @@ function cmDrag(e, v, make, update) {
   const before = snapshot(), start = localPoint(e, v), m = make(...toPdf(v, ...start));
   marksOf(v.entry).push(m); drawMarks(v);
   let end = start;
-  const move = (ev) => { end = localPoint(ev, v); update(m, ...toPdf(v, ...end)); drawMarks(v); };
+  const move = (ev) => { end = pagePoint(ev, v); update(m, ...toPdf(v, ...end)); drawMarks(v); };
   const up = () => {
     window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 4) { const list = marksOf(v.entry); list.splice(list.indexOf(m), 1); drawMarks(v); return; }
@@ -9148,10 +9423,12 @@ cmd('cm_fill', {
 });
 cmd('cm_list', { label: 'Comments list', icon: 'messages-square', enabled: has, run: () => { if (isPhone()) toggleSidebar(true); else if (!S.sidebar) toggleSidebar(true); setSide('comments'); } });
 // Compact groups, so the whole tab fits a laptop screen: Shapes is a grid of icons (closed shapes above, lines below).
-ribbonAdd('markup', 'Text mark-up', ['cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area'], 'Shapes', 'rows');
-ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon'], null, 'icons');
+// The four mark-ups made on text side by side; Area highlight (dragged as a box) is with the shapes, last (under Polygon).
+ribbonAdd('markup', 'Text mark-up', ['tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly'], 'Shapes', 'rows');
+ribbonAdd('markup', 'Shapes', ['cm_line', 'cm_oval', 'cm_arrow', 'cm_cloud', 'cm_polyline', 'cm_polygon', 'cm_area'], null, 'icons');
 ribbonAdd('markup', 'Text box', ['cm_callout', 'cm_typewriter'], 'Add', 'rows');
-ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
+// Signature has its home on Protect (below) and is here too, beside Stamp, as in PDFelement: one command, two buttons.
+ribbonAdd('markup', 'Add', ['cm_stamp', 'sign'], null, 'rows');
 ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
 ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
@@ -10220,7 +10497,7 @@ cmd('pg60_replace', { label: 'Replace pages…', icon: 'replace', enabled: has, 
 cmd('pg60_reverse', { label: 'Reverse order', icon: 'arrow-down-up', enabled: () => has() && doc.pages.length > 1, run: pg60Reverse });
 cmd('pg60_rotate', { label: 'Rotate pages…', icon: 'rotate-cw-square', enabled: has, run: pg60RotateRange });
 cmd('pg60_delete', { label: 'Delete pages…', icon: 'trash-2', enabled: () => has() && doc.pages.length > 1, run: () => pg60DeleteAsk() });
-cmd('pg60_selAll', { label: 'Select all pages', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
+cmd('pg60_selAll', { label: 'Select all pages', rlabel: 'Select all', icon: 'list-checks', enabled: () => has() && doc.pages.length > 1, run: () => { pg60SetSel([...doc.pages.keys()]); if (S.side !== 'thumbs') setSide('thumbs'); } });
 // One button per job: Rotate and Delete open their other choices from a small arrow, Insert is a list.
 ribbonAdd('pages', 'Order', ['pg60_reverse']);
 ribbonAdd('pages', 'Insert', ['pg60_ins', 'merge'], 'Remove');
@@ -10400,7 +10677,7 @@ function pg60OrgMove(from, to) {
 cmd('pg60_organize', { label: 'Organize pages', rlabel: 'Organize', icon: 'layout-grid', enabled: has, pressed: pg60OrgOn, run: () => pg60Organize(!pg60OrgOn()) });
 FEATURE.onDocShown.push(() => { if (pg60OrgOn()) pg60Organize(false); });
 FEATURE.onDocClosed.push(() => { if (pg60OrgOn()) pg60Organize(false); });
-ribbonAdd('pages', 'View', ['pg60_organize'], 'Rotate');
+ribbonAdd('pages', 'View', ['pg60_organize', 'pg60_selAll'], 'Rotate');
 menuAdd('View', ['pg60_organize']);
 TEST_HOOKS.pg60Org = { on: pg60OrgOn, move: pg60OrgMove };
 
@@ -10578,6 +10855,7 @@ function ffFillControl(m, fs) {
   el.addEventListener('pointerdown', (e) => e.stopPropagation()); // fill it in, don't select or move it
   el.addEventListener('change', () => {
     const before = snapshot(), val = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+    if (m.kind !== 'radio' && m.val === val) return; // kept already (by a save while it still had focus)
     if (m.kind === 'radio') { for (const r of ffMarks()) if (r.kind === 'radio' && r.name === m.name) r.val = r.id === m.id; }
     else m.val = val;
     changed(before);
@@ -11478,6 +11756,11 @@ FEATURE.markTypes.redact = {
     annots.push(ref);
   },
 };
+// The first mark (none waiting before it) says what happens next, with the step at hand: nothing is taken out yet.
+function protFirstMarkToast(what) {
+  if (protRedMarks(false).length !== 1) return;
+  toast(`${what} marked. Apply redactions removes it for good.`, { label: 'Apply', run: () => run('protRedApply') });
+}
 // Mark for redaction: drag an area.
 FEATURE.tools.protredarea = {
   down(e, v) {
@@ -11486,12 +11769,12 @@ FEATURE.tools.protredarea = {
     const [x, y] = toPdf(v, ...localPoint(e, v));
     const m = { id: uid(), type: 'redact', quads: [[[x, y], [x, y], [x, y], [x, y]]], fill: '#000000', label: '', applied: false };
     marksOf(v.entry).push(m);
-    const move = (ev) => { const [x2, y2] = toPdf(v, ...localPoint(ev, v)); m.quads = [[[x, y], [x2, y], [x2, y2], [x, y2]]]; drawMarks(v); };
+    const move = (ev) => { const [x2, y2] = toPdf(v, ...pagePoint(ev, v)); m.quads = [[[x, y], [x2, y], [x2, y2], [x, y2]]]; drawMarks(v); };
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       const b = quadBox(m.quads[0]);
       if (b[2] - b[0] < 2 || b[3] - b[1] < 2) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
-      drawMarks(v); changed(before);
+      drawMarks(v); changed(before); protFirstMarkToast('1 area');
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   },
@@ -11516,7 +11799,7 @@ function protMarkSelection() {
   }
   sel.removeAllRanges();
   if (!made.size) return false;
-  views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
+  views.forEach((v) => v.rendered && drawMarks(v)); changed(before); protFirstMarkToast('Text');
   return true;
 }
 document.addEventListener('pointerup', () => { if (app.dataset.tool === 'protredtext') setTimeout(protMarkSelection, 0); });
@@ -12148,9 +12431,18 @@ async function protDecodeImage(L, out, s0) {
 }
 const protCanvasJpeg = (c, q) => new Promise((res) => c.toBlob(async (b) => res(b ? new Uint8Array(await b.arrayBuffer()) : null), 'image/jpeg', q));
 function protScaled(c, w, h) { const t = document.createElement('canvas'); t.width = w; t.height = h; const g = t.getContext('2d'); g.imageSmoothingQuality = 'high'; g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(c, 0, 0, w, h); return t; }
+// Compress is the only change to a PDF opened on its own (its pages as they were, nothing marked or filled in).
+function protOnlyCompress() {
+  if (!doc || doc.sources.length !== 1 || doc.sources[0].password || doc.sources[0].ownerOnly) return false;
+  if (Object.entries(doc.marks).some(([k, l]) => (l || []).some((m) => k !== '__doc' || m.type !== 'protcompress'))) return false;
+  const pd = pdfDocs.get(0);
+  if (!pd || (pd.annotationStorage && pd.annotationStorage.size)) return false;
+  return doc.pages.length === pd.numPages && doc.pages.every((e, n) => e.src === 0 && e.i === n && !e.rot);
+}
 async function protCompress(L, out, pages, opt) {
   const { PDFName, PDFDict, PDFRawStream, PDFStream, PDFRef, PDFNumber } = L, N = PDFName.of;
   let images = 0;
+  const was = [], put = (ref, o) => { was.push([ref, out.context.lookup(ref), o]); out.context.assign(ref, o); }; // to put back if it gains nothing
   if (opt.dpi) {
     // The largest size each picture is drawn at, in points.
     const placed = new Map();
@@ -12191,10 +12483,10 @@ async function protCompress(L, out, pages, opt) {
         const sW = sm.dict.lookup(N('Width')); if (smc && smRef instanceof PDFRef && sW instanceof PDFNumber && sW.asNumber() > tw) {
           const g = protScaled(smc, tw, tht).getContext('2d').getImageData(0, 0, tw, tht).data, gray = new Uint8Array(tw * tht);
           for (let i = 0; i < gray.length; i++) gray[i] = g[i * 4];
-          out.context.assign(smRef, out.context.flateStream(gray, { Type: 'XObject', Subtype: 'Image', Width: tw, Height: tht, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+          put(smRef, out.context.flateStream(gray, { Type: 'XObject', Subtype: 'Image', Width: tw, Height: tht, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
         }
       }
-      out.context.assign(ref, ns); images++;
+      put(ref, ns); images++;
     }
   }
   // Streams stored without compression are compressed.
@@ -12203,10 +12495,34 @@ async function protCompress(L, out, pages, opt) {
     if (/^\/(Metadata|XRef|ObjStm)$/.test(String(o.dict.lookup(N('Type')) || '')) || o.getContents().length < 64) continue;
     const ns = out.context.flateStream(o.getContents(), {});
     for (const [k, v] of o.dict.entries()) if (k.asString() !== '/Length') ns.dict.set(k, v);
-    out.context.assign(ref, ns);
+    put(ref, ns);
   }
-  // Saved with object streams (smaller cross-reference data, many small objects packed together).
-  const save = out.save.bind(out); out.save = (o = {}) => save({ useObjectStreams: true, ...o });
+  // Saved with object streams (smaller cross-reference data, many small objects packed together). A file is never
+  // made bigger: when the compressed file isn't smaller, what was there is put back and that is saved, and you're told.
+  const save = out.save.bind(out);
+  out.save = async (o = {}) => {
+    const opts = { useObjectStreams: true, ...o }, orig = protOnlyCompress() ? doc.sources[0] : null;
+    const said = () => { if (!protMeasuring) toast('This PDF is already compact, so it was saved as it was'); };
+    let res;
+    if (!was.length) res = await save(opts);
+    else {
+      // Both are sized unencrypted (saving encrypts the streams in place), then the smaller is saved.
+      const sec = out.context.security; let packed, plain;
+      out.context.security = undefined;
+      try {
+        packed = await save(opts);
+        for (const [ref, old] of [...was].reverse()) out.context.assign(ref, old);
+        plain = await save(opts);
+      } finally { out.context.security = sec; }
+      const gain = plain.length > packed.length;
+      if (gain) for (const [ref, , now] of was) out.context.assign(ref, now);
+      res = sec ? await save(opts) : gain ? packed : plain;
+      if (!gain && !orig) said();
+    }
+    // Nothing else changed and it would only grow: the file as it was opened.
+    if (orig && res.length >= orig.length && !protMeasuring) { said(); return new Uint8Array(orig); }
+    return res;
+  };
   return images;
 }
 
@@ -12380,23 +12696,22 @@ async function protCompressDlg() {
         if (n !== ask) return;
         if (before == null || after == null) { out.textContent = 'The size can’t be worked out.'; return; }
         const pc = Math.round((1 - after / before) * 100), none = after >= before * .98;
-        // Balanced gains next to nothing: once, see whether Smallest does better and choose it if so.
+        // Balanced gains next to nothing: once, see whether Smallest does better and say so (it is never chosen for you:
+        // its pictures are coarser).
         if (none && lv === '150' && !tried) {
           tried = true;
           const small = await protMeasure(PROT_LEVELS['96']);
           if (n !== ask) return;
           if (small != null && small <= before * .95) {
-            const r96 = $('input[name=level][value="96"]', dlg); r96.checked = true; upd();
-            if (document.activeElement && document.activeElement.name === 'level') r96.focus();
             const spc = Math.round((1 - small / before) * 100);
-            out.textContent = `Now ${protSize(before)}. Balanced would save less than 2%. Smallest saves ${spc}% (${protSize(small)}), so it is selected.`;
-            out.dataset.before = before; out.dataset.after = small; out.classList.remove('none');
+            out.textContent = `Now ${protSize(before)}. Balanced would save less than 2%. Smallest would save ${spc}% (${protSize(small)}, pictures at 96 ppi).`;
+            out.dataset.before = before; out.dataset.after = after; out.classList.add('none');
             return;
           }
         }
         // Compress stays the main button; the note says how little it would gain.
         out.textContent = none
-          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%.`
+          ? `Now ${protSize(before)}. This PDF is already compact: compressing would save less than 2%, and it is never made bigger.`
           : `Now ${protSize(before)}. Compressed: ${protSize(after)} (${pc}% smaller).`;
         out.dataset.before = before; out.dataset.after = after; out.classList.toggle('none', none);
       } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }
@@ -13204,7 +13519,7 @@ function crdSayPaint(only) {
   }
   if (first) {
     const vr = viewer.getBoundingClientRect(), br = first.getBoundingClientRect();
-    if (br.top < vr.top + 40 || br.bottom > vr.bottom - 120) viewer.scrollBy({ top: br.top - vr.top - vr.height / 3, behavior: 'smooth' });
+    if (br.top < vr.top + 40 || br.bottom > vr.bottom - 120) viewer.scrollBy({ top: br.top - vr.top - vr.height / 3, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
   }
 }
 FEATURE.afterRender.push((v) => { if (crdSay.on && views[crdSay.n] === v) crdSayPaint(v); });
@@ -13361,7 +13676,7 @@ MENUS.find(([t]) => t === 'File')[1].unshift('crdNewBlank', 'crdNewPictures', 'c
 { const f = MENUS.find(([t]) => t === 'File')[1]; f.splice(f.indexOf('exportImage') + 1, 0, 'crdExportPages'); }
 menuAdd('View', ['crdReadMode', 'crdReadAloud']);
 ribbonAdd('home', 'Create', ['crdBlank', 'crdPictures', 'crdClip'], 'Edit');
-ribbonAdd('home', 'Read', ['crdReadAloud', 'crdReadMode']);
+ribbonAdd('home', 'Read', ['crdReadAloud', 'crdReadMode'], null, 'rows'); RIBBON.home[1].find(([g]) => g === 'Read')[3] = 'keep'; // small on a laptop (Home fits), big on a phone
 ribbonAdd('export', 'Export', ['crdExportPages']);
 {
   const card = $('#drop .card');
