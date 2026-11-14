@@ -92,4 +92,19 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     eq((await all(p)).map((m) => m.type), ['redact']);
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Dialogs open on their first text field, so typing straight away lands there, and Enter presses the main button', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="edit"]'); await p.focus('#ribbonBody [data-cmd="pd_watermark"]'); await p.keyboard.press('Enter');
+    await p.waitForSelector('#dialog[open] .pd-form');
+    eq(await p.evaluate(() => [document.activeElement.type, document.activeElement.dataset.k]), ['text', 'text'], 'on the Text field, not the Text/Picture choice');
+    await p.keyboard.press('Control+a'); await p.keyboard.type('DRAFT KB'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    ok(!(await p.$('#dialog[open]')), 'Enter added it');
+    eq((await p.evaluate(() => window.__cowdreyPdf.pdItems())).map((m) => m.text), ['DRAFT KB']);
+    // a question with one field: Enter there answers it, as before
+    await run(p, 'extract'); await p.waitForSelector('#dialog[open] #dlgInput');
+    eq(await p.evaluate(() => document.activeElement.id), 'dlgInput');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

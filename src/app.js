@@ -2967,12 +2967,20 @@ function showDialog(title, body, actions, setup) {
     });
     dlg.oncancel = (e) => { e.preventDefault(); done(null); };
     dlg.showModal();
-    // Start on the first field, or else on the main button, never on the close button.
-    const first = $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
-    if (first && document.activeElement === $('[data-x]', dlg)) first.focus();
+    // Start on the first field you type in (with a mouse and keyboard; a touch screen would open its keyboard), or else
+    // on the first field, or else on the main button, never on the close button: what's typed at once isn't lost.
+    const fine = matchMedia('(pointer: fine)').matches, texty = $(`.dlg-body :is(${DLG_TEXTY})`, dlg);
+    const first = $('.dlg-body [autofocus]', dlg) || (fine && texty) || $('.dlg-body :is(input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]))', dlg) || $('.dlg-foot .btn.primary:not([disabled])', dlg) || $('.dlg-foot .btn:not(.danger)', dlg);
+    if (first && (document.activeElement === $('[data-x]', dlg) || !dlg.contains(document.activeElement))) { first.focus(); if (fine && first === texty && first.select) first.select(); }
+    // Enter in a one-line field presses the main button (fields with their own Enter, like lists, say so first).
+    dlg.onkeydown = (e) => {
+      if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.altKey || !e.target.matches(`:is(${DLG_TEXTY}):not(textarea)`)) return;
+      const pb = $('.dlg-foot .btn.primary:not([disabled])', dlg); if (pb) { e.preventDefault(); pb.click(); }
+    };
     const inp = $('#dlgInput', dlg); if (inp) { inp.focus(); inp.select && inp.select(); inp.onkeydown = (e) => { if (e.key === 'Enter' && (inp.tagName !== 'TEXTAREA' || e.metaKey || e.ctrlKey)) { e.preventDefault(); done(inp.value); } }; }
   });
 }
+const DLG_TEXTY = 'input:not([type="hidden"], [type="radio"], [type="checkbox"], [type="range"], [type="color"], [type="file"], [type="button"], [disabled]), textarea:not([disabled])';
 function askText(title, note, value, ok, password, multiline) {
   const field = multiline ? `<textarea id="dlgInput" rows="4">${esc(value)}</textarea>` : `<input id="dlgInput" type="${password ? 'password' : 'text'}" value="${esc(value)}" autocomplete="off">`;
   return dialog(title, `${note ? `<p id="dlgNote">${esc(note)}</p>` : ''}<label class="field">${field.replace('id="dlgInput"', `id="dlgInput" aria-labelledby="dlgTitle"${note ? ' aria-describedby="dlgNote"' : ''}`)}</label>`, [{ label: 'Cancel' }, { label: ok, primary: true, input: true }]);
