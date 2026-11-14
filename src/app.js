@@ -34,7 +34,20 @@ const URL_THEME = (location.search.match(/[?&]theme=(dark|light)\b/) || [])[1];
 if (URL_THEME) S.theme = URL_THEME;
 const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: store.get('settings', {}).theme || 'system' } : S);
 let toastTimer;
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
+// Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
+const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg;
+  const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
+  let top = innerHeight;
+  for (const b of document.querySelectorAll(TOAST_AVOID)) {
+    const r = b.getBoundingClientRect();
+    if (!r.width || !r.height || r.bottom < innerHeight - 200 || r.right < left || r.left > right || getComputedStyle(b).visibility === 'hidden') continue;
+    top = Math.min(top, r.top);
+  }
+  t.style.setProperty('--toast-bottom', Math.max(48, innerHeight - top + 12) + 'px');
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
 
 /* ---------------- features ----------------
    Feature modules in src/features/*.js are joined into this file by build.py (where /*FEATURES*\/ stands, before
@@ -130,6 +143,12 @@ async function showDoc(d, loaded) {
   if (doc && persistTimer) { clearTimeout(persistTimer); persistTimer = null; await persistNow(); }
   for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
   pdfDocs.clear();
+  // A new document starts with the Select tool: no tool or mode (Edit PDF, Edit fields…) is kept from the last one.
+  if (app.dataset.tool !== 'select') setTool('select');
+  pendingImage = null; selContent = null; closePopover();
+  if (!$('#findbar').hidden) closeFind();
+  findState.texts.clear();
+  if (isPhone() && S.zoom !== 'fit') S.zoom = 'fit'; // phones open every document at its width
   doc = d; selMark = null; undoStack.length = redoStack.length = 0;
   pds.forEach((pd, k) => pdfDocs.set(k, pd));
   syncHiddenComments(); // before any page is drawn
@@ -157,23 +176,26 @@ async function pageOf(entry) { return pdfDocs.get(entry.src).getPage(entry.i + 1
 function fitScale(page, entry) {
   const v = page.getViewport({ scale: 1, rotation: (page.rotate + entry.rot) % 360 });
   // Fit the width, but no larger than 150%: a page wider than that reads worse, not better.
-  return Math.max(0.25, Math.min(1.5, (viewer.clientWidth - 48) / v.width));
+  return Math.max(0.25, Math.min(1.5, (viewer.clientWidth - (isPhone() ? 32 : 48)) / v.width));
 }
-let io;
+let io, layoutGen = 0;
 async function layoutPages(keep) {
   if (!doc) return;
+  const gen = ++layoutGen; // a later layout (zooming quickly) replaces this one
   closeLineEditor(true); selContent = null;
   const anchor = keep ? current : 0;
   pagesEl.innerHTML = '';
   views = [];
   if (!doc.pages.length) { pagesEl.innerHTML = '<p class="empty-note">This PDF has no pages left. Insert a page or undo.</p>'; updateStatus(); return; }
   const first = await pageOf(doc.pages[0]);
+  if (gen !== layoutGen) return false;
   scale = S.zoom === 'fit' ? fitScale(first, doc.pages[0]) : S.zoom / 100;
   io && io.disconnect();
   io = new IntersectionObserver((ents) => { for (const e of ents) if (e.isIntersecting) renderView(views[+e.target.dataset.n]); }, { root: viewer, rootMargin: '600px 0px' });
   for (let n = 0; n < doc.pages.length; n++) {
     const entry = doc.pages[n];
     const page = await pageOf(entry);
+    if (gen !== layoutGen) return false;
     const viewport = page.getViewport({ scale, rotation: (page.rotate + entry.rot) % 360 });
     const el = document.createElement('div');
     el.className = 'page'; el.dataset.n = n;
@@ -187,6 +209,8 @@ async function layoutPages(keep) {
   updateZoomLabel();
   if (keep) goPage(anchor, true);
   updateStatus();
+  releaseFar();
+  return true;
 }
 const linkService = {
   externalLinkEnabled: true, externalLinkTarget: 2, externalLinkRel: 'noopener noreferrer',
@@ -210,8 +234,10 @@ async function renderView(v) {
   const pd = pdfDocs.get(v.entry.src);
   const canvasMap = new Map(); // pdf.js draws form widgets' looks (a checkbox ticked or not) here, for the form layer
   try {
-    await page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage }).promise;
+    v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage });
+    await v.task.promise;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); }
+  v.task = null;
   if (stale()) return;
   // Text you can select and search
   try {
@@ -222,6 +248,7 @@ async function renderView(v) {
   // Form fields and links
   try {
     let annots = await page.getAnnotations({ intent: 'display' });
+    if (stale()) return;
     // Comments deleted or changed with the Edit tool
     const ae = marksOf(v.entry).filter((m) => m.type === 'ae');
     if (ae.length) {
@@ -244,6 +271,37 @@ async function renderView(v) {
   for (const f of FEATURE.afterRender) { try { f(v); } catch (e) { console.warn(e); } }
   if (findState.q) paintFind(v);
 }
+// Pages far from view give their drawing back, so a long PDF does not use more memory the further you scroll:
+// pages within KEEP_NEAR pages of those in view (and within a screen or two of it) stay drawn; the rest keep only
+// their size, mark-up and overlays, and are drawn again when they come back into view (typed form values are kept
+// in the document's annotation storage).
+const KEEP_NEAR = 3;
+let keepPages = false;
+function releaseView(v) {
+  v.token = (v.token || 0) + 1; v.rendered = false;
+  if (v.task) { try { v.task.cancel(); } catch {} v.task = null; }
+  for (const n of [...v.el.querySelectorAll(':scope > canvas.pdf, :scope > .textLayer, :scope > .annotationLayer, :scope > .find-hit')]) {
+    if (n.tagName === 'CANVAS') { n.width = 0; n.height = 0; }
+    n.remove();
+  }
+  try { v.page.cleanup(); } catch {}
+}
+function releaseFar() {
+  if (!views.length || keepPages) return;
+  const vr = viewer.getBoundingClientRect(), margin = Math.max(1200, vr.height * 2);
+  let lo = -1, hi = -1;
+  views.forEach((v, n) => { const b = v.el.getBoundingClientRect(); if (b.bottom > vr.top && b.top < vr.bottom) { if (lo < 0) lo = n; hi = n; } });
+  if (lo < 0) lo = hi = current;
+  views.forEach((v, n) => {
+    if (!v.rendered || (n >= lo - KEEP_NEAR && n <= hi + KEEP_NEAR)) return;
+    if (v.el.contains(document.activeElement) || v.el.querySelector('.line-editor')) return;
+    const b = v.el.getBoundingClientRect();
+    if (b.bottom > vr.top - margin && b.top < vr.bottom + margin) return; // near enough to come back at once
+    releaseView(v);
+  });
+}
+let releaseTimer;
+viewer.addEventListener('scroll', () => { clearTimeout(releaseTimer); releaseTimer = setTimeout(releaseFar, 250); }, { passive: true });
 async function goToDest(dest) {
   try {
     const pd = pdfDocs.get(0);
@@ -274,8 +332,85 @@ function updateStatus() {
   if (document.activeElement !== $('#pageJump')) $('#pageJump').value = doc && doc.pages.length ? current + 1 : '';
   refreshRibbon();
 }
-$('#pageJump').addEventListener('change', (e) => { const n = parseInt(e.target.value, 10); if (n) goPage(n - 1); });
-function setZoom(z) { S.zoom = z; saveSettings(); layoutPages(true); }
+// The page box: Enter goes to the page and gives the keys back to the pages, so the box follows scrolling again.
+const pageJump = $('#pageJump');
+pageJump.addEventListener('change', (e) => { const n = parseInt(e.target.value, 10); if (n) goPage(n - 1); });
+pageJump.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== 'Escape') return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.key === 'Escape') pageJump.value = current + 1; // no change
+  viewer.focus({ preventScroll: true });
+});
+pageJump.addEventListener('blur', () => setTimeout(updateStatus, 0));
+// `at`: { x, y } on screen; that spot of the page stays where it is (zooming with the wheel or a pinch).
+async function setZoom(z, at) {
+  const a = at && pageAnchor(at.x, at.y);
+  S.zoom = z; saveSettings();
+  if (!(await layoutPages(!a)) || !a || !views[a.n]) return;
+  const el = views[a.n].el;
+  viewer.scrollTop = el.offsetTop + a.fy * el.offsetHeight - a.vy;
+  viewer.scrollLeft = el.offsetLeft + a.fx * el.offsetWidth - a.vx;
+}
+// The page under a spot on screen, and where on it (fractions of its size).
+function pageAnchor(cx, cy) {
+  const vr = viewer.getBoundingClientRect();
+  let best = null, bd = Infinity;
+  for (const v of views) {
+    const b = v.el.getBoundingClientRect(), d = cy < b.top ? b.top - cy : cy > b.bottom ? cy - b.bottom : 0;
+    if (d < bd) { bd = d; best = { n: +v.el.dataset.n, fx: (cx - b.left) / b.width, fy: (cy - b.top) / b.height, vx: cx - vr.left, vy: cy - vr.top }; }
+    if (!d) break;
+  }
+  return best;
+}
+// Zooming around the pointer: Ctrl or Cmd with the wheel, a trackpad pinch (sent as Ctrl with the wheel, or as
+// gesture events in Safari and the Mac app) and two fingers on a touch screen. The pages are scaled while the gesture
+// lasts, then drawn again at the new size with the same spot under the pointer.
+let pinch = null; // { base, k, at, timer, kind }
+function pinchStart(x, y, kind) {
+  if (!has() || !views.length) return null;
+  if (pinch) return pinch;
+  const pr = pagesEl.getBoundingClientRect();
+  pagesEl.style.transformOrigin = `${x - pr.left}px ${y - pr.top}px`;
+  return (pinch = { base: scale * 100, k: 1, at: { x, y }, kind });
+}
+function pinchTo(k) {
+  if (!pinch) return;
+  pinch.k = Math.max(25 / pinch.base, Math.min(400 / pinch.base, k));
+  pagesEl.style.transform = `scale(${pinch.k})`;
+}
+function pinchEnd() {
+  const p = pinch; if (!p) return;
+  pinch = null; clearTimeout(p.timer);
+  const z = Math.round(p.base * p.k);
+  pagesEl.style.transform = pagesEl.style.transformOrigin = '';
+  if (Math.abs(z - p.base) >= 1) setZoom(z, p.at);
+}
+viewer.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || !has()) return;
+  e.preventDefault(); // not the browser's own zoom of the whole window
+  if (pinch && pinch.kind !== 'wheel') return;
+  const p = pinchStart(e.clientX, e.clientY, 'wheel'); if (!p) return;
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+  pinchTo(p.k * Math.exp(-Math.max(-60, Math.min(60, dy)) / 200));
+  clearTimeout(p.timer); p.timer = setTimeout(pinchEnd, 200);
+}, { passive: false });
+viewer.addEventListener('gesturestart', (e) => { e.preventDefault(); if (!pinch) pinchStart(e.clientX, e.clientY, 'gesture'); });
+viewer.addEventListener('gesturechange', (e) => { e.preventDefault(); if (pinch && pinch.kind === 'gesture') pinchTo(e.scale); });
+viewer.addEventListener('gestureend', (e) => { e.preventDefault(); if (pinch && pinch.kind === 'gesture') pinchEnd(); });
+const touchGap = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+viewer.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 2) return;
+  if (pinch && pinch.kind !== 'touch') return;
+  const t = e.touches, p = pinchStart((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2, 'touch');
+  if (p) p.gap = touchGap(t) / p.k;
+}, { passive: true });
+viewer.addEventListener('touchmove', (e) => {
+  if (!pinch || pinch.kind !== 'touch' || e.touches.length < 2) return;
+  if (e.cancelable) e.preventDefault();
+  pinchTo(touchGap(e.touches) / pinch.gap);
+}, { passive: false });
+const touchDone = (e) => { if (pinch && pinch.kind === 'touch' && e.touches.length < 2) pinchEnd(); };
+viewer.addEventListener('touchend', touchDone); viewer.addEventListener('touchcancel', touchDone);
 function updateZoomLabel() {
   $('#zoomLabel').textContent = S.zoom === 'fit' ? `Fit · ${Math.round(scale * 100)}%` : `${S.zoom}%`;
   $('#zoomRange').value = Math.round(scale * 100);
@@ -366,6 +501,7 @@ function redo() { if (!redoStack.length) return; const now = snapshot(); const n
 function localPoint(e, v) { const r = v.el.getBoundingClientRect(); return [(e.clientX - r.left), (e.clientY - r.top)]; }
 function onMarksDown(e, v) {
   const tool = app.dataset.tool;
+  if (e.button === 2) return; // a right-click opens the menu; it doesn't draw
   if (tool === 'edit') return onEditDown(e, v);
   if (tool === 'erase') return startErase(e, v);
   if (FEATURE.tools[tool]) return FEATURE.tools[tool].down(e, v);
@@ -434,16 +570,23 @@ function nudgeMark(key, big) {
 // original (or of the last paste), and is selected.
 let markClip = null;
 function copyMark() { const m = selectedMark(); if (!m) return false; markClip = { m: JSON.stringify(m), n: 0 }; toast('Copied'); return true; }
-function pasteMark(src) {
+// From a right-click menu: on page `v`, its top left corner at x, y (PDF points).
+function pasteMark(src, v, x, y) {
   const clip = src || markClip; if (!clip || !has()) return false;
-  const entry = src ? selMark.entry : doc.pages[current];
+  const entry = v ? v.entry : src ? selMark.entry : doc.pages[current];
   const m = JSON.parse(clip.m), k = ++clip.n * 10;
   m.id = uid(); delete m.pending;
   const before = snapshot();
-  offsetMark(m, JSON.parse(clip.m), k, -k);
+  const c = v && markCorner(m);
+  if (c) { clip.n--; offsetMark(m, JSON.parse(clip.m), x - c[0], y - c[1]); } else offsetMark(m, JSON.parse(clip.m), k, -k);
   marksOf(entry).push(m); changed(before);
   selectMark({ key: pageKey(entry), id: m.id, entry });
   return true;
+}
+// A mark's top left corner (PDF points, y up), for the kinds of mark that have one.
+function markCorner(m) {
+  const pts = m.rects ? m.rects.flatMap((r) => [[r[0], r[1]], [r[2], r[3]]]) : m.pts ? m.pts : 'x1' in m ? [[m.x1, m.y1], [m.x2, m.y2]] : 'x' in m ? [[m.x, m.y]] : null;
+  return pts && pts.length ? [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))] : null;
 }
 const duplicateMark = () => { const m = selectedMark(); return !!m && pasteMark({ m: JSON.stringify(m), n: 0 }); };
 function startMove(e, v, m) {
@@ -1720,6 +1863,7 @@ async function exportText() {
   catch (e) { console.error(e); toast(`Could not export the text: ${e.message || e}`); }
 }
 async function printDoc() {
+  keepPages = true; // every page stays drawn until printing is done
   for (const v of views) await renderView(v);
   try {
     // The apps' web views ignore window.print(): the Mac app and the phone apps open the system print dialog themselves.
@@ -1727,6 +1871,7 @@ async function printDoc() {
     else if (MOBILE_APP) await NATIVE.core.invoke('plugin:sharekit|native', { method: 'printPage', args: { title: doc.name } });
     else window.print();
   } catch (e) { toast(`Could not print: ${e.message || e}`); }
+  finally { keepPages = false; }
 }
 
 /* ---------------- find ---------------- */
@@ -2100,16 +2245,25 @@ function menuHtml(ids) {
 }
 const pop = $('#popover');
 let popAnchor = null; // the button that opened the popover; Escape gives it focus back
-function openPopover(anchor, html) {
+// `at`: { x, y, label } opens it at a spot (a right-click menu), above the spot if there is no room below.
+function openPopover(anchor, html, at) {
   popAnchor = anchor;
   pop.innerHTML = html; pop.hidden = false; icons();
-  if (anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
-  const r = anchor.getBoundingClientRect();
-  pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
-  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
+  if (!at && anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
+  if (at && at.label) pop.setAttribute('aria-label', at.label); else pop.removeAttribute('aria-label');
+  if (at) {
+    pop.style.maxHeight = innerHeight - 16 + 'px';
+    const h = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(at.x, innerWidth - pop.offsetWidth - 8)) + 'px';
+    pop.style.top = (at.y + h > innerHeight - 8 ? Math.max(8, at.y - h) : at.y) + 'px';
+  } else {
+    const r = anchor.getBoundingClientRect();
+    pop.style.maxHeight = Math.max(160, innerHeight - r.bottom - 12) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + 'px'; pop.style.top = r.bottom + 4 + 'px';
+  }
   const f = $('.mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.menubar > button, #moreBtn').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -2128,7 +2282,11 @@ pop.addEventListener('keydown', (e) => {
   } else return;
   e.stopPropagation();
 });
-pop.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd); });
+pop.addEventListener('click', (e) => {
+  const x = e.target.closest('[data-ctx]');
+  if (x) { const it = ctxItems[+x.dataset.ctx], back = popAnchor; closePopover(); if (back && back.isConnected) back.focus({ preventScroll: true }); if (it && !it.disabled) it.run(); return; }
+  const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
+});
 document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
@@ -2162,6 +2320,108 @@ $('#moreBtn').addEventListener('click', () => {
   closePopover(); if (open) return;
   b.setAttribute('aria-expanded', 'true'); openPopover(b, moreMenuHtml());
 });
+
+/* ---------------- right-click menus ----------------
+   On a page in the sidebar, on a page and on a mark. They open with a right-click, Shift+F10 or the menu key
+   (for what has focus, or the selected mark) and a long press on a touch screen, and work like the other menus. */
+let ctxItems = [], ctxOpened = 0; // ctxOpened: when a long press or a key last opened one, so the browser's own event that follows opens no other
+function ctxCmd(id, o = {}) { const c = C[id]; return c && !c.hidden ? { label: c.label, icon: c.icon, key: c.key, disabled: !!(c.enabled && !c.enabled()), run: () => run(id), ...o } : null; }
+function openCtx(list, at, anchor, label) {
+  const items = [];
+  for (const it of list) if (it && !(it === '-' && (!items.length || items[items.length - 1] === '-'))) items.push(it);
+  while (items[items.length - 1] === '-') items.pop();
+  ctxItems = items;
+  const html = items.map((it, k) => it === '-' ? '<div class="msep"></div>' : `<button type="button" class="mi" role="menuitem" data-ctx="${k}"${it.disabled ? ' disabled' : ''}>${it.on ? ic('check') : it.on === false ? '<span></span>' : ic(it.icon)}<span>${esc(it.label)}</span><span class="k">${fmtKey(it.key)}</span></button>`).join('');
+  closePopover(); openPopover(anchor, html, { x: at.x, y: at.y, label });
+  return true;
+}
+// A page in the sidebar: the commands work on that page (or on all the pages chosen there, when it is one of them).
+function thumbMenu(t, at) {
+  const n = +t.dataset.n;
+  if (typeof pg60Valid === 'function' && !pg60Valid().includes(n)) pg60SetSel([]);
+  const on = (id, o) => ctxCmd(id, { ...o, run: () => { current = n; markThumb(); run(id); } });
+  const was = current; current = n; // what can be done to this page
+  const items = [on('rotL'), on('rotR'), '-', on('dup'), on('blank', { label: 'Insert blank page after' }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
+  current = was;
+  openCtx(items, at, t, `Page ${n + 1}`); t.classList.add('ctx-for'); // shows which page the menu is for
+  return true;
+}
+// A spot on a page: `cx`, `cy` on screen.
+function pageMenu(v, cx, cy, anchor) {
+  const b = v.el.getBoundingClientRect(), [x, y] = toPdf(v, cx - b.left, cy - b.top), n = views.indexOf(v);
+  const text = String(getSelection() || '').trim();
+  return openCtx([
+    text && { label: 'Copy', icon: 'copy', key: 'Mod-c', run: () => document.execCommand('copy') }, text && '-',
+    { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', disabled: !markClip, run: () => pasteMark(null, v, x, y) },
+    { label: 'Add comment here', icon: 'message-square-plus', run: () => addNote(v, x, y) },
+    '-',
+    { label: 'Select tool', icon: 'mouse-pointer-2', on: app.dataset.tool === 'select', run: () => { setTool('select'); pendingImage = null; } },
+    { label: 'Rotate page', icon: 'rotate-cw', run: () => { current = n; rotatePage(90); } },
+  ], { x: cx, y: cy }, anchor || viewer, `Page ${n + 1}`);
+}
+// A mark (selected first). A mark type can add commands with `menu: [command ids]`.
+function markMenu(v, m, at, anchor) {
+  selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry });
+  const own = (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].menu) || [];
+  return openCtx([
+    { label: 'Copy', icon: 'copy', key: 'Mod-c', run: copyMark },
+    { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', run: duplicateMark },
+    { label: 'Delete', icon: 'trash-2', run: deleteSelected },
+    '-',
+    m.type === 'note' && { label: 'Edit note…', icon: 'pencil', run: () => editNote(v, m) },
+    m.type === 'text' && { label: 'Edit text…', icon: 'pencil', run: () => editText(v, m) },
+    ...own.map((id) => ctxCmd(id)),
+  ], at, anchor || viewer, 'Mark');
+}
+const typingIn = (el) => !!el && (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable);
+// The menu for whatever is at (x, y) on screen; false when there is none (the browser's own menu shows).
+function ctxFor(el, x, y) {
+  if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
+  const t = el.closest('#sidePanel .thumb'); if (t) return thumbMenu(t, { x, y });
+  const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
+  const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
+  return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
+}
+document.addEventListener('contextmenu', (e) => {
+  if (Date.now() - ctxOpened < 700) { e.preventDefault(); return; } // already opened by a long press or a key
+  ctxOpened = 0;
+  let el = e.target; if (!el || !el.isConnected) el = document.elementFromPoint(e.clientX, e.clientY);
+  if (ctxFor(el, e.clientX, e.clientY)) { e.preventDefault(); ctxPressEnd(); }
+});
+// Shift+F10 and the menu key: for the page in the sidebar that has focus, else the selected mark, else the page in view.
+document.addEventListener('keydown', (e) => {
+  if (!(e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) || !doc || $('#dialog').open) return;
+  const a = document.activeElement;
+  if (pop.contains(a) || typingIn(a)) return;
+  e.preventDefault(); e.stopPropagation(); ctxOpened = Date.now();
+  const t = a && a.closest && a.closest('#sidePanel .thumb');
+  if (t) { const r = t.getBoundingClientRect(); thumbMenu(t, { x: r.left + r.width / 2, y: r.top + r.height / 2 }); return; }
+  const m = selectedMark(), mv = m && views.find((x) => x.entry === selMark.entry), me = mv && mv.el.querySelector(`.mk[data-id="${CSS.escape(m.id)}"]`);
+  if (me) { const r = me.getBoundingClientRect(); markMenu(mv, m, { x: r.left, y: r.bottom + 4 }); return; }
+  const v = views[current]; if (!v) return;
+  const b = v.el.getBoundingClientRect(), vr = viewer.getBoundingClientRect();
+  pageMenu(v, Math.max(b.left, vr.left) + 40, Math.max(b.top, vr.top) + 40);
+}, true);
+// A long press (touch): the same menus, for pages in the sidebar, and on the page with the Select tool.
+let ctxPress = null;
+const ctxPressEnd = () => { if (ctxPress) { clearTimeout(ctxPress.timer); ctxPress = null; } };
+document.addEventListener('pointerdown', (e) => {
+  ctxPressEnd();
+  if (e.pointerType !== 'touch' || !doc || !e.isPrimary || typingIn(e.target)) return;
+  const onPage = e.target.closest('#pages .page');
+  if (!e.target.closest('#sidePanel .thumb') && !(onPage && app.dataset.tool === 'select')) return;
+  const p = ctxPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  p.timer = setTimeout(() => {
+    if (ctxPress !== p) return; ctxPress = null;
+    if (Date.now() - ctxOpened < 700 || !ctxFor(document.elementFromPoint(p.x, p.y), p.x, p.y)) return;
+    ctxOpened = Date.now();
+    // the click that ends the press does nothing else
+    const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    window.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => window.removeEventListener('click', eat, true), 800);
+  }, 550);
+}, true);
+document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId === ctxPress.id && Math.hypot(e.clientX - ctxPress.x, e.clientY - ctxPress.y) > 10) ctxPressEnd(); }, true);
+document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
   home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],

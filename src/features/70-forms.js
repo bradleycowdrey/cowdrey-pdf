@@ -686,6 +686,7 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
 
 /* ---- commands, ribbon, menu ---- */
 cmd('ffProps', { label: 'Properties…', icon: 'sliders-horizontal', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffPropsSelected });
+FEATURE.markTypes.ff.menu = ['ffProps']; // in the mark's right-click menu
 cmd('ffDelete', { label: 'Delete field', icon: 'trash-2', enabled: () => has() && (!!ffSelX || ffSelectedNew()), run: ffDeleteSelected });
 cmd('ffRecognize', { label: 'Recognize form', icon: 'scan-text', enabled: has, run: ffRecognize });
 cmd('ffClear', { label: 'Clear form…', icon: 'list-restart', enabled: has, run: ffClear });

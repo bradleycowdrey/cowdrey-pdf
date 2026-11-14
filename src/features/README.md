@@ -22,7 +22,7 @@ Plug in through:
   than select and highlight. Add cursor CSS with `addStyle()`.
 - Marks: a mark is a plain JSON object in `marksOf(entry)` with a unique `id` and a `type`, in PDF coordinates
   (points, y up). Register `FEATURE.markTypes[type] = { draw(v, m, svg), save({ L, out, p, m, entry, ctx }),
-  under?, move?(m, orig, dx, dy) }`. `draw` returns an SVG element (give it class `mk` to make it selectable and
+  under?, move?(m, orig, dx, dy), menu?: [command ids] }` (`menu` adds commands to the mark's right-click menu). `draw` returns an SVG element (give it class `mk` to make it selectable and
   movable with the Select tool). `save` draws the mark into the pdf-lib page `p` of document `out` (`L` is the
   pdf-lib module). Make every change with `const before = snapshot(); …; changed(before)` so undo and saving work.
 - `FEATURE.savePage.push(async ({ L, out, p, entry, n, entries, marks, ctx }) => …)` — per page, after its marks.
