@@ -708,7 +708,7 @@ function cmPanelSoon() { if (S.side !== 'comments') return; clearTimeout(CM.pane
 {
   const tabs = $('.side-tabs');
   const b = document.createElement('button');
-  Object.assign(b, { type: 'button', textContent: 'Comments' }); b.setAttribute('role', 'tab'); b.dataset.side = 'comments'; b.setAttribute('aria-selected', 'false');
+  Object.assign(b, { type: 'button', title: 'Comments', innerHTML: `${ic('message-square')}<span>Comments</span>` }); b.setAttribute('role', 'tab'); b.dataset.side = 'comments'; b.setAttribute('aria-selected', 'false'); b.setAttribute('aria-controls', 'sidePanel');
   b.addEventListener('click', () => setSide('comments'));
   tabs.appendChild(b);
 }
@@ -935,7 +935,6 @@ TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;
 TEST_HOOKS.cmExportXfdf = async () => { await cmExportXfdf(); return CM.lastXfdf; };
 
 addStyle(`
-.sidebar .side-tabs { grid-template-columns: repeat(2, 1fr); } /* four tabs: two rows of two */
 .app[data-tool="cmunderline"] .marks, .app[data-tool="cmstrike"] .marks, .app[data-tool="cmsquiggly"] .marks { pointer-events: none !important; }
 .app[data-tool="cmtype"] .marks { cursor: text; }
 .app[data-hide-marks="1"] .page .marks :is([data-type="hl"], [data-type="ink"], [data-type="rect"], [data-type="note"], [data-type^="cm"], .mk-selbox-g),

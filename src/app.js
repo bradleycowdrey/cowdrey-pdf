@@ -46,7 +46,8 @@ function toast(msg) {
   msg = touchWords(msg);
   // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
   // of a toast that goes after a moment and covers the page (toasts are for what happened).
-  if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); return; }
+  // (A phone's chip has room for the tool's name only: there the hint is also shown once, as a toast.)
+  if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
@@ -173,7 +174,13 @@ async function showDoc(d, loaded) {
   for (const f of FEATURE.onDocShown) { try { f(d); } catch (e) { console.warn(e); } }
   return true;
 }
-function setTitle() { $('#docTitle').textContent = doc ? doc.name : 'Cowdrey.PDF'; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF'; }
+// The name in the title bar: when it is too long, its middle gives way (the start and its last few letters stay),
+// and the whole name is its tooltip.
+function setTitle() {
+  const name = doc ? doc.name : 'Cowdrey.PDF', t = $('#docTitle'), k = name.length > 14 ? Math.min(8, Math.floor(name.length / 3)) : 0;
+  t.innerHTML = `<span class="dt-a">${esc(name.slice(0, name.length - k))}</span>${k ? `<span class="dt-b">${esc(name.slice(-k))}</span>` : ''}`;
+  t.title = name; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF';
+}
 // `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
 // Documents with changes says they are kept there.
 function setSaved(saved, opened) {
@@ -982,6 +989,8 @@ function setTool(t) {
   if (t !== was) toolHint = TOOL_HINTS[t] || '';
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
+  // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).
+  if (t !== was && t !== 'select' && isPhone()) setTimeout(() => { const m = $('#toast'); if (app.dataset.tool === t && toolHint && !(m.classList.contains('show') && m.textContent === touchWords(toolHint))) toast(toolHint); }, 0);
   refreshRibbon();
 }
 /* ---- the mode chip: while a tool other than Select is on, the status bar says which, and how to use it ---- */
@@ -1001,7 +1010,10 @@ function modeChip() {
   chip.hidden = !on; app.classList.toggle('tool-on', on);
   if (!on) return;
   const name = toolName(t), hint = toolHint ? touchWords(toolHint).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()).replace(/\.$/, '') : '';
-  chip.title = $('.mode-text', chip).textContent = [name && hint ? `${name}: ${hint}` : name || hint, coarse() ? '' : 'Esc to stop'].filter(Boolean).join(' · ');
+  const rest = [name && hint ? `: ${hint}` : name ? '' : hint, coarse() ? '' : ' · Esc to stop'].join('');
+  chip.title = (name || '') + rest;
+  // The name and the rest apart, so a phone can show the name alone (the rest is still read out).
+  $('.mode-text', chip).innerHTML = `<span class="mode-name">${esc(name || '')}</span><span class="mode-hint">${esc(name ? rest : rest.replace(/^ · /, ''))}</span>`;
 }
 $('#modeChip .mode-stop').addEventListener('click', () => { setTool('select'); pendingImage = null; });
 
