@@ -658,7 +658,9 @@ button { font: inherit; color: inherit; }
 .tb-main { min-width: 0; flex: 1; }
 .tb-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .doc-title { display: flex; min-width: 0; margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; white-space: pre; overflow: hidden; }
-.doc-title .dt-a { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.doc-title .dt-a { min-width: 0; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.doc-title .dt-cut::after { content: "…"; }
+.doc-title .dt-x { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .doc-title .dt-b { flex: none; }
 .save-state { color: var(--ink-3); font-size: 13px; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
 .menubar { display: flex; gap: 2px; margin-left: -6px; }
@@ -666,6 +668,8 @@ button { font: inherit; color: inherit; }
 .menubar > button:hover, .menubar > button[aria-expanded="true"] { background: var(--hover); }
 .menubar > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .mac-app .menubar { display: none; } /* the Mac app shows these menus in the macOS menu bar */
+.app[data-menubar="ribbon"] .menubar { display: none; } /* web: the ribbon is the menus (File, ? for Help) */
+.app:not([data-menubar="ribbon"]) :is(#fileBtn, #helpBtn) { display: none; }
 .tb-actions { display: flex; gap: 8px; align-items: center; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--hover); }
@@ -688,7 +692,14 @@ button { font: inherit; color: inherit; }
 .r-scroll svg { width: 16px; height: 16px; }
 .r-scroll-l { left: 4px; } .r-scroll-r { right: 4px; }
 @media (hover: hover) and (pointer: fine) { .ribbon.more-l .r-scroll-l, .ribbon.more-r .r-scroll-r { display: grid; } }
-.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; }
+.ribbon-head { display: flex; align-items: stretch; min-width: 0; }
+.ribbon-tabs { display: flex; gap: 4px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+/* File: the first item of the tab row, a menu (not a tab) */
+.ribbon-file { flex: none; display: inline-flex; align-items: center; gap: 4px; margin: 3px 0 3px max(12px, env(safe-area-inset-left, 0px)); padding: 2px 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); font-weight: 600; cursor: pointer; }
+.ribbon-file svg { width: 14px; height: 14px; color: var(--ink-3); }
+.ribbon-file:hover, .ribbon-file[aria-expanded="true"] { background: var(--hover); }
+.ribbon-file:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.app[data-menubar="ribbon"] .ribbon-file + .ribbon-tabs { padding-left: 6px; }
 .ribbon-tabs::-webkit-scrollbar { display: none; }
 .ribbon-tabs button { flex: none; }
 .ribbon-tabs button { border: 0; background: none; padding: 5px 10px 6px; color: var(--ink-2); font-weight: 500; cursor: pointer; position: relative; }
@@ -700,7 +711,9 @@ button { font: inherit; color: inherit; }
 .ribbon-body.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); }
 .ribbon-body.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px); mask-image: linear-gradient(90deg, transparent, #000 48px); }
 .ribbon-body.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
-.ribbon-tabs.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.ribbon-tabs.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent); }
+.ribbon-tabs.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 44px); mask-image: linear-gradient(90deg, transparent, #000 44px); }
+.ribbon-tabs.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 44px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, transparent, #000 44px, #000 calc(100% - 44px), transparent); }
 .r-group { display: flex; flex-direction: column; align-items: center; padding: 0 10px; border-right: 1px solid var(--line); flex: none; }
 .r-group[hidden] { display: none; }
 .r-group:last-child { border-right: 0; }
@@ -723,20 +736,37 @@ button { font: inherit; color: inherit; }
 .rb-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rb-more:disabled { opacity: .4; cursor: default; background: none; }
 @media (pointer: coarse) { .rb-more { width: 28px; } }
+/* a split button is one shape: hovered, open or pressed, the tint covers its arrow too (the half under the pointer
+   a little darker, with a hairline between the halves) */
+.rb-split { border-radius: 6px; }
+.rb-split > .rb, .rb-split > .rb:hover, .rb-split > .rb[aria-pressed="true"], .rb-split > .rb-more, .rb-split > .rb-more:hover { background: none; }
+.rb-split:hover:not(:has(> .rb:disabled)), .rb-split:has(> .rb-more[aria-expanded="true"]) { background: var(--hover); }
+.rb-split:has(> .rb[aria-pressed="true"]) { background: var(--accent-soft); }
+.rb-split:has(> .rb[aria-pressed="true"]) > .rb-more { color: var(--accent); }
+.rb-split > .rb:hover:not(:disabled), .rb-split > .rb-more:hover:not(:disabled), .rb-split > .rb-more[aria-expanded="true"] { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.rb-split:hover:not(:has(> .rb:disabled)) > .rb-more { box-shadow: inset 1px 0 0 var(--line); }
 .rb[data-rmenu] > span svg { width: 12px; height: 12px; vertical-align: -2px; margin-left: 1px; }
 .rb[data-rmenu][aria-expanded="true"] { background: var(--hover); }
 .rb[data-on] { background: var(--accent-soft); color: var(--accent); }
 .pop-sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 8px; }
 .r-swatches .sw-more svg { width: 10px; height: 10px; }
-.swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
-.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
-/* compact ribbon groups (wide screens): small buttons in two rows, with names (r-rows) or as icons (r-icons) */
+/* --sw-edge: a hairline inside each swatch, so a colour close to the bar's own (black on the dark theme, white on the
+   light one) still reads as a colour, pressed or not */
+.swatch { --sw-edge: rgb(0 0 0 / .2); width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 2px var(--accent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .swatch { --sw-edge: rgb(255 255 255 / .34); } }
+:root[data-theme="dark"] .swatch { --sw-edge: rgb(255 255 255 / .34); }
+/* compact ribbon groups (wide screens): small buttons with their names, in two rows (r-icons too, where there is room
+   for their names; on a phone those fold into one button that shows the tool in use) */
 @media (min-width: 761px) {
   .r-rows .r-items, .r-icons .r-items { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 26px); gap: 2px 2px; align-content: center; }
-  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 8px 0 6px; gap: 6px; align-items: center; }
-  .r-rows .rb > span { -webkit-line-clamp: 1; white-space: nowrap; }
-  .r-icons .rb { width: 30px; padding: 0; justify-content: center; }
+  .r-rows, .r-icons { padding: 0 7px; }
+  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 6px 0 5px; gap: 5px; align-items: center; }
+  .r-rows .rb > span, .r-icons .rb > span { -webkit-line-clamp: 1; white-space: nowrap; }
   .r-swatches .r-items { display: grid; grid-template-columns: repeat(4, 18px); grid-template-rows: repeat(2, 18px); gap: 8px 6px; align-content: center; padding: 0 2px; }
+}
+@media (min-width: 761px) and (max-width: 1399px) {
+  .r-icons .rb { width: 30px; padding: 0; justify-content: center; }
   .r-icons .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -773,6 +803,12 @@ button { font: inherit; color: inherit; }
 .viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; touch-action: pan-x pan-y; } /* a pinch zooms the pages, not the window */
 .viewer:focus-visible { outline-offset: -3px; }
 .pages { display: flex; flex-direction: column; align-items: safe center; gap: 18px; padding: 24px 16px 64px; }
+/* Two pages side by side (each pair meets in the middle), or one page at a time. */
+.pages.two { display: grid; grid-template-columns: repeat(2, max-content); justify-content: safe center; align-items: start; gap: 18px 10px; }
+.pages.two > .page.side-l { justify-self: end; }
+.pages.two > .page.side-r { justify-self: start; }
+.pages.two > .empty-note { grid-column: 1 / -1; }
+.pages.single > .page:not(.shown) { display: none; }
 .page { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; --scale-round-x: 1px; --scale-round-y: 1px; color-scheme: light; }
 .page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
 .app[data-darkpage="on"] .page canvas.pdf { filter: invert(.92) hue-rotate(180deg); }
@@ -786,6 +822,7 @@ button { font: inherit; color: inherit; }
 .app[data-tool]:not([data-tool="select"]):not([data-tool="highlight"]) .marks { pointer-events: auto; cursor: crosshair; }
 .app[data-tool="text"] .marks, .app[data-tool="note"] .marks { cursor: text; }
 .marks .mk { pointer-events: auto; cursor: pointer; }
+.app[data-tool="select"] .marks .mk-ontext { pointer-events: none; } /* text mark-up stays on its text: a drag there selects text */
 /* Touch: with a drawing or placing tool a finger draws on the page instead of scrolling it; with the text tools
    (Highlight, Underline…) a finger selects text; with Select a finger drags a mark. */
 .app[data-tool]:not([data-tool="select"]):not([data-tool="edit"]) .marks,
@@ -846,6 +883,8 @@ button { font: inherit; color: inherit; }
 .mode-chip .mode-stop { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
 .mode-chip .mode-stop:hover { background: var(--hover); color: var(--ink); }
 .mode-chip .mode-stop svg { width: 14px; height: 14px; }
+/* touch: Stop is a 44px target; the negative margins keep the chip its size */
+@media (pointer: coarse) { .mode-chip .mode-stop { width: 44px; height: 44px; margin: -10px -2px -10px -8px; } }
 .app.tool-on .sb-brand { display: none; }
 /* phones: the chip takes the room of the zoom buttons (a pinch zooms) */
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
@@ -911,7 +950,6 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .sw-more svg { width: 14px; height: 14px; stroke-width: 3; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
 .sw-more input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .sw-more:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
-.swatch[data-color="#111111"]:not([aria-pressed="true"]), .swatch[data-c="#111111"]:not([aria-pressed="true"]) { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 1px var(--line); } /* black stays visible on the dark theme, and does not look pressed */
 .sig-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0; }
 .sig-row[hidden], .sig-row [hidden] { display: none; }
 .sig-row .field { flex: 1; margin: 0; }
@@ -931,6 +969,10 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .about .logo { width: 64px; height: 64px; border-radius: 15px; font-size: 22px; }
 .toast { position: fixed; left: 50%; bottom: var(--toast-bottom, 48px); max-width: calc(100vw - 32px); box-sizing: border-box; text-align: center; transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
 .toast.show { opacity: 1; }
+.toast .toast-act { margin: -4px -8px -4px 6px; padding: 4px 8px; border: 0; border-radius: 12px; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; pointer-events: auto; }
+.toast .toast-act:hover { background: color-mix(in srgb, var(--surface) 18%, transparent); }
+.toast .toast-act:focus-visible { outline: 2px solid var(--surface); outline-offset: 1px; }
+.toast:not(.show) .toast-act { pointer-events: none; visibility: hidden; }
 /* The find bar sits in a zero-height strip that sticks to the top of the viewer, so it stays put while the pages scroll. */
 .find-dock { position: sticky; top: 0; left: 0; height: 0; z-index: 20; }
 .findbar { position: absolute; top: 10px; right: 16px; z-index: 20; display: flex; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
@@ -950,7 +992,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 /* phones (and phones on their side): the ribbon becomes a scrolling tool row; the sidebar becomes an overlay;
    Undo and Redo sit in the title bar, Appearance moves into More. Keep in step with PHONE_MQ in app.js. */
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  .menubar, .sb-brand, .tb-actions .btn span, .save-state, #themeBtn { display: none; }
+  .menubar, .sb-brand, .tb-actions .btn span, .save-state, #themeBtn, .app .ribbon-file, .app #helpBtn { display: none; }
   .titlebar { gap: 8px; padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
   .titlebar .logo { width: 28px; height: 28px; border-radius: 7px; }
   .doc-title { font-size: 16px; }
@@ -959,13 +1001,15 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .tb-actions .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
   .tb-actions .icon-btn { width: 40px; height: 40px; }
   .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
+  .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(320px, 88vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
   .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); transition: transform .2s, visibility 0s; } /* visible at once, so it can take focus */
   .app[data-sidebar="open"]::after { content: ""; position: fixed; inset: 0; z-index: 29; background: rgba(18, 12, 15, .35); }
   .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 4px; }
   .side-tabs button { min-height: 40px; }
-  .side-tabs.seg { margin: 8px 2px 8px 8px; }
-  .side-tabs.seg > button { flex-direction: column; gap: 1px; padding: 4px 0; font-size: 11px; letter-spacing: -.01em; line-height: 1.2; }
+  .side-tabs.seg { margin: 8px 2px 8px 8px; grid-auto-columns: auto; } /* each tab at least as wide as its name */
+  .side-tabs.seg > button { min-width: auto; }
+  @media (max-width: 369px) { .side-tabs.seg > button { min-width: 0; } } /* the narrowest phones: names may be cut */
+  .side-tabs.seg > button { flex-direction: column; gap: 1px; padding: 4px 3px; font-size: 11px; letter-spacing: -.01em; line-height: 1.2; }
   .side-tabs.seg > button > svg { width: 16px; height: 16px; }
   .side-tabs.seg > button > span { position: static; width: auto; height: auto; overflow: hidden; clip-path: none; text-overflow: ellipsis; max-width: 100%; }
   .r-label { display: none; }
@@ -983,6 +1027,13 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .findbar .count { min-width: 44px; }
   .findbar #findCase, .findbar #findWord { display: none; }
   .sb-pages { display: grid; width: 40px; height: 40px; margin-left: -8px; }
+  /* with a finger, the title and status bar buttons are 44px targets (Apple's minimum) */
+  @media (pointer: coarse) {
+    .titlebar { gap: 6px; }
+    .tb-actions { gap: 0; margin-right: -4px; } /* the last button's edge is still 4px in from the screen's */
+    .tb-actions .btn, .tb-actions .icon-btn, .sb-pages { width: 44px; height: 44px; }
+    .sb-zoom .icon-btn, #zoomLabel { min-width: 44px; height: 44px; }
+  }
   .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
 }
 /* a phone on its side: the bars get thinner and the ribbon shows icons only (the names stay for screen readers and
@@ -1028,6 +1079,8 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   body, .app, .workspace, .viewer { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
   .pages { padding: 0; gap: 0; }
   .page { box-shadow: none; break-after: page; }
+  .pages.two { display: flex; }
+  .pages.single > .page:not(.shown) { display: block; }
   .app[data-darkpage="on"] .page canvas.pdf { filter: none; }
 }
 </style>
@@ -1042,6 +1095,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
     <div class="tb-actions">
       <button class="icon-btn tb-undo" type="button" data-cmd="undo" title="Undo" aria-label="Undo" disabled><i data-lucide="undo-2"></i></button>
       <button class="icon-btn tb-undo" type="button" data-cmd="redo" title="Redo" aria-label="Redo" disabled><i data-lucide="redo-2"></i></button>
+      <button class="icon-btn" id="helpBtn" type="button" title="Help" aria-label="Help" aria-haspopup="menu" aria-expanded="false"><i data-lucide="circle-help"></i></button>
       <button class="icon-btn" id="themeBtn" type="button" title="Theme" aria-label="Theme"><i data-lucide="sun-moon"></i></button>
       <button class="btn" type="button" data-cmd="open" aria-label="Open"><i data-lucide="folder-open"></i><span>Open</span></button>
       <button class="btn primary" type="button" data-cmd="save" id="saveBtn" aria-label="Save PDF"><i data-lucide="download"></i><span>Save PDF</span></button>
@@ -1049,7 +1103,10 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
     </div>
   </header>
   <section class="ribbon" aria-label="Ribbon">
-    <div class="ribbon-tabs" role="tablist" aria-label="Ribbon tabs" id="ribbonTabs"></div>
+    <div class="ribbon-head">
+      <button class="ribbon-file" id="fileBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="File: open, save, print, close…">File<i data-lucide="chevron-down"></i></button>
+      <div class="ribbon-tabs" role="tablist" aria-label="Ribbon tabs" id="ribbonTabs"></div>
+    </div>
     <div class="ribbon-body" id="ribbonBody" role="tabpanel"></div>
     <button class="r-scroll r-scroll-l" type="button" data-dir="-1" tabindex="-1" aria-hidden="true" title="Scroll left"><i data-lucide="chevron-left"></i></button>
     <button class="r-scroll r-scroll-r" type="button" data-dir="1" tabindex="-1" aria-hidden="true" title="Scroll right"><i data-lucide="chevron-right"></i></button>
@@ -1092,7 +1149,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   </div>
   <footer class="statusbar">
     <button class="icon-btn sb-pages" type="button" data-cmd="sidebar" title="Pages and outline" aria-label="Pages and outline"><i data-lucide="panel-left"></i></button>
-    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> of <span id="pageCount">0</span></span>
+    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> <span id="pageOf">of </span><span id="pageCount">0</span><span id="pageEnd"></span></span>
     <span class="mode-chip" id="modeChip" role="status" hidden><span class="mode-text"></span><button class="mode-stop" type="button" title="Stop (Esc)" aria-label="Stop and go back to Select"><i data-lucide="x"></i></button></span>
     <span class="sb-spacer"></span>
     <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>
@@ -1151,19 +1208,38 @@ const saveSettings = () => store.set('settings', URL_THEME ? { ...S, theme: stor
 // Phones, and phones turned on their side (keep in step with the phone @media rule in template.html).
 const PHONE_MQ = '(max-width: 760px), (max-height: 500px) and (pointer: coarse)';
 const isPhone = () => matchMedia(PHONE_MQ).matches;
+// iPhone and iPad: WebKit zooms the whole window (title bar and ribbon too) into a text field under 16px when it gets
+// the focus, and leaves it so. The page is zoomed to the field instead (see the forms), so that zoom is turned off.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const ANDROID = /Android/i.test(navigator.userAgent); // Back closes what is open first (see "Back on Android")
+if (IOS) { const vm = document.querySelector('meta[name="viewport"]'); if (vm && !/maximum-scale/.test(vm.content)) vm.content += ', maximum-scale=1'; }
 const coarse = () => matchMedia('(pointer: coarse)').matches; // a finger, not a mouse: no Esc or Ctrl keys to mention
 let toastTimer;
 // Bars along the bottom of the window (the status bar, read aloud, form fields…): a toast goes above them.
 const TOAST_AVOID = '.statusbar, .crd-bar, .ff-bar, [data-toast-avoid]';
 let toolHint = '', toolJustSet = null; // the mode chip's hint, and the tool chosen in this task (see setTool)
+// A tool's how-to shown as a toast (on a phone): it goes once the page is tapped (the thing is placed) or the tool
+// changes, so it never covers what comes next.
+let hintToast = null;
+function hideHintToast() {
+  const t = $('#toast');
+  if (hintToast && t.classList.contains('show') && t.textContent === hintToast) { clearTimeout(toastTimer); t.classList.remove('show'); }
+  hintToast = null;
+}
 const touchWords = (msg) => coarse() ? String(msg).replace(/\bdouble-click/g, 'double-tap').replace(/\bClick\b/g, 'Tap').replace(/\bclick\b/g, 'tap') : msg;
-function toast(msg) {
+// `action`: { label, run } adds a button to the toast (Undo after deleting a page), kept up longer so it can be reached.
+function toast(msg, action) {
   msg = touchWords(msg);
   // How to use a tool just chosen goes in the mode chip in the status bar, which stays while the tool is on, instead
   // of a toast that goes after a moment and covers the page (toasts are for what happened).
   // (A phone's chip has room for the tool's name only: there the hint is also shown once, as a toast.)
   if (toolJustSet && toolJustSet === app.dataset.tool && toolJustSet !== 'select') { toolHint = msg; modeChip(); if (!isPhone()) return; }
   const t = $('#toast'); t.textContent = msg;
+  hintToast = app.dataset.tool !== 'select' && toolHint && msg === touchWords(toolHint) ? msg : null;
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); }; t.append(' ', b);
+  }
   const tw = t.offsetWidth, left = (innerWidth - tw) / 2, right = left + tw;
   let top = innerHeight;
   for (const b of document.querySelectorAll(TOAST_AVOID)) {
@@ -1172,7 +1248,12 @@ function toast(msg) {
     top = Math.min(top, r.top);
   }
   t.style.setProperty('--toast-bottom', Math.max(48, innerHeight - top + 12) + 'px');
-  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2600);
+}
+// What was done to the pages, with Undo on the toast (it takes back that change only, not one made since).
+function undoToast(msg) {
+  const top = undoStack[undoStack.length - 1];
+  toast(msg, { label: 'Undo', run: () => { if (top && undoStack[undoStack.length - 1] === top) undo(); } });
 }
 
 /* ---------------- features ----------------
@@ -1187,6 +1268,7 @@ const FEATURE = {
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
   afterRender: [], // (v) — after a page is drawn on screen
   onDocShown: [],  // (doc) — when a document is shown
+  onDocClosed: [], // () — when the document is closed (Close), before it goes: leave its own views and modes
   outlinePanel: null, // (panel) — draws the sidebar's Outline tab in place of the read-only list
   markLabels: [],  // (m) -> { label, text? } | null — what a mark is called (for screen readers and lists)
   selActions: [],  // { label, icon, order, run() } — what can be done with text selected on the page (its bar and menu)
@@ -1284,6 +1366,7 @@ async function showDoc(d, loaded) {
   syncHiddenComments(); // before any page is drawn
   $('#drop').hidden = true;
   setTitle(); setSaved(true, true);
+  sideForDoc();
   await layoutPages();
   renderSide();
   store.set('current', d.id);
@@ -1297,7 +1380,23 @@ function setTitle() {
   const k = name.length <= 14 ? 0 : cut >= 0 ? 11 - cut : Math.min(8, Math.floor(name.length / 3)); // from the last word, when it is short
   t.innerHTML = `<span class="dt-a">${esc(name.slice(0, name.length - k))}</span>${k ? `<span class="dt-b">${esc(name.slice(-k))}</span>` : ''}`;
   t.title = name; document.title = doc ? `${doc.name} · Cowdrey.PDF` : 'Cowdrey.PDF';
+  fitTitle();
 }
+// A name too long for the title bar loses letters from its middle: the ellipsis is put in here, right after the last
+// letter that fits, so the kept end follows it with no gap (the browser's own ellipsis stops at a whole letter and
+// leaves the rest of the width empty). The letters left out stay in the text, hidden, so the name is read out whole.
+function fitTitle() {
+  const t = $('#docTitle'), a = $('.dt-a', t), b = $('.dt-b', t); if (!a || !b) return;
+  const full = a.textContent, cut = (k) => { a.classList.toggle('dt-cut', k < full.length); a.innerHTML = k < full.length ? `${esc(full.slice(0, k))}<span class="dt-x">${esc(full.slice(k))}</span>` : esc(full); };
+  cut(full.length);
+  if (a.scrollWidth <= a.clientWidth) return;
+  let lo = 1, hi = full.length - 1;
+  while (lo < hi) { const k = (lo + hi + 1) >> 1; cut(k); if (a.scrollWidth <= a.clientWidth) lo = k; else hi = k - 1; }
+  while (lo > 1 && /\s/.test(full[lo - 1])) lo--; // no space before the ellipsis
+  cut(lo);
+}
+window.addEventListener('resize', () => fitTitle());
+document.fonts && document.fonts.ready.then(() => fitTitle());
 // `opened`: the document was just opened, not saved. An unedited file says nothing; one that comes back from
 // Documents with changes says they are kept there.
 function setSaved(saved, opened) {
@@ -1310,10 +1409,19 @@ function setSaved(saved, opened) {
 /* ---------------- rendering ---------------- */
 const viewer = $('#viewer'), pagesEl = $('#pages');
 async function pageOf(entry) { return pdfDocs.get(entry.src).getPage(entry.i + 1); }
+// The zoom follows the window: 'fit' (Fit width) or 'page' (Fit page: the whole page in view).
+const zoomFits = () => S.zoom === 'fit' || S.zoom === 'page';
+// Page layout: 'scroll' (one page after another), 'two' (two pages side by side; S.cover puts the first page on
+// its own, as a book's cover) or 'single' (one page at a time).
+const twoUp = () => S.layout === 'two' && !!doc && doc.pages.length > 1;
+const singleUp = () => S.layout === 'single';
 function fitScale(page, entry) {
   const v = page.getViewport({ scale: 1, rotation: (page.rotate + entry.rot) % 360 });
+  const across = twoUp() ? 2 : 1, w = (viewer.clientWidth - (isPhone() ? 32 : 48) - (across - 1) * 10) / across / v.width;
+  // Fit page: the whole page (or two pages) in the window, with a little room above and below.
+  if (S.zoom === 'page') return Math.max(0.1, Math.min(4, w, (viewer.clientHeight - 40) / v.height));
   // Fit the width, but no larger than 150%: a page wider than that reads worse, not better.
-  return Math.max(0.25, Math.min(1.5, (viewer.clientWidth - (isPhone() ? 32 : 48)) / v.width));
+  return Math.max(0.25, Math.min(1.5, w));
 }
 let io, layoutGen = 0;
 async function layoutPages(keep) {
@@ -1326,7 +1434,10 @@ async function layoutPages(keep) {
   if (!doc.pages.length) { pagesEl.innerHTML = '<p class="empty-note">This PDF has no pages left. Insert a page or undo.</p>'; updateStatus(); return; }
   const first = await pageOf(doc.pages[0]);
   if (gen !== layoutGen) return false;
-  scale = S.zoom === 'fit' ? fitScale(first, doc.pages[0]) : S.zoom / 100;
+  scale = zoomFits() ? fitScale(first, doc.pages[0]) : S.zoom / 100;
+  // Two pages side by side (the first on its own with a cover), or one page at a time.
+  const two = twoUp(), cover = two && !!S.cover;
+  pagesEl.classList.toggle('two', two); pagesEl.classList.toggle('single', singleUp());
   io && io.disconnect();
   io = new IntersectionObserver((ents) => { for (const e of ents) if (e.isIntersecting) renderView(views[+e.target.dataset.n]); }, { root: viewer, rootMargin: '600px 0px' });
   for (let n = 0; n < doc.pages.length; n++) {
@@ -1336,6 +1447,7 @@ async function layoutPages(keep) {
     const viewport = page.getViewport({ scale, rotation: (page.rotate + entry.rot) % 360 });
     const el = document.createElement('div');
     el.className = 'page'; el.dataset.n = n;
+    if (two) { const right = cover ? n % 2 === 0 : n % 2 === 1; el.classList.add(right ? 'side-r' : 'side-l'); el.style.gridColumn = right ? 2 : 1; }
     el.style.width = viewport.width + 'px'; el.style.height = viewport.height + 'px';
     el.style.setProperty('--scale-factor', scale); el.style.setProperty('--total-scale-factor', scale); el.style.setProperty('--user-unit', 1);
     el.setAttribute('role', 'region'); el.setAttribute('aria-label', `Page ${n + 1} of ${doc.pages.length}`);
@@ -1344,7 +1456,7 @@ async function layoutPages(keep) {
     io.observe(el);
   }
   updateZoomLabel();
-  if (keep) goPage(anchor, true);
+  if (keep) goPage(anchor, true); else if (singleUp()) { current = 0; showOnly(0); } // (no scrolling says which page)
   updateStatus();
   releaseFar();
   return true;
@@ -1358,6 +1470,7 @@ const linkService = {
   navigateTo(dest) { goToDest(dest); }, executeNamedAction() {}, executeSetOCGState() {}, cachePageRef() {},
   isPageVisible() { return true; }, isPageCached() { return true; }, setHash() {},
 };
+let paintN = 0; // each finished drawing of a page canvas gets a number (canvas.dataset.drawn)
 async function renderView(v) {
   if (!v || v.rendered) return;
   v.rendered = true;
@@ -1374,6 +1487,7 @@ async function renderView(v) {
     const skip = await imageSkip(v); if (stale()) return;
     v.task = page.render({ annotationCanvasMap: canvasMap, canvas, canvasContext: canvas.getContext('2d'), viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage, operationsFilter: skip.filter });
     await v.task.promise;
+    canvas.dataset.drawn = ++paintN;
     v.imgSig = skip.sig; v.imgHidden = skip.hidden;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); }
   v.task = null;
@@ -1449,6 +1563,7 @@ async function repaintCanvas(v) {
     const c = document.createElement('canvas'); c.className = 'pdf'; c.width = old.width; c.height = old.height;
     await v.page.render({ annotationCanvasMap: new Map(), canvas: c, canvasContext: c.getContext('2d'), viewport: v.viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : null, annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS, annotationStorage: pd.annotationStorage, operationsFilter: skip.filter }).promise;
     if (v.token !== token || !old.isConnected) return;
+    c.dataset.drawn = ++paintN;
     old.replaceWith(c); old.width = old.height = 0;
     v.imgSig = skip.sig; v.imgHidden = skip.hidden;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); } finally { v.repainting = false; }
@@ -1504,20 +1619,27 @@ function navUnlock() { navLock = 0; clearTimeout(navTimer); }
 function goPage(n, instant) {
   if (!views.length) return;
   n = Math.max(0, Math.min(views.length - 1, n));
-  current = n;
+  current = n; showOnly(n);
   const lock = ++navLock; clearTimeout(navTimer);
   navTimer = setTimeout(() => { if (navLock === lock) navLock = 0; }, 1500);
   viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant || reduceMotion.matches ? 'instant' : 'smooth' });
   updateStatus(); markThumb();
 }
+// One page at a time: only the page asked for is shown.
+function showOnly(n) {
+  if (!singleUp()) return;
+  views.forEach((v, k) => v.el.classList.toggle('shown', k === n));
+}
 viewer.addEventListener('scrollend', () => { const lock = navLock; if (lock) setTimeout(() => { if (navLock === lock) navLock = 0; }, 50); });
 for (const ev of ['wheel', 'touchstart', 'pointerdown']) viewer.addEventListener(ev, navUnlock, { passive: true });
 viewer.addEventListener('keydown', (e) => { if (/^(Arrow|Page|Home|End| )/.test(e.key)) navUnlock(); });
+viewer.addEventListener('click', () => hideHintToast(), true); // a tap on the page: the hint has been followed
 viewer.addEventListener('scroll', () => {
-  if (!views.length || navLock) return;
+  if (!views.length || navLock || singleUp()) return;
   const mid = viewer.scrollTop + viewer.clientHeight / 3;
   let n = 0;
-  for (let k = 0; k < views.length; k++) if (views[k].el.offsetTop <= mid) n = k;
+  // Two pages side by side: the left one of the pair in view (pages on one row share their top).
+  for (let k = 0; k < views.length; k++) if (views[k].el.offsetTop <= mid && (!k || views[k].el.offsetTop !== views[k - 1].el.offsetTop)) n = k;
   if (n !== current) { current = n; updateStatus(); markThumb(); }
 }, { passive: true });
 function updateStatus() {
@@ -1540,6 +1662,7 @@ async function setZoom(z, at) {
   const a = at && pageAnchor(at.x, at.y);
   S.zoom = z; saveSettings();
   if (!(await layoutPages(!a)) || !a || !views[a.n]) return;
+  if (singleUp()) { current = a.n; showOnly(a.n); updateStatus(); }
   const el = views[a.n].el;
   viewer.scrollTop = el.offsetTop + a.fy * el.offsetHeight - a.vy;
   viewer.scrollLeft = el.offsetLeft + a.fx * el.offsetWidth - a.vx;
@@ -1605,12 +1728,12 @@ viewer.addEventListener('touchmove', (e) => {
 const touchDone = (e) => { if (pinch && pinch.kind === 'touch' && e.touches.length < 2) pinchEnd(); };
 viewer.addEventListener('touchend', touchDone); viewer.addEventListener('touchcancel', touchDone);
 function updateZoomLabel() {
-  $('#zoomLabel').textContent = S.zoom === 'fit' ? `Fit · ${Math.round(scale * 100)}%` : `${S.zoom}%`;
+  $('#zoomLabel').textContent = S.zoom === 'fit' ? `Fit · ${Math.round(scale * 100)}%` : S.zoom === 'page' ? `Fit page · ${Math.round(scale * 100)}%` : `${S.zoom}%`;
   $('#zoomRange').value = Math.round(scale * 100);
 }
 $('#zoomRange').addEventListener('change', (e) => setZoom(+e.target.value));
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (doc && S.zoom === 'fit') layoutPages(true); }, 200); });
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (doc && zoomFits()) layoutPages(true); }, 200); });
 
 /* ---------------- mark-up ----------------
    Every mark lives in PDF coordinates (points, y up), converted to the screen with the page's viewport.
@@ -1671,6 +1794,7 @@ function drawMarks(v) {
     }
     if (!g) continue;
     g.dataset.id = m.id; g.dataset.type = m.type;
+    if (markOnText(m)) g.classList.add('mk-ontext');
     if (g.classList.contains('mk')) { g.setAttribute('role', 'img'); g.setAttribute('aria-label', markLabel(m, true)); }
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
@@ -1818,6 +1942,7 @@ function onMarksDown(e, v) {
       markDown = again ? null : { id: m.id, t: now };
       if (again) { e.preventDefault(); setTimeout(() => (m.type === 'note' ? editNote : editText)(v, m), 0); return; }
     }
+    if (markOnText(m)) return;
     startMove(e, v, m);
     return;
   }
@@ -1878,9 +2003,39 @@ function offsetMark(m, o, dx, dy) {
   if (FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].move) FEATURE.markTypes[m.type].move(m, o, dx, dy);
 }
 const selectedMark = () => selMark && (doc.marks[selMark.key] || []).find((m) => m.id === selMark.id);
+/* Text mark-up (a highlight, underline, strikethrough or squiggly made on text) stays on its text, as in other PDF
+   apps: it can be selected (a click on it), recoloured and deleted, never dragged or nudged off its words. With
+   Select, a drag across it selects the page's text as anywhere else (its marks let the pointer through). */
+const markOnText = (m) => !!m && ((m.type === 'hl' && !m.area) || m.type === 'cmMarkup');
+// The text mark-up under a point on screen (x, y), on page v: the last drawn (topmost) first.
+function onTextMarkAt(v, x, y) {
+  const svg = v && v.el.querySelector('svg.marks'); if (!svg) return null;
+  for (const g of [...svg.querySelectorAll('.mk-ontext[data-id]')].reverse()) {
+    const parts = g.children.length ? [...g.children] : [g];
+    if (parts.some((el) => { const r = el.getBoundingClientRect(); return x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 3 && y <= r.bottom + 3; })) {
+      const m = marksOf(v.entry).find((mm) => mm.id === g.dataset.id); if (m) return m;
+    }
+  }
+  return null;
+}
+// Select: a click (no drag, no text selected) on text mark-up selects it; a click elsewhere lets one go.
+let onTextDown = null;
+document.addEventListener('pointerdown', (e) => {
+  onTextDown = app.dataset.tool === 'select' && e.button === 0 && e.target.closest && e.target.closest('#pages .page') && !e.target.closest('.mk:not(.mk-ontext), .mk-handle, .annotationLayer :is(input, textarea, select, button, a)') ? { x: e.clientX, y: e.clientY } : null;
+}, true);
+document.addEventListener('pointerup', (e) => {
+  const d = onTextDown; onTextDown = null;
+  if (!d || !doc || app.dataset.tool !== 'select' || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+  const sel = getSelection(); if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  const pe = document.elementFromPoint(e.clientX, e.clientY), pg = pe && pe.closest('#pages .page'), v = pg && views.find((x) => x.el === pg);
+  const m = v && onTextMarkAt(v, e.clientX, e.clientY);
+  if (m) selectMark({ key: pageKey(v.entry), id: m.id, entry: v.entry });
+  else if (markOnText(selMark && selectedMark())) selectMark(null);
+});
 // Arrow keys: 1 pt a press (10 with Shift), along the page as it is shown.
 function nudgeMark(key, big) {
   const m = selectedMark(); if (!m) return false;
+  if (markOnText(m)) return true; // stays on its text (the arrows don't scroll the page either)
   const d = big ? 10 : 1, v = views.find((x) => x.entry === selMark.entry);
   let [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[key];
   if (v) { const [x0, y0] = toPdf(v, 0, 0), [x1, y1] = toPdf(v, dx * scale, dy * scale); [dx, dy] = [x1 - x0, y1 - y0]; }
@@ -1892,6 +2047,7 @@ function nudgeMark(key, big) {
 // Alt+Shift+arrows: the selected mark's right edge (Left, Right) or bottom edge (Up, Down) moves 2 pt, as dragging its
 // handle would; a mark that keeps its proportions grows or shrinks from its top-left corner.
 function sizeMark(key) {
+  if (markOnText(selMark && selectedMark())) return true;
   const m = selectedMark(), v = m && views.find((x) => x.entry === selMark.entry && x.rendered); if (!v) return false;
   const svg = v.el.querySelector('svg.marks'), el = svg && svg.querySelector(`[data-id="${CSS.escape(m.id)}"]`), b = el && markViewBox(svg, el);
   const stretch = MARK_STRETCH(m) || ((('x1' in m) || (Array.isArray(m.quads) && m.type !== 'cmMarkup')) && !MARK_SCALE[m.type]); // form fields, redaction areas too
@@ -2224,7 +2380,7 @@ function setTool(t) {
   if (t !== 'edit' && selContent) selectContent(null);
   // Edit PDF reads each drawn page's text ahead, so the first click opens its editor at once.
   if (t === 'edit' && was !== 'edit') setTimeout(() => views.forEach((v) => { if (v.rendered) contentMap(v.page).then((cm) => { v.page._cmapValue = cm; }).catch(() => {}); }), 0);
-  if (t !== was) toolHint = TOOL_HINTS[t] || '';
+  if (t !== was) { hideHintToast(); toolHint = TOOL_HINTS[t] || ''; } // the hint for the tool being left goes with it
   toolJustSet = t; queueMicrotask(() => { toolJustSet = null; });
   modeChip();
   // A phone's mode chip names the tool only: how to use it shows once, as a toast (unless the tool gave one).
@@ -2471,7 +2627,7 @@ const teCache = new Map();
 function teImage(v, m) {
   const cm = v.page._cmapValue, ratio = Math.min(window.devicePixelRatio || 1, 2);
   const L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm));
-  const loaded = L ? L.fontName : null, map = !m.ocr && !m.type3 && loaded && cm.glyphs.get(loaded);
+  const loaded = m.loaded || (L ? L.fontName : null), map = !m.ocr && !m.type3 && loaded && cm && cm.glyphs.get(loaded);
   const key = [m.id, m.text, m.color, scale, ratio, loaded, m.tr, m.lw, m.stroke, m.tc, m.tw].join('|');
   if (teCache.has(key)) return teCache.get(key);
   const { size, u } = lineFrame(m), hsc = Math.hypot(m.tm[0], m.tm[1]) / (Math.hypot(m.tm[2], m.tm[3]) || 1);
@@ -2500,6 +2656,25 @@ function teImage(v, m) {
   void u; if (teCache.size > 200) teCache.clear(); teCache.set(key, out);
   return out;
 }
+// Text after an edited line that is only moved along (its words unchanged): drawn as it was, not typeset again.
+const teShifted = (m) => !!m.shiftOnly && m.text === m.orig;
+// The page's drawing of such a line, copied from the rendered page (its quad only). Null until the page is drawn.
+function teShiftImage(v, m) {
+  const c = v.el.querySelector('canvas.pdf'); if (!c || !c.width || !c.dataset.drawn || !v.viewport) return null;
+  const k = c.width / v.viewport.width, q = m.quad.map(([x, y]) => toView(v, x, y));
+  const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]), x0 = Math.floor(Math.min(...xs)), y0 = Math.floor(Math.min(...ys));
+  const w = Math.ceil(Math.max(...xs)) - x0, h = Math.ceil(Math.max(...ys)) - y0;
+  if (w < 1 || h < 1) return null;
+  const key = [m.id, 'moved', c.width, c.height, c.dataset.drawn || '', x0, y0, w, h].join('|');
+  if (teCache.has(key)) return teCache.get(key);
+  const o = document.createElement('canvas'); o.width = Math.max(1, Math.round(w * k)); o.height = Math.max(1, Math.round(h * k));
+  const g = o.getContext('2d');
+  g.beginPath(); q.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo']((x - x0) * k, (y - y0) * k)); g.closePath(); g.clip();
+  try { g.drawImage(c, x0 * k, y0 * k, o.width, o.height, 0, 0, o.width, o.height); } catch { return null; }
+  const out = { url: o.toDataURL('image/png'), x: x0, y: y0, w, h };
+  if (teCache.size > 200) teCache.clear(); teCache.set(key, out);
+  return out;
+}
 // Marks that clear part of the page are drawn first, under everything else.
 function drawContentMark(v, m, svg) {
   const poly = (q, fill) => svgEl('polygon', { points: q.map(([x, y]) => toView(v, x, y).map((n) => n.toFixed(1)).join(',')).join(' '), fill });
@@ -2510,7 +2685,12 @@ function drawContentMark(v, m, svg) {
     const cover = poly(m.quad, m.bg);
     if (svg) { let under = svg.querySelector(':scope > g.te-under'); if (!under) under = svg.insertBefore(svgEl('g', { class: 'te-under' }), svg.firstChild); under.appendChild(cover); }
     else g.appendChild(cover);
-    if (!editingIds.has(m.id)) {
+    const sh = !editingIds.has(m.id) && teShifted(m) && teShiftImage(v, m);
+    if (sh) {
+      // Only moved: the page's own pixels of the line, moved along with it
+      const [ax, ay] = toView(v, m.tm[4], m.tm[5]), [bx, by] = toView(v, ...teAt(m).slice(4));
+      g.appendChild(svgEl('image', { x: sh.x + bx - ax, y: sh.y + by - ay, width: sh.w, height: sh.h, href: sh.url, preserveAspectRatio: 'none' }));
+    } else if (!editingIds.has(m.id)) {
       const t = teAt(m), im = teImage(v, m), [ox, oy] = toView(v, t[4], t[5]), { u } = lineFrame(m);
       const [ax, ay] = toView(v, t[4] + u[0], t[5] + u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
       g.appendChild(svgEl('image', { x: ox - (im.ox || 0), y: oy - im.asc, width: im.w, height: im.h, href: im.url, transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` }));
@@ -2552,7 +2732,7 @@ function rerenderView(v) { v.rendered = false; v.token = (v.token || 0) + 1; v.e
 let selContent = null; // { v, kind: 'image' | 'annot', im?, a?, mark? }
 // The first click on a page can take a moment while its text is read. Meanwhile the cursor shows it is busy, and
 // keys typed are kept and given to the editor once it opens (nothing typed goes to the ribbon or is lost).
-let editKeys = null;
+let editKeys = null, lastPress = null;
 async function editDownBusy(e, v) {
   if (editKeys) editReady();
   const keys = editKeys = [];
@@ -2564,8 +2744,12 @@ async function editDownBusy(e, v) {
   keys.off = () => window.removeEventListener('keydown', kh, true);
   window.addEventListener('keydown', kh, true);
   app.dataset.busy = '';
-  editAt = { x: e.clientX, y: e.clientY, detail: e.detail || 1 };
-  try { await onEditDown(e, v); } finally { editAt = null; if (editKeys === keys) editReady(); }
+  // Pointer presses carry no click count in every browser: a press soon after another, at the same spot, counts on.
+  const now = Date.now(), near = lastPress && now - lastPress.t < 500 && Math.hypot(e.clientX - lastPress.x, e.clientY - lastPress.y) < 6;
+  const detail = e.detail || (near ? lastPress.n % 3 + 1 : 1);
+  lastPress = { t: now, x: e.clientX, y: e.clientY, n: detail };
+  const at = editAt = { x: e.clientX, y: e.clientY, detail }; downSeq.set(e, ++editSeq);
+  try { await onEditDown(e, v); } finally { if (editAt === at) editAt = null; if (editKeys === keys) editReady(); }
 }
 // The editor is open (or nothing will open): hand it the keys typed while waiting.
 function editReady() {
@@ -2596,9 +2780,10 @@ async function onEditDown(e, v) {
   // An edit made earlier: change it again.
   const own = e.target.closest && e.target.closest('.mk');
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
-  if (om && om.type === 'te') { selectContent(null); return openLineEditor(await phoneZoomTo(v, om), om, false); }
+  const seq = downSeq.get(e) ?? editSeq;
+  if (om && om.type === 'te') { selectContent(null); const nv = await phoneZoomTo(v, om); if (seq === editSeq) openLineEditor(nv, om, false); return; }
   if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
-  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return startMove(e, v, om); }
+  if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return markOnText(om) ? undefined : startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
   if (selContent && selContent.v === v && selContent.kind === 'image') {
     const r = imageRect(selContent);
@@ -2608,7 +2793,7 @@ async function onEditDown(e, v) {
   }
   const hit = await contentAt(v, x, y);
   if (!hit) { selectContent(null); return; }
-  if (hit.kind === 'text') { selectContent(null); return editLine(v, hit.L, hit.mark); }
+  if (hit.kind === 'text') { selectContent(null); return editLine(v, hit.L, hit.mark, seq); }
   selectContent({ v, ...hit });
   if (hit.kind === 'image') return startImageDrag(e, v, selContent, 'move');
   if (hit.kind === 'annot' && e.detail === 2) { editReady(); return editComment(v, hit.a, hit.mark); }
@@ -2715,11 +2900,15 @@ async function editComment(v, a, mark) {
 
 // Editing a line in place: a box with the line's text, over the line, in its colours.
 let lineEditor = null;
-async function editLine(v, L, mark) {
+// A second click while the first is still opening the line (a double click) opens it once, as the second asks.
+let editSeq = 0; const downSeq = new WeakMap(); // press -> its number
+async function editLine(v, L, mark, seq = editSeq) {
   const cm = await contentMap(v.page); v.page._cmapValue = cm;
   const m = mark || await teMarkFor(v, L, cm);
   await Promise.race([lineFace(v, m), new Promise((r) => setTimeout(r, 400))]);
+  if (seq !== editSeq) return;
   v = await phoneZoomTo(v, m);
+  if (seq !== editSeq) return;
   openLineEditor(v, m, !mark);
 }
 // A te mark for a line of the page, not yet in the page's list: its text, font, colours and the original's text state.
@@ -2729,19 +2918,25 @@ async function teMarkFor(v, L, cm) {
   // The character code of each letter this font has (for fonts without a Unicode table, the only reliable source)
   const codes = {}; for (const [u, gl] of cm.glyphs.get(L.fontName) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
   const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
-  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
+  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name) || Math.abs(L.tm[2] / (L.tm[3] || 1)) > .1, bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
 }
 // On a phone, a line too small to read or tap into (under 14 px) is zoomed to about 18 px first, around the tap;
 // the zoom and scroll come back when the editor closes. Returns the page's view at the new zoom.
 let phoneZoom = null; // { zoom, top, left, timer }
 async function phoneZoomTo(v, m) {
   if (!isPhone() || !views.includes(v)) return v;
+  const [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
+  return phoneZoomPx(v, lineFrame(m).size * scale, editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y });
+}
+// The same for anything on page v whose text is `px` high on screen now (a form field…), around the spot `at`:
+// zoomed so it is `want` px when it is under `min` px.
+async function phoneZoomPx(v, px, at, want = 18, min = 14) {
+  if (!isPhone() || !views.includes(v)) return v;
   if (phoneZoom && phoneZoom.timer) { clearTimeout(phoneZoom.timer); phoneZoom.timer = 0; }
-  const px = lineFrame(m).size * scale; if (px >= 14) return v;
-  const n = views.indexOf(v), [x, y] = toView(v, ...teAt(m).slice(4)), r = v.el.getBoundingClientRect();
-  const at = editAt ? { x: editAt.x, y: editAt.y } : { x: r.left + x, y: r.top + y };
+  if (!(px > 0) || px >= min) return v;
+  const n = views.indexOf(v), r = v.el.getBoundingClientRect();
   if (!phoneZoom) phoneZoom = { zoom: S.zoom, top: viewer.scrollTop, left: viewer.scrollLeft, timer: 0 };
-  const z = Math.min(400, Math.ceil(scale * 100 * 18 / px));
+  const z = Math.min(400, Math.ceil(scale * 100 * want / px));
   const fx = (at.x - r.left) / r.width, fy = (at.y - r.top) / r.height;
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
@@ -2755,9 +2950,10 @@ async function phoneZoomTo(v, m) {
 }
 function phoneZoomBack() {
   if (!phoneZoom || phoneZoom.timer) return;
-  // A moment later, unless another line is opened in the meantime (it keeps this zoom).
+  // A moment later, unless another line or form field is opened in the meantime (it keeps this zoom).
   phoneZoom.timer = setTimeout(async () => {
-    const pz = phoneZoom; phoneZoom = null; if (!pz || lineEditor) { if (pz && lineEditor) phoneZoom = { ...pz, timer: 0 }; return; }
+    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input, textarea, select'));
+    const pz = phoneZoom; phoneZoom = null; if (!pz || keep) { if (pz && keep) phoneZoom = { ...pz, timer: 0 }; return; }
     await setZoom(pz.zoom); viewer.scrollTop = pz.top; viewer.scrollLeft = pz.left;
   }, 350);
 }
@@ -2847,13 +3043,13 @@ function openLineEditor(v, m, isNew) {
   lineEditor = { ed, v, m, isNew, follow: teFollowers(v, m) };
   if (!(v.page._ownFace && v.page._ownFace[m.id])) { const was = ed.style.font; lineFace(v, m, () => { if (lineEditor && lineEditor.ed === ed && ed.style.font === was) ed.style.font = lineFont(v, m, px); }); }
   ed.focus();
-  placeCaret(ed, editAt);
+  placeCaret(ed, editAt && { ...editAt, k: clickOffset(v, m, editAt) });
   ed.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); closeLineEditor(true); }
     if (e.key === 'Escape') { e.preventDefault(); keptHint(closeLineEditor(true)); }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
-  ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed) closeLineEditor(true); }, 0));
+  ed.addEventListener('blur', () => setTimeout(() => { if (lineEditor && lineEditor.ed === ed && document.activeElement !== ed) closeLineEditor(true); }, 0));
 }
 // Where a click (or tap) on the page put the caret: { x, y, detail } on screen, set while the Edit tool handles it.
 // Opened from the keyboard (no click), the editor selects all of the line.
@@ -2876,6 +3072,25 @@ function offsetAt(el, x, y) {
   if (node === el) return off ? (el.textContent || '').length : 0;
   return off;
 }
+// The offset in a line's text under a click, from the PDF's own glyph widths (the editor's font can be a little wider
+// or narrower than the printed line, so its own caret position drifts towards the end of a long line). The widths
+// are scaled to the line's printed width, which takes in kerning and gaps. Null for text that was changed.
+function clickOffset(v, m, at) {
+  if (!at || m.text !== m.orig) return null;
+  const cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.tm)), map = L && cm.glyphs.get(L.fontName);
+  if (!map || !m.width) return null;
+  const r = v.el.getBoundingClientRect(), [x, y] = toPdf(v, at.x - r.left, at.y - r.top), { u } = lineFrame(m), t = teAt(m);
+  const along = (x - t[4]) * u[0] + (y - t[5]) * u[1];
+  const chars = [...m.text], ws = chars.map((ch) => { const g = map.get(ch); return g && g.w > 0 ? g.w : ch === ' ' ? 250 : 500; });
+  const tot = ws.reduce((a, b) => a + b, 0); if (!tot) return null;
+  let acc = 0, off = 0, k = 0, best = Infinity;
+  for (let i = 0; i <= chars.length; i++) {
+    const d = Math.abs(acc / tot * m.width - along);
+    if (d < best) { best = d; k = off; }
+    if (i < chars.length) { acc += ws[i]; off += chars[i].length; }
+  }
+  return k;
+}
 // The word (letters and digits) around an offset.
 function wordAt(text, k) {
   const w = /[\p{L}\p{N}_'’-]/u; let a = k, b = k;
@@ -2889,7 +3104,7 @@ function placeCaret(el, at) {
   const field = el.tagName === 'TEXTAREA', text = field ? el.value : el.textContent || '';
   let a = 0, b = text.length;
   if (at && at.detail !== 3) {
-    const k = offsetAt(el, at.x, at.y);
+    const k = at.k ?? offsetAt(el, at.x, at.y);
     if (k >= 0) { a = b = Math.min(k, text.length); if (at.detail === 2) [a, b] = wordAt(text, a); }
     else a = b = text.length;
   }
@@ -2910,19 +3125,69 @@ function teFollowers(v, m) {
       const next = cm.lines.find((l) => {
         if (sameOrigin(l.tm, cur.tm)) return false;
         const g = lineFrame(l); if (Math.abs(g.size - f.size) > f.size * .6 || g.u[0] * f.u[0] + g.u[1] * f.u[1] < .999) return false;
-        const dx = l.tm[4] - f.o[0], dy = l.tm[5] - f.o[1], along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+        // across the baseline, square to it (a slanted line's own v axis leans)
+        const dx = l.tm[4] - f.o[0], dy = l.tm[5] - f.o[1], along = dx * f.u[0] + dy * f.u[1], perp = -dx * f.u[1] + dy * f.u[0];
         return Math.abs(perp) < f.size * .35 && along > cur.width - Math.max(1, f.size * .3) && along < cur.width + f.size * .8;
       });
       if (!next || (FEATURE.lineTaken && FEATURE.lineTaken(v.entry, next))) break;
-      const mk = own.find((x) => x.type === 'te' && sameOrigin(x.tm, next.tm)) || await teMarkFor(v, next, cm);
+      // Text that is only moved keeps its own drawing (colours, slant, fonts) on screen and in the saved file.
+      const mk = own.find((x) => x.type === 'te' && sameOrigin(x.tm, next.tm)) || { ...await teMarkFor(v, next, cm), shiftOnly: true };
       list.push(mk); cur = mk;
     }
-    out.list = list;
-  })().catch(() => { out.list = []; });
+    // and the text before it on the line (moved too when a centred or right-aligned line grows)
+    const lead = []; cur = m;
+    for (let k = 0; k < 12; k++) {
+      const f = lineFrame(cur);
+      const prev = cm.lines.find((l) => {
+        if (sameOrigin(l.tm, cur.tm)) return false;
+        const g = lineFrame(l); if (Math.abs(g.size - f.size) > f.size * .6 || g.u[0] * f.u[0] + g.u[1] * f.u[1] < .999) return false;
+        const dx = f.o[0] - l.tm[4], dy = f.o[1] - l.tm[5], along = dx * g.u[0] + dy * g.u[1], perp = -dx * g.u[1] + dy * g.u[0];
+        return Math.abs(perp) < g.size * .35 && along > l.width - Math.max(1, g.size * .3) && along < l.width + g.size * .8;
+      });
+      if (!prev || (FEATURE.lineTaken && FEATURE.lineTaken(v.entry, prev))) break;
+      const mk = own.find((x) => x.type === 'te' && sameOrigin(x.tm, prev.tm)) || { ...await teMarkFor(v, prev, cm), shiftOnly: true };
+      lead.unshift(mk); cur = mk;
+    }
+    out.lead = lead; out.list = list;
+  })().catch(() => { out.list = []; out.lead = []; });
   return out;
 }
+// A line keeps its alignment when its text changes width: a centred line grows about its centre, a right-aligned
+// one to the left, others to the right; and it stays on the page (moved back from the edge). The whole row moves:
+// its first run by the alignment, each run after it by how much wider the runs before it now are.
+// Returns { moved, past } (past: the line is longer than the page has room for).
+function teAlign(v, m, follow) {
+  const lead = (follow && follow.lead) || [], tail = (follow && follow.list) || [], row = [...lead, m, ...tail];
+  const cm = v.page._cmapValue, { u, size } = lineFrame(m), first = row[0];
+  const before = JSON.stringify(row.map((x) => x.dx || 0));
+  let a = 0, past = false;
+  if (cm && v.page.view && Math.abs(u[1]) <= .02 && u[0] > 0) {
+    const [P0, , P1] = v.page.view, W = P1 - P0;
+    const width = (x) => (x.text === x.orig ? x.width : x.width + teImage(v, x).adv - teImage(v, { ...x, text: x.orig }).adv);
+    const grow = row.reduce((n, x) => n + width(x) - x.width, 0);
+    // The row as it was: its ends and centre, against the lines like it just above and below
+    const x0 = Math.min(...row.map((x) => x.tm[4])), x1 = Math.max(...row.map((x) => x.tm[4] + x.width)), c = (x0 + x1) / 2, y = m.tm[5];
+    const near = cm.lines.filter((l) => { const g = lineFrame(l); return Math.abs(g.u[1]) < .02 && Math.abs(l.tm[5] - y) > size * .5 && Math.abs(l.tm[5] - y) < size * 4 && Math.abs(g.size - size) < size * .5 && l.str.trim(); });
+    const tol = Math.max(1.5, size * .1), mid = (l) => l.tm[4] + l.width / 2;
+    const left = near.some((l) => Math.abs(l.tm[4] - x0) < tol && Math.abs(mid(l) - c) > tol * 2);
+    const right = near.some((l) => Math.abs(l.tm[4] + l.width - x1) < tol && Math.abs(l.tm[4] - x0) > tol * 2);
+    const centre = near.some((l) => Math.abs(mid(l) - c) < tol && Math.abs(l.tm[4] - x0) > tol * 2);
+    const kind = left ? 'left' : right ? 'right' : centre || Math.abs((x0 - P0) - (P1 - x1)) < W * .04 ? 'centre' : 'left';
+    a = kind === 'centre' ? -grow / 2 : kind === 'right' ? -grow : 0;
+    // On the page: no closer to an edge than 18 pt (or than it was)
+    const lo = P0 + Math.max(0, Math.min(18, x0 - P0)), hi = P1 - Math.max(0, Math.min(18, P1 - x1));
+    if (x1 + grow + a > hi) a = hi - x1 - grow;
+    if (x0 + a < lo) { a = lo - x0; past = x1 + grow + a > hi + .5; }
+  }
+  a = Math.abs(a) < .05 ? 0 : +a.toFixed(3);
+  if (a) first.dx = a; else delete first.dx;
+  const list = marksOf(v.entry);
+  if (first !== m) { const inList = list.includes(first); if (!inList && first.dx) list.push(first); else if (inList && !first.dx && first.text === first.orig) list.splice(list.indexOf(first), 1); }
+  teReflow(v, first, { list: row.slice(1) }, m);
+  return { moved: before !== JSON.stringify(row.map((x) => x.dx || 0)), past };
+}
 // Moves the text after an edited line by how much wider or narrower the line now is. Returns true if anything moved.
-function teReflow(v, m, follow) {
+function teReflow(v, m, follow, keep = null) {
   if (!follow || !follow.list || !follow.list.length) return false;
   // How much wider the text is now, both measured the same way (so the gap after the original is kept).
   const list = marksOf(v.entry), grow = (x) => (x.text === x.orig ? 0 : teImage(v, x).adv - teImage(v, { ...x, text: x.orig }).adv);
@@ -2931,6 +3196,7 @@ function teReflow(v, m, follow) {
     const dx = Math.abs(shift) < .05 ? 0 : +shift.toFixed(3), inList = list.includes(f);
     if ((f.dx || 0) !== dx) moved = true;
     if (dx) f.dx = dx; else delete f.dx;
+    if (f === keep) { shift = (f.dx || 0) + grow(f); continue; }
     if (!inList && dx) list.push(f);
     else if (inList && !dx && f.text === f.orig) list.splice(list.indexOf(f), 1);
     shift = (f.dx || 0) + grow(f);
@@ -2945,17 +3211,20 @@ function closeLineEditor(commit) {
   if (!lineEditor) return false;
   const { ed, v, m, isNew, follow } = lineEditor; lineEditor = null;
   editingIds.delete(m.id);
-  const text = ed.textContent.replace(/[\r\n]+/g, ' ');
+  const text = ed.textContent.replace(/[\r\n]+/g, ' '), had = document.activeElement === ed;
   ed.remove();
+  if (had) viewer.focus({ preventScroll: true }); // the keys (Tab, the arrows, Delete) go on from the page
   phoneZoomBack();
   if (commit && text !== m.text) {
     const before = snapshot(), list = marksOf(v.entry);
     m.text = text;
-    if (text === m.orig && !isNew && !m.dx) list.splice(list.indexOf(m), 1); // back to the original: no edit left
-    else if (isNew) list.push(m);
-    // What follows on the line moves with its new end (once read; that takes a moment only the first time).
-    if (follow.list) teReflow(v, m, follow);
-    else follow.ready.then(() => { const b2 = snapshot(); if (teReflow(v, m, follow)) { changed(b2); drawMarks(v); } });
+    // The line keeps its alignment, and what follows on the line moves with its new end (once read; that takes a
+    // moment only the first time).
+    const fit = () => { const r = teAlign(v, m, follow); if (r.past) toast('This line is longer than the page has room for. Undo takes it back.'); return r.moved; };
+    if (follow.list) fit();
+    if (text === m.orig && !isNew && !m.dx) { if (list.includes(m)) list.splice(list.indexOf(m), 1); } // back to the original: no edit left
+    else if (isNew && !list.includes(m)) list.push(m);
+    if (!follow.list) follow.ready.then(() => { const b2 = snapshot(); if (fit()) { changed(b2); drawMarks(v); } });
     changed(before);
     drawMarks(v); return true;
   }
@@ -3077,7 +3346,7 @@ function walkContent(s, fontWidth, onShow, onImage, ctm0, onGs) {
         }
         // Cutting ' or " must keep their move to the next line (and " its spacing), or later lines shift up.
         const keep = o === "'" ? ' T* ' : o === '"' ? ` ${num(0)} Tw ${num(1)} Tc T* ` : ' ';
-        ops.push({ start, end, origin, font, fs, keep, bt, ctm, invisible: tr === 3 || tr === 7, strings: parts.filter((p) => p.t === 'str').map((p) => p.v) });
+        ops.push({ o, start, end, origin, font, fs, keep, bt, ctm, invisible: tr === 3 || tr === 7, strings: parts.filter((p) => p.t === 'str').map((p) => p.v) });
         onShow && onShow(ops[ops.length - 1]);
         tm = mul([1, 0, 0, 1, adv, 0], tm);
       } else if (o === 'Do') onImage({ start, end, ctm, name: a[0] && a[0].v });
@@ -3106,7 +3375,7 @@ function parseCMap(txt) {
 }
 function pageFonts(L, out, pageNode) {
   const { PDFName, PDFDict, PDFArray, PDFRawStream, PDFNumber, decodePDFRawStream } = L;
-  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getUnencodedContents ? st.getUnencodedContents() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
   const fonts = new Map();
   const res = pageNode.Resources && pageNode.Resources();
   const fd = res && res.lookup(PDFName.of('Font'));
@@ -3164,7 +3433,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   const streamsOf = () => { const raw = node.get(PDFName.of('Contents')); const r = raw && out.context.lookup(raw); return r instanceof PDFArray ? r.asArray() : raw ? [raw] : []; };
   const parts = streamsOf();
   let src = parts.map((r) => { const st = out.context.lookup(r); return st ? text(st) : ''; }).join('\n');
-  const cut = [], removed = new Set(), hidden = new Set(), anchor = new Map();
+  const cut = [], removed = new Set(), hidden = new Set(), anchor = new Map(), moves = new Map(), shifted = new Set();
   const resOf = (R) => { const x = R instanceof PDFDict ? R : null; return { xo: x && x.lookup(PDFName.of('XObject')) instanceof PDFDict ? x.lookup(PDFName.of('XObject')) : null, eg: x && x.lookup(PDFName.of('ExtGState')) instanceof PDFDict ? x.lookup(PDFName.of('ExtGState')) : null }; };
   const pageRes = resOf(node.Resources && node.Resources()), xo = pageRes.xo;
   const subOf = (o) => (o && o.dict ? String(o.dict.lookup(PDFName.of('Subtype'))) : '');
@@ -3227,9 +3496,11 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       const f = fonts.get(op.font);
       for (const m of lines) {
         const fr = lineFrame(m), dx = op.origin[0] - fr.o[0], dy = op.origin[1] - fr.o[1];
-        const along = dx * fr.u[0] + dy * fr.u[1], perp = dx * fr.v[0] + dy * fr.v[1];
+        // across the baseline, square to it (a slanted line's own v axis leans)
+        const along = dx * fr.u[0] + dy * fr.u[1], perp = -dx * fr.u[1] + dy * fr.u[0];
         if (perp < -fr.size * .35 || perp > fr.size * .35 || along < -Math.max(1, fr.size * .3) || along > m.width - Math.min(1, fr.size * .1)) continue;
         if (m.font && f && f.base && baseName(f.base) !== baseName(m.font)) continue;
+        if (teShifted(m)) { if (!moves.has(m.id)) moves.set(m.id, []); moves.get(m.id).push(op); break; }
         cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id);
         if (!anchor.has(m.id)) anchor.set(m.id, op);
         break;
@@ -3243,7 +3514,20 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
       if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
     }, undefined, (g) => pics.length && softMask(pageRes.eg, g, 1));
-  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); anchor.clear(); ops = null; }
+  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); anchor.clear(); moves.clear(); ops = null; }
+  // Text that only moves along (after an edited run) keeps its own drawing: each of its show operators is moved
+  // by a TJ offset before it and moved back after it, inside the text object. ' and " start a new line first (the
+  // offset would be lost), so a line drawn with them is typeset again instead.
+  for (const [id, list] of moves) {
+    const m = lines.find((x) => x.id === id);
+    if (list.some((op) => op.o !== 'Tj' && op.o !== 'TJ' || op.invisible)) {
+      for (const op of list) { cut.push([op.start, op.end, op.keep]); if (op.invisible) hidden.add(id); if (!anchor.has(id)) anchor.set(id, op); }
+      removed.add(id); continue;
+    }
+    const k = +(-(m.dx || 0) * 1000 / (Math.hypot(m.tm[0], m.tm[1]) || 1)).toFixed(3);
+    for (const op of list) { cut.push([op.start, op.start, `[${k}] TJ `]); cut.push([op.end, op.end, ` [${-k}] TJ`]); }
+    removed.add(id); shifted.add(id);
+  }
   // The new text of each line found, right after the text object it was in (back in page space there).
   const placed = new Set(), fmt = (n) => +(+n).toFixed(6);
   const ser = (list) => list.map((o) => o.toString()).join('\n');
@@ -3293,7 +3577,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     const key = node.newXObject('CPDFIm', im.ref);
     p.pushOperators(O('q'), O('cm', m.mat.map((n) => PDFNumber.of(+(+n).toFixed(4)))), O('Do', [key]), O('Q'));
   }
-  for (const [id, list] of newOps) if (!placed.has(id)) p.pushOperators(...list);
+  for (const [id, list] of newOps) if (!placed.has(id) && !shifted.has(id)) p.pushOperators(...list);
   void PDFRef; void PDFRawStream; void PDFHexString; void StandardFonts;
 }
 // An edited line drawn again: in the PDF's own font where it has the letters, else the closest standard font, with
@@ -3503,11 +3787,20 @@ const rotatePage = (d) => pageOp(() => { const e = doc.pages[current]; e.rot = (
 const rotateAll = (d) => pageOp(() => doc.pages.forEach((e) => { e.rot = (e.rot + d + 360) % 360; }));
 // Page moves and deletes are read out (the pages change under a screen reader's cursor without a word otherwise).
 // `idx`: the pages moved (indexes before the move); `to`: where the first of them is now.
-function pagesMoved(idx, to, together = true) { if (doc) announce(idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`); }
-function pagesDeleted(n) { if (doc) announce(`${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted. ${doc.pages.length} left.`); }
+// They are also shown, with Undo, as a toast.
+function pagesMoved(idx, to, together = true) {
+  if (!doc) return;
+  const msg = idx.length === 1 ? `Page ${idx[0] + 1} moved to ${to + 1}` : `${idx.length} pages moved${together ? ` to ${to + 1}-${to + idx.length}` : ''}`;
+  announce(msg); undoToast(msg);
+}
+function pagesDeleted(n) {
+  if (!doc) return;
+  const msg = `${n.length === 1 ? `Page ${n[0] + 1}` : `${n.length} pages`} deleted`;
+  announce(`${msg}. ${doc.pages.length} left.`); undoToast(msg);
+}
 const deletePage = () => { const n = current; pageOp(() => { doc.pages.splice(current, 1); current = Math.min(current, doc.pages.length - 1); }); pagesDeleted([n]); };
 const movePage = (d) => { const t = current + d, n = current; if (!doc || t < 0 || t >= doc.pages.length) return; pageOp(() => { const [e] = doc.pages.splice(current, 1); doc.pages.splice(t, 0, e); current = t; }); pagesMoved([n], t); };
-const duplicatePage = () => pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; });
+const duplicatePage = () => { const n = current; pageOp(() => { const e = doc.pages[current]; doc.pages.splice(current + 1, 0, { ...e }); current++; }); if (doc) undoToast(`Page ${n + 1} duplicated`); };
 async function insertBlank() {
   const L = await loadPdfLib();
   const base = await (await pageOf(doc.pages[current])).getViewport({ scale: 1 });
@@ -4079,7 +4372,14 @@ $('#findNext').onclick = () => stepFind(1); $('#findPrev').onclick = () => stepF
 
 /* ---------------- sidebar: pages, outline, documents ---------------- */
 function syncSideTabs() { $$('.side-tabs [data-side]').forEach((b) => { const on = b.dataset.side === S.side; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; b.id ||= 'side-' + b.dataset.side; if (on) $('#sidePanel').setAttribute('aria-labelledby', b.id); }); }
-function setSide(t) { S.side = t; saveSettings(); syncSideTabs(); renderSide(); }
+function setSide(t) { S.side = t; delete S.sideBack; saveSettings(); syncSideTabs(); renderSide(); }
+// With no document open, the sidebar shows Recent (Pages would be empty); the tab used before comes back with the
+// next document.
+function sideNoDoc() {
+  if (doc || S.side === 'docs') return;
+  S.sideBack = S.side; S.side = 'docs'; saveSettings(); syncSideTabs(); renderSide();
+}
+function sideForDoc() { if (S.sideBack && S.side === 'docs') { S.side = S.sideBack; syncSideTabs(); } delete S.sideBack; }
 $$('.side-tabs [data-side]').forEach((b) => b.addEventListener('click', () => setSide(b.dataset.side)));
 // Arrow keys, Home and End move between tabs (and choose them), as in any tab list.
 function tabKeys(e, list, choose) {
@@ -4110,7 +4410,7 @@ async function renderSide() {
   const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
   panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
-  thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target); } }), { root: panel, rootMargin: '300px' });
+  thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target).then(followThumbAgain); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
     thumbIO.observe(t);
     t.onclick = () => { goPage(+t.dataset.n); if (isPhone()) toggleSidebar(false); };
@@ -4233,7 +4533,23 @@ function markThumb() {
     if (n === current) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
     t.tabIndex = (focused ? t === focused : n === current) ? 0 : -1;
   });
+  followThumb();
 }
+// The page in view keeps its thumbnail in view in the sidebar (as the document scrolls, or a page is typed in),
+// unless the pointer or the focus is in the sidebar (someone looking through it there).
+function followThumb() {
+  const panel = $('#sidePanel');
+  if (S.side !== 'thumbs' || app.dataset.sidebar === 'off' || panel.matches(':hover, :focus-within')) return;
+  const t = $(`.thumb[data-n="${current}"]`, panel); if (!t) return;
+  const p = panel.getBoundingClientRect(), r = t.getBoundingClientRect(); if (!p.height) return;
+  if (r.top < p.top) panel.scrollTop -= p.top - r.top + 8;
+  else if (r.bottom > p.bottom) panel.scrollTop += r.bottom - p.bottom + 8;
+  else return;
+  followUntil = Date.now() + 1500;
+}
+// Thumbnails take their page's shape once drawn, which moves the ones below: follow again for a moment.
+let followUntil = 0;
+function followThumbAgain() { if (Date.now() < followUntil) followThumb(); }
 $('#sidePanel').addEventListener('keydown', (e) => {
   const t = e.target.closest && e.target.closest('#sidePanel .thumb'); if (!t || !doc || e.ctrlKey || e.metaKey) return;
   const list = $$('#sidePanel .thumb'), k = list.indexOf(t), last = list.length - 1;
@@ -4270,7 +4586,7 @@ function toggleSidebar(on) {
   }
   sideInert(false);
   S.sidebar = on ?? !S.sidebar; saveSettings(); app.dataset.sidebar = S.sidebar ? 'on' : 'off';
-  if (doc && S.zoom === 'fit') setTimeout(() => layoutPages(true), 50);
+  if (doc && zoomFits()) setTimeout(() => layoutPages(true), 50);
 }
 
 // While the phone sidebar is open, everything behind its scrim is out of reach (inert), and Tab goes round inside it.
@@ -4318,7 +4634,7 @@ async function renderDocs() {
   const panel = $('#sidePanel');
   const all = (await listDocs()).sort((a, b) => b.updated - a.updated);
   if (S.side !== 'docs') return;
-  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
+  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No recent PDFs yet. Files you open appear here, kept on this device.</p>';
   icons();
   $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
@@ -4328,6 +4644,32 @@ async function renderDocs() {
     if (doc && doc.id === b.dataset.del) { doc = null; pagesEl.innerHTML = ''; views = []; $('#drop').hidden = false; setTitle(); setSaved(true); updateStatus(); }
     renderDocs();
   }; });
+}
+// Close (Ctrl/Cmd+W): back to the start screen. Changes not saved to a file are asked about first; either way they
+// stay in Recent, so the document can be opened again from there.
+async function closeDocument() {
+  if (!doc) return false;
+  closeLineEditor(true);
+  if (app.dataset.organize === '1' && typeof pg60Organize === 'function') pg60Organize(false);
+  if (doc.dirty) {
+    const a = await dialog(`Save changes to ${doc.name}?`, '<p>Your changes are kept in Recent either way.</p>', [{ label: 'Cancel' }, { label: "Don't save", value: 'no' }, { label: 'Save', value: 'save', primary: true }]);
+    if (!a || (a === 'save' && !(await savePdf(false)))) return false;
+  }
+  clearTimeout(persistTimer); persistTimer = null;
+  try { await persistNow(); } catch (e) { console.warn(e); }
+  if (app.dataset.tool !== 'select') setTool('select');
+  pendingImage = null; selContent = null; closePopover();
+  if (!$('#findbar').hidden) closeFind();
+  findState.texts.clear();
+  for (const f of FEATURE.onDocClosed) { try { f(); } catch (e) { console.warn(e); } }
+  for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
+  pdfDocs.clear();
+  doc = null; selMark = null; current = 0; undoStack.length = redoStack.length = 0;
+  pagesEl.innerHTML = ''; views = []; $('#drop').hidden = false;
+  store.set('current', null);
+  setTitle(); setSaved(true); updateStatus(); sideNoDoc(); renderSide(); refreshRibbon();
+  const o = $('#drop [data-cmd="open"]') || $('#drop button'); if (o) o.focus({ preventScroll: true });
+  return true;
 }
 async function openStored(id) {
   if (doc && doc.id === id) return true;
@@ -4491,6 +4833,7 @@ function run(id) {
 cmd('open', { label: 'Open…', icon: 'folder-open', key: 'Mod-o', run: openFiles });
 cmd('save', { label: 'Save PDF', icon: 'download', key: 'Mod-s', enabled: has, run: () => savePdf(false) });
 cmd('saveCopy', { label: 'Save a copy…', icon: 'copy', key: 'Mod-Shift-s', enabled: has, run: () => savePdf(true) });
+cmd('closeDoc', { label: 'Close', icon: 'x', key: 'Mod-w', enabled: has, run: () => serial(closeDocument) });
 cmd('sample', { label: 'Open the sample PDF', icon: 'book-open', run: () => serial(openSample) });
 cmd('merge', { label: 'Combine PDFs…', icon: 'files', run: () => $('#mergeInput').click() }); // a list to order first: 60-pages.js
 cmd('exportImage', { rlabel: 'Page as picture', label: 'Export this page as a picture', icon: 'image-down', enabled: has, run: exportImage });
@@ -4500,13 +4843,17 @@ cmd('undo', { get label() { return undoStack.length ? 'Undo ' + undoName() : 'Un
 cmd('redo', { get label() { return redoStack.length ? 'Redo ' + redoName() : 'Redo'; }, rlabel: 'Redo', icon: 'redo-2', key: 'Mod-Shift-z', enabled: () => redoStack.length > 0, run: redo });
 TEST_HOOKS.cmdLabel = (id) => C[id].label;
 TEST_HOOKS.cmdEnabled = (id) => !C[id].enabled || !!C[id].enabled();
+TEST_HOOKS.cmdShown = (id) => shown(id);
 cmd('find', { label: 'Find…', icon: 'search', key: 'Mod-f', enabled: has, run: openFind });
 cmd('deleteMark', { label: 'Delete selected', icon: 'trash-2', enabled: () => !!selMark || !!selContent, run: deleteSelected });
 cmd('copyMark', { label: 'Copy', icon: 'copy', key: 'Mod-c', hidden: true, enabled: () => !!selMark, run: copyMark });
 cmd('pasteMark', { label: 'Paste', icon: 'clipboard-paste', key: 'Mod-v', hidden: true, enabled: () => !!markClip && has(), run: () => pasteMark() });
 cmd('dupMark', { label: 'Duplicate', icon: 'copy-plus', key: 'Mod-d', hidden: true, enabled: () => !!selMark, run: duplicateMark });
 const tools = [['select', 'Select', 'mouse-pointer-2'], ['highlight', 'Highlight', 'highlighter'], ['pen', 'Draw', 'pen-line'], ['rect', 'Rectangle', 'square'], ['text', 'Add text', 'type'], ['note', 'Note', 'sticky-note'], ['edit', 'Edit PDF', 'text-cursor-input'], ['erase', 'Erase area', 'eraser']];
-for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
+// Highlight, as on the selection's bar: text already selected is highlighted at once (the tool in use stays on);
+// with none, the tool turns on and highlights what is selected next. Its tooltip says both.
+const MARKUP_TIP = (verb, then = verb.toLowerCase() + ' it') => `${verb} the selected text, or turn this on and select text to ${then}`;
+for (const [t, label, icon] of tools) cmd('tool_' + t, { label, icon, ...(t === 'highlight' ? { tip: MARKUP_TIP('Highlight') } : {}), enabled: has, pressed: () => app.dataset.tool === t, run: () => { if (t === 'highlight' && highlightSelection()) return; setTool(t); } });
 cmd('sign', { label: 'Signature…', icon: 'signature', enabled: has, run: signature });
 cmd('image', { label: 'Picture…', icon: 'image-plus', enabled: has, run: () => $('#imageInput').click() });
 cmd('rotL', { label: 'Rotate left', icon: 'rotate-ccw', enabled: has, run: () => rotatePage(-90) });
@@ -4523,8 +4870,10 @@ cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
 cmd('zoomIn', { label: 'Zoom in', icon: 'zoom-in', key: 'Mod-=', enabled: has, run: () => setZoom(Math.min(400, Math.round(scale * 100) + 10)) });
 cmd('zoomOut', { label: 'Zoom out', icon: 'zoom-out', key: 'Mod--', enabled: has, run: () => setZoom(Math.max(25, Math.round(scale * 100) - 10)) });
-cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-0', enabled: has, run: () => setZoom('fit') });
-cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => setZoom(100) });
+// The zoom in use is checked (not on a phone, which always fits the width: its ribbon would scroll to it).
+cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-2', enabled: has, pressed: () => !isPhone() && S.zoom === 'fit', run: () => setZoom('fit') });
+cmd('zoomPage', { label: 'Fit page', icon: 'scan', key: 'Mod-0', enabled: has, pressed: () => !isPhone() && S.zoom === 'page', run: () => setZoom('page') });
+cmd('zoom100', { label: 'Actual size', icon: 'scan-line', key: 'Mod-1', enabled: has, pressed: () => !isPhone() && S.zoom === 100, run: () => setZoom(100) });
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
 cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, run: shortcutsDialog }); // not without a keyboard
@@ -4542,10 +4891,10 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
+  ['File', ['open', 'openRecent', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
-  ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
+  ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -4559,8 +4908,8 @@ const menuIcon = (icon) => icon ? ic(icon) : '<span></span>', menuChk = (on) => 
 function menuHtml(ids) {
   let html = '', group = false;
   for (const id of ids.filter(shown)) {
-    const radio = /^theme_/.test(id);
-    if (radio !== group) { html += radio ? '<div role="group" aria-label="Appearance">' : '</div>'; group = radio; }
+    const radio = /^theme_/.test(id) ? 'Appearance' : /^vw_lay_/.test(id) ? 'Page layout' : false;
+    if (radio !== group) { html += (group ? '</div>' : '') + (radio ? `<div role="group" aria-label="${radio}">` : ''); group = radio; }
     if (id === '-') { html += '<div class="msep"></div>'; continue; }
     const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
     const role = on === null ? 'role="menuitem"' : `role="${radio ? 'menuitemradio' : 'menuitemcheckbox'}" aria-checked="${on}"`;
@@ -4588,7 +4937,7 @@ function openPopover(anchor, html, at) {
   }
   const f = $('.pop-sw button[aria-checked="true"], .mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -4615,7 +4964,7 @@ pop.addEventListener('click', (e) => {
   const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
 });
 pop.addEventListener('change', (e) => { if (e.target.matches('[data-colorpick]')) { pickColor(e.target.value.toUpperCase()); closePopover(); } });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
   $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
@@ -4636,13 +4985,49 @@ $('#menubar').addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (bs[k].getAttribute('aria-expanded') !== 'true') bs[k].click(); }
 });
 // Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
-function moreMenuHtml() {
+function moreMenuHtml(menus = MENUS, keep = () => true) {
   const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids.flatMap((id) => [id, ...((C[id] && C[id].menu) || [])]) : [])));
-  return MENUS.map(([t, ids], k) => {
-    const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
+  return menus.map(([t, ids]) => {
+    const k = MENUS.findIndex(([x]) => x === t), only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id) && keep(id));
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
   }).join('');
 }
+/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). What only
+   the menus had is on it too: File (at the start of the tab row) lists the File menu, then what the other menus have
+   that no ribbon tab shows; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its
+   menus in the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
+if (!MAC_APP) app.dataset.menubar = 'ribbon';
+function fileMenuHtml() {
+  const file = MENUS.find(([t]) => t === 'File'), rest = MENUS.filter(([t]) => t !== 'File' && t !== 'Help');
+  return menuHtml(file ? file[1] : []) + moreMenuHtml(rest, (id) => !/^theme_/.test(id)); // the theme: its own button
+}
+const helpMenuHtml = () => menuHtml((MENUS.find(([t]) => t === 'Help') || ['', []])[1]);
+function menuButton(b, html) {
+  b.addEventListener('click', () => {
+    const open = b.getAttribute('aria-expanded') === 'true';
+    closePopover(); if (open) return;
+    b.setAttribute('aria-expanded', 'true'); openPopover(b, html());
+  });
+  b.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && b.getAttribute('aria-expanded') !== 'true') { e.preventDefault(); b.click(); } });
+}
+menuButton($('#fileBtn'), fileMenuHtml); menuButton($('#helpBtn'), helpMenuHtml);
+// Alt pressed and let go on its own, or F10: to the ribbon's tab row (again: back to the document).
+let altAlone = false;
+document.addEventListener('keydown', (e) => {
+  altAlone = e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+  if (e.key === 'F10' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && app.dataset.menubar === 'ribbon' && !$('#dialog').open) { e.preventDefault(); closePopover(); ribbonKeyFocus(); }
+}, true);
+document.addEventListener('keyup', (e) => { if (e.key === 'Alt' && altAlone && app.dataset.menubar === 'ribbon' && !$('#dialog').open && pop.hidden) { e.preventDefault(); ribbonKeyFocus(); } altAlone = false; }, true);
+document.addEventListener('pointerdown', () => { altAlone = false; }, true);
+function ribbonKeyFocus() {
+  const a = document.activeElement;
+  if (a && a.closest && a.closest('.ribbon-head')) { viewer.focus({ preventScroll: true }); return; }
+  const t = $('#ribbonTabs [aria-selected="true"]'); if (t && t.offsetParent) t.focus(); else if ($('#fileBtn').offsetParent) $('#fileBtn').focus();
+}
+cmd('openRecent', { label: 'Open recent…', icon: 'history', run: () => {
+  if (app.dataset.sidebar === 'off' || (isPhone() && app.dataset.sidebar !== 'open')) toggleSidebar(true);
+  setSide('docs'); setTimeout(() => { const f = $('#sidePanel .doc-open') || $('.side-tabs [data-side="docs"]'); f && f.focus({ preventScroll: true }); }, 60);
+} });
 $('#moreBtn').addEventListener('click', () => {
   const b = $('#moreBtn'), open = b.getAttribute('aria-expanded') === 'true';
   closePopover(); if (open) return;
@@ -4712,7 +5097,7 @@ function ctxFor(el, x, y) {
   if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
   const t = el.closest('#sidePanel .thumb, .pg60-cell'); if (t) return thumbMenu(t, { x, y });
   const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
-  const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
+  const hit = el.closest('svg.marks .mk[data-id]'), m = (hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id)) || (!String(getSelection() || '').trim() && onTextMarkAt(v, x, y));
   return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
 }
 document.addEventListener('contextmenu', (e) => {
@@ -4757,13 +5142,13 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
+  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'sidebar', 'darkPage'], 'rows', 'keep']]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
-  export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
+  export: ['Export', [['Save', ['saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
 // Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of). `look` makes a
 // compact group on wide screens: 'rows' (small buttons with their names, two rows) or 'icons' (a grid of icons).
@@ -4863,7 +5248,7 @@ function phoneFold(groups) {
   if (!isPhone()) return groups;
   const out = [], members = (ids) => ids.filter(shown), on = (id) => !!(C[id].pressed && C[id].pressed());
   for (let k = 0; k < groups.length; k++) {
-    const [label, ids, look] = groups[k];
+    const [label, ids, look, keep] = groups[k]; // keep: a compact group on wide screens, big buttons on a phone
     if (look === 'swatches') {
       const next = groups[k + 1], style = next && next[0] === 'Style' && Array.isArray(next[1]) ? members(next[1]) : [];
       if (style.length) k++;
@@ -4873,7 +5258,7 @@ function phoneFold(groups) {
     let list = Array.isArray(ids) ? members(ids) : [], name = label;
     // groups of small buttons side by side (Text box, Add) are one button, named after the last of them
     while (look === 'rows' && groups[k + 1] && groups[k + 1][2] === 'rows' && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
-    if (!look || list.length < 2) { out.push(groups[k]); continue; }
+    if (!look || keep || list.length < 2) { out.push(groups[k]); continue; }
     const label2 = name, face = () => list.find(on) || (list.includes(foldLast[label2]) ? foldLast[label2] : list[0]);
     cmd('fold:' + name, look === 'icons'
       ? { get label() { return C[face()].label; }, get icon() { return C[face()].icon; }, get rlabel() { return C[face()].rlabel; }, menu: list, pressed: () => on(face()), enabled: () => !C[face()].enabled || C[face()].enabled(), run: () => run(face()) }
@@ -4886,6 +5271,8 @@ function phoneFold(groups) {
 // of command ids) shows them under its name.
 matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
 Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+// A menu as the menu bar lists it (the Mac app's window shows the bar if macOS turns its menus down), opened under File.
+TEST_HOOKS.openMenu = (title) => { const m = MENUS.find(([t]) => t === title); closePopover(); openPopover($('#fileBtn'), menuHtml(m[1])); };
 function foldStyleHtml(ids) {
   const now = swatchNow();
   let html = `<div class="pop-sw" role="group" aria-label="Colour">${swatchesHtml(COLORS, { now, attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${now.toLowerCase()}"`, menu: true })}</div>`;
@@ -4997,6 +5384,7 @@ function refreshRibbon() {
   $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
   rbRoving();
   scheduleMacMenu();
+  if (ANDROID) backLater();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
 
@@ -5015,7 +5403,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (mod) {
     const key = (e.shiftKey ? 'Shift-' : '') + (e.altKey ? 'Alt-' : '') + e.key.toLowerCase();
-    const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
+    const map = { 'o': 'open', 'w': 'closeDoc', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomPage', '1': 'zoom100', '2': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
     const id = map[key.replace('Shift-', 'shift-').replace('Alt-', 'alt-')];
     if (id && !(typing && ['z', 'shift-z', 'y'].includes(key.toLowerCase()))) { e.preventDefault(); run(id); }
     return;
@@ -5041,6 +5429,49 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current + 1); } }
   if (e.key === 'PageUp' || (e.key === 'ArrowLeft' && !e.altKey && onPage)) { if (doc) { e.preventDefault(); goPage(current - 1); } }
 });
+
+/* ---------------- Back on Android ---------------- */
+// Back (the button or the gesture) closes what is on top, as Escape does: a dialog, a menu, the sidebar, an editor,
+// the find bar, a selection, then the tool. It leaves the app only when nothing is open. While something is open a
+// history entry stands for it, so Back takes that entry (and closes the top thing) instead of leaving; the entry is
+// put back while more is open, and taken away when everything was closed some other way.
+function backLayer() {
+  if ($('#dialog').open) return 'dialog';
+  if (!pop.hidden) return 'menu';
+  if (app.dataset.sidebar === 'open' && isPhone()) return 'sidebar';
+  if (lineEditor || $('#viewer :is(.txt-editor, .page-ask)')) return 'editor';
+  if (!$('#findbar').hidden) return 'find';
+  if (selContent || selMark) return 'selection';
+  if (doc && app.dataset.tool && app.dataset.tool !== 'select') return 'tool';
+  if (app.dataset.organize === '1') return 'organize';
+  return null;
+}
+function backClose() {
+  const l = backLayer(); if (!l) return;
+  if (l === 'dialog') { $('#dialog').dispatchEvent(new Event('cancel', { cancelable: true })); return; }
+  if (l === 'sidebar') { toggleSidebar(false); return; }
+  const esc = (el) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+  esc(document.activeElement || document.body);
+  // Still open (the focus was in a form field, which keeps its own Escape): from the page instead.
+  if (backLayer() === l && l !== 'editor') { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); esc(document.body); }
+}
+var backArmed = false, backSkip = false, backTimer = 0; // var: refreshRibbon can run before this line
+function backSync() {
+  if (backSkip) return;
+  const open = !!backLayer();
+  if (open && !backArmed) { history.pushState({ cowdreyBack: 1 }, ''); backArmed = true; }
+  else if (!open && backArmed && history.state && history.state.cowdreyBack) { backArmed = false; backSkip = true; history.back(); }
+}
+function backLater() { clearTimeout(backTimer); backTimer = setTimeout(backSync, 60); }
+if (ANDROID) {
+  window.addEventListener('popstate', () => {
+    if (backSkip) { backSkip = false; backLater(); return; } // our own entry, taken away
+    if (!backArmed) return;
+    backArmed = false; backClose(); backLater();
+  });
+  for (const t of ['click', 'keyup', 'focusin', 'pointerup']) document.addEventListener(t, backLater, true);
+  $('#dialog').addEventListener('close', backLater);
+}
 
 /* ---------------- theme ---------------- */
 function applyTheme() {
@@ -5107,7 +5538,7 @@ const txtCtx = document.createElement('canvas').getContext('2d');
 function txtMeasurer(page, m) {
   const cm = page && page._cmapValue, t0 = m.src[0].tm;
   const L = cm && cm.lines.find((l) => sameOrigin(l.tm, t0));
-  const loaded = L ? L.fontName : null, map = !m.std && !m.ocr && !m.type3 && loaded && cm.glyphs.get(loaded);
+  const loaded = m.loaded || (L ? L.fontName : null), map = !m.std && !m.ocr && !m.type3 && loaded && cm && cm.glyphs.get(loaded);
   const hsc = Math.hypot(t0[0], t0[1]) / (Math.hypot(t0[2], t0[3]) || 1);
   const own = `100px "${loaded}", ${cssFamily(m.fam)}`, fb = `${m.bold ? 'bold ' : ''}${m.italic ? 'italic ' : ''}100px ${cssFamily(m.fam)}`;
   return (s) => {
@@ -5140,18 +5571,67 @@ const txtJoin = (strs) => strs.reduce((a, s, k) => (k === 0 ? s : /-$/.test(a) ?
 // The block's frame: the first original line's origin (moved by dx, dy), its directions, and the size and leading now.
 function txtFrame(m) {
   const f = lineFrame(m.src[0]), k = m.size / f.size;
-  return { ...f, k, lead: m.lead0 * k, o: [f.o[0] + (m.dx || 0), f.o[1] + (m.dy || 0)] };
+  return { ...f, k, lead: txtLead(m, m.size, m.spacing, f.size), o: [f.o[0] + (m.dx || 0), f.o[1] + (m.dy || 0)] };
 }
+// Line spacing: a multiple of single spacing (1.2 times the size), or as in the PDF (lead0): as the original's,
+// and more for a larger size (never less: smaller text keeps the paragraph's line spacing, so it still matches the text around it).
+const TXT_SPACINGS = [1, 1.15, 1.5, 2];
+const txtLead = (m, size, spacing = m.spacing, size0 = m.size0) => (+spacing ? +spacing * 1.2 * size : m.lead0 * Math.max(1, size / size0));
 const txtOrigin = (F, i, x) => [F.o[0] + F.u[0] * x - F.v[0] * i * F.lead, F.o[1] + F.u[1] * x - F.v[1] * i * F.lead];
 const txtAlignK = (a) => ({ center: .5, right: 1 }[a] || 0);
 function txtRelayout(page, m) {
-  m.std = !!(m.bold !== m.base.bold || m.italic !== m.base.italic);
+  m.std = txtIsStd(m);
   m.lines = m.wrap ? txtWrap(m.text, m.wrap, txtMeasurer(page, m)) : m.text.split('\n');
+}
+/* ---- Font: the text's own font, another font the page uses, or a standard one (Helvetica, Times, Courier) ---- */
+// face: '' (the text's own), 'sans' | 'serif' | 'mono' (standard), or 'f:' + the name pdf.js loaded another of the
+// page's fonts as. A face from the page is written with that font where it has the letters (as the own font is).
+const TXT_STD_FACES = [['sans', 'Helvetica'], ['serif', 'Times'], ['mono', 'Courier']];
+const txtFontInfo = new Map(); // loaded name -> { font, codes, fam, bold, italic, ascent, descent, label }
+// A font's name as people know it: no subset tag, words apart ("ABCDEF+Carlito-Bold-8659" is "Carlito Bold").
+const txtFontLabel = (name) => baseName(name).replace(/[-_,+]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+\d{3,}$/, '').replace(/\s*\b(MT|PS|PSMT)$/, '').trim() || 'As in the PDF';
+const txtStdFace = (face) => TXT_STD_FACES.some(([k]) => k === face);
+// Drawn in a standard font: a standard face, or bold or italic asked of a font that isn't.
+const txtIsStd = (m) => txtStdFace(m.face) || m.bold !== (m.loaded ? !!m.fbold : m.base.bold) || m.italic !== (m.loaded ? !!m.fitalic : m.base.italic);
+function txtApplyFace(m, face = '') {
+  if (!m.own0) m.own0 = { font: m.font, codes: m.codes, fam: m.fam, ocr: m.ocr, type3: m.type3, ascent: m.ascent, descent: m.descent };
+  const info = /^f:/.test(face) && txtFontInfo.get(face.slice(2));
+  Object.assign(m, m.own0); delete m.loaded; delete m.fbold; delete m.fitalic;
+  m.face = info || txtStdFace(face) ? face : '';
+  if (info) Object.assign(m, { font: info.font, codes: info.codes, fam: info.fam, ocr: false, type3: false, ascent: info.ascent, descent: info.descent, loaded: face.slice(2), fbold: info.bold, fitalic: info.italic });
+  else if (txtStdFace(face)) m.fam = face;
+  return m;
+}
+// A tpara as it would be with a format (for measuring while the editor is open).
+const txtFaced = (m, f) => { const t = txtApplyFace({ ...m }, f.face); Object.assign(t, { size: f.size, bold: f.bold, italic: f.italic, spacing: f.spacing || 0 }); t.std = txtIsStd(t); return t; };
+// The fonts the page's text uses (not a scan's invisible text, not drawn fonts), each once, by name.
+async function txtPageFonts(v) {
+  return v.page._txtFonts || (v.page._txtFonts = (async () => {
+    const cm = await contentMap(v.page), out = [], names = new Set();
+    for (const L of cm.lines) {
+      const k = L.fontName;
+      if (cm.invisible.has(k) || out.some((x) => x.loaded === k)) continue;
+      const fo = await fontObj(v.page, k) || {}, name = String(fo.name || '');
+      if (!name || fo.isType3Font || /glyphless/i.test(name)) continue;
+      const label = txtFontLabel(name);
+      if (names.has(label)) continue; names.add(label);
+      const codes = {}; for (const [u, gl] of cm.glyphs.get(k) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
+      const info = { loaded: k, font: name, label, codes, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), ascent: L.ascent, descent: L.descent };
+      txtFontInfo.set(k, info); out.push(info);
+    }
+    return out;
+  })().catch(() => []));
+}
+// The Font list for text in the PDF: its own font first, the page's other fonts, then the standard ones.
+function txtFaceOpts(v, m) {
+  const cm = v.page._cmapValue, src = m.src ? m.src[0] : m, L = cm && cm.lines.find((l) => sameOrigin(l.tm, src.tm));
+  const ownName = (m.own0 || m).font, own = ownName && !/glyphless/i.test(ownName) ? txtFontLabel(ownName) : 'As in the PDF';
+  return { own, base: m.base || { bold: !!m.bold, italic: !!m.italic }, fonts: txtPageFonts(v).then((list) => list.filter((x) => x.loaded !== (L && L.fontName) && x.label !== own)) };
 }
 const txtSrc = (t) => ({ tm: t.tm, width: t.width, ascent: t.ascent, descent: t.descent, quad: t.quad, font: t.font, bg: t.bg, ocr: !!t.ocr, orig: t.orig });
 function txtNewPara(tes, wrap, lead0) {
   const t = tes[0], size = lineFrame(t).size;
-  const base = { text: txtJoin(tes.map((x) => x.orig)), size, color: t.color, bold: !!t.bold, italic: !!t.italic, underline: false, align: 'left' };
+  const base = { text: txtJoin(tes.map((x) => x.orig)), size, color: t.color, bold: !!t.bold, italic: !!t.italic, underline: false, align: 'left', face: '', spacing: 0 };
   // The first line's text state (outline, spacing) carries over, as it does for a single edited line.
   // Spacing only when every line has the same (a line set tighter to fit is not the paragraph's spacing).
   const st = {}; for (const k of ['tr', 'lw', 'stroke']) if (t[k] != null) st[k] = t[k];
@@ -5164,7 +5644,7 @@ async function txtTeFor(v, L, cm) {
   const name = String(fo.name || ''), { bg, fg } = sampleColors(v, L.quad);
   const codes = {}; for (const [u, gl] of cm.glyphs.get(L.fontName) || []) if (gl.inFont && gl.code != null) codes[u] = gl.code;
   const ocr = cm.invisible.has(L.fontName) || /glyphless/i.test(name);
-  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name), bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
+  return { id: uid(), type: 'te', tm: L.tm, width: L.width, ascent: L.ascent, descent: L.descent, quad: L.quad, orig: L.str, text: L.str, font: name, fam: stdFamily(name + ' ' + L.family), bold: !!fo.bold || /bold|black|heavy|semibold|demi/i.test(name), italic: !!fo.italic || /italic|oblique/i.test(name) || Math.abs(L.tm[2] / (L.tm[3] || 1)) > .1, bg, color: ocr ? '#111111' : lineColor(L, fg), codes, ocr, type3: !!fo.isType3Font, ...teState(L, ocr) };
 }
 const txtCovered = (entry, L) => marksOf(entry).some((m) => m.type === 'tpara' && m.src.some((s) => sameOrigin(s.tm, L.tm)));
 FEATURE.lineTaken = txtCovered; // a line in a rewritten paragraph is not moved by the line before it
@@ -5218,7 +5698,7 @@ FEATURE.markTypes.tpara = {
       if (!line.trim()) return;
       const w = meas(line), x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0;
       const org = txtOrigin(F, i, x), [ox, oy] = toView(v, ...org);
-      const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
+      const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}:${m.fam}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, loaded: m.loaded, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
       const gl = svgEl('g', { transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` });
       gl.appendChild(svgEl('image', { x: ox, y: oy - im.asc, width: im.w, height: im.h, href: im.url }));
       if (m.underline) { const uy = oy + m.size * scale * .12; gl.appendChild(svgEl('line', { x1: ox, y1: uy, x2: ox + w * scale, y2: uy, stroke: m.color, 'stroke-width': Math.max(.75, m.size * scale * .06) })); }
@@ -5345,13 +5825,16 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   // Text in a colour of its own (not one of the swatches) shows that colour first, pressed, so the bar says what it is.
   const own = /^#[0-9a-f]{6}$/i.test(fmt.color || '') && !TXT_SWATCHES.some((c) => c.toLowerCase() === fmt.color.toLowerCase()) ? fmt.color : null;
   const btn = (k, icon, label, extra = '') => `<button type="button" class="txt-b" data-tf="${k}" ${extra} title="${label}" aria-label="${label}">${ic(icon)}</button>`;
+  const sel = (k, icon, label, html) => `<label class="txt-grp txt-sel" title="${label}">${ic(icon)}<select data-tf="${k}" aria-label="${label}">${html}</select></label>`;
   bar.innerHTML = [
+    opts.face ? sel('face', 'type', 'Font', `<option value="">${esc(opts.face.own)}</option>${TXT_STD_FACES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}`) : '',
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
     `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? txtOwnSwatches(own) : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
+    opts.spacing ? sel('spacing', 'unfold-vertical', 'Line spacing', `<option value="0">As is</option>${TXT_SPACINGS.map((n) => `<option value="${n}">${n % 1 ? n : n.toFixed(1)}</option>`).join('')}`) : '',
   ].join('');
   const sync = () => {
     $('.txt-size', bar).textContent = txtRound(fmt.size);
@@ -5361,6 +5844,8 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     for (const k of ['bold', 'italic', 'underline']) $(`[data-tf="${k}"]`, bar).setAttribute('aria-pressed', !!fmt[k]);
     for (const k of ['left', 'center', 'right']) { const b = $(`[data-tf="${k}"]`, bar); if (b) b.setAttribute('aria-pressed', (fmt.align || 'left') === k); }
     const s = $('[data-tf="fam"]', bar); if (s) s.value = fmt.famPick || fmt.fam || 'sans';
+    const fc = $('[data-tf="face"]', bar); if (fc) fc.value = fmt.face || '';
+    const sp = $('[data-tf="spacing"]', bar); if (sp) sp.value = String(+fmt.spacing || 0);
   };
   const ownSw = $('[data-own]', bar); if (ownSw) { ownSw.title = 'Colour now'; ownSw.setAttribute('aria-label', `Colour now (${own})`); }
   // Buttons keep the focus in the text being edited.
@@ -5383,6 +5868,22 @@ function txtBarEl(fmt, opts, onChange, refocus) {
   pick.addEventListener('change', () => { refocus && refocus(); });
   const fam = $('[data-tf="fam"]', bar);
   if (fam) fam.addEventListener('change', () => { fmt.famPick = fam.value; onChange(fmt); refocus && refocus(); });
+  for (const k of ['face', 'spacing']) {
+    const el = $(`[data-tf="${k}"]`, bar); if (!el) continue;
+    el.addEventListener('change', () => {
+      fmt[k] = k === 'spacing' ? +el.value : el.value;
+      // A font of the page comes as it is (bold or not); back to the text's own font, its own bold and italic.
+      const info = k === 'face' && (/^f:/.test(el.value) ? txtFontInfo.get(el.value.slice(2)) : !el.value && opts.face.base);
+      if (info) { fmt.bold = !!info.bold; fmt.italic = !!info.italic; }
+      sync(); onChange(fmt); refocus && refocus();
+    });
+  }
+  // The page's other fonts join the Font list once they have been read (after the text's own font).
+  if (opts.face) opts.face.fonts.then((list) => {
+    const fc = $('[data-tf="face"]', bar); if (!fc || !list.length) return;
+    fc.options[0].insertAdjacentHTML('afterend', list.map((x) => `<option value="f:${esc(x.loaded)}">${esc(x.label)}</option>`).join(''));
+    fc.value = fmt.face || '';
+  });
   sync();
   return bar;
 }
@@ -5391,19 +5892,68 @@ function txtShowBar(v, target, fmt, opts, onChange, refocus) {
   txtHideBar();
   const bar = txtBar = txtBarEl(fmt, opts, (f) => { onChange(f); txtPlaceBar(v, target); }, refocus);
   bar.classList.add('floating');
+  txtBarKeys(bar, target, refocus);
   v.el.appendChild(bar); icons();
   txtPlaceBar(v, target);
   return bar;
 }
+// It never covers the line above (the text just before what is being changed): it goes in the room between the two
+// when there is enough, else under what is being edited (in the room above the next line when there is enough), and
+// always inside what the viewer shows (above a phone's keyboard too).
 function txtPlaceBar(v, target) {
   const bar = txtBar; if (!bar || !target.isConnected) return;
-  const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
-  // Inside the page and inside what the viewer shows of it (a page zoomed wider than the screen).
-  const vr = viewer.getBoundingClientRect(), lo = Math.max(4, vr.left - pr.left + 4), hi = Math.min(pr.width, vr.right - pr.left) - bw - 4;
+  // Inside the page and inside what the viewer shows of it (a page zoomed wider than the screen): no wider than that.
+  const pr = v.el.getBoundingClientRect(), er = target.getBoundingClientRect(), vr = viewer.getBoundingClientRect();
+  bar.style.maxWidth = Math.max(160, Math.min(pr.right, vr.right) - Math.max(pr.left, vr.left) - 8) + 'px';
+  const bw = bar.offsetWidth, bh = bar.offsetHeight, lo = Math.max(4, vr.left - pr.left + 4), hi = Math.min(pr.width, vr.right - pr.left) - bw - 4;
   const left = Math.max(lo, Math.min(er.left - pr.left, hi));
-  const vt = vr.top;
-  let top = er.top - pr.top - bh - 10; if (top < 4 || pr.top + top < vt + 4) top = er.bottom - pr.top + 10;
-  bar.style.left = left + 'px'; bar.style.top = top + 'px';
+  const vv = window.visualViewport, vTop = Math.max(vr.top, vv ? vv.offsetTop : 0) + 4, vBot = Math.min(vr.bottom, vv ? vv.offsetTop + vv.height : innerHeight) - 4;
+  // The nearest text above and below, in the bar's width (the lines being edited are left out).
+  let prev = -Infinity, next = Infinity;
+  const x0 = pr.left + left, x1 = x0 + bw;
+  // (from the page's own lines when they have been read: the text layer is drawn again, later, after a zoom)
+  const cm = v.page && v.page._cmapValue;
+  const boxes = cm ? cm.lines.map((L) => { const pts = L.quad.map(([x, y]) => toView(v, x, y)), xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]); return { left: pr.left + Math.min(...xs), right: pr.left + Math.max(...xs), top: pr.top + Math.min(...ys), bottom: pr.top + Math.max(...ys), width: 1, height: 1 }; })
+    : [...v.el.querySelectorAll('.textLayer span')].filter((sp) => sp.textContent.trim()).map((sp) => sp.getBoundingClientRect());
+  for (const r of boxes) {
+    if (!r.width || !r.height || r.right < x0 || r.left > x1) continue;
+    const mid = (r.top + r.bottom) / 2;
+    if (mid > er.top && mid < er.bottom) continue;
+    if (mid <= er.top) prev = Math.max(prev, r.bottom); else next = Math.min(next, r.top);
+  }
+  const gap = (room) => Math.max(2, Math.min(8, (room - bh) / 2));
+  const roomAbove = er.top - Math.max(prev, vTop), roomBelow = Math.min(next, vBot) - er.bottom;
+  let top;
+  if (roomAbove >= bh + 4) top = er.top - bh - gap(roomAbove);
+  else if (roomBelow >= bh + 4) top = er.bottom + gap(roomBelow);
+  else top = er.bottom + 6; // no room either side: over the next line, never the one before
+  top = Math.max(vTop, Math.min(top, vBot - bh)); // a phone: in view
+  bar.style.left = left + 'px'; bar.style.top = (top - pr.top) + 'px';
+}
+// The keys of an editor with its bar: Tab and Shift+Tab go round the text and the bar (Escape in the bar goes back
+// to the text), and Ctrl/Cmd+B, I and U press Bold, Italic and Underline, as in a word processor.
+const TXT_FMT_KEYS = { b: 'bold', i: 'italic', u: 'underline' };
+const txtBarStops = (bar) => $$('button, select, input:not([type="hidden"])', bar).filter((b) => !b.disabled && b.getClientRects().length);
+function txtFmtKey(e, bar) {
+  const k = (isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && TXT_FMT_KEYS[(e.key || '').toLowerCase()];
+  const b = k && $(`[data-tf="${k}"]`, bar); if (!b) return false;
+  e.preventDefault(); e.stopPropagation(); b.click(); return true;
+}
+function txtBarKeys(bar, target, refocus) {
+  const back = () => (refocus ? refocus() : target.focus({ preventScroll: true }));
+  target.addEventListener('keydown', (e) => {
+    if (txtBar !== bar || txtFmtKey(e, bar) || e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const stops = txtBarStops(bar); if (!stops.length) return;
+    e.preventDefault(); e.stopPropagation(); (e.shiftKey ? stops[stops.length - 1] : stops[0]).focus();
+  });
+  bar.addEventListener('keydown', (e) => {
+    if (txtFmtKey(e, bar)) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); back(); return; }
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const stops = txtBarStops(bar), k = stops.indexOf(document.activeElement);
+    if (k < 0 || (e.shiftKey ? k > 0 : k < stops.length - 1)) return; // within the bar: the browser moves along
+    e.preventDefault(); e.stopPropagation(); back();
+  });
 }
 function txtHideBar() { if (txtBar) { txtBar.remove(); txtBar = null; } }
 const txtBarBusy = () => (txtBar && txtBar.contains(document.activeElement)) || txtBarDown;
@@ -5419,6 +5969,7 @@ function txtOpenEditor(v, o) {
   if (o.placeholder) ta.placeholder = o.placeholder;
   v.el.appendChild(ta);
   const E = txtEd = { v, ta, ...o };
+  txtOverNoteGone();
   txtEditing.add(o.m.id); drawMarks(v);
   const fit = () => { o.place(ta, E.fmt); ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; if (o.single || !o.width) { ta.style.width = '0'; ta.style.width = Math.max(o.minWidth || 20, ta.scrollWidth + 2) + 'px'; } if (o.after) o.after(ta, E.fmt, fit); };
   fit();
@@ -5426,7 +5977,7 @@ function txtOpenEditor(v, o) {
   ta.addEventListener('keydown', (e) => {
     // Escape keeps, like clicking away (Undo takes it back), and the tool stays on: the page's own Escape doesn't run.
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const was = ta.value; txtCloseEditor(true); keptHint(was !== o.text); return; }
-    if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); txtCloseEditor(true); return; }
+    if (e.key === 'Enter' && (o.single || e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); txtCloseEditor(true, true); return; }
     if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
   });
   ta.addEventListener('blur', () => setTimeout(() => { if (txtEd === E && !txtBarBusy() && document.activeElement !== ta) txtCloseEditor(true); }, 0));
@@ -5435,32 +5986,34 @@ function txtOpenEditor(v, o) {
   // Opened by a click with Edit PDF: the caret goes where the click was (a double click selects the word). Else all.
   if (editAt) placeCaret(ta, editAt); else ta.select();
 }
-function txtCloseEditor(commit) {
+// done: closed with Done (Ctrl+Enter), which may ask; Escape and clicking away never do.
+function txtCloseEditor(commit, done = false) {
   const E = txtEd; if (!E) return;
+  const had = document.activeElement === E.ta || !!(txtBar && txtBar.contains(document.activeElement));
   txtEd = null; txtHideBar(); txtEditing.delete(E.m.id);
   if (E.cleanup) E.cleanup();
-  const text = E.ta.value.replace(/\r/g, ''), had = document.activeElement === E.ta;
+  const text = E.ta.value.replace(/\r/g, '');
   E.ta.remove();
   if (had) viewer.focus({ preventScroll: true }); // the keys go on working on the page
-  if (commit) Promise.resolve(E.done(text, E.fmt)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
+  if (commit) Promise.resolve(E.done(text, E.fmt, done)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
   else drawMarks(E.v);
 }
-const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans' });
-const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align'].every((k) => String(a[k]) === String(b[k]));
+const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans', face: m.face || '', spacing: +m.spacing || 0 });
+const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align', 'face', 'spacing'].every((k) => String(a[k] ?? (k === 'spacing' ? 0 : '')) === String(b[k] ?? (k === 'spacing' ? 0 : '')));
 const txtCss = (fam, f, px) => `${f.bold ? 'bold ' : ''}${f.italic ? 'italic ' : ''}${px}px ${cssFamily(fam)}`;
 
 // The editor types in the page's own font (as pdf.js loaded it) unless bold or italic changes it, so it wraps as the result will.
 function txtParaFont(v, m, f, px) {
-  const cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.src[0].tm));
-  const own = L && !m.ocr && !m.type3 && f.bold === m.base.bold && f.italic === m.base.italic && document.fonts.check(`${px}px "${L.fontName}"`);
-  return own ? `${px}px "${L.fontName}", ${cssFamily(m.fam)}` : txtCss(m.fam, f, px);
+  const t = txtFaced(m, f), cm = v.page._cmapValue, L = cm && cm.lines.find((l) => sameOrigin(l.tm, m.src[0].tm)), name = t.loaded || (L && L.fontName);
+  const own = name && !t.std && !t.ocr && !t.type3 && document.fonts.check(`${px}px "${name}"`);
+  return own ? `${px}px "${name}", ${cssFamily(t.fam)}` : txtCss(t.fam, f, px);
 }
 // How a paragraph's text fits the room its original lines had, at a format: { n (lines), over (runs past the last
 // original line) }. A paragraph never grows downwards silently: the editor warns, and committing asks.
 function txtParaFit(page, m, text, f) {
   if (!m.wrap) return { n: 1, over: false };
-  const t = { ...m, size: f.size, bold: f.bold, italic: f.italic, std: !!(f.bold !== m.base.bold || f.italic !== m.base.italic) };
-  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = m.lead0 * f.size / m.size0;
+  const t = txtFaced(m, f);
+  const n = txtWrap(text, m.wrap, txtMeasurer(page, t)).length, lead = txtLead(m, f.size, f.spacing);
   return { n, over: (n - 1) * lead > (m.src.length - 1) * m.lead0 + .5 };
 }
 // The largest size, in half points down to 70% of the original size, at which it fits. null when none does.
@@ -5500,21 +6053,24 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       place(); requestAnimationFrame(place);
     },
     cleanup() { if (note) { note.remove(); note = null; } }, single: !m.wrap, width: !!m.wrap, minWidth: (m.wrap || m.src[0].width) * scale, label: m.wrap ? 'Edit this paragraph' : 'Edit this line',
-    opts: { align: !!m.wrap },
+    opts: { align: !!m.wrap, spacing: !!m.wrap, face: txtFaceOpts(v, m) },
     place(ta, f) {
-      const F = txtFrame({ ...m, size: f.size }), px = f.size * scale, lh = F.lead * scale;
+      const F = txtFrame({ ...m, size: f.size, spacing: f.spacing || 0 }), px = f.size * scale, lh = F.lead * scale;
       const [ox, oy] = toView(v, ...F.o), [ax, ay] = toView(v, F.o[0] + F.u[0], F.o[1] + F.u[1]), ang = Math.atan2(ay - oy, ax - ox) * 180 / Math.PI;
       const base = (m.wrap ? lh : px * 1.25) / 2 + .35 * px;
       Object.assign(ta.style, { left: ox + 'px', top: (oy - base) + 'px', font: txtParaFont(v, m, f, px), lineHeight: (m.wrap ? lh : px * 1.25) + 'px', color: f.color, background: m.src[0].bg, textDecoration: f.underline ? 'underline' : 'none', textAlign: f.align || 'left', transformOrigin: `0 ${base}px`, transform: `rotate(${ang}deg)` });
       if (m.wrap) ta.style.width = (m.wrap * scale + 3) + 'px';
     },
-    async done(text, f) {
+    async done(text, f, asked) {
       const list = marksOf(v.entry);
       const back = text === m.base.text && txtSameFmt(f, m.base) && !m.dx && !m.dy;
       if (isNew ? back && !absorb.length : text === m.text && txtSameFmt(f, m)) return;
       const fit = back ? { over: false } : txtParaFit(v.page, m, text, f);
       // Asked once per paragraph: after "Let it run", it isn't asked again (the editor still warns).
-      if (fit.over && !m.runOver) {
+      // Done asks; Escape or a click away keeps it as typed and says so, with Shrink to fit and Undo at hand.
+      let quiet = null;
+      if (fit.over && !m.runOver && !asked) quiet = { s: txtParaFitSize(v.page, m, text, f), more: fit.n - m.src.length };
+      else if (fit.over && !m.runOver) {
         const s = txtParaFitSize(v.page, m, text, f);
         const a = await dialog(TXT_LONGER, `<p>It now takes ${fit.n} lines; it had ${m.src.length}. Kept like this, it runs over what is below it on the page.</p>${s == null ? '<p>It does not fit even at 70% of its size. Shorten the text, or let it run.</p>' : `<p>Shrink to fit makes the text ${s} pt (it is ${txtRound(f.size)} pt).</p>`}`,
           [{ label: 'Keep editing', value: 'edit' }, { label: 'Let it run', value: 'run' }, ...(s == null ? [] : [{ label: 'Shrink to fit', value: 'shrink', primary: true }])]);
@@ -5525,14 +6081,31 @@ function txtEditPara(v, m, isNew, absorb = [], draft = null) {
       for (const t of absorb) { const k = list.indexOf(t); if (k >= 0) list.splice(k, 1); }
       if (back) { const k = list.indexOf(m); if (k >= 0) list.splice(k, 1); }
       else {
-        Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', runOver: !!fit.over });
-        txtRelayout(v.page, m);
+        Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', spacing: +f.spacing || 0, runOver: !!fit.over });
+        txtApplyFace(m, f.face); txtRelayout(v.page, m);
         if (isNew) list.push(m);
       }
       changed(before);
+      if (quiet) txtOverNote(v, m, quiet);
     },
   });
 }
+// After a paragraph was kept longer than its space (Escape): a note under it, with Shrink to fit and Undo. It goes
+// after a while, or when something else is edited.
+function txtOverNote(v, m, { s, more }) {
+  txtOverNoteGone();
+  const note = document.createElement('div'); note.className = 'txt-over txt-over-kept'; note.setAttribute('role', 'status');
+  note.innerHTML = `<span>Paragraph is ${more === 1 ? '1 line' : more + ' lines'} longer than before.</span>${s == null ? '' : '<button type="button" class="btn" data-shrink>Shrink to fit</button>'}<button type="button" class="btn" data-undo>Undo</button>`;
+  note.addEventListener('pointerdown', (e) => e.stopPropagation());
+  note.timer = setTimeout(txtOverNoteGone, 12000);
+  const sh = $('[data-shrink]', note);
+  if (sh) sh.onclick = () => { txtOverNoteGone(); const before = snapshot(); Object.assign(m, { size: s, runOver: false }); txtRelayout(v.page, m); changed(before); drawMarks(v); };
+  $('[data-undo]', note).onclick = () => { txtOverNoteGone(); run('undo'); };
+  const F = txtFrame(m), [x, y] = toView(v, ...txtOrigin(F, Math.max(0, m.lines.length - 1), 0));
+  note.style.left = Math.max(4, Math.min(x, v.el.clientWidth - 320)) + 'px'; note.style.top = (y + m.size * scale * .5 + 8) + 'px';
+  v.el.appendChild(note);
+}
+function txtOverNoteGone() { for (const n of $$('.txt-over-kept')) { clearTimeout(n.timer); n.parentNode && n.parentNode.removeChild(n); } }
 // Starts editing the paragraph around line L (para mode). Returns false when L is a line on its own.
 async function txtStartPara(v, L) {
   const cm = await contentMap(v.page); v.page._cmapValue = cm;
@@ -5587,11 +6160,14 @@ const txtCoreOpenLine = openLineEditor;
 openLineEditor = function (v, m, isNew) {
   txtCoreOpenLine(v, m, isNew);
   const le = lineEditor; if (!le || le.m !== m) return;
-  const base = { size: lineFrame(m).size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: false, align: 'left' };
+  const base = { size: lineFrame(m).size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: false, align: 'left', face: '', spacing: 0 };
   txtLine = { le, base, fmt: { ...base } };
-  txtShowBar(v, le.ed, txtLine.fmt, { align: false }, (f) => {
+  txtShowBar(v, le.ed, txtLine.fmt, { align: false, face: txtFaceOpts(v, m) }, (f) => {
     const px = f.size * scale, asc = Math.max(m.ascent, .9) * px, desc = Math.max(-m.descent, .3) * px, [, oy] = toView(v, m.tm[4], m.tm[5]);
-    Object.assign(le.ed.style, { font: lineFont(v, m, px, f.bold, f.italic), color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
+    // Another font: the page's (as pdf.js loaded it, unless bold or italic is asked of it), or a standard one.
+    const info = /^f:/.test(f.face) && txtFontInfo.get(f.face.slice(2)), fam = info ? info.fam : f.face;
+    const font = !f.face ? lineFont(v, m, px, f.bold, f.italic) : info && f.bold === info.bold && f.italic === info.italic ? `${px}px "${info.loaded}", ${cssFamily(fam)}` : txtCss(fam, f, px);
+    Object.assign(le.ed.style, { font, color: f.color, textDecoration: f.underline ? 'underline' : 'none', top: (oy - asc) + 'px', height: (asc + desc) + 'px', lineHeight: (asc + desc) + 'px', transformOrigin: `0 ${asc}px` });
   }, () => le.ed.focus({ preventScroll: true }));
 };
 const txtCoreCloseLine = closeLineEditor;
@@ -5599,16 +6175,19 @@ closeLineEditor = function (commit) {
   if (txtEd) txtCloseEditor(commit);
   const le = lineEditor, T = txtLine && txtLine.le === le ? txtLine : null;
   if (le && commit && txtBarBusy() && document.activeElement !== le.ed && T) return; // the format bar is in use
+  // Focus in the editor or its bar goes back to the page when they close, never to the start of the window.
+  const had = le && (document.activeElement === le.ed || (txtBar && txtBar.contains(document.activeElement)));
+  if (had && document.activeElement !== le.ed) le.ed.focus({ preventScroll: true });
   txtLine = null; txtHideBar();
   if (!le || !commit || !T || txtSameFmt(T.fmt, T.base)) return txtCoreCloseLine(commit);
   lineEditor = null; editingIds.delete(le.m.id);
   const text = le.ed.textContent.replace(/[\r\n]+/g, ' ');
-  le.ed.remove(); phoneZoomBack();
+  le.ed.remove(); if (had) viewer.focus({ preventScroll: true }); phoneZoomBack();
   const before = snapshot(), list = marksOf(le.v.entry);
   if (!le.isNew) { const k = list.indexOf(le.m); if (k >= 0) list.splice(k, 1); }
   const m = txtNewPara([le.m], 0, T.base.size * 1.2);
   Object.assign(m, { text, size: T.fmt.size, color: T.fmt.color, bold: T.fmt.bold, italic: T.fmt.italic, underline: T.fmt.underline });
-  txtRelayout(le.v.page, m);
+  txtApplyFace(m, T.fmt.face); txtRelayout(le.v.page, m);
   list.push(m);
   drawMarks(le.v); changed(before);
 };
@@ -5748,9 +6327,17 @@ async function txtReplaceItem(entry, it, cm, re, rep, from = 0, limit = Infinity
   if (!n) return 0;
   const list = marksOf(entry);
   if (it.kind === 'para') { it.m.text = text; txtRelayout(await pageOf(entry), it.m); return n; }
-  if (it.te) { if (text === it.te.orig) list.splice(list.indexOf(it.te), 1); else it.te.text = text; return n; }
-  const v = await txtViewOf(entry), te = await txtTeFor(v, it.L, cm);
-  te.text = text; list.push(te); it.te = te;
+  // A run moved along by an earlier replacement on its line is already a mark: that one changes.
+  it.te ||= list.find((m) => m.type === 'te' && sameOrigin(m.tm, it.L.tm));
+  const v = await txtViewOf(entry);
+  let te = it.te;
+  if (te) te.text = text;
+  else { te = await txtTeFor(v, it.L, cm); te.text = text; list.push(te); it.te = te; }
+  // The line keeps its alignment (a centred title stays centred, on the page), and what follows it moves along.
+  v.page._cmapValue ||= cm;
+  const f = teFollowers(v, te); await f.ready;
+  teAlign(v, te, f);
+  if (te.text === te.orig && !te.dx && list.includes(te)) list.splice(list.indexOf(te), 1);
   return n;
 }
 const txtRS = { q: '', with: '', matchCase: false, whole: false, at: null };
@@ -5837,10 +6424,12 @@ TEST_HOOKS.txtWrap = txtWrap;
 
 addStyle(`
 .txt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 6px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; font: 13px/1 var(--font-ui); color-scheme: normal; }
-.txt-bar.floating { position: absolute; z-index: 8; box-shadow: 0 8px 28px rgba(0,0,0,.22); max-width: calc(100% - 8px); }
+.txt-bar.floating { position: absolute; z-index: 8; box-shadow: 0 8px 28px rgba(0,0,0,.3), 0 0 0 1px var(--line); max-width: calc(100% - 8px); }
 .txt-slot .txt-bar { margin: 4px 0 2px; }
 .txt-bar .txt-colgrp { display: none; }
-.txt-dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), 0 0 0 2px var(--surface), 0 0 0 3px var(--line); }
+.txt-dot { --sw-edge: rgb(0 0 0 / .2); width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--sw-edge), 0 0 0 2px var(--surface), 0 0 0 3px var(--line); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .txt-dot { --sw-edge: rgb(255 255 255 / .34); } }
+:root[data-theme="dark"] .txt-dot { --sw-edge: rgb(255 255 255 / .34); }
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   /* Phones: one row; the colours open from one button */
   .txt-bar.floating { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
@@ -5858,15 +6447,21 @@ addStyle(`
 .txt-b:hover { background: var(--hover); }
 .txt-b[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .txt-b [data-lucide], .txt-b svg { width: 16px; height: 16px; }
+@media (pointer: coarse) { .txt-b { width: 44px; height: 44px; } .txt-bar select { height: 44px; } } /* a finger's 44px */
 .txt-size { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; color: var(--ink); }
 .txt-bar .sw-row { gap: 4px; }
 @media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
+.txt-sel { gap: 4px; color: var(--ink-2); }
+.txt-sel svg { width: 15px; height: 15px; flex: none; }
+.txt-sel select { max-width: 150px; }
+@media (max-width: 760px) { .txt-sel select { max-width: 112px; } }
 .txt-bar select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; height: 30px; padding: 0 6px; }
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }
 .txt-editor.txt-over-ed { outline-color: var(--danger, #E03131); }
 .txt-over { position: absolute; z-index: 7; display: flex; align-items: center; gap: 8px; max-width: min(360px, calc(100% - 8px)); box-sizing: border-box; padding: 6px 6px 6px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--danger, #E03131); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); font: 12px/1.3 var(--font-ui); }
 .txt-over .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
+.txt-over-kept { max-width: min(440px, calc(100% - 8px)); }
 .field textarea.txt-paper { background: #fff; color-scheme: light; }
 .field.txt-wfield { flex-direction: row; align-items: center; gap: 10px; }
 .field.txt-wfield input { width: 130px; }
@@ -6066,6 +6661,319 @@ addStyle(`
 .di-fn { color: var(--ink); overflow-wrap: anywhere; }
 .di-ft { color: var(--ink-3); white-space: nowrap; }
 @media (max-width: 560px) { .di-fields { grid-template-columns: 1fr; } .di-dl { grid-template-columns: 130px 1fr; } .di-fonts li { flex-direction: column; gap: 0; } .di-ft { white-space: normal; } }
+`);
+
+// ---- src/features/15-view.js
+/* View: the Hand tool (and Space held down to pan), page layouts (continuous, single page, two pages), the
+   Attachments panel in the sidebar, and page labels (iii, A-1…) in the page box and the thumbnails.
+   Fit page, Actual size and the layouts themselves are in the core (fitScale, layoutPages, goPage).
+
+   docMarks(): { id, type: 'file', fid, name, mime, size, desc, at } — a file attached here, written into the PDF's
+   attached files when it is saved. Its bytes are kept on this device (IndexedDB 'cowdrey.pdf.files', by fid), not in
+   the marks, so undo and Recent stay small. */
+
+/* ---- Hand tool: drag to move around the document; Space held down does the same in any tool ---- */
+TOOL_HINTS.hand = 'Drag to move around the page';
+// (not without a mouse or trackpad: a finger pans already)
+cmd('tool_hand', { label: 'Hand', icon: 'hand', key: 'h', enabled: has, get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, pressed: () => app.dataset.tool === 'hand', run: () => setTool('hand') });
+FEATURE.tools.hand = { down() {} }; // the page layers let the press through to the viewer, which pans
+let vwSpace = false, vwSpaceUsed = false, vwPan = null;
+const vwPanning = () => app.dataset.tool === 'hand' || vwSpace;
+viewer.addEventListener('pointerdown', (e) => {
+  if (!vwPanning() || !has() || e.pointerType === 'touch' || e.button !== 0) return; // a finger scrolls by itself
+  if (e.target.closest && e.target.closest('.find-dock, .line-editor, .page-ask, input, textarea, select, [contenteditable="true"]')) return;
+  e.preventDefault(); e.stopPropagation(); // no selection, no drawing with the tool in use
+  navUnlock();
+  vwPan = { id: e.pointerId, x: e.clientX, y: e.clientY, top: viewer.scrollTop, left: viewer.scrollLeft, moved: false, target: e.target };
+  try { viewer.setPointerCapture(e.pointerId); } catch {}
+  app.classList.add('vw-grabbing');
+  if (vwSpace) vwSpaceUsed = true;
+  viewer.focus({ preventScroll: true });
+}, true);
+viewer.addEventListener('pointermove', (e) => {
+  const p = vwPan; if (!p || e.pointerId !== p.id) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y;
+  if (!p.moved && Math.hypot(dx, dy) < 3) return;
+  p.moved = true;
+  viewer.scrollLeft = p.left - dx; viewer.scrollTop = p.top - dy;
+});
+function vwPanEnd(e) {
+  const p = vwPan; if (!p || e.pointerId !== p.id) return;
+  vwPan = null; app.classList.remove('vw-grabbing');
+  try { viewer.releasePointerCapture(e.pointerId); } catch {}
+  // A click without a drag still follows a link, as Acrobat's Hand tool does.
+  if (!p.moved && e.type === 'pointerup') { const a = p.target.closest && p.target.closest('.annotationLayer a[href]'); if (a) a.click(); }
+}
+viewer.addEventListener('pointerup', vwPanEnd); viewer.addEventListener('pointercancel', vwPanEnd);
+// Space on the page: held down and dragged, it pans; tapped, it scrolls a screen down (Shift: up), as it did before.
+const vwOnPage = () => {
+  const a = document.activeElement;
+  return !a || a === document.body || a === viewer || (viewer.contains(a) && !a.closest('button, a, input, textarea, select, [contenteditable], [role], [tabindex]:not(#viewer)'));
+};
+document.addEventListener('keydown', (e) => {
+  if ($('#dialog').open || !has()) return;
+  if (!pop.hidden && pop.contains(document.activeElement)) return;
+  if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && vwOnPage() && matchMedia('(any-pointer: fine)').matches) {
+    e.preventDefault();
+    if (!e.repeat && !vwSpace) { vwSpace = true; vwSpaceUsed = false; app.classList.add('vw-space'); }
+    return;
+  }
+  // H: the Hand tool (from anywhere but a text field)
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
+  if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !typing) { e.preventDefault(); run('tool_hand'); }
+}, true);
+function vwSpaceOff() { vwSpace = false; app.classList.remove('vw-space'); }
+document.addEventListener('keyup', (e) => {
+  if (e.key !== ' ' || !vwSpace) return;
+  const used = vwSpaceUsed || vwPan; vwSpaceOff();
+  if (used || !has()) return;
+  e.preventDefault();
+  const d = e.shiftKey ? -1 : 1, atEnd = viewer.scrollTop + viewer.clientHeight >= viewer.scrollHeight - 2, atTop = viewer.scrollTop <= 0;
+  if (singleUp() && d > 0 && atEnd) return goPage(current + 1, true);
+  if (singleUp() && d < 0 && atTop && current > 0) { goPage(current - 1, true); viewer.scrollTop = viewer.scrollHeight; return; }
+  viewer.scrollBy({ top: d * viewer.clientHeight * .85, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
+});
+window.addEventListener('blur', vwSpaceOff);
+
+/* ---- page layout ---- */
+S.layout = ['scroll', 'single', 'two'].includes(S.layout) ? S.layout : 'scroll';
+async function vwSetLayout(l, cover = S.cover) {
+  if (S.layout === l && !!S.cover === !!cover) return;
+  S.layout = l; S.cover = !!cover; saveSettings();
+  if (doc) { const at = current; await layoutPages(true); goPage(at, true); }
+  refreshRibbon();
+}
+cmd('vw_lay_scroll', { label: 'Continuous', icon: 'rows-2', enabled: has, pressed: () => S.layout === 'scroll', run: () => vwSetLayout('scroll') });
+cmd('vw_lay_single', { label: 'Single page', icon: 'file', enabled: has, pressed: () => S.layout === 'single', run: () => vwSetLayout('single') });
+cmd('vw_lay_two', { label: 'Two pages', icon: 'book-open', enabled: has, pressed: () => S.layout === 'two' && !S.cover, run: () => vwSetLayout('two', false) });
+cmd('vw_lay_cover', { label: 'Two pages with cover', icon: 'book', enabled: has, pressed: () => S.layout === 'two' && !!S.cover, run: () => vwSetLayout('two', true) });
+const VW_LAYOUTS = ['vw_lay_scroll', 'vw_lay_single', 'vw_lay_two', 'vw_lay_cover'];
+cmd('vw_layout', { label: 'Page layout', rlabel: 'Layout', icon: 'book-open', enabled: has, menu: VW_LAYOUTS });
+// One page at a time: scrolling past its end (or its top) turns the page. A wheel at the edge first stops there, so
+// one long flick does not turn several pages.
+let vwEdge = 0, vwTurned = 0;
+viewer.addEventListener('wheel', (e) => {
+  if (!singleUp() || !has() || e.ctrlKey || e.metaKey || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+  const d = Math.sign(e.deltaY), atEnd = viewer.scrollTop + viewer.clientHeight >= viewer.scrollHeight - 2, atTop = viewer.scrollTop <= 0;
+  const edge = (d > 0 && atEnd && current < views.length - 1) ? 1 : (d < 0 && atTop && current > 0) ? -1 : 0;
+  const now = performance.now();
+  if (!edge) { vwEdge = 0; return; }
+  if (vwEdge !== edge) { vwEdge = edge; vwTurned = now; return; } // arrived at the edge: stop there first
+  if (now - vwTurned < 350) { vwTurned = now; return; } // still the same flick
+  vwEdge = 0; vwTurned = now;
+  goPage(current + edge, true);
+  if (edge < 0) viewer.scrollTop = viewer.scrollHeight;
+}, { passive: true });
+
+/* ---- page labels: iii, 1, A-1… as the PDF names its pages ---- */
+let vwLabels = null; // the opened file's labels, by its own page index (null: it has none, or they are 1, 2, 3…)
+async function vwReadLabels(d) {
+  vwLabels = null;
+  try {
+    const l = await pdfDocs.get(0).getPageLabels();
+    if (doc === d && l && l.some((x, i) => x !== String(i + 1))) vwLabels = l;
+  } catch {}
+}
+// The label of the page now at place n, or '' when it has none (pages from another PDF, or no labels).
+function vwLabel(n) { const e = doc && doc.pages[n]; return vwLabels && e && e.src === 0 && vwLabels[e.i] ? vwLabels[e.i] : ''; }
+const vwHasLabels = () => !!(vwLabels && doc && doc.pages.some((e, n) => vwLabel(n) && vwLabel(n) !== String(n + 1)));
+function vwLabelStatus() {
+  const box = $('#pageJump'), on = vwHasLabels() && doc.pages.length > 0, l = on ? vwLabel(current) : '';
+  $('#pageOf').textContent = on ? `(${current + 1} of ` : 'of ';
+  $('#pageEnd').textContent = on ? ')' : '';
+  box.inputMode = on ? 'text' : 'numeric';
+  box.setAttribute('aria-label', on ? 'Page label or number' : 'Page number');
+  if (on && document.activeElement !== box) box.value = l || current + 1;
+  box.style.width = on ? `${Math.max(44, Math.min(110, 18 + 8 * String(box.value).length))}px` : '';
+}
+const vwUpdateStatus0 = updateStatus;
+updateStatus = function () { vwUpdateStatus0(); vwLabelStatus(); };
+// Go to page: a label first (as typed, any case), else a page number.
+function vwFindPage(text) {
+  const t = String(text).trim(); if (!t || !doc) return -1;
+  if (vwHasLabels()) { const k = doc.pages.findIndex((e, n) => vwLabel(n).toLowerCase() === t.toLowerCase()); if (k >= 0) return k; }
+  const n = parseInt(t, 10); return n ? Math.max(0, Math.min(doc.pages.length - 1, n - 1)) : -1;
+}
+// Before the page box's own handler (which knows only numbers): the status bar sees the change first.
+$('.statusbar').addEventListener('change', (e) => {
+  if (e.target !== $('#pageJump') || !vwHasLabels()) return;
+  e.stopPropagation();
+  const n = vwFindPage(e.target.value); if (n >= 0) goPage(n);
+}, true);
+function vwThumbLabels() {
+  if (!vwHasLabels()) return;
+  for (const t of $$('#sidePanel .thumb')) {
+    const n = +t.dataset.n, l = vwLabel(n), s = $(':scope > span', t);
+    if (!l || l === String(n + 1)) continue;
+    if (s) s.textContent = `${l} (${n + 1})`;
+    t.setAttribute('aria-label', `Page ${l} (${n + 1} of ${doc.pages.length})`);
+  }
+}
+FEATURE.onDocShown.push(async (d) => { await vwReadLabels(d); if (doc !== d) return; updateStatus(); vwThumbLabels(); vwAttCache = null; if (S.side === 'files') renderSide(); });
+TEST_HOOKS.pageLabel = (n) => vwLabel(n);
+
+/* ---- attached files: a sidebar tab listing them, Save for each, Attach file… to add one ---- */
+{
+  const tabs = $('.side-tabs'), b = document.createElement('button');
+  Object.assign(b, { type: 'button', title: 'Attachments', innerHTML: `${ic('paperclip')}<span>Attachments</span>` });
+  b.setAttribute('role', 'tab'); b.dataset.side = 'files'; b.setAttribute('aria-selected', 'false'); b.setAttribute('aria-controls', 'sidePanel');
+  b.addEventListener('click', () => setSide('files'));
+  tabs.insertBefore(b, $('[data-side="docs"]', tabs));
+}
+const vwRenderSide0 = renderSide;
+renderSide = async function () {
+  if (S.side === 'files') return vwFilesPanel();
+  const r = await vwRenderSide0();
+  if (S.side === 'thumbs') vwThumbLabels();
+  return r;
+};
+let vwDbP = null;
+function vwDb() {
+  return vwDbP || (vwDbP = new Promise((res, rej) => {
+    const r = indexedDB.open('cowdrey.pdf.files', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result); r.onerror = () => { vwDbP = null; rej(r.error); };
+  }));
+}
+async function vwDbDo(mode, fn) {
+  const db = await vwDb();
+  return new Promise((res, rej) => { const t = db.transaction('files', mode), q = fn(t.objectStore('files')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); });
+}
+const vwBytes = new Map(); // fid -> Uint8Array, for this session
+async function vwFileBytes(fid) {
+  if (vwBytes.has(fid)) return vwBytes.get(fid);
+  try { const r = await vwDbDo('readonly', (s) => s.get(fid)); if (r && r.bytes) { const b = new Uint8Array(r.bytes); vwBytes.set(fid, b); return b; } } catch (e) { console.warn(e); }
+  return null;
+}
+const vwAdded = () => (doc ? docMarks().filter((m) => m.type === 'file') : []);
+const vwSize = (n) => (n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+// The files in the opened PDF: its attached files (the EmbeddedFiles name tree) and file attachment comments.
+let vwAttCache = null; // { doc, list: [{ name, desc, bytes, entry? }] }
+async function vwFilesIn(d) {
+  if (vwAttCache && vwAttCache.doc === d) return vwAttCache.list;
+  const list = [], pd = pdfDocs.get(0);
+  try {
+    const att = await pd.getAttachments(); // a Map (pdf.js 6) or an object; the bytes are asked for one by one
+    for (const [key, f] of att instanceof Map ? att : Object.entries(att || {})) {
+      list.push({ name: f.filename || key, desc: f.description || '', bytes: f.content || await pd.getAttachmentContent(key).catch(() => null) });
+    }
+  } catch (e) { console.warn('attachments', e); }
+  for (let i = 0; i < pd.numPages; i++) {
+    try {
+      const page = await pd.getPage(i + 1);
+      for (const a of await page.getAnnotations({ intent: 'display' })) {
+        if (a.subtype !== 'FileAttachment' || !a.file) continue;
+        const bytes = a.file.content || (a.fileId != null ? await pd.getAttachmentContent(a.fileId).catch(() => null) : null);
+        list.push({ name: a.file.filename || 'Attachment', desc: a.file.description || (a.contentsObj && a.contentsObj.str) || '', bytes, entry: { src: 0, i } });
+      }
+    } catch {}
+    if (doc !== d) return [];
+  }
+  vwAttCache = { doc: d, list };
+  return list;
+}
+async function vwFilesPanel() {
+  const panel = $('#sidePanel');
+  if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its attached files.</p>'; return; }
+  const d = doc;
+  if (!vwAttCache || vwAttCache.doc !== d) panel.innerHTML = '<p class="empty-note">Looking for attached files…</p>';
+  const inPdf = await vwFilesIn(d);
+  if (doc !== d || S.side !== 'files') return;
+  const rows = [];
+  inPdf.forEach((f, k) => {
+    let where = '';
+    if (f.entry) { const n = doc.pages.findIndex((e) => e.src === 0 && e.i === f.entry.i); if (n < 0) return; where = `On page ${vwLabel(n) || n + 1}`; }
+    rows.push({ key: 'p' + k, name: f.name, meta: [vwSize(f.bytes ? f.bytes.length : 0), where, f.desc].filter(Boolean).join(' · '), get: async () => f.bytes });
+  });
+  for (const m of vwAdded()) rows.push({ key: 'a' + m.id, name: m.name, meta: `${vwSize(m.size)} · Added, kept when you save`, get: () => vwFileBytes(m.fid), mark: m });
+  panel.innerHTML = `${rows.length ? `<ul class="vw-files" aria-label="Attachments">${rows.map((r) => `<li class="vw-file">${ic('paperclip')}<span class="vw-fname" title="${esc(r.name)}">${esc(r.name)}<span class="m">${esc(r.meta)}</span></span>`
+    + `<button type="button" class="btn vw-fsave" data-save="${esc(r.key)}" aria-label="Save ${esc(r.name)}">Save</button>`
+    + (r.mark ? `<button type="button" class="icon-btn" data-remove="${esc(r.mark.id)}" title="Remove" aria-label="Remove ${esc(r.name)}">${ic('x')}</button>` : '') + '</li>').join('')}</ul>`
+    : '<p class="empty-note">This PDF has no attached files.</p>'}
+    <button type="button" class="btn vw-fadd" data-cmd="vw_attach">${ic('paperclip')}<span>Attach file…</span></button>`;
+  icons();
+  $$('[data-save]', panel).forEach((b) => { b.onclick = async () => {
+    const r = rows.find((x) => x.key === b.dataset.save), bytes = r && await r.get();
+    if (!bytes) { toast('That file is no longer on this device. Attach it again.'); return; }
+    await saveFile(bytes, r.name, (r.mark && r.mark.mime) || 'application/octet-stream');
+  }; });
+  $$('[data-remove]', panel).forEach((b) => { b.onclick = () => {
+    const list = docMarks(), k = list.findIndex((m) => m.id === b.dataset.remove); if (k < 0) return;
+    const before = snapshot(); list.splice(k, 1); changed(before, 'Remove attachment');
+    renderSide();
+  }; });
+}
+const vwFileInput = Object.assign(document.createElement('input'), { type: 'file', multiple: true, hidden: true, id: 'vwFileInput' });
+document.body.appendChild(vwFileInput);
+vwFileInput.addEventListener('change', async () => {
+  const files = [...vwFileInput.files]; vwFileInput.value = '';
+  if (files.length) await vwAttach(files);
+});
+async function vwAttach(files) {
+  if (!has()) return;
+  const taken = new Set([...(await vwFilesIn(doc)).filter((f) => !f.entry).map((f) => f.name), ...vwAdded().map((m) => m.name)]);
+  const before = snapshot(); let n = 0;
+  for (const f of files) {
+    if (f.size > 100 * 1024 * 1024) { toast(`${f.name} is too big to attach (over 100 MB).`); continue; }
+    const bytes = new Uint8Array(await f.arrayBuffer()), fid = uid();
+    // A name already used gets a number, so each file keeps its own entry in the PDF.
+    let name = f.name || 'Attachment', k = 2; const dot = name.lastIndexOf('.'), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+    while (taken.has(name)) name = `${stem} (${k++})${ext}`;
+    taken.add(name);
+    try { await vwDbDo('readwrite', (s) => s.put({ id: fid, doc: doc.id, bytes })); } catch (e) { console.warn('could not keep the file on this device', e); }
+    vwBytes.set(fid, bytes);
+    docMarks().push({ id: uid(), type: 'file', fid, name, mime: f.type || 'application/octet-stream', size: bytes.length, at: Date.now() });
+    n++;
+  }
+  if (!n) return;
+  changed(before, n > 1 ? 'Attach files' : 'Attach file');
+  toast(n > 1 ? `Attached ${n} files` : `Attached ${vwAdded().pop().name}`);
+  if (S.side !== 'files') setSide('files'); else renderSide();
+  if (!isPhone() && !S.sidebar) toggleSidebar(true);
+}
+TEST_HOOKS.attachFiles = (files) => vwAttach(files);
+cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click() });
+cmd('vw_files', { label: 'Attachments', icon: 'paperclip', enabled: has, pressed: () => S.side === 'files' && (isPhone() ? app.dataset.sidebar === 'open' : S.sidebar), run: () => { setSide('files'); if (isPhone() || !S.sidebar) toggleSidebar(true); } });
+FEATURE.saveDoc.push(async ({ out }) => {
+  for (const m of vwAdded()) {
+    const bytes = await vwFileBytes(m.fid);
+    if (!bytes) { console.warn('attachment missing on this device', m.name); continue; }
+    await out.attach(bytes, m.name, { mimeType: m.mime, description: m.desc || undefined, creationDate: new Date(m.at), modificationDate: new Date(m.at) });
+  }
+});
+// Files kept for documents no longer in Recent are let go, once, a little after start.
+setTimeout(async () => {
+  try {
+    const docs = await listDocs(), keep = new Set(docs.flatMap((d) => ((d.marks && d.marks.__doc) || []).filter((m) => m.type === 'file').map((m) => m.fid)));
+    if (doc) for (const m of vwAdded()) keep.add(m.fid);
+    const ids = await vwDbDo('readonly', (s) => s.getAllKeys());
+    const gone = (ids || []).filter((id) => !keep.has(id));
+    if (gone.length) await vwDbDo('readwrite', (s) => { for (const id of gone) s.delete(id); });
+  } catch {}
+}, 5000);
+
+/* ---- where it all goes ---- */
+{ // View menu: after the zoom, the Hand tool, the layouts and Attachments
+  const vm = MENUS.find(([t]) => t === 'View')[1], k = vm.indexOf('zoom100');
+  vm.splice(k < 0 ? vm.length : k + 1, 0, '-', 'tool_hand', '-', ...VW_LAYOUTS, '-', 'vw_files');
+  const em = MENUS.find(([t]) => t === 'Edit')[1], j = em.indexOf('image'); // Edit: after Add picture
+  em.splice(j < 0 ? em.length : j + 1, 0, 'vw_attach');
+}
+addStyle(`
+.app[data-tool="hand"] .viewer, .app.vw-space .viewer { cursor: grab; user-select: none; -webkit-user-select: none; }
+.app[data-tool="hand"] .viewer :is(.page, .page *), .app.vw-space .viewer :is(.page, .page *) { cursor: grab !important; user-select: none !important; -webkit-user-select: none !important; }
+.app.vw-grabbing .viewer, .app.vw-grabbing .viewer :is(.page, .page *) { cursor: grabbing !important; }
+.app[data-tool="hand"] .page :is(.marks, .marks *), .app.vw-space .page :is(.marks, .marks *) { pointer-events: none !important; }
+.app[data-tool="hand"] .page .annotationLayer a { cursor: pointer !important; }
+.vw-files { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.vw-file { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 8px; border-radius: 6px; color: var(--ink); }
+.vw-file:hover { background: var(--hover); }
+.vw-file > svg { flex: none; width: 16px; height: 16px; color: var(--ink-3); }
+.vw-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.vw-fname .m { display: block; font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
+.vw-file .btn.vw-fsave { flex: none; padding: 3px 10px; font-size: 12px; }
+.vw-file .icon-btn { flex: none; width: 26px; height: 26px; }
+.btn.vw-fadd { margin: 4px 8px; }
 `);
 
 // ---- src/features/16-bookmarks.js
@@ -7379,6 +8287,7 @@ dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: non
 .pd-dialog .dlg-foot .pd-rm { margin-right: auto; }
 .pd-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 0 20px; align-items: start; }
 .pd-main { min-width: 0; }
+.pd-top { grid-column: 1 / -1; min-width: 0; }
 .pd-prev { margin: 8px 0; position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pd-prev-page { position: relative; width: 100%; aspect-ratio: 612 / 792; background: #fff; border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 2px 10px rgba(0, 0, 0, .18); overflow: hidden; }
 .pd-prev-page canvas { display: block; width: 100%; height: 100%; }
@@ -7469,7 +8378,7 @@ function pdStripPage(L, out, p) {
   const { PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = L, node = p.node;
   const raw = node.get(PDFName.of('Contents')), r = raw && out.context.lookup(raw);
   const parts = r instanceof PDFArray ? r.asArray() : raw ? [raw] : [];
-  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getUnencodedContents ? st.getUnencodedContents() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
   let src = parts.map((x) => { const st = out.context.lookup(x); return st ? text(st) : ''; }).join('\n');
   if (!src.includes(PD_KEY)) return false;
   const spans = pdTaggedSpans(src); if (!spans.length) return false;
@@ -7565,15 +8474,20 @@ function pdBody(type, m) {
     <div class="pd-form pd-wide" data-show="kind=image"${m.kind !== 'image' ? ' hidden' : ''}>${pdPicField(m, 'Picture')}${F.sel('fit', 'Size', m.fit, [['stretch', 'Fill the page'], ['fit', 'Fit inside the page']])}</div>
     ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range)}</div>
     <p class="pd-note">The background goes behind everything on the page.</p>`;
-  if (type === 'pd_headfoot') return `<div class="pd-slots">${PD_SLOTS.map(([k, t]) => F.text(k, t, m[k])).join('')}</div>
-    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
-    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p>
-    <div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
+  if (type === 'pd_headfoot') return `<div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
     ${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>`;
   return `<div class="pd-form">${F.text('prefix', 'Prefix', m.prefix)}${F.text('suffix', 'Suffix', m.suffix)}${F.num('start', 'Start number', m.start, 0, 999999999999)}${F.num('digits', 'Digits', m.digits, 1, 12)}
     <div class="pd-sample pd-wide" data-sample></div>
     ${F.sel('slot', 'Position', m.slot, PD_SLOTS)}${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>
     <p class="pd-note">Numbers run across the saved PDF's pages in order.</p>`;
+}
+// What goes across the whole dialog, above the settings and the preview (under the preview on a phone): the six places of a header and footer, so
+// each field is wide enough to show what is in it ("Page <<page>> of <<pages>>").
+function pdTop(type, m) {
+  if (type !== 'pd_headfoot') return '';
+  return `<div class="pd-top"><div class="pd-slots">${PD_SLOTS.map(([k, t]) => pdField.text(k, t, m[k])).join('')}</div>
+    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
+    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p></div>`;
 }
 function pdCheck(type, m) {
   if (m.range && m.range.trim() && !parseRange(m.range, doc.pages.length).length) return 'Check the pages: use numbers like 1-3, 5';
@@ -7632,7 +8546,7 @@ async function pdEdit(type, existing) {
     : [{ label: 'Cancel' }, { label: PD_VERB[type][0], value: 'ok', primary: true }];
   do {
     const title = existing ? PD_VERB[type][3] : PD_TYPES[type];
-    const res = await dialog(title, `<div class="pd-wrap"><div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
+    const res = await dialog(title, `<div class="pd-wrap">${pdTop(type, m)}<div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
       // The dialog element is reused: listen on its body, which is new for each dialog.
       const body = $('.dlg-body', dlg);
       dlg.classList.add('pd-dialog');
@@ -7644,7 +8558,7 @@ async function pdEdit(type, existing) {
         const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
         // A field that was typed over or split is marked, and the dialog can't be confirmed until it is fixed.
         let bad = false;
-        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; el.title = el.value; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
         const pb = $('.dlg-foot .btn.primary', dlg); if (pb && type === 'pd_headfoot') pb.disabled = bad;
         const note = $('[data-pd-err]', dlg); if (note) note.hidden = !bad;
         preview().catch(() => {});
@@ -8029,7 +8943,7 @@ document.addEventListener('pointerup', () => {
   CM.selDown = false; setTimeout(() => { if (cmMarkupKind() === k) cmMarkupSelection(k); }, 0);
 });
 for (const [kind, [label, icon]] of Object.entries(CM_MARKUP)) {
-  cmd('cm_' + kind, { label, icon, enabled: has, pressed: () => app.dataset.tool === 'cm' + kind, run: () => { if (cmMarkupSelection(kind)) return; setTool('cm' + kind); toast('Select text to ' + (kind === 'strike' ? 'strike it through' : kind === 'squiggly' ? 'add a squiggly line' : 'underline it')); } });
+  cmd('cm_' + kind, { label, icon, tip: kind === 'squiggly' ? MARKUP_TIP('Add a squiggly line under', 'mark it') : MARKUP_TIP(kind === 'strike' ? 'Strike through' : 'Underline'), enabled: has, pressed: () => app.dataset.tool === 'cm' + kind, run: () => { if (cmMarkupSelection(kind)) return; setTool('cm' + kind); toast('Select text to ' + (kind === 'strike' ? 'strike it through' : kind === 'squiggly' ? 'add a squiggly line' : 'underline it')); } });
 }
 
 /* ---- shapes dragged out on the page ---- */
@@ -8237,7 +9151,7 @@ ribbonAdd('markup', 'Add', ['cm_stamp'], null, 'rows');
 ribbonAdd('markup', 'Style', ['cm_width', 'cm_fill'], 'Text mark-up', 'rows'); // right after Colour
 ribbonAdd('markup', 'Comments', ['cm_list']);
 ribbonAdd('protect', 'Sign', ['sign']); // signing is protecting too (Protect's own groups follow)
-menuOrder('Comment', ['tool_select', '-', 'tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'tool_note', 'cm_typewriter', 'cm_callout', '-', 'tool_pen', 'tool_rect', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_stamp', 'sign', '-', 'cm_fill', 'cm_list']);
+menuOrder('Comment', ['tool_select', '-', 'tool_highlight', 'cm_underline', 'cm_strike', 'cm_squiggly', 'cm_area', '-', 'tool_note', 'cm_typewriter', 'cm_callout', '-', 'tool_pen', 'tool_rect', 'cm_oval', 'cm_line', 'cm_arrow', 'cm_polygon', 'cm_polyline', 'cm_cloud', '-', 'cm_stamp', '-', 'cm_fill', 'cm_list']);
 
 /* ---- the Comments panel: every comment on every page, yours and the PDF's own ---- */
 const CM_SUBTYPES = { Text: 'Note', FreeText: 'Text box', Line: 'Line', Square: 'Rectangle', Circle: 'Oval', Polygon: 'Polygon', PolyLine: 'Polyline', Highlight: 'Highlight', Underline: 'Underline', Squiggly: 'Squiggly', StrikeOut: 'Strikethrough', Stamp: 'Stamp', Caret: 'Caret', Ink: 'Drawing', FileAttachment: 'Attachment', Sound: 'Sound', Redact: 'Redaction' };
@@ -8369,9 +9283,19 @@ changed = function (before) {
   let fresh = false;
   for (const [key, list] of Object.entries(doc.marks)) {
     if (key === '__doc' || !Array.isArray(list)) continue;
-    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; fresh = true; }
+    for (const m of list) if (m && !m.at && m.type !== 'ae' && !m.drafting && !String(before).includes(`"id":"${m.id}"`) && cmDescribe(m)) { m.at = Date.now(); if (S.author) m.author = S.author; if (CM_ANNOT_TYPES.has(m.type) || m.type === 'cmReply') fresh = true; }
   }
-  if (fresh && !S.author && !S.cmNameTold) { S.cmNameTold = true; saveSettings(); toast('Comments are signed as "No name". Set your name in the Comments panel.'); }
+  // Only for a comment (a note, a highlight, a shape…), not a text box or an edit; never over a dialog (it waits for
+  // the dialog to close); once.
+  if (fresh && !S.author && !S.cmNameTold && !CM.nameTellSoon) {
+    CM.nameTellSoon = true;
+    const tell = () => {
+      if ($('#dialog').open) { $('#dialog').addEventListener('close', () => setTimeout(tell, 0), { once: true }); return; }
+      CM.nameTellSoon = false; if (S.author || S.cmNameTold) return;
+      S.cmNameTold = true; saveSettings(); toast('Your comments show as "No name". Set your name in the Comments panel.');
+    };
+    tell();
+  }
 };
 const CM_SORTS = [['page', 'By page'], ['new', 'Newest first'], ['old', 'Oldest first']];
 const CM_EVERYONE = '*everyone*';
@@ -8940,7 +9864,7 @@ async function pg60Replace() {
     current = at;
   });
   pg60SetSel([]);
-  toast(`Replaced ${pg60Plural(out.length, 'page')}`);
+  undoToast(`Replaced ${pg60Plural(out.length, 'page')}`);
 }
 
 /* ---- split into several files ---- */
@@ -8984,7 +9908,7 @@ function pg60Reverse() {
     const picked = t.map((n) => doc.pages[n]).reverse();
     t.forEach((n, k) => { doc.pages[n] = picked[k]; });
   });
-  toast(t.length === doc.pages.length ? 'Page order reversed' : `Reversed ${pg60Plural(t.length, 'page')}`);
+  undoToast(t.length === doc.pages.length ? 'Page order reversed' : `Reversed ${pg60Plural(t.length, 'page')}`);
 }
 async function pg60RotateRange() {
   const t = pg60Many() ? pg60Valid() : [...doc.pages.keys()];
@@ -9009,7 +9933,6 @@ function pg60DeleteMany(idx) {
   const gone = new Set(idx);
   pageOp(() => { doc.pages = doc.pages.filter((_, n) => !gone.has(n)); current = Math.max(0, Math.min(idx[0], doc.pages.length - 1)); });
   pg60SetSel([]); pagesDeleted(idx);
-  toast(`Deleted ${pg60Plural(idx.length, 'page')}`);
 }
 // Asks before deleting: which pages (a range, starting with idx), with the count on the button. Enter deletes.
 async function pg60DeleteAsk(idx = pg60Targets()) {
@@ -9059,7 +9982,7 @@ function pg60DupMany(idx) {
   const set = new Set(idx);
   pageOp(() => { doc.pages = doc.pages.flatMap((e, n) => (set.has(n) ? [e, JSON.parse(JSON.stringify(e))] : [e])); });
   pg60SetSel([]);
-  toast(`Duplicated ${pg60Plural(idx.length, 'page')}`);
+  undoToast(`Duplicated ${pg60Plural(idx.length, 'page')}`);
 }
 async function pg60ExtractMany(idx) {
   try {
@@ -9271,7 +10194,7 @@ async function pg60SetCrop(idx, margins) {
   }
   if (!crops.length) { toast('Those margins leave nothing of the page'); return 0; }
   pageOp(() => { for (const [e, c] of crops) { if (c) e.crop = c; else delete e.crop; } });
-  toast(!margins ? 'Crop removed' : `Cropped ${pg60Plural(crops.length, 'page')}`);
+  undoToast(!margins ? 'Crop removed' : `Cropped ${pg60Plural(crops.length, 'page')}`);
   return crops.length;
 }
 // Saved as the page's CropBox (what readers show) and TrimBox (the finished size for printing).
@@ -9368,12 +10291,15 @@ pg60Org.innerHTML = `<div class="pg60-org-bar">
 $('.workspace').appendChild(pg60Org);
 const pg60Grid = $('.pg60-org-grid', pg60Org);
 const pg60OrgOn = () => app.dataset.organize === '1';
-let pg60OrgIO, pg60OrgTimer;
+let pg60OrgIO, pg60OrgTimer, pg60OrgTabBack = null;
 function pg60Organize(on) {
   if (on && !has()) return;
   const was = pg60OrgOn();
   app.dataset.organize = on ? '1' : '';
   pg60Org.hidden = !on; viewer.inert = !!on;
+  // Organize shows the page tools (the Pages ribbon tab); Done goes back to the tab that was showing.
+  if (on && !was && S.ribbon !== 'pages') { pg60OrgTabBack = S.ribbon; chooseTab('pages'); }
+  if (!on && was && pg60OrgTabBack) { const back = pg60OrgTabBack; pg60OrgTabBack = null; if (S.ribbon === 'pages') chooseTab(back); }
   if (on) { if (isPhone() && app.dataset.sidebar === 'open') toggleSidebar(false); pg60OrgRender(true); }
   else if (was) { pg60Grid.innerHTML = ''; if (doc) goPage(current, true); viewer.focus({ preventScroll: true }); }
   refreshRibbon();
@@ -9469,6 +10395,7 @@ function pg60OrgMove(from, to) {
 }
 cmd('pg60_organize', { label: 'Organize pages', rlabel: 'Organize', icon: 'layout-grid', enabled: has, pressed: pg60OrgOn, run: () => pg60Organize(!pg60OrgOn()) });
 FEATURE.onDocShown.push(() => { if (pg60OrgOn()) pg60Organize(false); });
+FEATURE.onDocClosed.push(() => { if (pg60OrgOn()) pg60Organize(false); });
 ribbonAdd('pages', 'View', ['pg60_organize'], 'Rotate');
 menuAdd('View', ['pg60_organize']);
 TEST_HOOKS.pg60Org = { on: pg60OrgOn, move: pg60OrgMove };
@@ -10183,15 +11110,22 @@ function ffFixAcroForm(L, out, pages) {
     }
   };
   clean(fields);
-  const listed = new Set();
-  for (let k = 0; k < fields.size(); k++) { const r = fields.get(k); if (r instanceof PDFRef) listed.add(r.tag); }
+  const listed = new Set(), names = new Set(), nameOf = (d) => { const t = d.lookup(PDFName.of('T')); return t && t.decodeText ? t.decodeText() : null; };
+  for (let k = 0; k < fields.size(); k++) { const r = fields.get(k); if (r instanceof PDFRef) listed.add(r.tag); const d = c.lookup(r); if (d instanceof PDFDict && nameOf(d) != null) names.add(nameOf(d)); }
   for (const p of pages) {
     const annots = p.node.lookup(PDFName.of('Annots')); if (!(annots instanceof PDFArray)) continue;
     for (let k = 0; k < annots.size(); k++) {
       let r = annots.get(k), d = c.lookup(r);
       if (!(d instanceof PDFDict) || String(d.get(PDFName.of('Subtype'))) !== '/Widget') continue;
       for (let n = 0; n < 32; n++) { const pr = d.get(PDFName.of('Parent')); const pd = pr instanceof PDFRef ? c.lookup(pr) : null; if (!(pd instanceof PDFDict)) break; r = pr; d = pd; }
-      if (r instanceof PDFRef && !listed.has(r.tag) && (d.get(PDFName.of('T')) || d.get(PDFName.of('FT')))) { fields.push(r); listed.add(r.tag); }
+      if (r instanceof PDFRef && !listed.has(r.tag) && (d.get(PDFName.of('T')) || d.get(PDFName.of('FT')))) {
+        // A field from another PDF (or a copied page) whose name is taken gets a name of its own ("Name_2"):
+        // two fields with one name are one field to other readers.
+        const t = nameOf(d);
+        if (t != null && names.has(t)) { let n = 2; while (names.has(`${t}_${n}`)) n++; d.set(PDFName.of('T'), L.PDFHexString.fromText(`${t}_${n}`)); }
+        if (nameOf(d) != null) names.add(nameOf(d));
+        fields.push(r); listed.add(r.tag);
+      }
     }
   }
 }
@@ -10372,6 +11306,30 @@ addStyle(`
 `);
 // pdf.js turns its form layer with the page using these rules from its viewer stylesheet (only part of it is built
 // in), so fields on a turned page sit where the page shows them.
+// Phones: a form field whose text is too small to read (under 16px, as at a phone's fit zoom) zooms the page in to it
+// when it gets the focus, so its text is 16px or more (WebKit then leaves the window as it is); the zoom goes back when
+// the focus leaves the form. The field is drawn again at the new size and takes the focus back.
+const FF_SMALL = '.annotationLayer :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select), :is(input, textarea, select).ff-ctl:not([type="checkbox"]):not([type="radio"])';
+let ffZooming = false;
+const ffFieldKey = (f) => f.dataset.elementId ? `[data-element-id="${CSS.escape(f.dataset.elementId)}"]` : f.dataset.field ? `.ff-ctl[data-field="${CSS.escape(f.dataset.field)}"]` : f.name ? `.annotationLayer [name="${CSS.escape(f.name)}"]` : null;
+viewer.addEventListener('focusin', async (e) => {
+  const f = e.target.closest && e.target.closest(FF_SMALL);
+  if (!f || ffZooming || !isPhone() || !coarse()) return;
+  const px = parseFloat(getComputedStyle(f).fontSize), v = views.find((x) => x.el.contains(f));
+  if (!v || !(px > 0) || px >= 16) return;
+  const key = ffFieldKey(f), r = f.getBoundingClientRect();
+  ffZooming = true;
+  try {
+    const nv = await phoneZoomPx(v, px, { x: r.left + Math.min(r.width / 2, 60), y: r.top + r.height / 2 }, 17, 16);
+    if (nv === v && f.isConnected) return;
+    let g = null;
+    for (let k = 0; k < 40 && !g; k++) { g = key && nv.el.querySelector(key); if (!g) await new Promise((res) => setTimeout(res, 50)); }
+    if (g && document.activeElement !== g) { g.focus({ preventScroll: true }); }
+    if (g) { const b = g.getBoundingClientRect(), vr = viewer.getBoundingClientRect(); if (b.top < vr.top + 8 || b.bottom > vr.bottom - 8 || b.left < vr.left || b.right > vr.right) g.scrollIntoView({ block: 'center', inline: 'nearest' }); }
+  } finally { ffZooming = false; }
+}, true);
+viewer.addEventListener('focusout', (e) => { if (!ffZooming && e.target.closest && e.target.closest(FF_SMALL)) phoneZoomBack(); }, true);
+
 addStyle(`
 .page .annotationLayer { transform-origin: 0 0; }
 .page .annotationLayer[data-main-rotation="90"], .page .annotationLayer [data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
@@ -10732,6 +11690,14 @@ async function protHitShot(f) {
 /* ----- apply ----- */
 // A mark's rough extent, to find what overlaps a redaction.
 function protMarkBox(m) {
+  // Comments (Comment tab): text mark-up by its quads, boxes by their corners
+  const fr = typeof cmFrame === 'function' && 'rot' in m ? cmFrame(m.x, m.y, m.type === 'cmStamp' ? m.rot + (m.tilt || 0) : m.rot) : null;
+  const tw = (t, size) => size * .55 * Math.max(1, ...String(t || '').split('\n').map((l) => l.length));
+  const cpts = m.quads ? m.quads.flatMap((q) => [[q[0], q[1]], [q[2], q[3]], [q[4], q[5]], [q[6], q[7]]])
+    : fr && m.type === 'cmStamp' ? [fr(-m.bw / 2, -m.bh / 2), fr(m.bw / 2, m.bh / 2), fr(-m.bw / 2, m.bh / 2), fr(m.bw / 2, -m.bh / 2)]
+    : fr && m.type === 'cmCallout' ? [fr(0, 0), fr(m.bw, 0), fr(m.bw, m.bh), fr(0, m.bh), [m.tx, m.ty]]
+    : fr && m.type === 'cmType' ? [fr(0, 0), fr(tw(m.text, m.size), 0), fr(0, m.size * 1.2 * String(m.text || '').split('\n').length), fr(tw(m.text, m.size), m.size * 1.2 * String(m.text || '').split('\n').length)] : null;
+  if (cpts) return quadBox(cpts);
   const pts = m.rects ? m.rects.flatMap((r) => [[r[0], r[1]], [r[2], r[3]]]) : m.pts ? m.pts : 'x1' in m ? [[m.x1, m.y1], [m.x2, m.y2]]
     : m.type === 'note' ? [[m.x, m.y - 22], [m.x + 22, m.y]] : m.type === 'img' ? [[m.x, m.y], [m.x + m.w, m.y + m.h]] : m.type === 'text' ? [[m.x, m.y - m.size * 1.2 * m.text.split('\n').length], [m.x + m.size * .55 * Math.max(...m.text.split('\n').map((l) => l.length)), m.y]] : null;
   return pts && pts.length ? quadBox(pts) : null;
@@ -10741,7 +11707,7 @@ async function protApply() {
   if (!pend.length) { toast('Mark text or an area for redaction first'); return; }
   const last = S.protRedact || { fill: '#000000', label: '' };
   const swatches = ['#000000', '#FFFFFF', '#E03131'];
-  const r = await protAsk('Apply redactions', `<p>${pend.length === 1 ? 'The marked area is' : `The ${pend.length} marked areas are`} covered with a box. When you save, the text, pictures and drawings under ${pend.length === 1 ? 'it' : 'them'} are taken out of the PDF for good, and comments over ${pend.length === 1 ? 'it' : 'them'} are removed.</p>
+  const r = await protAsk('Apply redactions', `<p>${pend.length === 1 ? 'The marked area is' : `The ${pend.length} marked areas are`} covered with a box, and comments over ${pend.length === 1 ? 'it' : 'them'} are removed now. When you save, the text, pictures and drawings under ${pend.length === 1 ? 'it' : 'them'} are taken out of the PDF for good.</p>
     <div class="prot-fill"><span>Box colour</span>${swatches.map((c) => `<button type="button" class="prot-sw" data-sw="${c}" style="background:${c}" aria-label="Colour ${c}" aria-pressed="${last.fill.toUpperCase() === c}"></button>`).join('')}<input type="color" name="fill" value="${esc(last.fill)}" aria-label="Other colour"></div>
     <label class="field"><span>Text on the box (optional)</span><input name="label" type="text" autocomplete="off" placeholder="For example: Redacted" value="${esc(last.label || '')}"></label>`,
   [{ label: 'Cancel' }, { label: 'Apply', value: 'apply', primary: true }], (dlg, upd) => {
@@ -10762,6 +11728,8 @@ async function protApply() {
       const x = list[k]; if (x.type === 'redact' || CONTENT_TYPES.has(x.type)) continue;
       const b = protMarkBox(x); if (b && boxes.some((bb) => protOverlap(bb, b))) list.splice(k, 1);
     }
+    // and the replies to a comment that went
+    for (let k = list.length - 1; k >= 0; k--) { const x = list[k]; if (x.type === 'cmReply' && x.to && !list.some((y) => y.id === x.to)) list.splice(k, 1); }
     // So do comments from other apps (they are deleted the way the Edit tool deletes them).
     try {
       const cm = await contentMap(await pageOf(e));
@@ -11453,6 +12421,7 @@ cmd('protClean', { label: 'Remove hidden info…', icon: 'eye-off', enabled: has
 ribbonAdd('protect', 'Redact', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
 ribbonAdd('protect', 'Security', ['protPassword', 'protUnsecure']);
 ribbonAdd('protect', 'Document', ['protFlatten', 'protCompress', 'protClean']);
+menuAdd('Protect', ['sign']); // Signature has one place: Protect (on the ribbon too)
 menuAdd('Protect', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
 menuAdd('Protect', ['protPassword', 'protUnsecure']);
 menuAdd('Protect', ['protFlatten', 'protCompress', 'protClean']);
@@ -12236,6 +13205,7 @@ function crdSayPaint(only) {
 }
 FEATURE.afterRender.push((v) => { if (crdSay.on && views[crdSay.n] === v) crdSayPaint(v); });
 FEATURE.onDocShown.push(() => { crdSayStop(); });
+FEATURE.onDocClosed.push(() => { crdSayStop(); });
 
 /* ---- read mode ---- */
 function crdReadBar() {
@@ -12482,15 +13452,21 @@ async function beforeQuit() {
   }
   NATIVE.core.invoke('quit_app').catch(() => {});
 }
-const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
+const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-w': 'CmdOrCtrl+W', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-1': 'CmdOrCtrl+1', 'Mod-2': 'CmdOrCtrl+2', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
 // The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
-// Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
-var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line
-function macMenu() {
-  if (!MAC_APP) return;
+// Paste and Select All are the system's, for text fields. Checkmarks and greyed-out commands follow the app: the
+// whole menu bar is sent when its items change, and only the items that were turned on or off otherwise.
+var lastMenu = '', lastEnabled = null, menuTimer = null; // var: applyTheme can run before this line
+// Whether a command can be chosen now, as the in-app menus show it. Undo and Redo also edit text in a text field.
+function macEnabled(id) {
+  const c = C[id]; if (!c.enabled || c.enabled()) return true;
+  const el = document.activeElement;
+  return (id === 'undo' || id === 'redo') && !!el && (/INPUT|TEXTAREA/.test(el.tagName) || el.isContentEditable);
+}
+function macMenuSpec() {
   // Only a real switch is a check item: a command that opens a window (its name ends in …) never is (Apple's HIG).
-  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
-  const menus = MENUS.map(([title, ids]) => {
+  const item = (id) => ({ kind: 'item', id: 'cmd:' + id, label: C[id].label, accel: ACCEL[C[id].key] || null, enabled: macEnabled(id), checked: C[id].pressed && !/…$/.test(C[id].label) ? !!C[id].pressed() : null });
+  return MENUS.map(([title, ids]) => {
     // About and Check for Updates live in the Cowdrey.PDF menu.
     let items = ids.filter((id) => shown(id) && id !== 'about' && id !== 'checkUpdates').map((id) => id === '-' ? { kind: 'sep' } : item(id));
     if (title === 'Edit') {
@@ -12501,11 +13477,29 @@ function macMenu() {
     items = items.filter((x, k, a) => x.kind !== 'sep' || (k > 0 && k < a.length - 1 && a[k - 1].kind !== 'sep')); // no separator at an end, or two together
     return { title, items };
   });
-  const json = JSON.stringify(menus);
-  if (json === lastMenu) return;
-  lastMenu = json;
-  MAC_APP.core.invoke('set_menu', { menus }).then(() => document.documentElement.classList.add('mac-app'), () => { lastMenu = ''; });
 }
+// What to send for a menu bar: { full: menus } when its items changed, { enabled: [[id, on]…] } when only some were
+// turned on or off, or null when nothing changed. (Pure, for tests: takes and gives back the state it compares to.)
+function macMenuDelta(menus, last) {
+  const items = menus.flatMap((m) => m.items).filter((x) => x.kind === 'item');
+  const enabled = Object.fromEntries(items.map((x) => [x.id, x.enabled !== false]));
+  const shape = JSON.stringify(menus, (k, v) => (k === 'enabled' ? undefined : v));
+  if (!last || shape !== last.shape) return { send: { full: menus }, state: { shape, enabled } };
+  const diff = Object.entries(enabled).filter(([id, on]) => last.enabled[id] !== on);
+  return { send: diff.length ? { enabled: diff } : null, state: { shape, enabled } };
+}
+TEST_HOOKS.macMenuSpec = macMenuSpec; TEST_HOOKS.macMenuDelta = macMenuDelta;
+function macMenu() {
+  if (!MAC_APP) return;
+  const { send, state } = macMenuDelta(macMenuSpec(), lastEnabled);
+  if (!send) return;
+  lastEnabled = state; lastMenu = state.shape;
+  const failed = () => { lastEnabled = null; lastMenu = ''; };
+  if (send.full) MAC_APP.core.invoke('set_menu', { menus: send.full }).then(() => document.documentElement.classList.add('mac-app'), failed);
+  else MAC_APP.core.invoke('set_menu_enabled', { items: send.enabled }).catch(() => { failed(); scheduleMacMenu(); }); // the whole bar instead
+}
+// Undo and Redo in the menu follow the focus too (a text field has its own undo).
+if (MAC_APP) { document.addEventListener('focusin', () => scheduleMacMenu()); document.addEventListener('focusout', () => scheduleMacMenu()); }
 function scheduleMacMenu() { if (!MAC_APP) return; clearTimeout(menuTimer); menuTimer = setTimeout(macMenu, 120); }
 if (NATIVE) {
   NATIVE.event.listen('open-files', () => serial(takeOpened));
@@ -12533,6 +13527,7 @@ serial(async () => {
   if (/[?&]sample\b/.test(location.search)) { await openSample(); return; }
   const last = store.get('current', null);
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
+  sideNoDoc();
 });
 if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
