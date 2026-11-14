@@ -1782,7 +1782,7 @@ async function phoneZoomPx(v, px, at, want = 18, min = 14) {
   await setZoom(z, at);
   const nv = views[n]; if (!nv) return v;
   // The tap's spot stays under the finger (as far as the page can scroll), so the caret goes where it was tapped.
-  await new Promise(requestAnimationFrame);
+  await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); // laid out at the new size
   let b = nv.el.getBoundingClientRect();
   viewer.scrollLeft += b.left + fx * b.width - at.x; viewer.scrollTop += b.top + fy * b.height - at.y;
   b = nv.el.getBoundingClientRect();
