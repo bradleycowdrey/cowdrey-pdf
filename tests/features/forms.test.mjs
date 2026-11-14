@@ -189,7 +189,7 @@ export default async (h) => {
     // showing what was filled in
     await p.click('[data-rt="forms"]'); await p.waitForTimeout(200);
     eq(await p.$$eval('.ff-fill-layer .ff-ctl', (c) => c.length), 5, 'Select on the Forms tab fills in');
-    eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'true');
+    eq(await p.getAttribute('[data-cmd="ffPreview"]', 'aria-pressed'), 'false', 'Fill in is pressed only once chosen');
     await p.click('[data-cmd="ff_edit"]'); await p.waitForTimeout(200);
     ok(!(await p.$('.ff-fill-layer .ff-ctl')), 'designing again');
     eq(await p.$$eval('.marks .ff-mk.mk', (m) => m.length), 5);

@@ -88,4 +88,20 @@ export default async (h) => {
       await p.ctx.close();
     }
   });
+
+  await test('layout: Fill in has its own icon and is pressed only once chosen; pressed, it goes back to Edit fields', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="forms"]');
+    const icon = (id) => p.$eval(`#ribbonBody [data-cmd="${id}"] svg`, (s) => s.getAttribute('class'));
+    const fill = await icon('ffPreview'); await p.click('[data-rt="edit"]'); const edit = await icon('tool_edit'); await p.click('[data-rt="forms"]');
+    ok(fill !== edit && /pencil-line/.test(fill), `not the Edit PDF icon: ${fill} / ${edit}`);
+    eq(await p.getAttribute('#ribbonBody [data-cmd="ffPreview"]', 'aria-pressed'), 'false', 'not pressed when the tab opens');
+    await p.click('#ribbonBody [data-cmd="ffPreview"]'); await p.waitForTimeout(150);
+    eq([await p.getAttribute('#ribbonBody [data-cmd="ffPreview"]', 'aria-pressed'), await p.evaluate(() => document.querySelector('#app').dataset.tool)], ['true', 'select'], 'chosen: fill in');
+    await p.click('#ribbonBody [data-cmd="ffPreview"]'); await p.waitForTimeout(150);
+    eq([await p.getAttribute('#ribbonBody [data-cmd="ffPreview"]', 'aria-pressed'), await p.evaluate(() => document.querySelector('#app').dataset.tool)], ['false', 'ff_edit'], 'pressed again: Edit fields');
+    await p.click('[data-rt="home"]'); await p.click('[data-rt="forms"]');
+    eq(await p.getAttribute('#ribbonBody [data-cmd="ffPreview"]', 'aria-pressed'), 'false', 'not pressed on coming back');
+    await p.ctx.close();
+  });
 };
