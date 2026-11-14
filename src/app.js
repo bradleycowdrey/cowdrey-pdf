@@ -290,6 +290,11 @@ async function renderView(v) {
       await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: PDFJS_ICONS, downloadManager: null });
       al.addEventListener('input', () => setSaved(false));
       al.addEventListener('change', () => setSaved(false));
+      // A field with no tooltip (/TU) is named after the field itself (/T), so a screen reader can say what it is for.
+      for (const f of al.querySelectorAll('input, select, textarea')) {
+        if (f.getAttribute('aria-label') || f.title || !f.name) continue;
+        f.setAttribute('aria-label', f.name.split('.').pop().replace(/[_]+/g, ' ').trim() || 'Form field');
+      }
     }
   } catch (e) { console.warn('annotation layer', e); }
   if (app.dataset.tool === 'edit') contentMap(page).then((cm) => { page._cmapValue = cm; }).catch(() => {}); // read ahead for Edit PDF
@@ -2517,10 +2522,12 @@ function stepFind(d, to) {
     const top = v.el.offsetTop + b.y + b.h / 2 - viewer.clientHeight / 2, left = v.el.offsetLeft + b.x + b.w / 2 - viewer.clientWidth / 2;
     viewer.scrollTo({ top: Math.max(0, top), left: viewer.scrollWidth > viewer.clientWidth ? Math.max(0, left) : 0, behavior: 'instant' });
   }
-  $$('#findList [data-hit]').forEach((x) => { const on = +x.dataset.hit === findState.now; x.setAttribute('aria-current', on ? 'true' : 'false'); if (on) x.scrollIntoView({ block: 'nearest' }); });
+  const inList = $('#findList').contains(document.activeElement);
+  $$('#findList [data-hit]').forEach((x) => { const on = +x.dataset.hit === findState.now; x.setAttribute('aria-current', on ? 'true' : 'false'); x.setAttribute('aria-selected', on); if (!inList) x.tabIndex = on ? 0 : -1; if (on) x.scrollIntoView({ block: 'nearest' }); });
   renderView(v).then(() => views.forEach((x) => x.rendered && paintFind(x)));
 }
-// All results: each match with its page and the words around it; choosing one goes to it.
+// All results: each match with its page and the words around it; choosing one goes to it. A list box: one Tab stop
+// (the match in view), the arrows, Home and End move, Enter or a click goes to the match.
 const FIND_LIST_MAX = 500;
 function findListDraw() {
   const list = $('#findList'); if (!list || list.hidden) return;
@@ -2532,21 +2539,23 @@ function findListDraw() {
     const flat = (x) => esc(x.replace(/\s+/g, ' '));
     const a = Math.max(0, h.at - 40), b = Math.min(s.length, h.at + h.len + 40);
     const before = s.slice(a, h.at).replace(/^\S*\s/, a ? '' : '$&'), after = s.slice(h.at + h.len, b).replace(/\s\S*$/, b < s.length ? '' : '$&');
-    return `<li><button type="button" data-hit="${k}" aria-current="${k === findState.now}"><b>Page ${h.n + 1}</b><span>${a ? '…' : ''}${flat(before)}<mark>${flat(s.slice(h.at, h.at + h.len))}</mark>${flat(after)}${b < s.length ? '…' : ''}</span></button></li>`;
+    const on = k === (findState.now >= 0 && findState.now < Math.min(hits.length, FIND_LIST_MAX) ? findState.now : 0);
+    return `<li role="none"><button type="button" role="option" data-hit="${k}" aria-current="${k === findState.now}" aria-selected="${k === findState.now}" tabindex="${on ? 0 : -1}"><b>Page ${h.n + 1}</b><span>${a ? '…' : ''}${flat(before)}<mark>${flat(s.slice(h.at, h.at + h.len))}</mark>${flat(after)}${b < s.length ? '…' : ''}</span></button></li>`;
   };
-  list.innerHTML = `<p class="find-head">${hits.length === 1 ? '1 result' : `${hits.length} results`}${hits.length > FIND_LIST_MAX ? `, first ${FIND_LIST_MAX} shown` : ''}</p><ol>${hits.slice(0, FIND_LIST_MAX).map(row).join('')}</ol>`;
+  list.innerHTML = `<p class="find-head">${hits.length === 1 ? '1 result' : `${hits.length} results`}${hits.length > FIND_LIST_MAX ? `, first ${FIND_LIST_MAX} shown` : ''}</p><ol role="listbox" aria-label="Results">${hits.slice(0, FIND_LIST_MAX).map(row).join('')}</ol>`;
 }
 function findListShow(on) {
   const list = $('#findList'), btn = $('#findAll');
   list.hidden = !on; btn.setAttribute('aria-pressed', on); btn.setAttribute('aria-expanded', on);
   findListDraw();
 }
-$('#findList').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) stepFind(0, +b.dataset.hit); });
+$('#findList').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) { $$('#findList [data-hit]').forEach((x) => { x.tabIndex = x === b ? 0 : -1; }); stepFind(0, +b.dataset.hit); } });
 $('#findList').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); findListShow(false); $('#findAll').focus(); return; }
   const bs = $$('#findList [data-hit]'), k = bs.indexOf(document.activeElement); if (k < 0) return;
   const n = { ArrowDown: k + 1, ArrowUp: k - 1, Home: 0, End: bs.length - 1 }[e.key]; if (n === undefined) return;
-  e.preventDefault(); e.stopPropagation(); bs[Math.max(0, Math.min(bs.length - 1, n))].focus();
+  e.preventDefault(); e.stopPropagation();
+  const t = bs[Math.max(0, Math.min(bs.length - 1, n))]; bs.forEach((x) => { x.tabIndex = x === t ? 0 : -1; }); t.focus();
 });
 $('#findAll').onclick = () => findListShow($('#findList').hidden);
 for (const [id, k] of [['#findCase', 'matchCase'], ['#findWord', 'words']]) $(id).onclick = () => { findOpts[k] = !findOpts[k]; $(id).setAttribute('aria-pressed', findOpts[k]); runFind($('#findInput').value.trim()); };

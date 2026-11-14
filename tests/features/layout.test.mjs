@@ -162,4 +162,30 @@ export default async (h) => {
     eq(await said(), '2 pages deleted. 1 left.');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('layout: All results is one Tab stop (a list box the arrows move through); form fields with no tooltip are named; the ribbon is a named region', async () => {
+    const p = await open(); await openPdf(p);
+    await p.keyboard.press('Control+f'); await p.fill('#findInput', 'pelican'); await p.waitForTimeout(600);
+    await p.click('#findAll'); await p.waitForTimeout(200);
+    eq(await p.$eval('#findList ol', (e) => [e.getAttribute('role'), e.getAttribute('aria-label')]), ['listbox', 'Results']);
+    const opts = await p.$$eval('#findList [data-hit]', (b) => b.map((x) => [x.getAttribute('role'), x.tabIndex, x.getAttribute('aria-selected')]));
+    eq(opts.length, 6); eq(opts.filter((o) => o[1] === 0).length, 1, 'one Tab stop'); ok(opts.every((o) => o[0] === 'option'), 'options');
+    eq(opts.findIndex((o) => o[2] === 'true'), opts.findIndex((o) => o[1] === 0), 'the Tab stop is the match in view');
+    await p.focus('#findClose'); await p.keyboard.press('Tab');
+    eq(await p.evaluate(() => document.activeElement.dataset.hit), '0', 'Tab goes into the list');
+    await p.keyboard.press('ArrowDown'); await p.keyboard.press('ArrowDown');
+    eq(await p.evaluate(() => [document.activeElement.dataset.hit, document.activeElement.tabIndex]), ['2', 0], 'the arrows move');
+    await p.keyboard.press('End'); eq(await p.evaluate(() => document.activeElement.dataset.hit), '5');
+    await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    eq(await p.textContent('#findCount'), '6 of 6', 'Enter goes to the match');
+    eq(await p.$$eval('#findList [data-hit]', (b) => b.filter((x) => x.tabIndex === 0).map((x) => x.dataset.hit)), ['5']);
+    await p.keyboard.press('Shift+Tab'); ok(await p.evaluate(() => !document.activeElement.closest('#findList')), 'Shift+Tab leaves the list at once');
+    // form fields: the sample's text field and checkbox have no /TU
+    eq(await p.$$eval('.annotationLayer :is(input, select, textarea)', (f) => f.map((x) => x.getAttribute('aria-label') || x.title)), ['name', 'agree']);
+    // landmarks
+    eq(await p.$eval('.ribbon', (e) => [e.tagName, e.getAttribute('aria-label')]), ['SECTION', 'Ribbon']);
+    ok(await p.$eval('#ribbonTabs', (e) => e.closest('section.ribbon') !== null) && await p.$eval('#ribbonBody', (e) => e.closest('section.ribbon') !== null), 'tabs and body in the region');
+    eq(await p.$$eval('h1', (h) => h.map((x) => x.textContent)), ['Quarterly report']);
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
