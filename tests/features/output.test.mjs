@@ -295,4 +295,33 @@ export default async (h) => {
     ok(packed <= plain, `compressed ${packed} vs not ${plain}`);
     await p.ctx.close();
   });
+
+  await test('page design: watermark, background, header, footer and Bates are pagination artifacts other editors can find; ours again on reopening', async () => {
+    const p = await open(); await openPdf(p);
+    const add = async (id, fill = {}) => {
+      await p.evaluate((i) => window.__cowdreyPdf.run(i), id); await p.waitForSelector('#dialog[open] .pd-form');
+      for (const [k, v] of Object.entries(fill)) await p.fill(`#dialog [data-k="${k}"]`, String(v));
+      await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(300);
+    };
+    await add('pd_watermark', { text: 'DRAFT' }); await add('pd_background'); await add('pd_headfoot', { tl: 'Acme report' }); await add('pd_bates');
+    const out = await savedOf(p);
+    const c = (await contentOf(out, [0])).join('\n'), all = (await contentOf(out, [0, 1, 2])).join('\n');
+    const tags = [...all.matchAll(/\/Artifact\s*<<([\s\S]*?)>>\s*BDC/g)].map((m) => m[1]);
+    ok(tags.length && tags.every((t) => /\/Type\s*\/Pagination/.test(t) && /\/CowdreyPdfPD\s+1/.test(t)), 'tagged as ours: ' + tags);
+    const kinds = [...c.matchAll(/\/Artifact\s*<<([\s\S]*?)>>\s*BDC/g)].map((m) => [(/\/Subtype\s*\/(\w+)/.exec(m[1]) || [])[1], (/\/Attached\s*\[\s*\/(\w+)/.exec(m[1]) || [])[1] || '']);
+    eq([...new Set(kinds.map((k) => k.join(' ').trim()))].sort(), ['Footer Bottom', 'Header Top', 'Watermark'], 'page 1');
+    // the header text is inside a Header artifact, the page number and Bates number inside Footer ones
+    const spans = [...c.matchAll(/\/Artifact\s*<<([\s\S]*?)>>\s*BDC([\s\S]*?)EMC/g)].map((m) => [(/\/Subtype\s*\/(\w+)/.exec(m[1]) || [])[1], m[2]]);
+    ok(spans.some(([k, b]) => k === 'Header' && /Tj|TJ/.test(b)) && spans.filter(([k]) => k === 'Footer').length >= 1 && spans.some(([k, b]) => k === 'Watermark' && /re\b|Tj/.test(b)), JSON.stringify(spans.map(([k]) => k)));
+    // opened again here: the settings come back and Manage page design removes all of it
+    await reopen(p, out); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await p.waitForTimeout(300);
+    await p.evaluate(() => window.__cowdreyPdf.run('pd_manage')); await p.waitForSelector('#dialog[open] .pd-row');
+    eq(await p.$$eval('#dialog .pd-row strong', (e) => e.map((x) => x.textContent)), ['Background', 'Watermark', 'Header & footer', 'Bates numbering']);
+    await shot(p, 'pd-manage-reopened.png');
+    while (await p.$('#dialog [data-remove]')) { await p.click('#dialog [data-remove]'); await p.waitForTimeout(150); }
+    await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(200);
+    const out2 = await savedOf(p);
+    ok(!(await contentOf(out2, [0, 1, 2])).join('\n').includes('/Pagination'), 'nothing of it left');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

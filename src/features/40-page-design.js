@@ -59,8 +59,8 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
       if (m.kind === 'image' && m.data) {
         let w = W, h = H;
         if (m.fit === 'fit') { const r = Math.min(W / m.iw, H / m.ih); w = m.iw * r; h = m.ih * r; }
-        under.push({ kind: 'image', data: m.data, x: (W - w) / 2, y: (H - h) / 2, w, h, angle: 0, opacity: op });
-      } else under.push({ kind: 'rect', x: 0, y: 0, w: W, h: H, color: m.color, opacity: op, angle: 0 });
+        under.push({ kind: 'image', data: m.data, x: (W - w) / 2, y: (H - h) / 2, w, h, angle: 0, opacity: op, art: 'Watermark' });
+      } else under.push({ kind: 'rect', x: 0, y: 0, w: W, h: H, color: m.color, opacity: op, angle: 0, art: 'Watermark' });
     } else if (m.type === 'pd_watermark') {
       const to = m.front === 'behind' ? under : over;
       const a = (+m.rotation || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
@@ -68,12 +68,12 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
       if (m.kind === 'image') {
         if (!m.data) continue;
         w = W * Math.max(1, +m.scale || 50) / 100; h = w * m.ih / m.iw;
-        item = (cx, cy) => ({ kind: 'image', data: m.data, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, w, h, angle: +m.rotation || 0, opacity: op });
+        item = (cx, cy) => ({ kind: 'image', data: m.data, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, w, h, angle: +m.rotation || 0, opacity: op, art: 'Watermark' });
       } else {
         const text = pdClean(m.text || ''), size = Math.max(1, +m.size || 48);
         if (!text.trim()) continue;
         w = measure(text, m.font, m.bold, size); h = size * .7;
-        item = (cx, cy) => ({ kind: 'text', text, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, angle: +m.rotation || 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: op });
+        item = (cx, cy) => ({ kind: 'text', text, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, angle: +m.rotation || 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: op, art: 'Watermark' });
       }
       const centres = m.layout === 'tile' ? pdTiles(W, H, a, m.kind === 'image' ? w * 1.4 : w + h * 3, m.kind === 'image' ? h * 1.6 : h * 4.5, Math.hypot(w, h) / 2) : [[W / 2, H / 2]];
       for (const [cx, cy] of centres) to.push(item(cx, cy));
@@ -88,7 +88,7 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
         const tw = measure(text, m.font, m.bold, size), side = (+m.mSide || 0) * PD_MM;
         const x = s[1] === 'l' ? side : s[1] === 'r' ? W - side - tw : (W - tw) / 2;
         const y = s[0] === 't' ? H - (+m.mTop || 0) * PD_MM - size * .75 : (+m.mBottom || 0) * PD_MM + size * .22;
-        over.push({ kind: 'text', text, x, y, angle: 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: 1 });
+        over.push({ kind: 'text', text, x, y, angle: 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: 1, art: s[0] === 't' ? 'Header' : 'Footer' });
       }
     }
   }
@@ -215,8 +215,13 @@ dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: non
 /* saving */
 const PD_STD = { sans: ['Helvetica', 'HelveticaBold'], serif: ['TimesRoman', 'TimesRomanBold'], mono: ['Courier', 'CourierBold'] };
 function pdRgb(L, hex) { const n = parseInt(String(hex || '#000000').slice(1), 16) || 0; return L.rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); }
+// Each run of items of one kind is marked as a pagination artifact of that kind (Watermark, Header, Footer), which
+// other editors look for to update or remove them, and tagged as ours (see pdTag).
 async function pdDrawItems(L, out, p, items, map, r, ctx) {
+  let tag = null;
   for (const it of items) {
+    const art = it.art || 'Watermark';
+    if (art !== tag) { if (tag) pdTag(L, out, p, false); tag = art; pdTag(L, out, p, true, tag); }
     const [x, y] = map(it.x, it.y), rotate = L.degrees((it.angle + r) % 360);
     if (it.kind === 'rect') p.drawRectangle({ x, y, width: it.w, height: it.h, color: pdRgb(L, it.color), opacity: it.opacity, rotate });
     else if (it.kind === 'image') {
@@ -225,6 +230,7 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
       p.drawImage(im, { x, y, width: it.w, height: it.h, opacity: it.opacity, rotate });
     } else p.drawText(it.text, { x, y, size: it.size, font: ctx.pdFonts.get((it.font || 'sans') + (it.bold ? 'b' : '')), color: pdRgb(L, it.color), opacity: it.opacity, rotate });
   }
+  if (tag) pdTag(L, out, p, false);
 }
 // Drawn after every other savePage hook, so applying redactions (which rewrites what is already in the page) never
 // cuts letters out of it; page design from an earlier save is taken out when the file is opened (see pdReadBack).
@@ -243,19 +249,20 @@ FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   if (under.length) {
     // Behind the content: drawn in a stream of its own, which then goes first in the page's list of streams.
     p.getContentStream(false);
-    pdTag(L, out, p, true); await pdDrawItems(L, out, p, under, map, r, ctx); pdTag(L, out, p, false);
+    await pdDrawItems(L, out, p, under, map, r, ctx);
     const contents = p.node.Contents(), ref = p.contentStreamRef, at = contents ? contents.indexOf(ref) : -1;
     if (at > 0) { contents.remove(at); contents.insert(0, ref); }
     p.getContentStream(false); // what's drawn next goes on top again
   }
-  if (over.length) { pdTag(L, out, p, true); await pdDrawItems(L, out, p, over, map, r, ctx); pdTag(L, out, p, false); }
+  if (over.length) await pdDrawItems(L, out, p, over, map, r, ctx);
 });
 /* Kept in the saved PDF, so it can be changed or removed when the file is opened again: what is drawn is marked as
    an artifact tagged /CowdreyPdfPD, and the settings are a JSON string in the document's Info under the same key.
    Opening such a file takes the tagged drawing out of the pages and puts the settings back in docMarks(). */
 const PD_KEY = 'CowdreyPdfPD';
-function pdTag(L, out, p, on) {
-  p.pushOperators(on ? L.PDFOperator.of('BDC', [L.PDFName.of('Artifact'), out.context.obj({ Type: 'Pagination', [PD_KEY]: 1 })]) : L.PDFOperator.of('EMC'));
+function pdTag(L, out, p, on, sub = 'Watermark') {
+  const place = sub === 'Header' ? { Attached: ['Top'] } : sub === 'Footer' ? { Attached: ['Bottom'] } : {};
+  p.pushOperators(on ? L.PDFOperator.of('BDC', [L.PDFName.of('Artifact'), out.context.obj({ Type: 'Pagination', Subtype: sub, ...place, [PD_KEY]: 1 })]) : L.PDFOperator.of('EMC'));
 }
 // ASCII only (\uXXXX for the rest), with \ ( ) escaped for a PDF literal string.
 const pdPdfString = (L, json) => L.PDFString.of(json.replace(/[\u007f-\uffff]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/[\\()]/g, '\\$&'));
