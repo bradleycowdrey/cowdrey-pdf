@@ -274,7 +274,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 .sw-more svg { width: 14px; height: 14px; stroke-width: 3; filter: drop-shadow(0 0 1px rgba(0,0,0,.8)); }
 .sw-more input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .sw-more:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
-.swatch[data-color="#111111"], .swatch[data-c="#111111"] { box-shadow: 0 0 0 1px var(--ink-3); } /* black stays visible on the dark theme */
+.swatch[data-color="#111111"]:not([aria-pressed="true"]), .swatch[data-c="#111111"]:not([aria-pressed="true"]) { box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 0 1px var(--line); } /* black stays visible on the dark theme, and does not look pressed */
 .sig-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0; }
 .sig-row[hidden], .sig-row [hidden] { display: none; }
 .sig-row .field { flex: 1; margin: 0; }

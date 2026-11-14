@@ -62,6 +62,8 @@ function txtMeasurer(page, m) {
       run += gl ? gl.fc : ch;
     }
     flush();
+    // The line's own spacing (relative to its size), as it is drawn and saved.
+    if (m.tc || m.tw) for (const ch of s) w += ((m.tc || 0) + (ch === ' ' ? m.tw || 0 : 0)) * 100;
     return w / 100 * hsc * m.size;
   };
 }
@@ -91,7 +93,11 @@ const txtSrc = (t) => ({ tm: t.tm, width: t.width, ascent: t.ascent, descent: t.
 function txtNewPara(tes, wrap, lead0) {
   const t = tes[0], size = lineFrame(t).size;
   const base = { text: txtJoin(tes.map((x) => x.orig)), size, color: t.color, bold: !!t.bold, italic: !!t.italic, underline: false, align: 'left' };
-  return { id: uid(), type: 'tpara', src: tes.map(txtSrc), font: t.font, fam: t.fam, codes: t.codes || {}, ocr: !!t.ocr, type3: !!t.type3, ascent: t.ascent, descent: t.descent, size0: size, lead0, wrap, base, size, color: t.color, bold: base.bold, italic: base.italic, underline: false, align: 'left', std: false, text: '', lines: [] };
+  // The first line's text state (outline, spacing) carries over, as it does for a single edited line.
+  // Spacing only when every line has the same (a line set tighter to fit is not the paragraph's spacing).
+  const st = {}; for (const k of ['tr', 'lw', 'stroke']) if (t[k] != null) st[k] = t[k];
+  for (const k of ['tc', 'tw']) if (t[k] != null && tes.every((x) => x[k] === t[k])) st[k] = t[k];
+  return { id: uid(), type: 'tpara', src: tes.map(txtSrc), font: t.font, fam: t.fam, codes: t.codes || {}, ocr: !!t.ocr, type3: !!t.type3, ascent: t.ascent, descent: t.descent, size0: size, lead0, wrap, base, size, color: t.color, bold: base.bold, italic: base.italic, underline: false, align: 'left', std: false, text: '', lines: [], ...st };
 }
 // A te mark for a line, as the Edit tool makes one (its font, colours and the letters its font has).
 async function txtTeFor(v, L, cm) {
@@ -116,8 +122,15 @@ function txtBlock(cm, L, entry) {
     for (let j = k + dir; j >= 0 && j < cands.length; j += dir) {
       const gap = Math.abs(cands[cur].p - cands[j].p);
       if (gap < sz * .5) continue;
-      if (gap > sz * 2.5) break;
+      // Single to double spacing (body text set at 2.6 em, as in long manuals), the same all the way down.
+      if (gap > sz * 3.2) break;
       if (!lead) { if (gap < sz * .9) break; lead = gap; } else if (Math.abs(gap - lead) > sz * .15) break;
+      // Widely spaced lines are a paragraph only when they are full (wrapped) lines: every line but the last is
+      // most of the block's width, so a list of short lines spaced apart stays separate.
+      if (gap > sz * 1.9) {
+        const upper = dir > 0 ? cands[cur] : cands[j], widest = Math.max(...block.map((x) => x.c.width), cands[j].c.width);
+        if (upper.c.width < widest * .6) break;
+      }
       if (dir > 0) block.push(cands[j]); else block.unshift(cands[j]);
       cur = j;
     }
@@ -146,7 +159,7 @@ FEATURE.markTypes.tpara = {
       if (!line.trim()) return;
       const w = meas(line), x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0;
       const org = txtOrigin(F, i, x), [ox, oy] = toView(v, ...org);
-      const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr });
+      const im = teImage(v, { id: `${m.id}:${i}:${m.size}:${+m.std}${+m.bold}${+m.italic}`, text: line, color: m.color, tm: [t0[0] * k, t0[1] * k, t0[2] * k, t0[3] * k, t0[4], t0[5]], fam: m.fam, bold: m.bold, italic: m.italic, ascent: m.ascent, descent: m.descent, type3: m.std || m.type3, ocr: m.ocr, tr: m.tr, lw: m.lw, stroke: m.stroke, tc: m.tc, tw: m.tw });
       const gl = svgEl('g', { transform: `rotate(${ang.toFixed(2)} ${ox} ${oy})` });
       gl.appendChild(svgEl('image', { x: ox, y: oy - im.asc, width: im.w, height: im.h, href: im.url }));
       if (m.underline) { const uy = oy + m.size * scale * .12; gl.appendChild(svgEl('line', { x1: ox, y1: uy, x2: ox + w * scale, y2: uy, stroke: m.color, 'stroke-width': Math.max(.75, m.size * scale * .06) })); }
@@ -156,9 +169,10 @@ FEATURE.markTypes.tpara = {
   },
   move(m, o, dx, dy) { m.dx = (o.dx || 0) + dx; m.dy = (o.dy || 0) + dy; },
   async save({ L, out, p, m, ctx }) {
-    // The original lines come out of the page as edited lines with no text would.
-    await saveContentEdits(L, out, p, m.src.map((s, i) => ({ ...s, id: m.id + ':' + i, type: 'te', text: '', codes: {} })), ctx);
-    await txtDrawPara(L, out, p, m, ctx);
+    // The original lines come out of the page as edited lines with no text would; the block is drawn where the
+    // first of them was in the content (so reading order stays), or over the page when none was found there.
+    const ops = await txtDrawPara(L, out, p, m, ctx);
+    await saveContentEdits(L, out, p, m.src.map((s, i) => ({ ...s, id: m.id + ':' + i, type: 'te', text: '', codes: {}, grp: m.id, ...(i === 0 ? { emit: ops } : {}) })), ctx);
   },
 };
 async function txtDrawPara(L, out, p, m, ctx) {
@@ -174,7 +188,7 @@ async function txtDrawPara(L, out, p, m, ctx) {
   const std = async () => { let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); } return sf; };
   const F = txtFrame(m), t0 = m.src[0].tm, hs = Math.hypot(t0[0], t0[1]) * F.k;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (n) => PDFNumber.of(+(+n).toFixed(4));
-  const col = txtHexRgb(m.color);
+  const col = txtHexRgb(m.color), all = [];
   for (let i = 0; i < m.lines.length; i++) {
     const line = m.lines[i]; if (!line.trim()) continue;
     const runs = glyphRuns(line, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
@@ -184,20 +198,21 @@ async function txtDrawPara(L, out, p, m, ctx) {
       const sf = await std(); r.sf = sf;
       try { r.hex = sf.encodeText(r.chars.join('')); r.w = sf.widthOfTextAtSize(r.chars.join(''), 1); } catch { const s = txtSafe(r.chars.join('')); r.hex = sf.encodeText(s); r.w = sf.widthOfTextAtSize(s, 1); }
     }
-    for (const r of runs) w += r.w * hs;
+    for (const r of runs) w += (r.w + r.chars.length * (m.tc || 0)) * hs;
     const x = m.wrap ? Math.max(0, m.wrap - w) * txtAlignK(m.align) : 0, org = txtOrigin(F, i, x);
-    const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), O('rg', col.map(N)), O('BT'), O('Tr', [N(0)]), O('Tc', [N(0)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
+    const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
       else ops.push(O('Tf', [node.newFontDictionary('CPDF', r.sf.ref), N(1)]), O('Tj', [r.hex]));
     }
     ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
-    p.pushOperators(...ops);
+    all.push(...ops);
     if (m.underline) {
       const d = m.size * .12, s0 = [org[0] - F.v[0] * d, org[1] - F.v[1] * d];
-      p.drawLine({ start: { x: s0[0], y: s0[1] }, end: { x: s0[0] + F.u[0] * w, y: s0[1] + F.u[1] * w }, thickness: Math.max(.5, m.size * .06), color: rgb(...col) });
+      all.push(...L.drawLine({ start: { x: s0[0], y: s0[1] }, end: { x: s0[0] + F.u[0] * w, y: s0[1] + F.u[1] * w }, thickness: Math.max(.5, m.size * .06), color: rgb(...col) }));
     }
   }
+  return all;
 }
 
 /* ---- text boxes (the Text tool) ---- */
@@ -262,12 +277,14 @@ window.addEventListener('pointercancel', () => { txtBarDown = false; }, true);
 function txtBarEl(fmt, opts, onChange, refocus) {
   const bar = document.createElement('div');
   bar.className = 'txt-bar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Text format');
+  // Text in a colour of its own (not one of the swatches) shows that colour first, pressed, so the bar says what it is.
+  const own = /^#[0-9a-f]{6}$/i.test(fmt.color || '') && !TXT_SWATCHES.some((c) => c.toLowerCase() === fmt.color.toLowerCase()) ? fmt.color : null;
   const btn = (k, icon, label, extra = '') => `<button type="button" class="txt-b" data-tf="${k}" ${extra} title="${label}" aria-label="${label}">${ic(icon)}</button>`;
   bar.innerHTML = [
     opts.family ? `<select data-tf="fam" aria-label="Font" title="Font">${TXT_FAMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>` : '',
     `<span class="txt-grp">${btn('smaller', 'minus', 'Smaller')}<span class="txt-size" aria-live="polite" title="Size in points"></span>${btn('bigger', 'plus', 'Bigger')}</span>`,
     `<span class="txt-grp txt-colgrp"><button type="button" class="txt-b txt-colbtn" data-tf="colors" title="Colour" aria-label="Colour" aria-expanded="false"><span class="txt-dot"></span></button></span>`,
-    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"`, pick: 'data-tf="pick"' })}</span>`,
+    `<span class="txt-grp txt-cols sw-row" role="group" aria-label="Colour">${swatchesHtml(own ? [own, ...TXT_SWATCHES.slice(0, -1)] : TXT_SWATCHES, { now: fmt.color, attrs: (c) => `data-tf="color" data-c="${c}"` + (c === own ? ' data-own=""' : ''), pick: 'data-tf="pick"' })}</span>`,
     `<span class="txt-grp">${btn('bold', 'bold', 'Bold')}${btn('italic', 'italic', 'Italic')}${btn('underline', 'underline', 'Underline')}</span>`,
     opts.align ? `<span class="txt-grp">${btn('left', 'align-left', 'Align left')}${btn('center', 'align-center', 'Centre')}${btn('right', 'align-right', 'Align right')}</span>` : '',
   ].join('');
@@ -280,6 +297,7 @@ function txtBarEl(fmt, opts, onChange, refocus) {
     for (const k of ['left', 'center', 'right']) { const b = $(`[data-tf="${k}"]`, bar); if (b) b.setAttribute('aria-pressed', (fmt.align || 'left') === k); }
     const s = $('[data-tf="fam"]', bar); if (s) s.value = fmt.famPick || fmt.fam || 'sans';
   };
+  const ownSw = $('[data-own]', bar); if (ownSw) { ownSw.title = 'Colour now'; ownSw.setAttribute('aria-label', `Colour now (${own})`); }
   // Buttons keep the focus in the text being edited.
   bar.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
   bar.addEventListener('pointerdown', (e) => { txtBarDown = true; e.stopPropagation(); });
@@ -522,6 +540,7 @@ closeLineEditor = function (commit) {
   list.push(m);
   drawMarks(le.v); changed(before);
 };
+let txtSoloHinted = false;
 const txtCoreEditDown = onEditDown;
 onEditDown = async function (e, v) {
   e.preventDefault();
@@ -535,7 +554,10 @@ onEditDown = async function (e, v) {
     const [x, y] = toPdf(v, ...localPoint(e, v));
     const cm = await contentMap(v.page);
     const L = om ? cm.lines.find((l) => sameOrigin(l.tm, om.tm)) : cm.lines.find((l) => inQuad(l.quad, x, y));
-    if (L && !txtCovered(v.entry, L)) { selectContent(null); if (await txtStartPara(v, L)) return; }
+    if (L && !txtCovered(v.entry, L)) {
+      selectContent(null); if (await txtStartPara(v, L)) return;
+      if (!txtSoloHinted) { txtSoloHinted = true; toast('This line is not part of a paragraph, so it is edited on its own.'); }
+    }
   }
   return txtCoreEditDown(e, v);
 };

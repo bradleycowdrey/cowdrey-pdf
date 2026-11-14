@@ -293,13 +293,16 @@ async function renderView(v) {
 }
 // Pictures moved or deleted with Edit PDF are left out when the page is drawn (so nothing has to be painted over
 // them, which would also hide what is drawn on top of them, such as text over a background picture).
-const imageSig = (v) => marksOf(v.entry).filter((m) => m.type === 'ie').map((m) => m.n).sort((a, b) => a - b).join(',');
+// A picture is known by its identity (raw: its place among the page's picture draws, the count saving uses too);
+// marks from before that have only n (its place among the pictures that can be picked).
+const imageSig = (v) => marksOf(v.entry).filter((m) => m.type === 'ie').map((m) => (m.raw != null ? 'r' + m.raw : 'n' + m.n)).sort().join(',');
+const imageOf = (cm, m) => (m.raw != null ? cm.images.find((i) => i.raw === m.raw) || { n: m.n, raw: m.raw, quad: m.quad, mat: quadMat(m.quad) } : cm.images[m.n]);
 async function imageSkip(v) {
   const sig = imageSig(v), hidden = new Set();
   if (!sig) return { sig, hidden, filter: null };
   let cm; try { cm = await contentMap(v.page); } catch { return { sig, hidden, filter: null }; }
   const raws = new Set();
-  for (const n of sig.split(',').map(Number)) { const im = cm.images[n]; if (im && im.raw != null) { raws.add(im.raw); hidden.add(n); } }
+  for (const m of marksOf(v.entry)) if (m.type === 'ie') { const im = imageOf(cm, m); if (im && im.raw != null) { raws.add(im.raw); hidden.add(m.id); } }
   const O = pdfjs.OPS, skipAt = new Set(); let seen = 0, k = -1;
   const filter = (i, ol) => {
     for (; seen <= i && seen < ol.fnArray.length; seen++) { const fn = ol.fnArray[seen]; if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject) { k++; if (raws.has(k)) skipAt.add(seen); } }
@@ -1205,7 +1208,7 @@ async function contentAt(v, x, y) {
   const L = cm.lines.find((l) => inQuad(l.quad, x, y));
   if (L) return { kind: 'text', L, mark: own.find((m) => m.type === 'te' && sameOrigin(m.tm, L.tm)) };
   for (let k = cm.images.length - 1; k >= 0; k--) {
-    const im = cm.images[k], mark = own.find((m) => m.type === 'ie' && m.n === im.n);
+    const im = cm.images[k], mark = own.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
     if (mark && mark.deleted) continue;
     if (inQuad(mark ? matQuad(mark.mat) : im.quad, x, y)) return { kind: 'image', im, mark };
   }
@@ -1267,7 +1270,7 @@ function drawContentMark(v, m, svg) {
   }
   if (m.type === 'ie') {
     const g = svgEl('g', { class: 'mk' });
-    if (!(v.imgHidden && v.imgHidden.has(m.n))) g.appendChild(poly(m.quad, m.bg));
+    if (!(v.imgHidden && v.imgHidden.has(m.id))) g.appendChild(poly(m.quad, m.bg));
     if (!m.deleted && m.data) {
       // The picture's top-left, top-right and bottom-left corners on screen give the SVG matrix.
       const o = toView(v, ...apply(m.mat, 0, 1)), x = toView(v, ...apply(m.mat, 1, 1)), y = toView(v, ...apply(m.mat, 0, 0));
@@ -1345,7 +1348,7 @@ async function onEditDown(e, v) {
   const own = e.target.closest && e.target.closest('.mk');
   const om = own && marksOf(v.entry).find((m) => m.id === own.dataset.id);
   if (om && om.type === 'te') { selectContent(null); return openLineEditor(await phoneZoomTo(v, om), om, false); }
-  if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: cm.images[om.n] || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
+  if (om && om.type === 'ie' && !om.deleted) { const cm = await contentMap(v.page); selectContent({ v, kind: 'image', im: imageOf(cm, om) || { n: om.n, quad: om.quad, mat: quadMat(om.quad) }, mark: om }); return startImageDrag(e, v, selContent, 'move'); }
   if (om && !CONTENT_TYPES.has(om.type)) { selectContent(null); selectMark({ key: pageKey(v.entry), id: om.id, entry: v.entry }); return startMove(e, v, om); }
   // A picture already selected: its corner handle resizes it, anywhere on it moves it.
   if (selContent && selContent.v === v && selContent.kind === 'image') {
@@ -1404,7 +1407,7 @@ async function imageMark(v, s) {
   if (s.mark) return s.mark;
   const data = await imagePng(v, s.im);
   if (!data) { toast('This picture can’t be moved, but it can be deleted or erased.'); return null; }
-  const m = { id: uid(), type: 'ie', n: s.im.n, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, mat: (s.im.mat || quadMat(s.im.quad)).slice() };
+  const m = { id: uid(), type: 'ie', n: s.im.n, raw: s.im.raw, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, mat: (s.im.mat || quadMat(s.im.quad)).slice() };
   marksOf(v.entry).push(m); s.mark = m;
   return m;
 }
@@ -1443,7 +1446,7 @@ function deleteContent() {
   const before = snapshot(), list = marksOf(s.v.entry);
   if (s.kind === 'image') {
     if (s.mark) s.mark.deleted = true;
-    else list.push({ id: uid(), type: 'ie', n: s.im.n, quad: s.im.quad, bg: sampleColors(s.v, s.im.quad).bg, data: '', mat: (s.im.mat || quadMat(s.im.quad)).slice(), deleted: true });
+    else list.push({ id: uid(), type: 'ie', n: s.im.n, raw: s.im.raw, quad: s.im.quad, bg: sampleColors(s.v, s.im.quad).bg, data: '', mat: (s.im.mat || quadMat(s.im.quad)).slice(), deleted: true });
   } else {
     if (s.mark) s.mark.deleted = true;
     else list.push({ id: uid(), type: 'ae', ref: s.a.id, rect: s.a.rect, subtype: s.a.subtype || '', deleted: true });
@@ -1697,8 +1700,9 @@ function closeLineEditor(commit) {
   phoneZoomBack();
   if (commit && text !== m.text) {
     const before = snapshot(), list = marksOf(v.entry);
+    m.text = text;
     if (text === m.orig && !isNew && !m.dx) list.splice(list.indexOf(m), 1); // back to the original: no edit left
-    else { m.text = text; if (isNew) list.push(m); }
+    else if (isNew) list.push(m);
     // What follows on the line moves with its new end (once read; that takes a moment only the first time).
     if (follow.list) teReflow(v, m, follow);
     else follow.ready.then(() => { const b2 = snapshot(); if (teReflow(v, m, follow)) { changed(b2); drawMarks(v); } });
@@ -1784,10 +1788,11 @@ function tokenizeContent(s) {
   return out;
 }
 // Walks a content stream with a text and graphics state, and calls back with each text-showing and image operator.
-function walkContent(s, fontWidth, onShow, onImage, ctm0) {
+function walkContent(s, fontWidth, onShow, onImage, ctm0, onGs) {
   const toks = tokenizeContent(s);
   let ctm = ctm0 || [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, tr = 0;
-  const gstack = [], ops = []; let operands = [], opStart = null, arrStack = [], bi = null;
+  const gstack = [], ops = []; let operands = [], opStart = null, arrStack = [], bi = null, bt = 0;
+  ops.etEnd = []; // where each text object (BT … ET) ends, by its number
   for (const t of toks) {
     if (t.t === 'op') {
       const o = t.v, a = operands, start = opStart ?? t.start, end = t.end;
@@ -1795,13 +1800,14 @@ function walkContent(s, fontWidth, onShow, onImage, ctm0) {
       const num = (k) => (a[k] && a[k].t === 'num' ? a[k].v : 0);
       if (o === 'BI') { bi = { start }; continue; }
       if (o === 'ID') continue;
-      if (o === 'EI') { if (bi) { onImage({ start: bi.start, end, ctm, inline: true }); bi = null; } continue; }
+      if (o === 'EI') { if (bi) { onImage({ start: bi.start, end, ctm, inline: true, mask: /\/(IM|ImageMask)\s+true/.test(s.slice(bi.start, end).split(/\sID\s/)[0]) }); bi = null; } continue; }
       if (bi) continue;
       if (o === 'q') gstack.push([ctm, font, fs, tc, tw, th, tl, tr]);
       else if (o === 'Q') { const g = gstack.pop(); if (g) [ctm, font, fs, tc, tw, th, tl, tr] = g; }
       else if (o === 'Tr') tr = num(0);
       else if (o === 'cm') ctm = mul([0, 1, 2, 3, 4, 5].map(num), ctm);
-      else if (o === 'BT') { tm = tlm = [1, 0, 0, 1, 0, 0]; }
+      else if (o === 'BT') { tm = tlm = [1, 0, 0, 1, 0, 0]; bt++; }
+      else if (o === 'ET') ops.etEnd[bt] = end;
       else if (o === 'Tf') { font = a[0] && a[0].v; fs = num(1); }
       else if (o === 'Tc') tc = num(0);
       else if (o === 'Tw') tw = num(0);
@@ -1821,10 +1827,11 @@ function walkContent(s, fontWidth, onShow, onImage, ctm0) {
         }
         // Cutting ' or " must keep their move to the next line (and " its spacing), or later lines shift up.
         const keep = o === "'" ? ' T* ' : o === '"' ? ` ${num(0)} Tw ${num(1)} Tc T* ` : ' ';
-        ops.push({ start, end, origin, font, fs, keep, invisible: tr === 3 || tr === 7, strings: parts.filter((p) => p.t === 'str').map((p) => p.v) });
+        ops.push({ start, end, origin, font, fs, keep, bt, ctm, invisible: tr === 3 || tr === 7, strings: parts.filter((p) => p.t === 'str').map((p) => p.v) });
         onShow && onShow(ops[ops.length - 1]);
         tm = mul([1, 0, 0, 1, adv, 0], tm);
       } else if (o === 'Do') onImage({ start, end, ctm, name: a[0] && a[0].v });
+      else if (o === 'gs' && onGs) onGs(a[0] && a[0].v, ctm);
       continue;
     }
     if (opStart == null) opStart = t.start;
@@ -1884,36 +1891,73 @@ function pageFonts(L, out, pageNode) {
 }
 const baseName = (n) => String(n || '').replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
 // Applies a page's content edits while saving: takes out what was replaced, then paints the new content.
+// A line's new text goes where its old text was in the content (after the old text's BT … ET), so the page's reading
+// order (text extraction, copy, screen readers) stays the same. `m.emit` (operators) replaces a line's own drawing,
+// once for the lines that share `m.grp` (a paragraph drawn again as a block).
 async function saveContentEdits(L, out, p, marks, ctx) {
   const edits = marks.filter((m) => CONTENT_TYPES.has(m.type) && !m.drafting);
   if (!edits.length) return;
   const { PDFName, PDFArray, PDFDict, PDFRef, PDFOperator, PDFNumber, PDFHexString, PDFRawStream, StandardFonts } = L;
   const node = p.node;
   const { fonts, fontWidth, text } = pageFonts(L, out, node);
-  // 1. Take edited lines and changed pictures out of the page's own content.
   const lines = edits.filter((m) => m.type === 'te'), pics = edits.filter((m) => m.type === 'ie');
+  const rgbOf = (hex) => { const n = parseInt(String(hex || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map((x) => PDFNumber.of(+x.toFixed(4))); };
+  const O = (name, args = []) => PDFOperator.of(name, args);
+  // 0. Each edited line's new text, made first so it can go in the old text's place.
+  const newOps = new Map();
+  for (const m of lines) {
+    const ops = m.emit || (m.text.trim() ? await teOps(L, out, node, m, fonts, ctx) : null);
+    if (ops && ops.length) newOps.set(m.id, ops);
+  }
+  // 1. Take edited lines and changed pictures out of the page's own content.
   // Contents may be one stream, an array of them, or a reference to such an array.
   const streamsOf = () => { const raw = node.get(PDFName.of('Contents')); const r = raw && out.context.lookup(raw); return r instanceof PDFArray ? r.asArray() : raw ? [raw] : []; };
   const parts = streamsOf();
   let src = parts.map((r) => { const st = out.context.lookup(r); return st ? text(st) : ''; }).join('\n');
-  const cut = [], removed = new Set(), hidden = new Set();
-  const xo = (() => { const res = node.Resources && node.Resources(); const x = res && res.lookup(PDFName.of('XObject')); return x instanceof PDFDict ? x : null; })();
-  const isImage = (name) => { const o = xo && xo.lookup(PDFName.of(name)); return o && o.dict && String(o.dict.lookup(PDFName.of('Subtype'))) === '/Image'; };
-  const samePic = (q) => { const b = quadBox(q); return pics.find((m) => !removed.has(m.id) && quadBox(m.quad).every((n, k) => Math.abs(n - b[k]) < .75)); };
+  const cut = [], removed = new Set(), hidden = new Set(), anchor = new Map();
+  const resOf = (R) => { const x = R instanceof PDFDict ? R : null; return { xo: x && x.lookup(PDFName.of('XObject')) instanceof PDFDict ? x.lookup(PDFName.of('XObject')) : null, eg: x && x.lookup(PDFName.of('ExtGState')) instanceof PDFDict ? x.lookup(PDFName.of('ExtGState')) : null }; };
+  const pageRes = resOf(node.Resources && node.Resources()), xo = pageRes.xo;
+  const subOf = (o) => (o && o.dict ? String(o.dict.lookup(PDFName.of('Subtype'))) : '');
+  const isMask = (o) => String(o && o.dict && o.dict.lookup(PDFName.of('ImageMask'))) === 'true';
+  // Pictures are found by identity, as the screen hides them: their place among the page's picture draws (forms and
+  // soft masks included, image masks not), counted the way pdf.js counts them. Marks from before that identity (no
+  // raw) are found by where they are drawn.
+  let rawK = -1;
+  const picAt = (q) => {
+    const k = ++rawK, b = quadBox(q), near = (m) => quadBox(m.quad).every((n, j) => Math.abs(n - b[j]) < .75);
+    return pics.find((m) => !removed.has(m.id) && (m.raw != null ? m.raw === k && near(m) : near(m)));
+  };
+  // Pictures a soft mask draws only count (they are never what was clicked).
+  const countForm = (st, depth) => {
+    if (!st || !st.dict || depth > 5) return;
+    const R = resOf(st.dict.lookup(PDFName.of('Resources')));
+    walkContent(text(st), fontWidth, null, (im) => {
+      if (im.inline) { if (!im.mask) rawK++; return; }
+      const o = R.xo && R.xo.lookup(PDFName.of(im.name)), sub = subOf(o);
+      if (sub === '/Image') { if (!isMask(o)) rawK++; } else if (sub === '/Form') countForm(o, depth + 1);
+    }, null, (g) => softMask(R.eg, g, depth + 1));
+  };
+  const softMask = (eg, name, depth) => {
+    const gs = eg && name && eg.lookup(PDFName.of(name)), sm = gs instanceof PDFDict ? gs.lookup(PDFName.of('SMask')) : null;
+    if (sm instanceof PDFDict) countForm(sm.lookup(PDFName.of('G')), depth);
+  };
   // A picture inside a form (a page background often is): the form is copied without it, and the page draws the copy.
   let formN = 0;
   const formCut = (dict, name, ctm, depth) => {
     const st = dict && dict.lookup(PDFName.of(name));
-    if (!st || !st.dict || depth > 5 || String(st.dict.lookup(PDFName.of('Subtype'))) !== '/Form') return null;
+    if (!st || !st.dict || depth > 5 || subOf(st) !== '/Form') return null;
     const M = st.dict.lookup(PDFName.of('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = out.context.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
-    const R = st.dict.lookup(PDFName.of('Resources')), fx = (R instanceof PDFDict && R.lookup(PDFName.of('XObject'))) || dict;
+    const R = st.dict.lookup(PDFName.of('Resources')), own = resOf(R), fx = own.xo || dict;
     const fxo = fx instanceof PDFDict ? fx : null;
     let fsrc = text(st); const fcut = [], ids = [];
     walkContent(fsrc, fontWidth, null, (im) => {
-      const o = !im.inline && fxo && fxo.lookup(PDFName.of(im.name)), sub = im.inline ? '/Image' : o && o.dict && String(o.dict.lookup(PDFName.of('Subtype')));
-      if (sub === '/Image') { const m = samePic([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); } }
-      else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
-    }, mul(fm, ctm));
+      const o = !im.inline && fxo && fxo.lookup(PDFName.of(im.name)), sub = im.inline ? '/Image' : subOf(o);
+      if (sub === '/Image') {
+        if (im.inline ? im.mask : isMask(o)) return;
+        const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
+        if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); }
+      } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
+    }, mul(fm, ctm), (g) => softMask(own.eg, g, depth + 1));
     if (!ids.length) return null;
     fcut.sort((a, b) => b[0] - a[0]);
     for (const [a, b, keep] of fcut) fsrc = fsrc.slice(0, a) + keep + fsrc.slice(b);
@@ -1925,8 +1969,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     else { key = `/CPDFFm${++formN}x${Date.now() % 100000}`; fxo.set(PDFName.of(key.slice(1)), ref); }
     return { key, ids };
   };
+  let ops = null;
   try {
-    walkContent(src, fontWidth, (op) => {
+    ops = walkContent(src, fontWidth, (op) => {
       // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
       // within the line (not at its end, where a word in another font or a link may follow).
       const f = fonts.get(op.font);
@@ -1935,17 +1980,40 @@ async function saveContentEdits(L, out, p, marks, ctx) {
         const along = dx * fr.u[0] + dy * fr.u[1], perp = dx * fr.v[0] + dy * fr.v[1];
         if (perp < -fr.size * .35 || perp > fr.size * .35 || along < -Math.max(1, fr.size * .3) || along > m.width - Math.min(1, fr.size * .1)) continue;
         if (m.font && f && f.base && baseName(f.base) !== baseName(m.font)) continue;
-        cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id); break;
+        cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id);
+        if (!anchor.has(m.id)) anchor.set(m.id, op);
+        break;
       }
     }, (im) => {
       if (!pics.length) return;
-      if (!im.inline && !isImage(im.name)) { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
-      const m = samePic([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
+      if (im.inline) { if (!im.mask) { const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); } } return; }
+      const o = xo && xo.lookup(PDFName.of(im.name)), sub = subOf(o);
+      if (sub === '/Form') { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
+      if (sub !== '/Image' || isMask(o)) return;
+      const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
       if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
-    });
-  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); }
+    }, undefined, (g) => pics.length && softMask(pageRes.eg, g, 1));
+  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); anchor.clear(); ops = null; }
+  // The new text of each line found, right after the text object it was in (back in page space there).
+  const placed = new Set(), fmt = (n) => +(+n).toFixed(6);
+  const ser = (list) => list.map((o) => o.toString()).join('\n');
+  [...newOps.keys()].forEach((id, seq) => {
+    const m = lines.find((x) => x.id === id);
+    const group = m.grp ? lines.filter((x) => x.grp === m.grp) : [m];
+    // Text whose original is clipped and covered instead (OCR text over a scan, text in a form) goes on top.
+    if (group.some((x) => !removed.has(x.id) || hidden.has(x.id) || x.ocr)) return;
+    const op = group.map((x) => anchor.get(x.id)).filter(Boolean).sort((a, b) => a.start - b.start)[0];
+    if (!op || !ops) return;
+    const at = ops.etEnd[op.bt] ?? op.end, c = op.ctm, det = c[0] * c[3] - c[1] * c[2];
+    if (Math.abs(det) < 1e-9) return;
+    const id6 = c.every((n, k) => Math.abs(n - [1, 0, 0, 1, 0, 0][k]) < 1e-9);
+    const inv = [c[3] / det, -c[1] / det, -c[2] / det, c[0] / det, (c[2] * c[5] - c[3] * c[4]) / det, (c[1] * c[4] - c[0] * c[5]) / det].map(fmt);
+    cut.push([at, at, `\nq\n${id6 ? '' : inv.join(' ') + ' cm\n'}${ser(newOps.get(id))}\nQ\n`, seq]);
+    placed.add(id);
+  });
   if (cut.length) {
-    cut.sort((a, b) => b[0] - a[0]);
+    // From the end back; text put at the same place keeps its order.
+    cut.sort((a, b) => b[0] - a[0] || (b[3] ?? -1) - (a[3] ?? -1));
     for (const [a, b, keep] of cut) src = src.slice(0, a) + (keep || ' ') + src.slice(b);
     const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
     node.set(PDFName.of('Contents'), out.context.obj([out.context.register(out.context.flateStream(bytes))])); // an array, as pdf-lib expects once the page has new resources
@@ -1962,9 +2030,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     const preRef = out.context.register(out.context.flateStream(pre)), postRef = out.context.register(out.context.flateStream('\nQ\n'));
     node.set(PDFName.of('Contents'), out.context.obj([preRef, ...streamsOf(), postRef]));
   }
-  // 3. Paint: the colour that was behind each change, then new pictures and text.
-  const rgbOf = (hex) => { const n = parseInt(String(hex || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map((x) => PDFNumber.of(+x.toFixed(4))); };
-  const O = (name, args = []) => PDFOperator.of(name, args);
+  // 3. Paint: the colour that was behind each change, then new pictures, and the text not placed above.
   for (const m of edits) {
     if (m.type === 'ae') continue;
     const q = m.type === 'te' ? lineQuad(m, .3) : m.quad;
@@ -1977,35 +2043,48 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     const key = node.newXObject('CPDFIm', im.ref);
     p.pushOperators(O('q'), O('cm', m.mat.map((n) => PDFNumber.of(+(+n).toFixed(4)))), O('Do', [key]), O('Q'));
   }
-  for (const m of lines) {
-    if (!m.text.trim()) continue;
-    const want = baseName(m.font);
-    // The PDF's own font, unless it draws nothing visible (OCR text) or is a Type3 font
-    let f = m.ocr || m.type3 || /glyphless/i.test(want) ? null : [...fonts.values()].find((x) => baseName(x.base) === want);
-    if (f) {
-      // Only letters this font really has: from its ToUnicode, and for a simple font without one, from what pdf.js read.
-      const rev = new Map(f.hasToUnicode ? f.rev : []);
-      if (!f.type0) for (const [u, code] of Object.entries(m.codes || {})) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
-      f = rev.size ? { ...f, rev } : null;
-    }
-    const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
-    const runs = glyphRuns(m.text, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
-    // A clean text state: what the page set before (invisible text, spacing, rise) must not apply to the new line.
-    const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), O('rg', rgbOf(m.color)), O('BT'), O('Tr', [PDFNumber.of(0)]), O('Tc', [PDFNumber.of(0)]), O('Tw', [PDFNumber.of(0)]), O('Tz', [PDFNumber.of(100)]), O('Ts', [PDFNumber.of(0)]), O('Tm', m.tm.map((n) => PDFNumber.of(+(+n).toFixed(4))))];
-    for (const r of runs) {
-      if (r.own) {
-        ops.push(O('Tf', [f.key, PDFNumber.of(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
-      } else {
-        let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); }
-        const key = node.newFontDictionary ? node.newFontDictionary('CPDF', sf.ref) : (() => { throw new Error('no font dictionary'); })();
-        let hex; try { hex = sf.encodeText(r.chars.join('')); } catch { hex = sf.encodeText(r.chars.map((c) => (/[\x20-\x7E]/.test(c) ? c : '?')).join('')); }
-        ops.push(O('Tf', [key, PDFNumber.of(1)]), O('Tj', [hex]));
-      }
-    }
-    ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
-    p.pushOperators(...ops);
+  for (const [id, list] of newOps) if (!placed.has(id)) p.pushOperators(...list);
+  void PDFRef; void PDFRawStream; void PDFHexString; void StandardFonts;
+}
+// An edited line drawn again: in the PDF's own font where it has the letters, else the closest standard font, with
+// the original's text state (render mode and outline, character and word spacing; its width scale and rise are in
+// its matrix). Returns the operators, in page space.
+async function teOps(L, out, node, m, fonts, ctx) {
+  const { PDFOperator, PDFNumber, PDFHexString, StandardFonts } = L;
+  const O = (name, args = []) => PDFOperator.of(name, args), N = (n) => PDFNumber.of(+(+n).toFixed(4));
+  const want = baseName(m.font);
+  // The PDF's own font, unless it draws nothing visible (OCR text) or is a Type3 font
+  let f = m.ocr || m.type3 || /glyphless/i.test(want) ? null : [...fonts.values()].find((x) => baseName(x.base) === want);
+  if (f) {
+    // Only letters this font really has: from its ToUnicode, and for a simple font without one, from what pdf.js read.
+    const rev = new Map(f.hasToUnicode ? f.rev : []);
+    if (!f.type0) for (const [u, code] of Object.entries(m.codes || {})) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
+    f = rev.size ? { ...f, rev } : null;
   }
-  void PDFRef; void PDFRawStream;
+  const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
+  const runs = glyphRuns(m.text, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
+  // The original's text state; what else the page set before (invisible text, rise) must not apply to the new line.
+  const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', teAt(m).map(N))];
+  for (const r of runs) {
+    if (r.own) {
+      ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
+    } else {
+      let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); }
+      const key = node.newFontDictionary ? node.newFontDictionary('CPDF', sf.ref) : (() => { throw new Error('no font dictionary'); })();
+      let hex; try { hex = sf.encodeText(r.chars.join('')); } catch { hex = sf.encodeText(r.chars.map((c) => (/[\x20-\x7E]/.test(c) ? c : '?')).join('')); }
+      ops.push(O('Tf', [key, N(1)]), O('Tj', [hex]));
+    }
+  }
+  ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
+  return ops;
+}
+// The colours (and, for outlined text, line width) a new line is drawn with.
+function teStateOps(L, m) {
+  const { PDFOperator, PDFNumber } = L, O = (name, args = []) => PDFOperator.of(name, args);
+  const rgb = (hex) => { const n = parseInt(String(hex || '#111111').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map((x) => PDFNumber.of(+x.toFixed(4))); };
+  const out = [O('rg', rgb(m.color))];
+  if (m.tr === 1 || m.tr === 2) out.push(O('RG', rgb(m.stroke || m.color)), O('w', [PDFNumber.of(+(+(m.lw || 0)).toFixed(4))]));
+  return out;
 }
 // A line split into runs set in the page's own font (`own`, its codes) or in a standard font (the letters). A word
 // with any letter the font lacks is set in the standard font as a whole: switching fonts inside a word splits it
@@ -2793,16 +2872,18 @@ async function drawThumb(t) {
   const v2 = page.getViewport({ scale: (+t.dataset.size || 182) / Math.max(vp.width, vp.height), rotation: rot });
   const off = document.createElement('canvas'); off.width = v2.width; off.height = v2.height;
   const g = off.getContext('2d');
-  try { await page.render({ canvas: off, canvasContext: g, viewport: v2 }).promise; } catch {}
+  // Pictures deleted or moved with Edit PDF are left out, as on the page (not painted over, which hides the text on them).
+  const skip = await imageSkip({ entry: e, page }).catch(() => ({ filter: null, hidden: new Set() }));
+  try { await page.render({ canvas: off, canvasContext: g, viewport: v2, operationsFilter: skip.filter }).promise; } catch {}
   if (thumbToken.get(t) !== tok) return;
-  try { await thumbOverlays(e, n, page, v2, g); } catch (err) { console.warn('thumbnail', err); }
+  try { await thumbOverlays(e, n, page, v2, g, skip.hidden); } catch (err) { console.warn('thumbnail', err); }
   if (thumbToken.get(t) !== tok || !t.isConnected) return;
   const c = $('canvas', t); c.width = off.width; c.height = off.height; c.getContext('2d').drawImage(off, 0, 0);
   off.width = off.height = 0;
   t.dataset.sig = sig;
 }
 // Draws the page's layers (made by the same code as on the big page, at the thumbnail's scale) onto `g`.
-async function thumbOverlays(e, n, page, vp, g) {
+async function thumbOverlays(e, n, page, vp, g, imgHidden) {
   const marks = doc.marks[pageKey(e)] || [];
   if (!marks.length && !(doc.marks.__doc || []).length) return;
   if (marks.some((m) => m.type === 'te') && !page._cmapValue) { try { page._cmapValue = await contentMap(page); } catch {} }
@@ -2811,7 +2892,7 @@ async function thumbOverlays(e, n, page, vp, g) {
   el.style.cssText = `position:fixed;left:-100000px;top:0;width:${vp.width}px;height:${vp.height}px;visibility:hidden;pointer-events:none`;
   document.body.appendChild(el);
   try {
-    const v = { el, entry: e, viewport: vp, page, rendered: true, thumb: true };
+    const v = { el, entry: e, viewport: vp, page, rendered: true, thumb: true, imgHidden };
     // Drawn at the thumbnail's scale. What is selected stays so (features keep their own state, a crop under way…);
     // a selection's outline is a page style, which a picture of the layer does not have.
     const keep = scale; scale = vp.scale;
