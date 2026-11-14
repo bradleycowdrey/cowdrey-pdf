@@ -131,4 +131,29 @@ export default async ({ test, eq, ok, open, openPdf, marks, at, selectText, WORD
     ok(Math.abs((await all(p))[1].x - x0 - 1) < .01, 'and the arrows move it');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('Ribbon: each group is a toolbar with one Tab stop; arrows move within it, Tab to the next group; Down opens a list', async () => {
+    const p = await open(); await openPdf(p);
+    await p.click('[data-rt="markup"]'); await p.waitForTimeout(150);
+    const groups = await p.$$eval('#ribbonBody .r-group:not([hidden])', (g) => g.map((x) => [x.getAttribute('role'), x.getAttribute('aria-label'), [...x.querySelectorAll('button, input')].filter((b) => b.tabIndex === 0).length]));
+    ok(groups.length >= 4, 'groups ' + groups.length);
+    ok(groups.every(([r, l, n]) => r === 'toolbar' && l && n === 1), JSON.stringify(groups));
+    eq(await p.$$eval('#ribbonBody button, #ribbonBody input', (b) => b.filter((x) => x.tabIndex === 0 && !x.closest('[hidden]')).length), groups.length, 'one Tab stop a group');
+    // from the tab, Tab enters the first group on its pressed tool (Select); Right moves along; Tab goes to the next group
+    await p.focus('#rt-markup'); await p.keyboard.press('Tab');
+    const name = () => p.evaluate(() => [document.activeElement.closest('.r-group')?.getAttribute('aria-label'), document.activeElement.dataset.cmd || document.activeElement.dataset.color || document.activeElement.dataset.rmenu]);
+    const [g0, c0] = await name(); eq(c0, 'tool_select');
+    await p.keyboard.press('ArrowRight'); const [g1, c1] = await name(); eq(g1, g0, 'stays in the group'); ok(c1 !== c0, 'moved');
+    await p.keyboard.press('ArrowLeft'); eq((await name())[1], c0);
+    await p.keyboard.press('ArrowLeft'); const [gw, last] = await name(); eq(gw, g0, 'wraps within the group'); ok(last !== c0, 'to its last item');
+    await p.keyboard.press('Tab'); const [g2] = await name(); ok(g2 && g2 !== g0, 'Tab: next group ' + g2);
+    await p.keyboard.press('Shift+Tab'); eq(await name(), [g0, last], 'Shift+Tab back, to where it was');
+    // Down on a button with a list opens it
+    await p.click('[data-rt="pages"]'); await p.waitForTimeout(100);
+    const more = await p.$('#ribbonBody [data-rmenu]'); ok(more, 'a list button');
+    await more.focus(); await p.keyboard.press('ArrowDown'); await p.waitForSelector('#popover:not([hidden])');
+    ok(await p.evaluate(() => document.activeElement.closest('#popover') !== null), 'focus in the list');
+    await p.keyboard.press('Escape'); ok(await p.evaluate(() => document.activeElement.matches('#ribbonBody [data-rmenu]')), 'Escape back to it');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

@@ -3368,7 +3368,7 @@ function renderRibbon() {
   // Groups for a selection (Picture…) come last, so showing one never moves the tools people already know.
   const [, all] = RIBBON[S.ribbon] || RIBBON.home, onSel = ([, ids]) => Array.isArray(ids) && ids.length > 0 && ids.every((id) => C[id] && C[id].contextual);
   const groups = phoneFold([...all.filter((g) => !onSel(g)), ...all.filter(onSel)]);
-  $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="group" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
+  $('#ribbonBody').innerHTML = groups.map(([label, ids, look]) => `<div class="r-group${look ? ' r-' + look : ''}" role="toolbar" aria-label="${esc(label)}"><div class="r-items">${ids === 'COLORS'
     ? swatchesHtml(COLORS, { now: swatchNow(), attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${swatchNow().toLowerCase()}"` })
     : ids.filter(shown).map(ribbonButton).join('')}</div><div class="r-label">${label}</div></div>`).join('');
   $$('#ribbonBody [data-color]').forEach((b) => b.onclick = () => pickColor(b.dataset.color));
@@ -3463,6 +3463,34 @@ $$('.r-scroll').forEach((a) => {
 $('#ribbonTabs').addEventListener('scroll', ribbonEdges, { passive: true });
 window.addEventListener('resize', ribbonEdges);
 // Keyboard focus that lands on a button out of view brings it into view.
+/* Each ribbon group is a toolbar with one Tab stop (the button last used there, or else the one pressed, or the first):
+   Tab and Shift+Tab move between groups, the arrow keys (and Home, End) within one, Down opens a button's list. */
+const rbLast = {}; // tab:group -> the item last focused in it
+const rbKey = (b) => b.dataset.cmd || (b.dataset.rmenu ? 'menu:' + b.dataset.rmenu : '') || (b.dataset.color ? 'color:' + b.dataset.color : '') || (b.matches('[data-colorpick]') ? 'pick' : '');
+const rbItems = (g) => $$('button:not([disabled]), input:not([disabled])', g).filter((b) => !b.closest('[hidden]'));
+const rbGroupKey = (g) => S.ribbon + ':' + g.getAttribute('aria-label');
+function rbRoving() {
+  $$('#ribbonBody .r-group').forEach((g) => {
+    const items = rbItems(g), want = rbLast[rbGroupKey(g)];
+    const cur = (want && items.find((b) => rbKey(b) === want)) || items.find((b) => b.getAttribute('aria-pressed') === 'true' || b.getAttribute('aria-checked') === 'true') || items[0];
+    $$('button, input', g).forEach((b) => { b.tabIndex = b === cur ? 0 : -1; });
+  });
+}
+$('#ribbonBody').addEventListener('focusin', (e) => {
+  const g = e.target.closest('.r-group'); if (!g || !rbKey(e.target)) return;
+  rbLast[rbGroupKey(g)] = rbKey(e.target);
+  $$('button, input', g).forEach((b) => { b.tabIndex = b === e.target ? 0 : -1; });
+});
+$('#ribbonBody').addEventListener('keydown', (e) => {
+  const g = e.target.closest('.r-group'); if (!g || e.altKey || e.ctrlKey || e.metaKey) return;
+  const items = rbItems(g), k = items.indexOf(e.target); if (k < 0) return;
+  const menu = e.target.closest('[data-rmenu]');
+  if (e.key === 'ArrowDown' && menu) { e.preventDefault(); e.stopPropagation(); if (menu.getAttribute('aria-expanded') !== 'true') { closePopover(); openRibbonMenu(menu.dataset.rmenu); } return; }
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  const n = step ? items[(k + step + items.length) % items.length] : e.key === 'Home' ? items[0] : e.key === 'End' ? items[items.length - 1] : null;
+  if (!n) return;
+  e.preventDefault(); e.stopPropagation(); n.focus();
+});
 $('#ribbonBody').addEventListener('focusin', (e) => { const b = e.target.closest('button'); if (b && b.matches(':focus-visible')) scrollIntoRow($('#ribbonBody'), b); });
 function refreshRibbon() {
   $$('#ribbonBody [data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); if (c.pressed) b.setAttribute('aria-pressed', !!c.pressed()); });
@@ -3486,6 +3514,7 @@ function refreshRibbon() {
   $('#saveBtn').disabled = !has();
   $$('.tb-actions .tb-undo[data-cmd]').forEach((b) => { const c = C[b.dataset.cmd]; b.disabled = !!(c.enabled && !c.enabled()); });
   $$('[data-cmd="undo"], [data-cmd="redo"]').forEach((b) => { if (pop.contains(b)) return; const c = C[b.dataset.cmd], t = c.label + (c.key ? ' (' + fmtKey(c.key) + ')' : ''); if (b.title !== t) { b.title = t; if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', c.label); } });
+  rbRoving();
   scheduleMacMenu();
 }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-cmd]'); if (b && !pop.contains(b)) run(b.dataset.cmd); });
