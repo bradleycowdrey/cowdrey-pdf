@@ -195,10 +195,19 @@ function setSaved(saved, opened) {
 /* ---------------- rendering ---------------- */
 const viewer = $('#viewer'), pagesEl = $('#pages');
 async function pageOf(entry) { return pdfDocs.get(entry.src).getPage(entry.i + 1); }
+// The zoom follows the window: 'fit' (Fit width) or 'page' (Fit page: the whole page in view).
+const zoomFits = () => S.zoom === 'fit' || S.zoom === 'page';
+// Page layout: 'scroll' (one page after another), 'two' (two pages side by side; S.cover puts the first page on
+// its own, as a book's cover) or 'single' (one page at a time).
+const twoUp = () => S.layout === 'two' && !!doc && doc.pages.length > 1;
+const singleUp = () => S.layout === 'single';
 function fitScale(page, entry) {
   const v = page.getViewport({ scale: 1, rotation: (page.rotate + entry.rot) % 360 });
+  const across = twoUp() ? 2 : 1, w = (viewer.clientWidth - (isPhone() ? 32 : 48) - (across - 1) * 10) / across / v.width;
+  // Fit page: the whole page (or two pages) in the window, with a little room above and below.
+  if (S.zoom === 'page') return Math.max(0.1, Math.min(4, w, (viewer.clientHeight - 40) / v.height));
   // Fit the width, but no larger than 150%: a page wider than that reads worse, not better.
-  return Math.max(0.25, Math.min(1.5, (viewer.clientWidth - (isPhone() ? 32 : 48)) / v.width));
+  return Math.max(0.25, Math.min(1.5, w));
 }
 let io, layoutGen = 0;
 async function layoutPages(keep) {
@@ -211,7 +220,10 @@ async function layoutPages(keep) {
   if (!doc.pages.length) { pagesEl.innerHTML = '<p class="empty-note">This PDF has no pages left. Insert a page or undo.</p>'; updateStatus(); return; }
   const first = await pageOf(doc.pages[0]);
   if (gen !== layoutGen) return false;
-  scale = S.zoom === 'fit' ? fitScale(first, doc.pages[0]) : S.zoom / 100;
+  scale = zoomFits() ? fitScale(first, doc.pages[0]) : S.zoom / 100;
+  // Two pages side by side (the first on its own with a cover), or one page at a time.
+  const two = twoUp(), cover = two && !!S.cover;
+  pagesEl.classList.toggle('two', two); pagesEl.classList.toggle('single', singleUp());
   io && io.disconnect();
   io = new IntersectionObserver((ents) => { for (const e of ents) if (e.isIntersecting) renderView(views[+e.target.dataset.n]); }, { root: viewer, rootMargin: '600px 0px' });
   for (let n = 0; n < doc.pages.length; n++) {
@@ -221,6 +233,7 @@ async function layoutPages(keep) {
     const viewport = page.getViewport({ scale, rotation: (page.rotate + entry.rot) % 360 });
     const el = document.createElement('div');
     el.className = 'page'; el.dataset.n = n;
+    if (two) { const right = cover ? n % 2 === 0 : n % 2 === 1; el.classList.add(right ? 'side-r' : 'side-l'); el.style.gridColumn = right ? 2 : 1; }
     el.style.width = viewport.width + 'px'; el.style.height = viewport.height + 'px';
     el.style.setProperty('--scale-factor', scale); el.style.setProperty('--total-scale-factor', scale); el.style.setProperty('--user-unit', 1);
     el.setAttribute('role', 'region'); el.setAttribute('aria-label', `Page ${n + 1} of ${doc.pages.length}`);
@@ -229,7 +242,7 @@ async function layoutPages(keep) {
     io.observe(el);
   }
   updateZoomLabel();
-  if (keep) goPage(anchor, true);
+  if (keep) goPage(anchor, true); else if (singleUp()) showOnly(0);
   updateStatus();
   releaseFar();
   return true;
@@ -389,20 +402,26 @@ function navUnlock() { navLock = 0; clearTimeout(navTimer); }
 function goPage(n, instant) {
   if (!views.length) return;
   n = Math.max(0, Math.min(views.length - 1, n));
-  current = n;
+  current = n; showOnly(n);
   const lock = ++navLock; clearTimeout(navTimer);
   navTimer = setTimeout(() => { if (navLock === lock) navLock = 0; }, 1500);
   viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant || reduceMotion.matches ? 'instant' : 'smooth' });
   updateStatus(); markThumb();
 }
+// One page at a time: only the page asked for is shown.
+function showOnly(n) {
+  if (!singleUp()) return;
+  views.forEach((v, k) => v.el.classList.toggle('shown', k === n));
+}
 viewer.addEventListener('scrollend', () => { const lock = navLock; if (lock) setTimeout(() => { if (navLock === lock) navLock = 0; }, 50); });
 for (const ev of ['wheel', 'touchstart', 'pointerdown']) viewer.addEventListener(ev, navUnlock, { passive: true });
 viewer.addEventListener('keydown', (e) => { if (/^(Arrow|Page|Home|End| )/.test(e.key)) navUnlock(); });
 viewer.addEventListener('scroll', () => {
-  if (!views.length || navLock) return;
+  if (!views.length || navLock || singleUp()) return;
   const mid = viewer.scrollTop + viewer.clientHeight / 3;
   let n = 0;
-  for (let k = 0; k < views.length; k++) if (views[k].el.offsetTop <= mid) n = k;
+  // Two pages side by side: the left one of the pair in view (pages on one row share their top).
+  for (let k = 0; k < views.length; k++) if (views[k].el.offsetTop <= mid && (!k || views[k].el.offsetTop !== views[k - 1].el.offsetTop)) n = k;
   if (n !== current) { current = n; updateStatus(); markThumb(); }
 }, { passive: true });
 function updateStatus() {
@@ -490,12 +509,12 @@ viewer.addEventListener('touchmove', (e) => {
 const touchDone = (e) => { if (pinch && pinch.kind === 'touch' && e.touches.length < 2) pinchEnd(); };
 viewer.addEventListener('touchend', touchDone); viewer.addEventListener('touchcancel', touchDone);
 function updateZoomLabel() {
-  $('#zoomLabel').textContent = S.zoom === 'fit' ? `Fit · ${Math.round(scale * 100)}%` : `${S.zoom}%`;
+  $('#zoomLabel').textContent = S.zoom === 'fit' ? `Fit · ${Math.round(scale * 100)}%` : S.zoom === 'page' ? `Fit page · ${Math.round(scale * 100)}%` : `${S.zoom}%`;
   $('#zoomRange').value = Math.round(scale * 100);
 }
 $('#zoomRange').addEventListener('change', (e) => setZoom(+e.target.value));
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (doc && S.zoom === 'fit') layoutPages(true); }, 200); });
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (doc && zoomFits()) layoutPages(true); }, 200); });
 
 /* ---------------- mark-up ----------------
    Every mark lives in PDF coordinates (points, y up), converted to the screen with the page's viewport.
@@ -3155,7 +3174,7 @@ function toggleSidebar(on) {
   }
   sideInert(false);
   S.sidebar = on ?? !S.sidebar; saveSettings(); app.dataset.sidebar = S.sidebar ? 'on' : 'off';
-  if (doc && S.zoom === 'fit') setTimeout(() => layoutPages(true), 50);
+  if (doc && zoomFits()) setTimeout(() => layoutPages(true), 50);
 }
 
 // While the phone sidebar is open, everything behind its scrim is out of reach (inert), and Tab goes round inside it.
@@ -3408,8 +3427,9 @@ cmd('sidebar', { label: 'Sidebar', icon: 'panel-left', key: 'Mod-Alt-s', pressed
 cmd('darkPage', { label: 'Dark pages', icon: 'moon-star', pressed: () => S.darkPage, run: () => { S.darkPage = !S.darkPage; saveSettings(); applyTheme(); refreshRibbon(); } });
 cmd('zoomIn', { label: 'Zoom in', icon: 'zoom-in', key: 'Mod-=', enabled: has, run: () => setZoom(Math.min(400, Math.round(scale * 100) + 10)) });
 cmd('zoomOut', { label: 'Zoom out', icon: 'zoom-out', key: 'Mod--', enabled: has, run: () => setZoom(Math.max(25, Math.round(scale * 100) - 10)) });
-cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-0', enabled: has, run: () => setZoom('fit') });
-cmd('zoom100', { label: 'Actual size', icon: 'scan', enabled: has, run: () => setZoom(100) });
+cmd('zoomFit', { label: 'Fit width', icon: 'move-horizontal', key: 'Mod-2', enabled: has, pressed: () => S.zoom === 'fit', run: () => setZoom('fit') });
+cmd('zoomPage', { label: 'Fit page', icon: 'scan', key: 'Mod-0', enabled: has, pressed: () => S.zoom === 'page', run: () => setZoom('page') });
+cmd('zoom100', { label: 'Actual size', icon: 'scan-line', key: 'Mod-1', enabled: has, pressed: () => S.zoom === 100, run: () => setZoom(100) });
 [['system', 'Match system', 'sun-moon'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].forEach(([v, l, i]) => cmd('theme_' + v, { label: 'Appearance: ' + l, icon: i, pressed: () => S.theme === v, run: () => { S.theme = v; saveSettings(); applyTheme(); } }));
 cmd('about', { label: 'About Cowdrey.PDF', icon: 'info', run: about });
 cmd('shortcuts', { label: 'Keyboard shortcuts', icon: 'keyboard', get hidden() { return !matchMedia('(any-pointer: fine)').matches; }, run: shortcutsDialog }); // not without a keyboard
@@ -3429,7 +3449,7 @@ const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Sh
 const MENUS = [
   ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
-  ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
+  ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
@@ -3444,8 +3464,8 @@ const menuIcon = (icon) => icon ? ic(icon) : '<span></span>', menuChk = (on) => 
 function menuHtml(ids) {
   let html = '', group = false;
   for (const id of ids.filter(shown)) {
-    const radio = /^theme_/.test(id);
-    if (radio !== group) { html += radio ? '<div role="group" aria-label="Appearance">' : '</div>'; group = radio; }
+    const radio = /^theme_/.test(id) ? 'Appearance' : /^vw_lay_/.test(id) ? 'Page layout' : false;
+    if (radio !== group) { html += (group ? '</div>' : '') + (radio ? `<div role="group" aria-label="${radio}">` : ''); group = radio; }
     if (id === '-') { html += '<div class="msep"></div>'; continue; }
     const c = C[id], on = c.pressed ? !!c.pressed() : null, dis = c.enabled && !c.enabled();
     const role = on === null ? 'role="menuitem"' : `role="${radio ? 'menuitemradio' : 'menuitemcheckbox'}" aria-checked="${on}"`;
@@ -3642,7 +3662,7 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
+  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'sidebar', 'darkPage'], 'rows']]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
   markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
@@ -3900,7 +3920,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (mod) {
     const key = (e.shiftKey ? 'Shift-' : '') + (e.altKey ? 'Alt-' : '') + e.key.toLowerCase();
-    const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
+    const map = { 'o': 'open', 's': 'save', 'shift-s': 'saveCopy', 'p': 'print', 'z': 'undo', 'shift-z': 'redo', 'y': 'redo', 'f': 'find', '=': 'zoomIn', '+': 'zoomIn', '-': 'zoomOut', '0': 'zoomPage', '1': 'zoom100', '2': 'zoomFit', 'r': 'rotR', 'alt-s': 'sidebar' };
     const id = map[key.replace('Shift-', 'shift-').replace('Alt-', 'alt-')];
     if (id && !(typing && ['z', 'shift-z', 'y'].includes(key.toLowerCase()))) { e.preventDefault(); run(id); }
     return;
@@ -4020,7 +4040,7 @@ async function beforeQuit() {
   }
   NATIVE.core.invoke('quit_app').catch(() => {});
 }
-const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
+const ACCEL = { 'Mod-o': 'CmdOrCtrl+O', 'Mod-s': 'CmdOrCtrl+S', 'Mod-Shift-s': 'CmdOrCtrl+Shift+S', 'Mod-p': 'CmdOrCtrl+P', 'Mod-z': 'CmdOrCtrl+Z', 'Mod-Shift-z': 'CmdOrCtrl+Shift+Z', 'Mod-f': 'CmdOrCtrl+F', 'Mod-=': 'CmdOrCtrl+=', 'Mod--': 'CmdOrCtrl+-', 'Mod-0': 'CmdOrCtrl+0', 'Mod-1': 'CmdOrCtrl+1', 'Mod-2': 'CmdOrCtrl+2', 'Mod-r': 'CmdOrCtrl+R', 'Mod-Alt-s': 'CmdOrCtrl+Alt+S', 'Mod-Shift-r': 'CmdOrCtrl+Shift+R' };
 // The Mac menu bar, built from the same menus. Undo and Redo are the app's own (the PDF edits), and Cut, Copy,
 // Paste and Select All are the system's, for text fields. Checkmarks are rebuilt whenever something changes.
 var lastMenu = '', menuTimer = null; // var: applyTheme can run before this line

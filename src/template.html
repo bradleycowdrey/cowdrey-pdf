@@ -158,6 +158,12 @@ button { font: inherit; color: inherit; }
 .viewer { position: relative; overflow: auto; background: var(--canvas); min-width: 0; touch-action: pan-x pan-y; } /* a pinch zooms the pages, not the window */
 .viewer:focus-visible { outline-offset: -3px; }
 .pages { display: flex; flex-direction: column; align-items: safe center; gap: 18px; padding: 24px 16px 64px; }
+/* Two pages side by side (each pair meets in the middle), or one page at a time. */
+.pages.two { display: grid; grid-template-columns: repeat(2, max-content); justify-content: safe center; align-items: start; gap: 18px 10px; }
+.pages.two > .page.side-l { justify-self: end; }
+.pages.two > .page.side-r { justify-self: start; }
+.pages.two > .empty-note { grid-column: 1 / -1; }
+.pages.single > .page:not(.shown) { display: none; }
 .page { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; --scale-round-x: 1px; --scale-round-y: 1px; color-scheme: light; }
 .page canvas.pdf { position: absolute; inset: 0; width: 100%; height: 100%; }
 .app[data-darkpage="on"] .page canvas.pdf { filter: invert(.92) hue-rotate(180deg); }
@@ -413,6 +419,8 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   body, .app, .workspace, .viewer { display: block !important; height: auto !important; overflow: visible !important; background: #fff !important; }
   .pages { padding: 0; gap: 0; }
   .page { box-shadow: none; break-after: page; }
+  .pages.two { display: flex; }
+  .pages.single > .page:not(.shown) { display: block; }
   .app[data-darkpage="on"] .page canvas.pdf { filter: none; }
 }
 </style>
@@ -477,7 +485,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   </div>
   <footer class="statusbar">
     <button class="icon-btn sb-pages" type="button" data-cmd="sidebar" title="Pages and outline" aria-label="Pages and outline"><i data-lucide="panel-left"></i></button>
-    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> of <span id="pageCount">0</span></span>
+    <span>Page <input class="page-jump" id="pageJump" inputmode="numeric" aria-label="Page number"> <span id="pageOf">of </span><span id="pageCount">0</span><span id="pageEnd"></span></span>
     <span class="mode-chip" id="modeChip" role="status" hidden><span class="mode-text"></span><button class="mode-stop" type="button" title="Stop (Esc)" aria-label="Stop and go back to Select"><i data-lucide="x"></i></button></span>
     <span class="sb-spacer"></span>
     <span class="sb-brand">Made by Bradley Cowdrey. Free. Forever. · <a href="https://bradcowdrey.com" target="_blank" rel="noopener">bradcowdrey.com</a></span>
