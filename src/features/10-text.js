@@ -509,10 +509,12 @@ function txtCloseEditor(commit, done = false) {
   const text = E.ta.value.replace(/\r/g, '');
   E.ta.remove();
   if (had) viewer.focus({ preventScroll: true }); // the keys go on working on the page
-  if (commit) return Promise.resolve(E.done(text, E.fmt, done)).catch((e) => console.warn(e)).finally(() => drawMarks(E.v));
+  if (commit) { const w = Promise.resolve(E.done(text, E.fmt, done)).catch((e) => console.warn(e)).finally(() => { txtPending.delete(w); drawMarks(E.v); }); txtPending.add(w); return w; }
   drawMarks(E.v);
 }
-FEATURE.commitEdits.push(() => txtCloseEditor(true)); // a paragraph or text box being typed is kept before a save
+// A paragraph or text box being typed, or still being kept (closed a moment ago), is in the PDF before a save.
+const txtPending = new Set();
+FEATURE.commitEdits.push(async () => { txtCloseEditor(true); await Promise.all([...txtPending]); });
 const txtFmtOf = (m) => ({ size: m.size, color: m.color, bold: !!m.bold, italic: !!m.italic, underline: !!m.underline, align: m.align || 'left', fam: m.fam || 'sans', famPick: m.famPick || m.fam || 'sans', face: m.face || '', spacing: +m.spacing || 0 });
 const txtSameFmt = (a, b) => ['size', 'color', 'bold', 'italic', 'underline', 'align', 'face', 'spacing'].every((k) => String(a[k] ?? (k === 'spacing' ? 0 : '')) === String(b[k] ?? (k === 'spacing' ? 0 : '')));
 const txtCss = (fam, f, px) => `${f.bold ? 'bold ' : ''}${f.italic ? 'italic ' : ''}${px}px ${cssFamily(fam)}`;

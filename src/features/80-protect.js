@@ -873,7 +873,7 @@ async function protCompress(L, out, pages, opt) {
   const save = out.save.bind(out);
   out.save = async (o = {}) => {
     const opts = { useObjectStreams: true, ...o }, orig = protOnlyCompress() ? doc.sources[0] : null;
-    const said = () => { if (!protMeasuring) toast('Compressing would not make this PDF smaller, so it was saved as it was'); };
+    const said = () => { if (!protMeasuring) toast('This PDF is already compact, so it was saved as it was'); };
     let res;
     if (!was.length) res = await save(opts);
     else {

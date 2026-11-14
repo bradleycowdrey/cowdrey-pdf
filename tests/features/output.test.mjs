@@ -282,7 +282,7 @@ export default async (h) => {
       await compressAt(p, lv);
       const out = await savedOf(p);
       ok(out.length <= size0, `${lv}: ${size0} → ${out.length}`);
-      ok(/would not make this PDF smaller/.test(await p.evaluate(() => document.body.textContent)), 'said so');
+      ok(/already compact, so it was saved as it was/.test(await p.evaluate(() => document.body.textContent)), 'said so');
       await p.ctx.close();
     }
     // With an edit, compressing still never gives a bigger file than not compressing.
