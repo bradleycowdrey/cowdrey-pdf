@@ -3662,7 +3662,7 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'sidebar', 'darkPage'], 'rows']]],
+  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['tool_hand', 'vw_layout', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'sidebar', 'darkPage'], 'rows', 'keep']]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
   markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
@@ -3768,7 +3768,7 @@ function phoneFold(groups) {
   if (!isPhone()) return groups;
   const out = [], members = (ids) => ids.filter(shown), on = (id) => !!(C[id].pressed && C[id].pressed());
   for (let k = 0; k < groups.length; k++) {
-    const [label, ids, look] = groups[k];
+    const [label, ids, look, keep] = groups[k]; // keep: a compact group on wide screens, big buttons on a phone
     if (look === 'swatches') {
       const next = groups[k + 1], style = next && next[0] === 'Style' && Array.isArray(next[1]) ? members(next[1]) : [];
       if (style.length) k++;
@@ -3778,7 +3778,7 @@ function phoneFold(groups) {
     let list = Array.isArray(ids) ? members(ids) : [], name = label;
     // groups of small buttons side by side (Text box, Add) are one button, named after the last of them
     while (look === 'rows' && groups[k + 1] && groups[k + 1][2] === 'rows' && Array.isArray(groups[k + 1][1])) { k++; name = groups[k][0]; list = [...list, ...members(groups[k][1])]; }
-    if (!look || list.length < 2) { out.push(groups[k]); continue; }
+    if (!look || keep || list.length < 2) { out.push(groups[k]); continue; }
     const label2 = name, face = () => list.find(on) || (list.includes(foldLast[label2]) ? foldLast[label2] : list[0]);
     cmd('fold:' + name, look === 'icons'
       ? { get label() { return C[face()].label; }, get icon() { return C[face()].icon; }, get rlabel() { return C[face()].rlabel; }, menu: list, pressed: () => on(face()), enabled: () => !C[face()].enabled || C[face()].enabled(), run: () => run(face()) }

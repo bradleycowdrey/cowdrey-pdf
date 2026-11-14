@@ -350,13 +350,15 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .tb-actions .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
   .tb-actions .icon-btn { width: 40px; height: 40px; }
   .workspace, .app[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
+  .sidebar { position: fixed; z-index: 30; top: 0; bottom: 0; left: 0; width: min(320px, 88vw); background: var(--surface); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; padding-top: env(safe-area-inset-top, 0px); }
   .app[data-sidebar="open"] .sidebar { visibility: visible; transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); transition: transform .2s, visibility 0s; } /* visible at once, so it can take focus */
   .app[data-sidebar="open"]::after { content: ""; position: fixed; inset: 0; z-index: 29; background: rgba(18, 12, 15, .35); }
   .side-close { display: grid; flex: none; width: 40px; height: 40px; margin-right: 4px; }
   .side-tabs button { min-height: 40px; }
-  .side-tabs.seg { margin: 8px 2px 8px 8px; }
-  .side-tabs.seg > button { flex-direction: column; gap: 1px; padding: 4px 0; font-size: 11px; letter-spacing: -.01em; line-height: 1.2; }
+  .side-tabs.seg { margin: 8px 2px 8px 8px; grid-auto-columns: auto; } /* each tab at least as wide as its name */
+  .side-tabs.seg > button { min-width: auto; }
+  @media (max-width: 369px) { .side-tabs.seg > button { min-width: 0; } } /* the narrowest phones: names may be cut */
+  .side-tabs.seg > button { flex-direction: column; gap: 1px; padding: 4px 3px; font-size: 11px; letter-spacing: -.01em; line-height: 1.2; }
   .side-tabs.seg > button > svg { width: 16px; height: 16px; }
   .side-tabs.seg > button > span { position: static; width: auto; height: auto; overflow: hidden; clip-path: none; text-overflow: ellipsis; max-width: 100%; }
   .r-label { display: none; }

@@ -148,8 +148,8 @@ TEST_HOOKS.pageLabel = (n) => vwLabel(n);
 /* ---- attached files: a sidebar tab listing them, Save for each, Attach file… to add one ---- */
 {
   const tabs = $('.side-tabs'), b = document.createElement('button');
-  Object.assign(b, { type: 'button', title: 'Attachments', innerHTML: `${ic('paperclip')}<span>Files</span>` });
-  b.setAttribute('role', 'tab'); b.dataset.side = 'files'; b.setAttribute('aria-selected', 'false'); b.setAttribute('aria-controls', 'sidePanel'); b.setAttribute('aria-label', 'Attachments');
+  Object.assign(b, { type: 'button', title: 'Attachments', innerHTML: `${ic('paperclip')}<span>Attachments</span>` });
+  b.setAttribute('role', 'tab'); b.dataset.side = 'files'; b.setAttribute('aria-selected', 'false'); b.setAttribute('aria-controls', 'sidePanel');
   b.addEventListener('click', () => setSide('files'));
   tabs.insertBefore(b, $('[data-side="docs"]', tabs));
 }
@@ -286,10 +286,11 @@ setTimeout(async () => {
 }, 5000);
 
 /* ---- where it all goes ---- */
-ribbonAdd('markup', 'Add', ['vw_attach']);
 { // View menu: after the zoom, the Hand tool, the layouts and Attachments
   const vm = MENUS.find(([t]) => t === 'View')[1], k = vm.indexOf('zoom100');
   vm.splice(k < 0 ? vm.length : k + 1, 0, '-', 'tool_hand', '-', ...VW_LAYOUTS, '-', 'vw_files');
+  const em = MENUS.find(([t]) => t === 'Edit')[1], j = em.indexOf('image'); // Edit: after Add picture
+  em.splice(j < 0 ? em.length : j + 1, 0, 'vw_attach');
 }
 addStyle(`
 .app[data-tool="hand"] .viewer, .app.vw-space .viewer { cursor: grab; user-select: none; -webkit-user-select: none; }

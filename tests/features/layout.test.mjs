@@ -5,12 +5,12 @@ export default async (h) => {
   const run = (p, id) => p.evaluate((i) => window.__cowdreyPdf.run(i), id).then(() => p.waitForTimeout(200));
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
 
-  await test('layout: the four sidebar tabs sit in one row, named by tooltip and for screen readers; a phone shows the names too', async () => {
+  await test('layout: the five sidebar tabs sit in one row, named by tooltip and for screen readers; a phone shows the names too', async () => {
     const p = await open(); await openPdf(p);
     const tabs = await p.$$eval('.side-tabs [data-side]', (b) => b.map((x) => { const r = x.getBoundingClientRect(); return { side: x.dataset.side, top: Math.round(r.top), h: r.height, title: x.title, name: x.textContent.trim(), icon: !!x.querySelector('svg') }; }));
-    eq(tabs.map((t) => t.side), ['thumbs', 'outline', 'docs', 'comments']);
+    eq(tabs.map((t) => t.side), ['thumbs', 'outline', 'files', 'docs', 'comments']);
     eq(new Set(tabs.map((t) => t.top)).size, 1, 'one row: ' + JSON.stringify(tabs));
-    eq(tabs.map((t) => [t.title, t.name, t.icon]), [['Pages', 'Pages', true], ['Outline', 'Outline', true], ['Recent', 'Recent', true], ['Comments', 'Comments', true]]);
+    eq(tabs.map((t) => [t.title, t.name, t.icon]), [['Pages', 'Pages', true], ['Outline', 'Outline', true], ['Attachments', 'Attachments', true], ['Recent', 'Recent', true], ['Comments', 'Comments', true]]);
     ok(tabs.every((t) => t.h <= 44), 'short tabs');
     eq(await p.$eval('.side-tabs [data-side="comments"]', (b) => b.getAttribute('aria-controls')), 'sidePanel');
     await p.click('.side-tabs [data-side="comments"]'); await p.waitForSelector('#sidePanel .cm-tools');

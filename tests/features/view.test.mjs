@@ -187,9 +187,9 @@ export default async (h) => {
 
   await test('view: Attach file adds a file that is kept in the saved PDF; undo takes it back', async () => {
     const p = await open(); await reopen(p, await attachedPdf());
-    await p.click('[data-rt="markup"]'); ok(await p.$('#ribbonBody [data-cmd="vw_attach"]'), 'Comment > Add > Attach file');
+    await p.click('#menubar button:has-text("Edit")');
     const chooser = p.waitForEvent('filechooser');
-    await p.click('#ribbonBody [data-cmd="vw_attach"]');
+    await p.click('#popover [data-cmd="vw_attach"]');
     await (await chooser).setFiles([{ name: 'hello.txt', mimeType: 'text/plain', buffer: Buffer.from('Another hello') }, { name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('# Plan') }]);
     await p.waitForTimeout(800);
     eq(await p.evaluate(() => document.querySelector('[data-side="files"]').getAttribute('aria-selected')), 'true', 'the panel opens');
