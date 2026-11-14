@@ -229,13 +229,13 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
-  await h.test('comments: the Comment tab fits 1440 and 1280 wide windows: Signature, Stamp and the Comments list in view', async () => {
+  await h.test('comments: the Comment tab fits 1440 and 1280 wide windows: Stamp and the Comments list in view (Signature is on Protect)', async () => {
     for (const width of [1440, 1280]) {
       const p = await open({ width }); await openPdf(p);
       await p.click('[data-rt="markup"]'); await p.waitForTimeout(150);
       const [sw, cw, right] = await p.$eval('#ribbonBody', (e) => [e.scrollWidth, e.clientWidth, e.getBoundingClientRect().right]);
       ok(sw <= cw, `${width}: no hidden groups (${sw}/${cw})`);
-      for (const id of ['sign', 'cm_stamp', 'cm_list', 'tool_rect', 'cm_cloud', 'cm_area', 'cm_typewriter']) ok(await p.$eval(`#ribbonBody [data-cmd="${id}"]`, (b, r) => b.getBoundingClientRect().right <= r && b.getBoundingClientRect().width > 20, right), `${width}: ${id} in view`);
+      for (const id of ['cm_stamp', 'cm_list', 'tool_rect', 'cm_cloud', 'cm_area', 'cm_typewriter']) ok(await p.$eval(`#ribbonBody [data-cmd="${id}"]`, (b, r) => b.getBoundingClientRect().right <= r && b.getBoundingClientRect().width > 20, right), `${width}: ${id} in view`);
       eq(await p.$eval('#ribbonBody [data-cmd="cm_cloud"]', (b) => [b.title, b.textContent.trim()]), ['Cloud', 'Cloud'], 'icon buttons keep their names');
       await p.ctx.close();
     }

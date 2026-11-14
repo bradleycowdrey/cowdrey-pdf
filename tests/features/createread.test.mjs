@@ -24,7 +24,7 @@ export default async (h) => {
     const d = await PDFDocument.load(await savedOf(p));
     eq(sizesOf(d), [[842, 595], [842, 595], [842, 595]]);
     // remembered for next time; Legal portrait from the File menu
-    await p.click('#menubar [data-menu="0"]'); await p.click('#popover [data-cmd="crdNewBlank"]');
+    await p.click('#fileBtn'); await p.click('#popover [data-cmd="crdNewBlank"]');
     await p.waitForSelector('#dialog[open] #crdSize');
     eq(await p.inputValue('#crdSize'), 'a4');
     await p.selectOption('#crdSize', 'legal'); await p.click('label:has(input[name="crdOri"][value="p"])');

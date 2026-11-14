@@ -199,7 +199,7 @@ export default async (h) => {
     // the Rotate face rotates right; Select all pages (the menu, or Ctrl+A on a page in the sidebar)
     await p.click('#ribbonBody [data-cmd="rotR"]'); await settle(p);
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.rot)), [90, 0, 0, 0]);
-    await p.click('#menubar button:text-is("Pages")'); await p.waitForSelector('#popover:not([hidden])');
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('Pages')); await p.waitForSelector('#popover:not([hidden])');
     ok((await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent))).includes('Select all pages'), 'menu says Select all pages');
     await p.keyboard.press('Escape');
     await p.focus('.thumb[data-n="0"]'); await p.keyboard.press('Control+a'); await settle(p);

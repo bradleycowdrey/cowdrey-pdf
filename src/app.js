@@ -3507,10 +3507,10 @@ cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden:
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
-  ['File', ['open', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print']],
+  ['File', ['open', 'openRecent', 'save', 'saveCopy', 'share', '-', 'merge', 'exportImage', 'exportText', '-', 'print', '-', 'closeDoc']],
   ['Edit', ['undo', 'redo', '-', 'deleteMark', '-', 'find', '-', 'tool_edit', 'tool_erase', 'tool_text', 'image']],
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
-  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note', '-', 'sign']],
+  ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
   ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
 ];
@@ -3553,7 +3553,7 @@ function openPopover(anchor, html, at) {
   }
   const f = $('.pop-sw button[aria-checked="true"], .mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -3580,7 +3580,7 @@ pop.addEventListener('click', (e) => {
   const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
 });
 pop.addEventListener('change', (e) => { if (e.target.matches('[data-colorpick]')) { pickColor(e.target.value.toUpperCase()); closePopover(); } });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, [data-rmenu]')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
   $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
@@ -3601,12 +3601,65 @@ $('#menubar').addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (bs[k].getAttribute('aria-expanded') !== 'true') bs[k].click(); }
 });
 // Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
-function moreMenuHtml() {
+function moreMenuHtml(menus = MENUS, keep = () => true) {
   const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids.flatMap((id) => [id, ...((C[id] && C[id].menu) || [])]) : [])));
-  return MENUS.map(([t, ids], k) => {
-    const only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id));
+  return menus.map(([t, ids]) => {
+    const k = MENUS.findIndex(([x]) => x === t), only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id) && keep(id));
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
   }).join('');
+}
+/* Web and Windows: the ribbon is the one row of menus (the menu bar above it named nearly the same tabs). What only
+   the menus had is on it too: File (at the start of the tab row) lists the File menu, then what the other menus have
+   that no ribbon tab shows; ? (beside the theme) is Help. Alt or F10 goes to the tab row. The Mac app keeps its
+   menus in the macOS menu bar; its window shows the menu bar only if macOS turns the menus down. */
+if (!MAC_APP) app.dataset.menubar = 'ribbon';
+function fileMenuHtml() {
+  const file = MENUS.find(([t]) => t === 'File'), rest = MENUS.filter(([t]) => t !== 'File' && t !== 'Help');
+  return menuHtml(file ? file[1] : []) + moreMenuHtml(rest, (id) => !/^theme_/.test(id)); // the theme: its own button
+}
+const helpMenuHtml = () => menuHtml((MENUS.find(([t]) => t === 'Help') || ['', []])[1]);
+function menuButton(b, html) {
+  b.addEventListener('click', () => {
+    const open = b.getAttribute('aria-expanded') === 'true';
+    closePopover(); if (open) return;
+    b.setAttribute('aria-expanded', 'true'); openPopover(b, html());
+  });
+  b.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && b.getAttribute('aria-expanded') !== 'true') { e.preventDefault(); b.click(); } });
+}
+menuButton($('#fileBtn'), fileMenuHtml); menuButton($('#helpBtn'), helpMenuHtml);
+// Alt pressed and let go on its own, or F10: to the ribbon's tab row (again: back to the document).
+let altAlone = false;
+document.addEventListener('keydown', (e) => {
+  altAlone = e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+  if (e.key === 'F10' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && app.dataset.menubar === 'ribbon' && !$('#dialog').open) { e.preventDefault(); closePopover(); ribbonKeyFocus(); }
+}, true);
+document.addEventListener('keyup', (e) => { if (e.key === 'Alt' && altAlone && app.dataset.menubar === 'ribbon' && !$('#dialog').open && pop.hidden) { e.preventDefault(); ribbonKeyFocus(); } altAlone = false; }, true);
+document.addEventListener('pointerdown', () => { altAlone = false; }, true);
+function ribbonKeyFocus() {
+  const a = document.activeElement;
+  if (a && a.closest && a.closest('.ribbon-head')) { viewer.focus({ preventScroll: true }); return; }
+  const t = $('#ribbonTabs [aria-selected="true"]'); if (t && t.offsetParent) t.focus(); else if ($('#fileBtn').offsetParent) $('#fileBtn').focus();
+}
+cmd('openRecent', { label: 'Open recent…', icon: 'history', run: () => {
+  if (app.dataset.sidebar === 'off' || (isPhone() && app.dataset.sidebar !== 'open')) toggleSidebar(true);
+  setSide('docs'); setTimeout(() => { const f = $('#sidePanel .doc-open') || $('.side-tabs [data-side="docs"]'); f && f.focus({ preventScroll: true }); }, 60);
+} });
+cmd('closeDoc', { label: 'Close', icon: 'x', enabled: has, run: () => serial(closeDoc) });
+// Close: the document stays in Recent, with its changes; the window goes back to Open a PDF.
+async function closeDoc() {
+  if (!doc) return;
+  if (app.dataset.organize === '1' && typeof pg60Organize === 'function') pg60Organize(false);
+  if (app.dataset.tool !== 'select') setTool('select');
+  pendingImage = null; selContent = null; closePopover();
+  if (!$('#findbar').hidden) closeFind();
+  clearTimeout(persistTimer); persistTimer = null; await persistNow();
+  for (const p of pdfDocs.values()) try { p.destroy(); } catch {}
+  pdfDocs.clear(); findState.texts.clear();
+  doc = null; selMark = null; current = 0; undoStack.length = redoStack.length = 0;
+  views = []; pagesEl.innerHTML = ''; $('#drop').hidden = false;
+  setTitle(); setSaved(true); updateStatus(); store.set('current', null);
+  sideNoDoc(); renderSide(); refreshRibbon();
+  toast('Closed. It stays in Recent.');
 }
 $('#moreBtn').addEventListener('click', () => {
   const b = $('#moreBtn'), open = b.getAttribute('aria-expanded') === 'true';
@@ -3722,13 +3775,13 @@ document.addEventListener('pointermove', (e) => { if (ctxPress && e.pointerId ==
 document.addEventListener('pointerup', ctxPressEnd, true); document.addEventListener('pointercancel', ctxPressEnd, true);
 // Ribbon tabs, in order. A tab with no groups is not shown. Features add groups with ribbonAdd().
 const RIBBON = {
-  home: ['Home', [['File', ['open', 'save', 'print']], ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
+  home: ['Home', [['File', ['open', 'print']] /* Save PDF: in the title bar, always in view */, ['Edit', ['undo', 'redo', 'find']], ['View', ['zoomOut', 'zoomIn', 'zoomFit', 'sidebar', 'darkPage']]]],
   edit: ['Edit', [['Edit the PDF', ['tool_edit', 'tool_erase']], ['Add', ['tool_text', 'image']]]],
-  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', ['sign']]]],
+  markup: ['Comment', [['Tools', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_note']], ['Colour', 'COLORS', 'swatches'], ['Shapes', ['tool_rect'], 'icons'], ['Add', []]]], // Signature: on the Protect tab
   pages: ['Pages', [['Rotate', ['rotR']], ['Order', ['up', 'down', 'dup']], ['Remove', ['delPage', 'extract']]]],
   forms: ['Forms', []],
   protect: ['Protect', []],
-  export: ['Export', [['Save', ['save', 'saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
+  export: ['Export', [['Save', ['saveCopy', 'share']], ['Export', ['exportImage', 'exportText', 'print']]]],
 };
 // Adds commands to a ribbon group (made if missing; `before` names a group to put it in front of). `look` makes a
 // compact group on wide screens: 'rows' (small buttons with their names, two rows) or 'icons' (a grid of icons).
@@ -3851,6 +3904,8 @@ function phoneFold(groups) {
 // of command ids) shows them under its name.
 matchMedia(PHONE_MQ).addEventListener('change', () => renderRibbon()); // a phone turned, or a window made narrow
 Object.assign(TEST_HOOKS, { menus: () => MENUS, S, docMarks: () => docMarks() });
+// A menu as the menu bar lists it (the Mac app's window shows the bar if macOS turns its menus down), opened under File.
+TEST_HOOKS.openMenu = (title) => { const m = MENUS.find(([t]) => t === title); closePopover(); openPopover($('#fileBtn'), menuHtml(m[1])); };
 function foldStyleHtml(ids) {
   const now = swatchNow();
   let html = `<div class="pop-sw" role="group" aria-label="Colour">${swatchesHtml(COLORS, { now, attrs: (c) => `data-color="${c}"`, pick: `data-colorpick value="${now.toLowerCase()}"`, menu: true })}</div>`;

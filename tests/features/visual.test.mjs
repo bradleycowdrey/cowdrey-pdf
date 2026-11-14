@@ -33,7 +33,7 @@ export default async (h) => {
     await p.mouse.wheel(0, 3000); await p.waitForTimeout(150);
     const [l, max] = await body(); ok(l >= max - 1, `at the end: ${l} of ${max}`);
     eq(await arrows(), [true, false], 'the left arrow now');
-    for (const id of ['sign', 'cm_stamp', 'cm_list']) ok(await p.$eval(`#ribbonBody [data-cmd="${id}"]`, (b) => b.getBoundingClientRect().right <= innerWidth), id + ' in view');
+    for (const id of ['cm_stamp', 'cm_list']) ok(await p.$eval(`#ribbonBody [data-cmd="${id}"]`, (b) => b.getBoundingClientRect().right <= innerWidth), id + ' in view');
     await p.click('.r-scroll-l'); await p.waitForTimeout(600);
     ok((await body())[0] < l, 'the left arrow scrolls back');
     // Picture tools (for a selected picture) are the last group of the Edit tab, so they never move the others
@@ -46,7 +46,7 @@ export default async (h) => {
   await test('visual: every menu row keeps its icon; toggles show their check in a column of its own', async () => {
     const p = await open(); await openPdf(p);
     await p.click('[data-rt="markup"]'); await p.click('[data-cmd="tool_highlight"]');
-    await p.click('#menubar > button:has-text("Comment")'); await p.waitForTimeout(100);
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('Comment')); await p.waitForTimeout(100);
     const rows = await menuRows(p);
     eq(rows.filter(([, icon]) => !icon).map(([id]) => id), [], 'rows without an icon');
     eq(rows.filter(([, , c]) => c === 'true').map(([id]) => id), ['tool_highlight']);
@@ -55,12 +55,12 @@ export default async (h) => {
     ok(chk < icon, 'the check comes before the icon');
     await p.keyboard.press('Escape');
     // a menu with no toggle has no empty check column
-    await p.click('#menubar > button:has-text("File")'); await p.waitForTimeout(100);
+    await p.click('#fileBtn'); await p.waitForTimeout(100);
     ok(!(await p.$eval('#popover', (x) => x.classList.contains('has-chk'))), 'no check column in File');
     eq((await menuRows(p)).filter(([, icon]) => !icon).map(([id]) => id), []);
     // menu order: Pages groups its jobs, Bookmarks is in View
     await p.keyboard.press('Escape');
-    eq(await p.$$eval('#menubar > button', (b) => b.map((x) => x.textContent)), ['File', 'Edit', 'View', 'Comment', 'Pages', 'Forms', 'Protect', 'Help']);
+    eq(await p.evaluate(() => window.__cowdreyPdf.menus().map(([t]) => t)), ['File', 'Edit', 'View', 'Comment', 'Pages', 'Forms', 'Protect', 'Help']);
     const ids = (t) => p.evaluate((x) => window.__cowdreyPdf.menus().find(([m]) => m === x)[1], t);
     const pages = await ids('Pages');
     ok(pages.indexOf('rotAll') < pages.indexOf('pg60_rotate') && pages.indexOf('pg60_rotate') < pages.indexOf('up'), pages.join());
@@ -125,7 +125,7 @@ export default async (h) => {
     await run(p, 'cm_underline');
     ok(await p.$eval('#ribbonBody [data-rmenu="fold:Text mark-up"]', (b) => b.hasAttribute('data-on')), 'Text mark-up on');
     await p.click('#ribbonBody [data-rmenu="fold:Add"]'); await p.waitForSelector('#popover:not([hidden])');
-    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'sign', 'cm_stamp']);
+    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'cm_stamp']);
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr3/fix-visual/ph-comment-add.png' });
     eq(p.errors, []); await p.ctx.close();
   });
@@ -156,7 +156,7 @@ export default async (h) => {
     eq(await outline('.side-tabs [aria-selected="true"]'), ['solid', true], 'sidebar tab');
     eq(await outline('.thumb[aria-current="page"]'), ['solid', true], 'current page');
     eq(await p.$eval('#ribbonBody [data-cmd="tool_pen"]', (e) => getComputedStyle(e).outlineStyle), 'none', 'a tool not pressed');
-    await p.click('#menubar > button:has-text("View")'); await p.waitForTimeout(100);
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('View')); await p.waitForTimeout(100);
     await p.hover('#popover [data-cmd="zoomIn"]'); eq(await outline('#popover [data-cmd="zoomIn"]'), ['solid', true], 'menu row under the pointer');
     eq(p.errors, []); await p.ctx.close();
   });
@@ -190,7 +190,7 @@ export default async (h) => {
     // a computer still has them
     const d = await open(); await openPdf(d);
     ok(/^Drop a PDF/.test(await d.textContent('#drop .card p')), 'desktop wording');
-    await d.click('#menubar > button:has-text("Help")'); await d.waitForTimeout(100);
+    await d.click('#helpBtn'); await d.waitForTimeout(100);
     ok(await d.$('#popover [data-cmd="shortcuts"]'), 'Keyboard shortcuts on a computer');
     await d.keyboard.press('Escape');
     await d.click('[data-side="docs"]'); await d.waitForSelector('.doc-item');

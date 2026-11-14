@@ -86,16 +86,22 @@ export default async (h) => {
 
   await test('shell: menus work from the keyboard; ribbon and sidebar tabs are tab lists', async () => {
     const p = await open(); await openPdf(p);
-    await p.focus('#menubar > button'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
+    // File, at the start of the ribbon's tab row (the web shows no menu bar)
+    await p.focus('#fileBtn'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
     ok(!(await p.$eval('#popover', (e) => e.hidden)), 'File opens');
     const first = await focused(p);
     await p.keyboard.press('ArrowDown'); ok((await focused(p)) !== first, 'Down moves');
     await p.keyboard.press('End'); await p.keyboard.press('Home'); eq(await focused(p), first, 'Home');
-    await p.keyboard.press('ArrowRight'); await p.waitForTimeout(100);
-    eq(await p.$eval('#menubar > [aria-expanded="true"]', (e) => e.textContent), 'Edit', 'Right opens the next menu');
     await p.keyboard.press('Escape'); await p.waitForTimeout(100);
-    ok(await p.$eval('#popover', (e) => e.hidden), 'Escape closes'); eq(await focused(p), 'menu-1', 'focus back on Edit');
+    ok(await p.$eval('#popover', (e) => e.hidden), 'Escape closes'); eq(await focused(p), 'fileBtn', 'focus back on File');
+    await p.keyboard.press('ArrowDown'); await p.waitForTimeout(100);
+    ok(!(await p.$eval('#popover', (e) => e.hidden)), 'Down opens File'); await p.keyboard.press('Escape');
     eq(await p.evaluate(() => window.__cowdreyPdf.current), 0, 'no page turned');
+    // Alt on its own, or F10, goes to the tab row; again goes back to the document
+    await p.focus('#viewer'); await p.keyboard.press('Alt'); eq(await focused(p), 'home', 'Alt: the tab chosen');
+    await p.keyboard.press('Alt'); eq(await focused(p), 'viewer', 'Alt again: the document');
+    await p.keyboard.press('F10'); eq(await focused(p), 'home', 'F10: the tab row');
+    await p.keyboard.press('Escape'); await p.focus('#viewer');
     // ribbon tabs
     await p.focus('#ribbonTabs [aria-selected="true"]');
     eq(await p.$$eval('#ribbonTabs [tabindex="0"]', (e) => e.length), 1, 'one Tab stop');
@@ -196,9 +202,9 @@ export default async (h) => {
 
   await test('shell: one name per place: Comment menu, page design under Edit, pictures called pictures', async () => {
     const p = await open(); await openPdf(p);
-    const titles = await p.$$eval('#menubar > button', (b) => b.map((x) => x.textContent));
+    const titles = await p.evaluate(() => window.__cowdreyPdf.menus().map(([t]) => t));
     ok(titles.includes('Comment') && !titles.includes('Mark up') && !titles.includes('Tools'), titles.join());
-    await p.click('#menubar > button:nth-child(2)');
+    await p.evaluate(() => window.__cowdreyPdf.openMenu('Edit'));
     const edit = await p.$$eval('#popover [data-cmd]', (e) => e.map((x) => x.dataset.cmd));
     for (const id of ['pd_watermark', 'tool_edit', 'txtParaMode', 'tool_link']) ok(edit.includes(id), id + ' in Edit');
     const all = await p.evaluate(() => document.querySelector('#popover').textContent);

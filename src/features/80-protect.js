@@ -1069,6 +1069,7 @@ cmd('protClean', { label: 'Remove hidden info…', icon: 'eye-off', enabled: has
 ribbonAdd('protect', 'Redact', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
 ribbonAdd('protect', 'Security', ['protPassword', 'protUnsecure']);
 ribbonAdd('protect', 'Document', ['protFlatten', 'protCompress', 'protClean']);
+menuAdd('Protect', ['sign']); // Signature has one place: Protect (on the ribbon too)
 menuAdd('Protect', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
 menuAdd('Protect', ['protPassword', 'protUnsecure']);
 menuAdd('Protect', ['protFlatten', 'protCompress', 'protClean']);
