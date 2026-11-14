@@ -94,9 +94,9 @@ function ocrLinesOf(res) {
   for (const L of lines) L.words.sort((a, b) => a.bbox.x0 - b.bbox.x0);
   return lines;
 }
-// Where each word goes in the PDF: a text matrix (in points, along the baseline, any rotation) and the spacing that
-// makes the word as wide as it is on the scan. Each word but the last runs to the next one, with a space, so lines
-// read and search as sentences.
+// Where each word goes in the PDF: a text matrix (in points, along the baseline, any rotation) and the horizontal
+// scaling that makes the word as wide as it is on the scan. Each word but the last runs to the next one, with a space,
+// so lines read and search as sentences.
 function ocrPlace(lines, vp, widthOf) {
   const out = [];
   for (const line of lines) {
@@ -115,7 +115,9 @@ function ocrPlace(lines, vp, widthOf) {
       const dx = p1[0] - p0[0], dy = p1[1] - p0[1], len = Math.hypot(dx, dy) || 1, u = [dx / len, dy / len];
       const text = w.text + (last ? '' : ' '), n = [...text].length;
       const natural = widthOf(text); // in units of the font size
-      out.push({ text, tm: [u[0] * size, u[1] * size, -u[1] * size, u[0] * size, p0[0], p0[1]], tc: (len / size - natural) / n });
+      // Stretched (Tz), not spaced out (Tc): a reader takes a gap between letters of more than a tenth of the size for
+      // a space, so a word whose scan is wider than the font's letters would be found and copied as "w o r d".
+      out.push({ text, tm: [u[0] * size, u[1] * size, -u[1] * size, u[0] * size, p0[0], p0[1]], tz: natural > 0 ? 100 * len / size / natural : 100, tc: natural > 0 ? 0 : len / size / n });
     });
   }
   return out;
@@ -162,9 +164,9 @@ async function ocrWritePage(L, out, p, lines, vp, ctx) {
   if (!placed.length) return 0;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (x) => PDFNumber.of(+(+x).toFixed(4));
   const keys = new Map(), keyOf = (ref) => { if (!keys.has(ref)) keys.set(ref, p.node.newFontDictionary('OCR', ref)); return keys.get(ref); };
-  const ops = [O('q'), O('BT'), O('Tr', [N(3)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)])];
+  const ops = [O('q'), O('BT'), O('Tr', [N(3)]), O('Tw', [N(0)]), O('Ts', [N(0)])];
   for (const w of placed) {
-    ops.push(O('Tc', [N(w.tc)]), O('Tm', w.tm.map(N)));
+    ops.push(O('Tc', [N(w.tc)]), O('Tz', [N(w.tz)]), O('Tm', w.tm.map(N)));
     if (canHelv(w.text)) ops.push(O('Tf', [keyOf(helv.ref), N(1)]), O('Tj', [helv.encodeText(w.text)]));
     else {
       // one run per Type3 font (a page with more than 255 different letters needs several)

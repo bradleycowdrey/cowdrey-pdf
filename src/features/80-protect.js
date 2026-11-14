@@ -178,7 +178,7 @@ function protMarkSelection() {
   views.forEach((v) => v.rendered && drawMarks(v)); changed(before); protFirstMarkToast('Text');
   return true;
 }
-document.addEventListener('pointerup', () => { if (app.dataset.tool === 'protredtext') setTimeout(protMarkSelection, 0); });
+onTextToolUp('protredtext', protMarkSelection);
 
 /* ----- search and redact ----- */
 const PROT_PATTERNS = {
@@ -252,7 +252,8 @@ async function protFind(rx) {
 const protGlyphExt = (st) => [Math.max(st.descent ?? -.2, -.22), Math.min(st.ascent ?? .8, .9)];
 function protGlyphBand(tc, it) {
   const f = lineFrame({ tm: it.transform }), size = f.size, ext = protGlyphExt(tc.styles[it.fontName] || {});
-  let y0 = ext[0] * size, y1 = ext[1] * size;
+  // At least this line's capitals and most of its descenders, whatever the font says (Helvetica Bold's ascent is .718)
+  let y0 = Math.min(ext[0], -.14) * size, y1 = Math.max(ext[1], .72) * size;
   for (const jt of tc.items) {
     if (jt === it || !jt.str || !jt.str.trim() || !jt.transform) continue;
     const g = lineFrame({ tm: jt.transform }); if (g.u[0] * f.u[0] + g.u[1] * f.u[1] < .99) continue; // same direction only

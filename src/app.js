@@ -259,6 +259,7 @@ async function layoutPages(keep) {
   const gen = ++layoutGen; // a later layout (zooming quickly) replaces this one
   closeLineEditor(true); selContent = null;
   const anchor = keep ? current : 0;
+  if (!keep) current = 0; // a new document starts at its first page (no scroll event may come to say so)
   pagesEl.innerHTML = '';
   views = [];
   if (!doc.pages.length) { pagesEl.innerHTML = '<p class="empty-note">This PDF has no pages left. Insert a page or undo.</p>'; updateStatus(); return; }
@@ -286,7 +287,7 @@ async function layoutPages(keep) {
     io.observe(el);
   }
   updateZoomLabel();
-  if (keep) goPage(anchor, true); else if (singleUp()) { current = 0; showOnly(0); } // (no scrolling says which page)
+  if (keep) goPage(anchor, true); else showOnly(0);
   updateStatus();
   releaseFar();
   return true;
@@ -1106,7 +1107,16 @@ function highlightSelection() {
   if (any) { views.forEach((v) => v.rendered && drawMarks(v)); changed(before); }
   return any;
 }
-document.addEventListener('pointerup', () => { if (app.dataset.tool === 'highlight') setTimeout(highlightSelection, 0); });
+// Only for a press on the pages, read before the next one: a press elsewhere (the ribbon button that changes the tool)
+// marks nothing, and a selection begun after it (when busy, the timer can come after the next press) is left alone.
+let textToolDowns = 0, textToolDown = false;
+document.addEventListener('pointerdown', (e) => { textToolDown = !!(e.target.closest && e.target.closest('#viewer')); if (textToolDown) textToolDowns++; }, true);
+const onTextToolUp = (tool, mark) => document.addEventListener('pointerup', () => {
+  if (app.dataset.tool !== tool || !textToolDown) return;
+  const n = textToolDowns; textToolDown = false;
+  setTimeout(() => { if (textToolDowns === n) mark(); }, 0);
+});
+onTextToolUp('highlight', highlightSelection);
 /* ---- text selected with the Select tool: a small bar over it (Highlight, Underline, Strikethrough, Redact, Copy),
    the same actions as in its right-click menu. It shows once the selection is made (the button or finger let go). */
 FEATURE.selActions.push(
@@ -2266,7 +2276,7 @@ function pageFonts(L, out, pageNode) {
     } else {
       const fc = d.lookup(PDFName.of('FirstChar')), W = d.lookup(PDFName.of('Widths'));
       if (fc instanceof PDFNumber && W instanceof PDFArray) W.asArray().forEach((w, j) => widths.set(fc.asNumber() + j, out.context.lookup(w).asNumber()));
-      if (!W) dw = 500;
+      else if (!W) { dw = 500; stdWidths(L, baseName(d.lookup(PDFName.of('BaseFont'))), widths); } // one of the 14 standard fonts: their own widths
     }
     fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw, hasToUnicode: !!tu });
   }
@@ -2278,6 +2288,19 @@ function pageFonts(L, out, pageNode) {
   return { fonts, fontWidth, text };
 }
 const baseName = (n) => String(n || '').replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
+// The widths of one of the 14 standard fonts (which a PDF may name without giving its widths), by code in its
+// built-in encoding (WinAnsi for the Latin ones, as pdf-lib writes them).
+const stdWidthCache = new Map();
+function stdWidths(L, name, into) {
+  if (!L.StandardFontEmbedder || !(L.StandardFontValues || []).includes(name)) return;
+  let w = stdWidthCache.get(name);
+  if (!w) {
+    w = new Map();
+    try { const e = L.StandardFontEmbedder.for(name); for (const [code, glyph] of Object.values(e.encoding.unicodeMappings)) if (!w.has(code)) w.set(code, e.font.getWidthOfGlyph(glyph)); } catch {}
+    stdWidthCache.set(name, w);
+  }
+  for (const [code, x] of w) into.set(code, x);
+}
 // Applies a page's content edits while saving: takes out what was replaced, then paints the new content.
 // A line's new text goes where its old text was in the content (after the old text's BT … ET), so the page's reading
 // order (text extraction, copy, screen readers) stays the same. `m.emit` (operators) replaces a line's own drawing,

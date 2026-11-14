@@ -816,6 +816,10 @@ addText = function (v, x, y) {
 function txtAddInline(v, x, y, boxW) {
   const fmt = txtLast();
   const m = { id: uid(), type: 'text', x, y, text: '', size: fmt.size, color: fmt.color, rot: totalRot(v), fam: 'sans', famPick: fmt.famPick, bold: fmt.bold, italic: fmt.italic, underline: fmt.underline, align: fmt.align, w: boxW || 0 };
+  // It takes its place among the marks as they were when it was started: marks made while it is being typed or laid
+  // out (its font may still be loading) come after it, as they were made after it.
+  const was = new Set(marksOf(v.entry));
+  txtStdFont(txtStdName(fmt.famPick, fmt.bold, fmt.italic)).catch(() => {}); // its font loads while it is typed
   txtOpenEditor(v, {
     m, text: '', fmt, width: !!m.w, minWidth: 90, label: 'Add text', placeholder: 'Type here', opts: { family: true, align: true },
     place: txtBoxPlace(v, m),
@@ -825,8 +829,9 @@ function txtAddInline(v, x, y, boxW) {
       const fam = f.famPick === 'page' ? await txtPageFam(v) : f.famPick;
       Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', fam, famPick: f.famPick });
       await txtLayoutBox(m);
-      const before = snapshot();
-      marksOf(v.entry).push(m);
+      const before = snapshot(), list = marksOf(v.entry);
+      let k = list.length; while (k > 0 && !was.has(list[k - 1])) k--;
+      list.splice(k, 0, m);
       drawMarks(v); changed(before);
     },
   });

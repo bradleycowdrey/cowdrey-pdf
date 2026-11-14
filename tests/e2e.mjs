@@ -47,6 +47,8 @@ await test('mark up: highlight selected text, draw, box, text, note; undo and re
   await p.waitForSelector('.page .txt-editor'); await p.keyboard.type('Approved'); await p.keyboard.press('Escape');
   await p.click('[data-rt="markup"]'); await p.click('[data-cmd="tool_note"]'); await p.mouse.click(g.x + 400, g.y + 620);
   await p.fill('.page-ask textarea', 'Check the numbers'); await p.click('.page-ask .btn.primary');
+  // the text is kept once its font has loaded, which can be after the note is made: it keeps its place all the same
+  await p.waitForFunction(() => Object.values(window.__cowdreyPdf.doc.marks).flat().length === 5, null, { timeout: 10000 });
   eq(await marks(p), ['hl', 'ink', 'rect', 'text', 'note']);
   await p.keyboard.press('Control+z'); eq((await marks(p)).length, 4, 'undo');
   await p.keyboard.press('Control+Shift+z'); eq((await marks(p)).length, 5, 'redo');

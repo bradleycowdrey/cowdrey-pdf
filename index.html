@@ -1440,6 +1440,7 @@ async function layoutPages(keep) {
   const gen = ++layoutGen; // a later layout (zooming quickly) replaces this one
   closeLineEditor(true); selContent = null;
   const anchor = keep ? current : 0;
+  if (!keep) current = 0; // a new document starts at its first page (no scroll event may come to say so)
   pagesEl.innerHTML = '';
   views = [];
   if (!doc.pages.length) { pagesEl.innerHTML = '<p class="empty-note">This PDF has no pages left. Insert a page or undo.</p>'; updateStatus(); return; }
@@ -1467,7 +1468,7 @@ async function layoutPages(keep) {
     io.observe(el);
   }
   updateZoomLabel();
-  if (keep) goPage(anchor, true); else if (singleUp()) { current = 0; showOnly(0); } // (no scrolling says which page)
+  if (keep) goPage(anchor, true); else showOnly(0);
   updateStatus();
   releaseFar();
   return true;
@@ -2287,7 +2288,16 @@ function highlightSelection() {
   if (any) { views.forEach((v) => v.rendered && drawMarks(v)); changed(before); }
   return any;
 }
-document.addEventListener('pointerup', () => { if (app.dataset.tool === 'highlight') setTimeout(highlightSelection, 0); });
+// Only for a press on the pages, read before the next one: a press elsewhere (the ribbon button that changes the tool)
+// marks nothing, and a selection begun after it (when busy, the timer can come after the next press) is left alone.
+let textToolDowns = 0, textToolDown = false;
+document.addEventListener('pointerdown', (e) => { textToolDown = !!(e.target.closest && e.target.closest('#viewer')); if (textToolDown) textToolDowns++; }, true);
+const onTextToolUp = (tool, mark) => document.addEventListener('pointerup', () => {
+  if (app.dataset.tool !== tool || !textToolDown) return;
+  const n = textToolDowns; textToolDown = false;
+  setTimeout(() => { if (textToolDowns === n) mark(); }, 0);
+});
+onTextToolUp('highlight', highlightSelection);
 /* ---- text selected with the Select tool: a small bar over it (Highlight, Underline, Strikethrough, Redact, Copy),
    the same actions as in its right-click menu. It shows once the selection is made (the button or finger let go). */
 FEATURE.selActions.push(
@@ -3447,7 +3457,7 @@ function pageFonts(L, out, pageNode) {
     } else {
       const fc = d.lookup(PDFName.of('FirstChar')), W = d.lookup(PDFName.of('Widths'));
       if (fc instanceof PDFNumber && W instanceof PDFArray) W.asArray().forEach((w, j) => widths.set(fc.asNumber() + j, out.context.lookup(w).asNumber()));
-      if (!W) dw = 500;
+      else if (!W) { dw = 500; stdWidths(L, baseName(d.lookup(PDFName.of('BaseFont'))), widths); } // one of the 14 standard fonts: their own widths
     }
     fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw, hasToUnicode: !!tu });
   }
@@ -3459,6 +3469,19 @@ function pageFonts(L, out, pageNode) {
   return { fonts, fontWidth, text };
 }
 const baseName = (n) => String(n || '').replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
+// The widths of one of the 14 standard fonts (which a PDF may name without giving its widths), by code in its
+// built-in encoding (WinAnsi for the Latin ones, as pdf-lib writes them).
+const stdWidthCache = new Map();
+function stdWidths(L, name, into) {
+  if (!L.StandardFontEmbedder || !(L.StandardFontValues || []).includes(name)) return;
+  let w = stdWidthCache.get(name);
+  if (!w) {
+    w = new Map();
+    try { const e = L.StandardFontEmbedder.for(name); for (const [code, glyph] of Object.values(e.encoding.unicodeMappings)) if (!w.has(code)) w.set(code, e.font.getWidthOfGlyph(glyph)); } catch {}
+    stdWidthCache.set(name, w);
+  }
+  for (const [code, x] of w) into.set(code, x);
+}
 // Applies a page's content edits while saving: takes out what was replaced, then paints the new content.
 // A line's new text goes where its old text was in the content (after the old text's BT … ET), so the page's reading
 // order (text extraction, copy, screen readers) stays the same. `m.emit` (operators) replaces a line's own drawing,
@@ -6459,6 +6482,10 @@ addText = function (v, x, y) {
 function txtAddInline(v, x, y, boxW) {
   const fmt = txtLast();
   const m = { id: uid(), type: 'text', x, y, text: '', size: fmt.size, color: fmt.color, rot: totalRot(v), fam: 'sans', famPick: fmt.famPick, bold: fmt.bold, italic: fmt.italic, underline: fmt.underline, align: fmt.align, w: boxW || 0 };
+  // It takes its place among the marks as they were when it was started: marks made while it is being typed or laid
+  // out (its font may still be loading) come after it, as they were made after it.
+  const was = new Set(marksOf(v.entry));
+  txtStdFont(txtStdName(fmt.famPick, fmt.bold, fmt.italic)).catch(() => {}); // its font loads while it is typed
   txtOpenEditor(v, {
     m, text: '', fmt, width: !!m.w, minWidth: 90, label: 'Add text', placeholder: 'Type here', opts: { family: true, align: true },
     place: txtBoxPlace(v, m),
@@ -6468,8 +6495,9 @@ function txtAddInline(v, x, y, boxW) {
       const fam = f.famPick === 'page' ? await txtPageFam(v) : f.famPick;
       Object.assign(m, { text, size: f.size, color: f.color, bold: f.bold, italic: f.italic, underline: f.underline, align: f.align || 'left', fam, famPick: f.famPick });
       await txtLayoutBox(m);
-      const before = snapshot();
-      marksOf(v.entry).push(m);
+      const before = snapshot(), list = marksOf(v.entry);
+      let k = list.length; while (k > 0 && !was.has(list[k - 1])) k--;
+      list.splice(k, 0, m);
       drawMarks(v); changed(before);
     },
   });
@@ -11806,7 +11834,7 @@ function protMarkSelection() {
   views.forEach((v) => v.rendered && drawMarks(v)); changed(before); protFirstMarkToast('Text');
   return true;
 }
-document.addEventListener('pointerup', () => { if (app.dataset.tool === 'protredtext') setTimeout(protMarkSelection, 0); });
+onTextToolUp('protredtext', protMarkSelection);
 
 /* ----- search and redact ----- */
 const PROT_PATTERNS = {
@@ -11880,7 +11908,8 @@ async function protFind(rx) {
 const protGlyphExt = (st) => [Math.max(st.descent ?? -.2, -.22), Math.min(st.ascent ?? .8, .9)];
 function protGlyphBand(tc, it) {
   const f = lineFrame({ tm: it.transform }), size = f.size, ext = protGlyphExt(tc.styles[it.fontName] || {});
-  let y0 = ext[0] * size, y1 = ext[1] * size;
+  // At least this line's capitals and most of its descenders, whatever the font says (Helvetica Bold's ascent is .718)
+  let y0 = Math.min(ext[0], -.14) * size, y1 = Math.max(ext[1], .72) * size;
   for (const jt of tc.items) {
     if (jt === it || !jt.str || !jt.str.trim() || !jt.transform) continue;
     const g = lineFrame({ tm: jt.transform }); if (g.u[0] * f.u[0] + g.u[1] * f.u[1] < .99) continue; // same direction only
@@ -12849,9 +12878,9 @@ function ocrLinesOf(res) {
   for (const L of lines) L.words.sort((a, b) => a.bbox.x0 - b.bbox.x0);
   return lines;
 }
-// Where each word goes in the PDF: a text matrix (in points, along the baseline, any rotation) and the spacing that
-// makes the word as wide as it is on the scan. Each word but the last runs to the next one, with a space, so lines
-// read and search as sentences.
+// Where each word goes in the PDF: a text matrix (in points, along the baseline, any rotation) and the horizontal
+// scaling that makes the word as wide as it is on the scan. Each word but the last runs to the next one, with a space,
+// so lines read and search as sentences.
 function ocrPlace(lines, vp, widthOf) {
   const out = [];
   for (const line of lines) {
@@ -12870,7 +12899,9 @@ function ocrPlace(lines, vp, widthOf) {
       const dx = p1[0] - p0[0], dy = p1[1] - p0[1], len = Math.hypot(dx, dy) || 1, u = [dx / len, dy / len];
       const text = w.text + (last ? '' : ' '), n = [...text].length;
       const natural = widthOf(text); // in units of the font size
-      out.push({ text, tm: [u[0] * size, u[1] * size, -u[1] * size, u[0] * size, p0[0], p0[1]], tc: (len / size - natural) / n });
+      // Stretched (Tz), not spaced out (Tc): a reader takes a gap between letters of more than a tenth of the size for
+      // a space, so a word whose scan is wider than the font's letters would be found and copied as "w o r d".
+      out.push({ text, tm: [u[0] * size, u[1] * size, -u[1] * size, u[0] * size, p0[0], p0[1]], tz: natural > 0 ? 100 * len / size / natural : 100, tc: natural > 0 ? 0 : len / size / n });
     });
   }
   return out;
@@ -12917,9 +12948,9 @@ async function ocrWritePage(L, out, p, lines, vp, ctx) {
   if (!placed.length) return 0;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (x) => PDFNumber.of(+(+x).toFixed(4));
   const keys = new Map(), keyOf = (ref) => { if (!keys.has(ref)) keys.set(ref, p.node.newFontDictionary('OCR', ref)); return keys.get(ref); };
-  const ops = [O('q'), O('BT'), O('Tr', [N(3)]), O('Tw', [N(0)]), O('Tz', [N(100)]), O('Ts', [N(0)])];
+  const ops = [O('q'), O('BT'), O('Tr', [N(3)]), O('Tw', [N(0)]), O('Ts', [N(0)])];
   for (const w of placed) {
-    ops.push(O('Tc', [N(w.tc)]), O('Tm', w.tm.map(N)));
+    ops.push(O('Tc', [N(w.tc)]), O('Tz', [N(w.tz)]), O('Tm', w.tm.map(N)));
     if (canHelv(w.text)) ops.push(O('Tf', [keyOf(helv.ref), N(1)]), O('Tj', [helv.encodeText(w.text)]));
     else {
       // one run per Type3 font (a page with more than 255 different letters needs several)
