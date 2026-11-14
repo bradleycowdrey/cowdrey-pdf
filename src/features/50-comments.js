@@ -293,7 +293,7 @@ document.addEventListener('pointerup', () => {
   CM.selDown = false; setTimeout(() => { if (cmMarkupKind() === k) cmMarkupSelection(k); }, 0);
 });
 for (const [kind, [label, icon]] of Object.entries(CM_MARKUP)) {
-  cmd('cm_' + kind, { label, icon, enabled: has, pressed: () => app.dataset.tool === 'cm' + kind, run: () => { if (cmMarkupSelection(kind)) return; setTool('cm' + kind); toast('Select text to ' + (kind === 'strike' ? 'strike it through' : kind === 'squiggly' ? 'add a squiggly line' : 'underline it')); } });
+  cmd('cm_' + kind, { label, icon, tip: kind === 'squiggly' ? MARKUP_TIP('Add a squiggly line under', 'mark it') : MARKUP_TIP(kind === 'strike' ? 'Strike through' : 'Underline'), enabled: has, pressed: () => app.dataset.tool === 'cm' + kind, run: () => { if (cmMarkupSelection(kind)) return; setTool('cm' + kind); toast('Select text to ' + (kind === 'strike' ? 'strike it through' : kind === 'squiggly' ? 'add a squiggly line' : 'underline it')); } });
 }
 
 /* ---- shapes dragged out on the page ---- */
