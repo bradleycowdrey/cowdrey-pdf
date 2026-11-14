@@ -350,6 +350,12 @@ pg60Panel.addEventListener('click', (e) => {
   }
   pg60Sel = new Set([n]); pg60Anchor = n; pg60Paint(); // the sidebar's own click goes to the page
 }, true);
+// The keys in the sidebar's page list: an arrow picks one page, Shift+arrow picks a run from where it started.
+FEATURE.thumbPick = (n) => { pg60Sel = new Set([n]); pg60Anchor = n; pg60Paint(); };
+FEATURE.thumbExtend = (n) => {
+  const a = pg60Anchor ?? current, lo = Math.min(a, n), hi = Math.max(a, n);
+  pg60Anchor = a; pg60SetSel(Array.from({ length: hi - lo + 1 }, (_, k) => lo + k));
+};
 // Dragging one of several chosen pages moves them all.
 pg60Panel.addEventListener('drop', (e) => {
   const t = e.target.closest('.thumb'); if (!t || !pg60Many()) return;
@@ -377,6 +383,7 @@ document.addEventListener('keydown', (e) => {
 function pg60Paint() {
   const many = pg60Many(), sel = new Set(pg60Valid());
   for (const t of $$('.thumb', pg60Panel)) t.classList.toggle('pg60-sel', many && sel.has(+t.dataset.n));
+  markThumb(); if (typeof pg60OrgPaint === 'function') pg60OrgPaint();
   const list = $('.thumbs', pg60Panel); if (!list) return;
   let bar = $('.pg60-selbar', pg60Panel);
   if (!many) { if (bar) bar.remove(); return; }
@@ -543,7 +550,196 @@ ribbonAdd('pages', 'Crop', ['tool_crop', 'pg60_crop'], 'Remove');
 ribbonAdd('pages', 'Remove', ['pg60_split']);
 menuAdd('Pages', ['pg60_selAll', 'pg60_rotate', 'pg60_reverse', '-', 'pg60_insert', 'pg60_replace', 'pg60_split', 'pg60_delete', '-', 'tool_crop', 'pg60_crop']);
 
+/* ---- insert blank pages: size, orientation, how many and where ---- */
+const PG60_SIZES = { a4: [595.28, 841.89, 'A4 (210 × 297 mm)'], letter: [612, 792, 'Letter (8.5 × 11 in)'], legal: [612, 1008, 'Legal (8.5 × 14 in)'] };
+async function pg60BlankAsk() {
+  if (!has()) return;
+  const e = doc.pages[current], page = await pageOf(e), vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
+  const W = vp.width, H = vp.height, here = current + 1, mm = (pt) => Math.round(pt / PG60_MM);
+  const r = await pg60Ask('Insert blank pages', `
+    <div class="pg60-grid">
+      <label class="field"><span>Size</span><select name="size"><option value="same">Same as this page (${mm(W)} × ${mm(H)} mm)</option>${Object.entries(PG60_SIZES).map(([k, x]) => `<option value="${k}">${x[2]}</option>`).join('')}</select></label>
+      <label class="field"><span>Pages</span><input name="count" type="number" inputmode="numeric" min="1" max="100" value="1"></label>
+    </div>
+    <div class="pg60-label">Orientation</div>
+    <div class="pg60-row">${pg60Opt('orient', 'portrait', 'Portrait', H >= W)}${pg60Opt('orient', 'landscape', 'Landscape', W > H)}</div>
+    <div class="pg60-label">Where</div>
+    ${pg60Opt('where', 'after', `After this page (${here})`, true)}
+    ${pg60Opt('where', 'before', `Before this page (${here})`)}
+    ${pg60Opt('where', 'end', 'At the end')}`,
+  [{ label: 'Cancel' }, { label: 'Insert', value: 'ok', primary: true }]);
+  if (!r) return;
+  const v = r.vals, count = Math.max(1, Math.min(100, parseInt(v.count, 10) || 1));
+  const [a, b] = v.size in PG60_SIZES ? PG60_SIZES[v.size] : [W, H];
+  const size = v.orient === 'landscape' ? [Math.max(a, b), Math.min(a, b)] : [Math.min(a, b), Math.max(a, b)];
+  await pg60Blank(count, size, { after: current + 1, before: current, end: doc.pages.length }[v.where] ?? current + 1);
+}
+// Inserts `count` blank pages of `size` ([w, h] in points) before index `at`, as one step to undo.
+async function pg60Blank(count, size, at) {
+  const L = await loadPdfLib();
+  const pdf = await L.PDFDocument.create();
+  for (let k = 0; k < count; k++) pdf.addPage(size);
+  const bytes = await pdf.save();
+  let pd; try { pd = await loadProtected(bytes, 'Blank pages'); } catch (e) { console.error(e); }
+  if (!pd || !doc) return;
+  pg60WithSource({ bytes, pd }, (k) => { doc.pages.splice(at, 0, ...Array.from({ length: count }, (_, i) => ({ src: k, i, rot: 0 }))); if (at <= current) current += count; });
+  pg60SetSel([]);
+  toast(count === 1 ? 'Inserted a blank page' : `Inserted ${count} blank pages`);
+}
+if (C.blank) { C.blank.label = 'Insert blank pages…'; C.blank.run = pg60BlankAsk; }
+
+/* ---- Organize: every page in a grid that fills the window. Click, Shift- and Cmd/Ctrl-click choose pages, drag
+   moves them, and the bar's commands (rotate, insert, duplicate, extract, delete) work on the chosen pages. ---- */
+const pg60Org = document.createElement('section');
+pg60Org.className = 'pg60-org'; pg60Org.id = 'pg60Org'; pg60Org.hidden = true; pg60Org.setAttribute('aria-label', 'Organize pages');
+pg60Org.innerHTML = `<div class="pg60-org-bar">
+  <span class="pg60-org-count" aria-live="polite"></span>
+  <span class="pg60-org-tools">${[['pg60_selAll', 'Select all'], ['rotL', 'Rotate left'], ['rotR', 'Rotate right'], ['blank', 'Insert'], ['dup', 'Duplicate'], ['extract', 'Extract'], ['delPage', 'Delete']].map(([id, l]) => `<button type="button" class="btn" data-org="${id}" title="${esc(C[id] ? C[id].label : l)}">${ic(C[id] ? C[id].icon : 'circle')}<span>${l}</span></button>`).join('')}</span>
+  <button type="button" class="btn primary" data-org-done>${ic('x')}<span>Close</span></button>
+</div>
+<div class="pg60-org-grid" role="listbox" aria-label="Pages" aria-multiselectable="true"></div>`;
+$('.workspace').appendChild(pg60Org);
+const pg60Grid = $('.pg60-org-grid', pg60Org);
+const pg60OrgOn = () => app.dataset.organize === '1';
+let pg60OrgIO, pg60OrgTimer;
+function pg60Organize(on) {
+  if (on && !has()) return;
+  const was = pg60OrgOn();
+  app.dataset.organize = on ? '1' : '';
+  pg60Org.hidden = !on; viewer.inert = !!on;
+  if (on) { if (isPhone() && app.dataset.sidebar === 'open') toggleSidebar(false); pg60OrgRender(true); }
+  else if (was) { pg60Grid.innerHTML = ''; if (doc) goPage(current, true); viewer.focus({ preventScroll: true }); }
+  refreshRibbon();
+}
+function pg60OrgRender(focus) {
+  if (!pg60OrgOn() || !doc) return;
+  const refocus = focus || pg60Grid.contains(document.activeElement);
+  const size = Math.round(240 * Math.min(window.devicePixelRatio || 1, 2));
+  pg60Grid.innerHTML = doc.pages.map((e, n) => `<button type="button" role="option" class="pg60-cell" draggable="true" data-n="${n}" data-size="${size}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><span class="pg60-cell-pic"><canvas width="1" height="1"></canvas></span><span aria-hidden="true">${n + 1}</span></button>`).join('');
+  pg60OrgIO && pg60OrgIO.disconnect();
+  pg60OrgIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { pg60OrgIO.unobserve(en.target); drawThumb(en.target).then(() => pg60ThumbCrop(en.target)); } }), { root: pg60Org, rootMargin: '400px' });
+  $$('.pg60-cell', pg60Grid).forEach((c) => pg60OrgIO.observe(c));
+  pg60OrgPaint();
+  const c = $(`.pg60-cell[data-n="${current}"]`, pg60Grid);
+  if (c) { if (refocus) c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest' }); }
+}
+function pg60OrgPaint() {
+  if (!pg60OrgOn() || !doc) return;
+  const sel = thumbChosen(), a = document.activeElement, focused = a && a.closest && a.closest('.pg60-cell');
+  for (const c of $$('.pg60-cell', pg60Grid)) {
+    const n = +c.dataset.n;
+    c.setAttribute('aria-selected', sel.has(n));
+    if (n === current) c.setAttribute('aria-current', 'page'); else c.removeAttribute('aria-current');
+    c.tabIndex = (focused && pg60Grid.contains(focused) ? c === focused : n === current) ? 0 : -1;
+  }
+  const many = pg60Many();
+  $('.pg60-org-count', pg60Org).textContent = many ? `${sel.size} of ${pg60Plural(doc.pages.length, 'page')} selected` : `Page ${current + 1} of ${doc.pages.length}`;
+  for (const b of $$('[data-org]', pg60Org)) { const c = C[b.dataset.org]; b.disabled = !c || !!(c.enabled && !c.enabled()); }
+}
+// Page changes lay the pages out again: so is the grid.
+new MutationObserver(() => { if (pg60OrgOn()) { clearTimeout(pg60OrgTimer); pg60OrgTimer = setTimeout(() => pg60OrgRender(false), 30); } }).observe(pagesEl, { childList: true });
+// Choosing pages works as in the sidebar.
+function pg60OrgPick(n, e) {
+  const add = isMac ? e.metaKey : e.ctrlKey || e.metaKey;
+  if (e.shiftKey) {
+    const a = pg60Anchor ?? current, lo = Math.min(a, n), hi = Math.max(a, n);
+    pg60Sel = new Set([...(add ? pg60Valid() : []), ...Array.from({ length: hi - lo + 1 }, (_, k) => lo + k)]); pg60Anchor = a;
+  } else if (add) {
+    pg60Sel = new Set(pg60Valid().length ? pg60Valid() : [current]); pg60Sel.has(n) ? pg60Sel.delete(n) : pg60Sel.add(n); pg60Anchor = n;
+  } else { pg60Sel = new Set([n]); pg60Anchor = n; current = n; }
+  pg60Paint(); updateStatus(); pg60OrgPaint();
+}
+pg60Grid.addEventListener('click', (e) => { const c = e.target.closest('.pg60-cell'); if (c) pg60OrgPick(+c.dataset.n, e); });
+pg60Grid.addEventListener('dblclick', (e) => { const c = e.target.closest('.pg60-cell'); if (c) { current = +c.dataset.n; pg60Organize(false); } });
+pg60Org.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-org]'); if (b) { run(b.dataset.org); return; }
+  if (e.target.closest('[data-org-done]')) pg60Organize(false);
+});
+const pg60Cols = () => Math.max(1, getComputedStyle(pg60Grid).gridTemplateColumns.split(' ').filter(Boolean).length);
+pg60Org.addEventListener('keydown', (e) => {
+  if ($('#dialog').open) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pg60Organize(false); return; }
+  const c = e.target.closest && e.target.closest('.pg60-cell'); if (!c) return;
+  const n = +c.dataset.n, last = doc.pages.length - 1, mod = isMac ? e.metaKey : e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); e.stopPropagation(); run('pg60_selAll'); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); pg60DeleteAsk(pg60Many() ? pg60Valid() : [n]); return; }
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); current = n; pg60Organize(false); return; }
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); e.stopPropagation(); if (!thumbChosen().has(n)) pg60OrgPick(n, {}); run(e.key === 'ArrowLeft' ? 'up' : 'down'); return; }
+  const cols = pg60Cols();
+  const to = { ArrowLeft: n - 1, ArrowRight: n + 1, ArrowUp: n - cols, ArrowDown: n + cols, Home: 0, End: last }[e.key];
+  if (to === undefined || e.altKey || mod) return;
+  e.preventDefault(); e.stopPropagation();
+  const k = Math.max(0, Math.min(last, to)), t = $(`.pg60-cell[data-n="${k}"]`, pg60Grid);
+  if (e.shiftKey) { const a = pg60Anchor ?? n; pg60Anchor = a; pg60Sel = new Set(Array.from({ length: Math.abs(k - a) + 1 }, (_, j) => Math.min(a, k) + j)); pg60Paint(); refreshRibbon(); }
+  else pg60OrgPick(k, {});
+  if (t) { t.focus(); t.scrollIntoView({ block: 'nearest' }); }
+  pg60OrgPaint();
+});
+// Escape anywhere (not in a dialog or menu) leaves the grid.
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pg60OrgOn() && !$('#dialog').open && pop.hidden) { e.preventDefault(); e.stopPropagation(); pg60Organize(false); } }, true);
+// Dragging: the pages go before or after the page dropped on, whichever half of it the pointer is over.
+let pg60OrgFrom = null;
+pg60Grid.addEventListener('dragstart', (e) => { const c = e.target.closest('.pg60-cell'); if (!c) return; pg60OrgFrom = +c.dataset.n; e.dataTransfer.setData('text/plain', c.dataset.n); e.dataTransfer.effectAllowed = 'move'; });
+const pg60OrgClear = () => $$('.pg60-drop-before, .pg60-drop-after', pg60Grid).forEach((x) => x.classList.remove('pg60-drop-before', 'pg60-drop-after'));
+const pg60OrgSide = (c, e) => { const r = c.getBoundingClientRect(); return e.clientX > r.left + r.width / 2 ? 'after' : 'before'; };
+pg60Grid.addEventListener('dragover', (e) => { const c = e.target.closest('.pg60-cell'); if (!c) return; e.preventDefault(); pg60OrgClear(); c.classList.add('pg60-drop-' + pg60OrgSide(c, e)); });
+pg60Grid.addEventListener('dragleave', (e) => { if (!pg60Grid.contains(e.relatedTarget)) pg60OrgClear(); });
+pg60Grid.addEventListener('dragend', () => { pg60OrgClear(); pg60OrgFrom = null; });
+pg60Grid.addEventListener('drop', (e) => {
+  const c = e.target.closest('.pg60-cell'); pg60OrgClear(); if (!c) return;
+  e.preventDefault();
+  const from = Number.isInteger(pg60OrgFrom) ? pg60OrgFrom : parseInt(e.dataTransfer.getData('text/plain'), 10); pg60OrgFrom = null;
+  if (Number.isNaN(from)) return;
+  pg60OrgMove(from, +c.dataset.n + (pg60OrgSide(c, e) === 'after' ? 1 : 0));
+});
+// Moves page `from` (and the other chosen pages, when it is one of them) to stand before index `to`.
+function pg60OrgMove(from, to) {
+  const idx = pg60Many() && pg60Valid().includes(from) ? pg60Valid() : [from];
+  const order = doc.pages.map((_, n) => n), set = new Set(idx);
+  const moved = order.slice(0, to).filter((n) => !set.has(n)).concat(idx, order.slice(to).filter((n) => !set.has(n)));
+  if (moved.every((x, k) => x === k)) return;
+  pg60MoveTo(idx, to);
+}
+cmd('pg60_organize', { label: 'Organize pages', rlabel: 'Organize', icon: 'layout-grid', enabled: has, pressed: pg60OrgOn, run: () => pg60Organize(!pg60OrgOn()) });
+FEATURE.onDocShown.push(() => { if (pg60OrgOn()) pg60Organize(false); });
+ribbonAdd('pages', 'View', ['pg60_organize'], 'Rotate');
+menuAdd('View', ['pg60_organize']);
+TEST_HOOKS.pg60Org = { on: pg60OrgOn, move: pg60OrgMove };
+
 addStyle(`
+.workspace > .viewer { grid-row: 1; grid-column: -2 / -1; }
+.pg60-org { grid-row: 1; grid-column: -2 / -1; z-index: 3; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; background: var(--canvas); }
+.pg60-org[hidden] { display: none; }
+.app[data-organize="1"] .viewer { visibility: hidden; }
+.pg60-org-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.pg60-org-count { color: var(--ink-2); font-size: 13px; white-space: nowrap; margin-right: auto; }
+.pg60-org-tools { display: flex; gap: 4px; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.pg60-org-bar .btn { height: 32px; padding: 0 10px; white-space: nowrap; flex: none; }
+.pg60-org-bar .btn:disabled { opacity: .45; cursor: default; }
+.pg60-org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 20px 24px 64px; }
+.pg60-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; padding: 10px; border-radius: 10px; color: var(--ink-3); font: inherit; font-size: 13px; cursor: pointer; }
+.pg60-cell-pic { display: flex; align-items: center; justify-content: center; height: 240px; max-width: 100%; }
+.pg60-cell canvas { display: block; max-width: 100%; max-height: 240px; box-shadow: var(--page-shadow); background: #fff; }
+.pg60-cell[aria-current="page"] { color: var(--accent); font-weight: 600; }
+.pg60-cell[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); outline: 2px solid var(--accent); outline-offset: -2px; }
+.pg60-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pg60-cell.ctx-for { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pg60-drop-before::before, .pg60-drop-after::after { content: ""; position: absolute; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: var(--accent); }
+.pg60-drop-before::before { left: -10px; }
+.pg60-drop-after::after { right: -10px; }
+.pg60-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.pg60-dlg .field select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .pg60-org-bar { padding: 4px 8px; gap: 4px; }
+  .pg60-org-bar .btn { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .pg60-org-bar .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pg60-org-count { display: none; }
+  .pg60-org-tools { margin-right: auto; }
+  .pg60-org-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; padding: 12px 12px 48px; }
+  .pg60-cell { padding: 6px; }
+  .pg60-cell-pic { height: 170px; }
+  .pg60-cell canvas { max-height: 170px; }
+}
 .app[data-tool="crop"] .marks { cursor: crosshair; }
 .page svg.pg60-ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 .pg60-dim { fill: rgba(17, 12, 15, .55); }

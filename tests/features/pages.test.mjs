@@ -192,8 +192,8 @@ export default async (h) => {
     eq(await menu('delPage'), ['delPage', 'pg60_delete']);
     await p.click('#popover [data-cmd="pg60_delete"]'); await dlg(p); await p.click('#dialog [data-x]');
     eq(await menu('pg60_ins'), ['blank', 'pg60_insert', 'pg60_replace', 'merge']);
-    eq(await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent)), ['Insert blank page', 'Insert from PDF…', 'Replace pages…', 'Combine PDFs…']);
-    await p.click('#popover [data-cmd="blank"]'); await settle(p);
+    eq(await p.$$eval('#popover .mi span:nth-child(2)', (m) => m.map((x) => x.textContent)), ['Insert blank pages…', 'Insert from PDF…', 'Replace pages…', 'Combine PDFs…']);
+    await p.click('#popover [data-cmd="blank"]'); await dlg(p); await primary(p); await settle(p);
     eq(await p.$$eval('.thumb', (e) => e.length), 4, 'blank page inserted from the list');
     // the Rotate face rotates right; Select all pages (the menu, or Ctrl+A on a page in the sidebar)
     await p.click('#ribbonBody [data-cmd="rotR"]'); await settle(p);

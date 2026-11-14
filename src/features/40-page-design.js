@@ -136,6 +136,7 @@ FEATURE.afterRender.push((v) => {
   const marksSvg = v.el.querySelector('svg.marks');
   if (marksSvg && !marksSvg.pdWatch) { marksSvg.pdWatch = new MutationObserver(() => pdDrawView(v)); marksSvg.pdWatch.observe(marksSvg, { childList: true }); }
 });
+FEATURE.thumbLayers.push((v) => { v.pdSig = null; pdDrawView(v); }); // thumbnails show it too
 addStyle(`
 .pd-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
 .pd-layer text { white-space: pre; user-select: none; }
