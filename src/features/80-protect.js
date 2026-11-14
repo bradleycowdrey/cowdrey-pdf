@@ -132,6 +132,11 @@ FEATURE.markTypes.redact = {
     annots.push(ref);
   },
 };
+// The first mark (none waiting before it) says what happens next, with the step at hand: nothing is taken out yet.
+function protFirstMarkToast(what) {
+  if (protRedMarks(false).length !== 1) return;
+  toast(`${what} marked. Apply redactions removes it for good.`, { label: 'Apply', run: () => run('protRedApply') });
+}
 // Mark for redaction: drag an area.
 FEATURE.tools.protredarea = {
   down(e, v) {
@@ -145,7 +150,7 @@ FEATURE.tools.protredarea = {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       const b = quadBox(m.quads[0]);
       if (b[2] - b[0] < 2 || b[3] - b[1] < 2) { marksOf(v.entry).splice(marksOf(v.entry).indexOf(m), 1); drawMarks(v); return; }
-      drawMarks(v); changed(before);
+      drawMarks(v); changed(before); protFirstMarkToast('1 area');
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   },
@@ -170,7 +175,7 @@ function protMarkSelection() {
   }
   sel.removeAllRanges();
   if (!made.size) return false;
-  views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
+  views.forEach((v) => v.rendered && drawMarks(v)); changed(before); protFirstMarkToast('Text');
   return true;
 }
 document.addEventListener('pointerup', () => { if (app.dataset.tool === 'protredtext') setTimeout(protMarkSelection, 0); });
