@@ -618,12 +618,15 @@ pg60Org.innerHTML = `<div class="pg60-org-bar">
 $('.workspace').appendChild(pg60Org);
 const pg60Grid = $('.pg60-org-grid', pg60Org);
 const pg60OrgOn = () => app.dataset.organize === '1';
-let pg60OrgIO, pg60OrgTimer;
+let pg60OrgIO, pg60OrgTimer, pg60OrgTabBack = null;
 function pg60Organize(on) {
   if (on && !has()) return;
   const was = pg60OrgOn();
   app.dataset.organize = on ? '1' : '';
   pg60Org.hidden = !on; viewer.inert = !!on;
+  // Organize shows the page tools (the Pages ribbon tab); Done goes back to the tab that was showing.
+  if (on && !was && S.ribbon !== 'pages') { pg60OrgTabBack = S.ribbon; chooseTab('pages'); }
+  if (!on && was && pg60OrgTabBack) { const back = pg60OrgTabBack; pg60OrgTabBack = null; if (S.ribbon === 'pages') chooseTab(back); }
   if (on) { if (isPhone() && app.dataset.sidebar === 'open') toggleSidebar(false); pg60OrgRender(true); }
   else if (was) { pg60Grid.innerHTML = ''; if (doc) goPage(current, true); viewer.focus({ preventScroll: true }); }
   refreshRibbon();

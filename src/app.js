@@ -179,6 +179,7 @@ async function showDoc(d, loaded) {
   syncHiddenComments(); // before any page is drawn
   $('#drop').hidden = true;
   setTitle(); setSaved(true, true);
+  sideForDoc();
   await layoutPages();
   renderSide();
   store.set('current', d.id);
@@ -3016,7 +3017,14 @@ $('#findNext').onclick = () => stepFind(1); $('#findPrev').onclick = () => stepF
 
 /* ---------------- sidebar: pages, outline, documents ---------------- */
 function syncSideTabs() { $$('.side-tabs [data-side]').forEach((b) => { const on = b.dataset.side === S.side; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; b.id ||= 'side-' + b.dataset.side; if (on) $('#sidePanel').setAttribute('aria-labelledby', b.id); }); }
-function setSide(t) { S.side = t; saveSettings(); syncSideTabs(); renderSide(); }
+function setSide(t) { S.side = t; delete S.sideBack; saveSettings(); syncSideTabs(); renderSide(); }
+// With no document open, the sidebar shows Recent (Pages would be empty); the tab used before comes back with the
+// next document.
+function sideNoDoc() {
+  if (doc || S.side === 'docs') return;
+  S.sideBack = S.side; S.side = 'docs'; saveSettings(); syncSideTabs(); renderSide();
+}
+function sideForDoc() { if (S.sideBack && S.side === 'docs') { S.side = S.sideBack; syncSideTabs(); } delete S.sideBack; }
 $$('.side-tabs [data-side]').forEach((b) => b.addEventListener('click', () => setSide(b.dataset.side)));
 // Arrow keys, Home and End move between tabs (and choose them), as in any tab list.
 function tabKeys(e, list, choose) {
@@ -3047,7 +3055,7 @@ async function renderSide() {
   const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
   panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
-  thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target); } }), { root: panel, rootMargin: '300px' });
+  thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target).then(followThumbAgain); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
     thumbIO.observe(t);
     t.onclick = () => { goPage(+t.dataset.n); if (isPhone()) toggleSidebar(false); };
@@ -3170,7 +3178,23 @@ function markThumb() {
     if (n === current) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
     t.tabIndex = (focused ? t === focused : n === current) ? 0 : -1;
   });
+  followThumb();
 }
+// The page in view keeps its thumbnail in view in the sidebar (as the document scrolls, or a page is typed in),
+// unless the pointer or the focus is in the sidebar (someone looking through it there).
+function followThumb() {
+  const panel = $('#sidePanel');
+  if (S.side !== 'thumbs' || app.dataset.sidebar === 'off' || panel.matches(':hover, :focus-within')) return;
+  const t = $(`.thumb[data-n="${current}"]`, panel); if (!t) return;
+  const p = panel.getBoundingClientRect(), r = t.getBoundingClientRect(); if (!p.height) return;
+  if (r.top < p.top) panel.scrollTop -= p.top - r.top + 8;
+  else if (r.bottom > p.bottom) panel.scrollTop += r.bottom - p.bottom + 8;
+  else return;
+  followUntil = Date.now() + 1500;
+}
+// Thumbnails take their page's shape once drawn, which moves the ones below: follow again for a moment.
+let followUntil = 0;
+function followThumbAgain() { if (Date.now() < followUntil) followThumb(); }
 $('#sidePanel').addEventListener('keydown', (e) => {
   const t = e.target.closest && e.target.closest('#sidePanel .thumb'); if (!t || !doc || e.ctrlKey || e.metaKey) return;
   const list = $$('#sidePanel .thumb'), k = list.indexOf(t), last = list.length - 1;
@@ -3255,7 +3279,7 @@ async function renderDocs() {
   const panel = $('#sidePanel');
   const all = (await listDocs()).sort((a, b) => b.updated - a.updated);
   if (S.side !== 'docs') return;
-  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">PDFs you open are kept here, on this device.</p>';
+  panel.innerHTML = all.length ? `<p class="empty-note">Files you opened here. Choose one to switch to it.</p><ul class="doc-list">${all.map((d) => `<li class="doc-item"${doc && d.id === doc.id ? ' aria-current="true"' : ''}><button type="button" class="doc-open" data-id="${d.id}">${esc(d.name)}<span class="m">${new Date(d.updated).toLocaleDateString()} · ${d.pages.length} page${d.pages.length === 1 ? '' : 's'}</span></button><button type="button" class="icon-btn" data-del="${d.id}" title="Remove from Recent" aria-label="Remove ${esc(d.name)} from Recent">${ic('x')}</button></li>`).join('')}</ul>` : '<p class="empty-note">No recent PDFs yet. Files you open appear here, kept on this device.</p>';
   icons();
   $$('[data-id]', panel).forEach((b) => { b.onclick = () => serial(() => openStored(b.dataset.id)); });
   $$('[data-del]', panel).forEach((b) => { b.onclick = async () => {
@@ -4127,6 +4151,7 @@ serial(async () => {
   if (/[?&]sample\b/.test(location.search)) { await openSample(); return; }
   const last = store.get('current', null);
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
+  sideNoDoc();
 });
 if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
