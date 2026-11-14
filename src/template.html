@@ -233,6 +233,8 @@ button { font: inherit; color: inherit; }
 .mode-chip .mode-stop { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-2); cursor: pointer; }
 .mode-chip .mode-stop:hover { background: var(--hover); color: var(--ink); }
 .mode-chip .mode-stop svg { width: 14px; height: 14px; }
+/* touch: Stop is a 44px target; the negative margins keep the chip its size */
+@media (pointer: coarse) { .mode-chip .mode-stop { width: 44px; height: 44px; margin: -10px -2px -10px -8px; } }
 .app.tool-on .sb-brand { display: none; }
 /* phones: the chip takes the room of the zoom buttons (a pinch zooms) */
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
@@ -370,6 +372,12 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .findbar .count { min-width: 44px; }
   .findbar #findCase, .findbar #findWord { display: none; }
   .sb-pages { display: grid; width: 40px; height: 40px; margin-left: -8px; }
+  /* with a finger, the title and status bar buttons are 44px targets (Apple's minimum) */
+  @media (pointer: coarse) {
+    .tb-actions { gap: 0; }
+    .tb-actions .btn, .tb-actions .icon-btn, .sb-pages { width: 44px; height: 44px; }
+    .sb-zoom .icon-btn, #zoomLabel { min-width: 44px; height: 44px; }
+  }
   .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
 }
 /* a phone on its side: the bars get thinner and the ribbon shows icons only (the names stay for screen readers and

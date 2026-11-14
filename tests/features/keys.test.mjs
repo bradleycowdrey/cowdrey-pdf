@@ -131,4 +131,21 @@ export default async (h) => {
     eq((await cls())[0], [true, false, true], 'at the end');
     eq(p.errors, []); await p.ctx.close();
   });
+
+  await test('phone: touch targets are at least 44px (Stop, the text format bar, title and status bar); desktop keeps its sizes', async () => {
+    const sizes = (p) => p.$$eval('.mode-stop, .txt-b, .tb-actions .icon-btn, .tb-actions .btn, .sb-pages, .sb-zoom .icon-btn', (b) => b.filter((x) => x.getClientRects().length).map((x) => [x.className.split(' ').filter((c) => c !== 'icon-btn' && c !== 'btn')[0] || x.id, Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)]));
+    const p = await open({ width: 390, height: 844, touch: true, ua: ANDROID }); await openPdf(p, WORD, 'Pelican report.pdf');
+    await editLine(p); await p.waitForSelector('.txt-bar .txt-b');
+    const ph = await sizes(p);
+    ok(ph.length > 8 && ph.every(([, w, hh]) => w >= 44 && hh >= 44), JSON.stringify(ph.filter(([, w, hh]) => w < 44 || hh < 44)));
+    ok(await p.$eval('#modeChip', (e) => e.getBoundingClientRect().height <= 30), 'the chip keeps its size');
+    await shot(p, 'phone-dark-line-editor.png');
+    await p.ctx.close();
+    const d = await open(); await openPdf(d, WORD, 'Pelican report.pdf');
+    await editLine(d);
+    const dk = Object.fromEntries((await sizes(d)).map(([k, w]) => [k, w]));
+    eq([dk['mode-stop'], dk['txt-b']], [22, 30], 'desktop');
+    await shot(d, 'desktop-dark-line-editor.png');
+    await d.ctx.close();
+  });
 };
