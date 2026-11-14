@@ -642,15 +642,22 @@ function ffFixAcroForm(L, out, pages) {
     }
   };
   clean(fields);
-  const listed = new Set();
-  for (let k = 0; k < fields.size(); k++) { const r = fields.get(k); if (r instanceof PDFRef) listed.add(r.tag); }
+  const listed = new Set(), names = new Set(), nameOf = (d) => { const t = d.lookup(PDFName.of('T')); return t && t.decodeText ? t.decodeText() : null; };
+  for (let k = 0; k < fields.size(); k++) { const r = fields.get(k); if (r instanceof PDFRef) listed.add(r.tag); const d = c.lookup(r); if (d instanceof PDFDict && nameOf(d) != null) names.add(nameOf(d)); }
   for (const p of pages) {
     const annots = p.node.lookup(PDFName.of('Annots')); if (!(annots instanceof PDFArray)) continue;
     for (let k = 0; k < annots.size(); k++) {
       let r = annots.get(k), d = c.lookup(r);
       if (!(d instanceof PDFDict) || String(d.get(PDFName.of('Subtype'))) !== '/Widget') continue;
       for (let n = 0; n < 32; n++) { const pr = d.get(PDFName.of('Parent')); const pd = pr instanceof PDFRef ? c.lookup(pr) : null; if (!(pd instanceof PDFDict)) break; r = pr; d = pd; }
-      if (r instanceof PDFRef && !listed.has(r.tag) && (d.get(PDFName.of('T')) || d.get(PDFName.of('FT')))) { fields.push(r); listed.add(r.tag); }
+      if (r instanceof PDFRef && !listed.has(r.tag) && (d.get(PDFName.of('T')) || d.get(PDFName.of('FT')))) {
+        // A field from another PDF (or a copied page) whose name is taken gets a name of its own ("Name_2"):
+        // two fields with one name are one field to other readers.
+        const t = nameOf(d);
+        if (t != null && names.has(t)) { let n = 2; while (names.has(`${t}_${n}`)) n++; d.set(PDFName.of('T'), L.PDFHexString.fromText(`${t}_${n}`)); }
+        if (nameOf(d) != null) names.add(nameOf(d));
+        fields.push(r); listed.add(r.tag);
+      }
     }
   }
 }

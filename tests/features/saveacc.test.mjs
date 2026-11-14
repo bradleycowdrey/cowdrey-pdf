@@ -212,4 +212,26 @@ export default async (h) => {
     eq((await all(p)).find((m) => m.orig === L.str).text, L.str + 'X');
     eq(p.errors, []); await p.ctx.close();
   });
+  await test('Combine: a form field from the added PDF whose name is taken gets its own name, and still works', async () => {
+    const SAMPLE = H.path.join(H.root, 'tests/fixtures/sample.pdf');
+    const p = await open(); await openPdf(p, SAMPLE, 'Form.pdf');
+    await p.fill('.annotationLayer input[name="name"]', 'Jane Filled');
+    const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.evaluate(() => window.__cowdreyPdf.run('merge'))]);
+    await fc.setFiles([SAMPLE]); await p.waitForSelector('#dialog[open]');
+    await p.click('#dialog .btn.primary'); await p.waitForTimeout(800);
+    const out = await savedOf(p), form = (await pdfLib().PDFDocument.load(out)).getForm();
+    const names = form.getFields().map((f) => f.getName());
+    eq(names.slice().sort(), ['agree', 'agree_2', 'name', 'name_2'], 'unique names');
+    eq(form.getTextField('name').getText(), 'Jane Filled', 'the first keeps its value');
+    eq(form.getTextField('name_2').getText(), undefined, 'the added one is its own field');
+    eq(form.getTextField('name_2').acroField.getWidgets().length, 1, 'with its widget');
+    // reopened, the second one can be filled on its own
+    await reopen(p, out); await p.waitForTimeout(600);
+    await p.evaluate(() => window.__cowdreyPdf.views()[3] && window.__cowdreyPdf.views()[3].el.scrollIntoView()); await p.waitForTimeout(1200);
+    await p.fill('.annotationLayer input[name="name_2"]', 'Second');
+    eq(await p.inputValue('.annotationLayer input[name="name"]'), 'Jane Filled', 'the first is not linked to it');
+    const f2 = (await pdfLib().PDFDocument.load(await savedOf(p))).getForm();
+    eq([f2.getTextField('name').getText(), f2.getTextField('name_2').getText()], ['Jane Filled', 'Second']);
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
