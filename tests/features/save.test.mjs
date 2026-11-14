@@ -115,7 +115,7 @@ export default async (h) => {
     await goTo(p, 0); await run(p, 'down'); await p.waitForTimeout(300); await check('move', 3);
     await goTo(p, 2); await run(p, 'delPage'); await p.waitForTimeout(300); await check('delete', 2);
     await goTo(p, 1); await run(p, 'dup'); await p.waitForTimeout(300); await check('duplicate', 3);
-    await goTo(p, 0); await run(p, 'blank'); await p.waitForTimeout(500); await check('blank page', 4);
+    await goTo(p, 0); await run(p, 'blank'); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(500); await check('blank page', 4);
     eq(p.errors, []); await p.ctx.close();
   });
 

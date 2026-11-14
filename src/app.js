@@ -58,6 +58,7 @@ function toast(msg) {
    Feature modules in src/features/*.js are joined into this file by build.py (where /*FEATURES*\/ stands, before
    the apps and start sections) and plug in through this registry. See src/features/README.md. */
 const FEATURE = {
+  thumbLayers: [], // (v) => draw a feature's own layer (an svg in v.el) for a thumbnail; v.thumb is true
   markTypes: {},   // type -> { draw(v, m, svg) -> SVG element, save: async ({ L, out, p, m, entry, ctx }), under?: true (drawn and saved before other marks), move?(m, orig, dx, dy) }
   tools: {},       // tool id -> { down(e, v), move?(e, v) } — pointer handling on the page while the tool is chosen
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
@@ -353,15 +354,25 @@ async function goToDest(dest) {
   } catch {}
 }
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+// Going to a page (a thumbnail, the page box, a link) holds `current` on that page while the view scrolls there, so
+// a page command straight after acts on the page asked for, even when it can't reach the top (the last pages).
+// Scrolling by hand (wheel, touch, keys, the scroll bar) lets the page in view decide again.
+let navLock = 0, navTimer;
+function navUnlock() { navLock = 0; clearTimeout(navTimer); }
 function goPage(n, instant) {
   if (!views.length) return;
   n = Math.max(0, Math.min(views.length - 1, n));
   current = n;
+  const lock = ++navLock; clearTimeout(navTimer);
+  navTimer = setTimeout(() => { if (navLock === lock) navLock = 0; }, 1500);
   viewer.scrollTo({ top: views[n].el.offsetTop - 16, behavior: instant || reduceMotion.matches ? 'instant' : 'smooth' });
-  updateStatus();
+  updateStatus(); markThumb();
 }
+viewer.addEventListener('scrollend', () => { const lock = navLock; if (lock) setTimeout(() => { if (navLock === lock) navLock = 0; }, 50); });
+for (const ev of ['wheel', 'touchstart', 'pointerdown']) viewer.addEventListener(ev, navUnlock, { passive: true });
+viewer.addEventListener('keydown', (e) => { if (/^(Arrow|Page|Home|End| )/.test(e.key)) navUnlock(); });
 viewer.addEventListener('scroll', () => {
-  if (!views.length) return;
+  if (!views.length || navLock) return;
   const mid = viewer.scrollTop + viewer.clientHeight / 3;
   let n = 0;
   for (let k = 0; k < views.length; k++) if (views[k].el.offsetTop <= mid) n = k;
@@ -531,7 +542,7 @@ function changed(before, what) {
   let name = what; if (!name) { try { name = changeName(before); } catch { name = ''; } }
   undoStack.push({ s: before, what: name || 'Change' }); if (undoStack.length > 100) undoStack.shift();
   redoStack.length = 0;
-  setSaved(false); persist(); refreshRibbon();
+  setSaved(false); persist(); refreshRibbon(); thumbsLater();
 }
 const CHANGE_NAMES = { te: 'Text edit', tpara: 'Text edit', ie: 'Picture', erase: 'Erase', ae: 'Comment', hl: 'Highlight', ink: 'Drawing', rect: 'Rectangle', text: 'Text box', note: 'Note', img: 'Picture', pic: 'Picture', link: 'Link', lnkx: 'Link', redact: 'Redaction', cmMarkup: 'Text mark-up', cmShape: 'Shape', cmCallout: 'Callout', cmType: 'Typewriter text', cmStamp: 'Stamp', cmReply: 'Reply', ff: 'Form field', ffmod: 'Form field', ffflat: 'Flatten form', file: 'Attachment', docinfo: 'Document properties', bookmarks: 'Bookmarks', protsec: 'Security', pd_watermark: 'Watermark', pd_background: 'Background', pd_headfoot: 'Header & footer', pd_bates: 'Bates numbering' };
 const MOVE_KEYS = new Set(['x', 'y', 'x1', 'y1', 'x2', 'y2', 'pts', 'rects', 'quads', 'mat', 'tx', 'ty', 'dx', 'dy', 'rect']);
@@ -563,7 +574,7 @@ function restore(s, layout) {
   syncHiddenComments();
   layout ? layoutPages(true).then(renderSide) : views.forEach((v) => v.rendered && drawMarks(v));
   if (!layout && S.side === 'outline') renderSide(); // bookmarks are kept with the marks
-  setSaved(false); persist(); refreshRibbon();
+  setSaved(false); persist(); refreshRibbon(); thumbsLater();
 }
 function undo() { if (!undoStack.length) return; const now = snapshot(); const { s: prev, what } = undoStack.pop(); redoStack.push({ s: now, what }); restore(prev, JSON.parse(prev).pages.length !== doc.pages.length || prev.includes('"rot"') && prev !== now); toast('Undid: ' + what); }
 function redo() { if (!redoStack.length) return; const now = snapshot(); const { s: next, what } = redoStack.pop(); undoStack.push({ s: now, what }); restore(next, true); toast('Redid: ' + what); }
@@ -2227,44 +2238,129 @@ async function textOf(entry) {
   if (!findState.texts.has(k)) findState.texts.set(k, await (await pageOf(entry)).getTextContent());
   return findState.texts.get(k);
 }
+// A page's text as one string, each letter mapped back to its piece of text ([item, letter]; null for a space or line
+// break put between pieces), so a phrase split across pieces ('U' + 'ser Guide') is found too.
+function findIndexOf(tc) {
+  if (tc.findIndex) return tc.findIndex;
+  let s = ''; const map = []; let prev = null;
+  tc.items.forEach((it, idx) => {
+    if (!it.str || !it.transform) { if (it.hasEOL) { s += '\n'; map.push(null); prev = null; } return; }
+    if (prev && !/\s$/.test(s) && !/^\s/.test(it.str)) {
+      const f = lineFrame({ tm: prev.transform }), dx = it.transform[4] - f.o[0], dy = it.transform[5] - f.o[1];
+      const along = dx * f.u[0] + dy * f.u[1], perp = dx * f.v[0] + dy * f.v[1];
+      if (Math.abs(perp) > f.size * .3 || along - prev.width > f.size * .25 || along < prev.width - f.size) { s += ' '; map.push(null); }
+    }
+    for (let j = 0; j < it.str.length; j++) map.push([idx, j]);
+    s += it.str; prev = it;
+    if (it.hasEOL) { s += '\n'; map.push(null); prev = null; }
+  });
+  return (tc.findIndex = { s, map });
+}
+const findOpts = { matchCase: false, words: false };
+function findRegex(q) {
+  const body = q.trim().split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
+  return new RegExp(findOpts.words ? `(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])` : body, 'gu' + (findOpts.matchCase ? '' : 'i'));
+}
+let findGen = 0;
 async function runFind(q) {
+  const gen = ++findGen;
   findState.q = q; findState.hits = []; findState.now = -1;
   $$('.find-hit').forEach((h) => h.remove());
-  if (!q || !doc) { $('#findCount').textContent = ''; return; }
-  const needle = q.toLowerCase();
+  if (!q || !doc) { $('#findCount').textContent = ''; findListDraw(); return; }
+  const rx = findRegex(q), hits = [];
   for (let n = 0; n < doc.pages.length; n++) {
     const tc = await textOf(doc.pages[n]);
-    tc.items.forEach((it, idx) => { let p = it.str.toLowerCase().indexOf(needle); while (p >= 0) { findState.hits.push({ n, idx, p }); p = it.str.toLowerCase().indexOf(needle, p + 1); } });
+    if (gen !== findGen) return;
+    const { s: text, map } = findIndexOf(tc);
+    rx.lastIndex = 0;
+    for (let m; (m = rx.exec(text));) {
+      if (!m[0].length) { rx.lastIndex++; continue; }
+      // The match's letters, in runs on the same piece of text: one box each.
+      const parts = [];
+      for (let k = m.index; k < m.index + m[0].length; k++) {
+        const c = map[k]; if (!c) continue;
+        const last = parts[parts.length - 1];
+        if (last && last[0] === c[0] && last[1] + last[2] === c[1]) last[2]++; else parts.push([c[0], c[1], 1]);
+      }
+      if (parts.length) hits.push({ n, at: m.index, len: m[0].length, parts });
+    }
   }
-  $('#findCount').textContent = findState.hits.length ? `0 of ${findState.hits.length}` : 'No matches';
+  findState.hits = hits;
+  $('#findCount').textContent = hits.length ? `0 of ${hits.length}` : 'No matches';
   views.forEach((v) => v.rendered && paintFind(v));
-  if (findState.hits.length) stepFind(1);
+  findListDraw();
+  // From the page in view onwards
+  if (hits.length) { const k = hits.findIndex((h) => h.n >= current); findState.now = (k < 0 ? 0 : k) - 1; stepFind(1); }
+}
+// A box for each run of a match on its piece of text, in the page's coordinates as shown.
+function findBoxes(v, h) {
+  const tc = findState.texts.get(pageKey(v.entry)); if (!tc) return [];
+  return h.parts.map(([idx, p, len]) => {
+    const it = tc.items[idx];
+    const t = pdfjs.Util.transform(v.viewport.transform, it.transform);
+    const fh = Math.hypot(t[2], t[3]), w = it.width * v.viewport.scale, per = it.str.length ? w / it.str.length : 0;
+    return { x: t[4] + per * p, y: t[5] - fh, w: Math.max(4, per * len), h: fh * 1.15 };
+  });
 }
 function paintFind(v) {
   $$('.find-hit', v.el).forEach((h) => h.remove());
-  const n = views.indexOf(v), tc = findState.texts.get(pageKey(v.entry));
-  if (!tc) return;
+  const n = views.indexOf(v);
   findState.hits.forEach((h, k) => {
     if (h.n !== n) return;
-    const it = tc.items[h.idx];
-    const t = pdfjs.Util.transform(v.viewport.transform, it.transform);
-    const fh = Math.hypot(t[2], t[3]), w = it.width * scale, per = it.str.length ? w / it.str.length : 0;
-    const el = document.createElement('div'); el.className = 'find-hit' + (k === findState.now ? ' now' : '');
-    el.style.left = (t[4] + per * h.p) + 'px'; el.style.top = (t[5] - fh) + 'px';
-    el.style.width = Math.max(4, per * findState.q.length) + 'px'; el.style.height = fh * 1.15 + 'px';
-    v.el.appendChild(el);
+    for (const b of findBoxes(v, h)) {
+      const el = document.createElement('div'); el.className = 'find-hit' + (k === findState.now ? ' now' : '');
+      el.style.left = b.x + 'px'; el.style.top = b.y + 'px'; el.style.width = b.w + 'px'; el.style.height = b.h + 'px';
+      v.el.appendChild(el);
+    }
   });
 }
-function stepFind(d) {
+function stepFind(d, to) {
   if (!findState.hits.length) return;
-  findState.now = (findState.now + d + findState.hits.length) % findState.hits.length;
-  const h = findState.hits[findState.now];
+  findState.now = to ?? (findState.now + d + findState.hits.length) % findState.hits.length;
+  const h = findState.hits[findState.now], v = views[h.n];
   $('#findCount').textContent = `${findState.now + 1} of ${findState.hits.length}`;
   goPage(h.n, true);
-  renderView(views[h.n]).then(() => views.forEach((v) => v.rendered && paintFind(v)));
+  // The match in the middle of the view (not just its page's top, where it may be out of sight).
+  const b = findBoxes(v, h)[0];
+  if (b) {
+    const top = v.el.offsetTop + b.y + b.h / 2 - viewer.clientHeight / 2, left = v.el.offsetLeft + b.x + b.w / 2 - viewer.clientWidth / 2;
+    viewer.scrollTo({ top: Math.max(0, top), left: viewer.scrollWidth > viewer.clientWidth ? Math.max(0, left) : 0, behavior: 'instant' });
+  }
+  $$('#findList [data-hit]').forEach((x) => { const on = +x.dataset.hit === findState.now; x.setAttribute('aria-current', on ? 'true' : 'false'); if (on) x.scrollIntoView({ block: 'nearest' }); });
+  renderView(v).then(() => views.forEach((x) => x.rendered && paintFind(x)));
 }
+// All results: each match with its page and the words around it; choosing one goes to it.
+const FIND_LIST_MAX = 500;
+function findListDraw() {
+  const list = $('#findList'); if (!list || list.hidden) return;
+  const hits = findState.hits;
+  if (!findState.q) { list.innerHTML = '<p class="find-none">Type to search.</p>'; return; }
+  if (!hits.length) { list.innerHTML = '<p class="find-none">No matches</p>'; return; }
+  const row = (h, k) => {
+    const tc = findState.texts.get(pageKey(doc.pages[h.n])), s = tc ? findIndexOf(tc).s : '';
+    const flat = (x) => esc(x.replace(/\s+/g, ' '));
+    const a = Math.max(0, h.at - 40), b = Math.min(s.length, h.at + h.len + 40);
+    const before = s.slice(a, h.at).replace(/^\S*\s/, a ? '' : '$&'), after = s.slice(h.at + h.len, b).replace(/\s\S*$/, b < s.length ? '' : '$&');
+    return `<li><button type="button" data-hit="${k}" aria-current="${k === findState.now}"><b>Page ${h.n + 1}</b><span>${a ? '…' : ''}${flat(before)}<mark>${flat(s.slice(h.at, h.at + h.len))}</mark>${flat(after)}${b < s.length ? '…' : ''}</span></button></li>`;
+  };
+  list.innerHTML = `<p class="find-head">${hits.length === 1 ? '1 result' : `${hits.length} results`}${hits.length > FIND_LIST_MAX ? `, first ${FIND_LIST_MAX} shown` : ''}</p><ol>${hits.slice(0, FIND_LIST_MAX).map(row).join('')}</ol>`;
+}
+function findListShow(on) {
+  const list = $('#findList'), btn = $('#findAll');
+  list.hidden = !on; btn.setAttribute('aria-pressed', on); btn.setAttribute('aria-expanded', on);
+  findListDraw();
+}
+$('#findList').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) stepFind(0, +b.dataset.hit); });
+$('#findList').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); findListShow(false); $('#findAll').focus(); return; }
+  const bs = $$('#findList [data-hit]'), k = bs.indexOf(document.activeElement); if (k < 0) return;
+  const n = { ArrowDown: k + 1, ArrowUp: k - 1, Home: 0, End: bs.length - 1 }[e.key]; if (n === undefined) return;
+  e.preventDefault(); e.stopPropagation(); bs[Math.max(0, Math.min(bs.length - 1, n))].focus();
+});
+$('#findAll').onclick = () => findListShow($('#findList').hidden);
+for (const [id, k] of [['#findCase', 'matchCase'], ['#findWord', 'words']]) $(id).onclick = () => { findOpts[k] = !findOpts[k]; $(id).setAttribute('aria-pressed', findOpts[k]); runFind($('#findInput').value.trim()); };
 function openFind() { $('#findbar').hidden = false; $('#findInput').focus(); $('#findInput').select(); }
-function closeFind() { $('#findbar').hidden = true; runFind(''); }
+function closeFind() { $('#findbar').hidden = true; findListShow(false); runFind(''); }
 let findTimer;
 $('#findInput').addEventListener('input', (e) => { clearTimeout(findTimer); findTimer = setTimeout(() => runFind(e.target.value.trim()), 200); });
 $('#findInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') closeFind(); });
@@ -2298,7 +2394,10 @@ async function renderSide() {
     $$('[data-o]', panel).forEach((b, k) => { b.onclick = () => goToDest(flat[k].dest); });
     return;
   }
-  panel.innerHTML = `<div class="thumbs">${doc.pages.map((e, n) => `<button type="button" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}"><canvas width="1" height="1"></canvas><span>${n + 1}</span></button>`).join('')}</div>`;
+  // A list box: one Tab stop (the page in view), arrows move, Shift+arrows choose several, Enter goes to the page.
+  const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#sidePanel .thumb');
+  const refocus = had ? (thumbChosen().has(+had.dataset.n) ? +had.dataset.n : current) : -1;
+  panel.innerHTML = `<div class="thumbs" role="listbox" aria-label="Pages" aria-multiselectable="true" aria-orientation="vertical">${doc.pages.map((e, n) => `<button type="button" role="option" class="thumb" draggable="true" data-n="${n}" aria-label="Page ${n + 1}" aria-selected="false" tabindex="-1"><canvas width="1" height="1"></canvas><span aria-hidden="true">${n + 1}</span></button>`).join('')}</div>`;
   thumbIO && thumbIO.disconnect();
   thumbIO = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) { thumbIO.unobserve(en.target); drawThumb(en.target); } }), { root: panel, rootMargin: '300px' });
   $$('.thumb', panel).forEach((t) => {
@@ -2315,17 +2414,109 @@ async function renderSide() {
     };
   });
   markThumb();
+  if (refocus >= 0) { const t = $(`.thumb[data-n="${refocus}"]`, panel) || $(`.thumb[data-n="${current}"]`, panel); if (t) { t.focus({ preventScroll: true }); markThumb(); } }
+  const t0 = $(`.thumb[data-n="${current}"]`, panel); if (t0) t0.scrollIntoView({ block: 'nearest' });
 }
+// A thumbnail shows what will be saved: the page, with its page design (watermark, header, background), redactions
+// and mark-up drawn over it the way the page shows them. `data-size` on the element sets its longer side.
+const thumbToken = new WeakMap();
+// What a thumbnail depends on: when this changes (an edit, undo, redo), it is drawn again.
+function thumbSig(e, n, extra) { return JSON.stringify([e.src, e.i, e.rot, e.crop || 0, n, doc.pages.length, doc.marks[pageKey(e)] || [], extra]); }
 async function drawThumb(t) {
-  const e = doc.pages[+t.dataset.n]; if (!e) return;
-  const page = await pageOf(e);
-  const vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
-  const s = 140 / Math.max(vp.width, vp.height) * 1.3;
-  const v2 = page.getViewport({ scale: s, rotation: (page.rotate + e.rot) % 360 });
-  const c = $('canvas', t); c.width = v2.width; c.height = v2.height;
-  try { await page.render({ canvas: c, canvasContext: c.getContext('2d'), viewport: v2 }).promise; } catch {}
+  const n = +t.dataset.n, e = doc && doc.pages[n]; if (!e) return;
+  const tok = (thumbToken.get(t) || 0) + 1; thumbToken.set(t, tok);
+  const sig = thumbSig(e, n, JSON.stringify(doc.marks.__doc || []));
+  const page = await pageOf(e), rot = (page.rotate + e.rot) % 360;
+  const vp = page.getViewport({ scale: 1, rotation: rot });
+  const v2 = page.getViewport({ scale: (+t.dataset.size || 182) / Math.max(vp.width, vp.height), rotation: rot });
+  const off = document.createElement('canvas'); off.width = v2.width; off.height = v2.height;
+  const g = off.getContext('2d');
+  try { await page.render({ canvas: off, canvasContext: g, viewport: v2 }).promise; } catch {}
+  if (thumbToken.get(t) !== tok) return;
+  try { await thumbOverlays(e, n, page, v2, g); } catch (err) { console.warn('thumbnail', err); }
+  if (thumbToken.get(t) !== tok || !t.isConnected) return;
+  const c = $('canvas', t); c.width = off.width; c.height = off.height; c.getContext('2d').drawImage(off, 0, 0);
+  off.width = off.height = 0;
+  t.dataset.sig = sig;
 }
-function markThumb() { $$('.thumb').forEach((t) => t.setAttribute('aria-current', +t.dataset.n === current)); }
+// Draws the page's layers (made by the same code as on the big page, at the thumbnail's scale) onto `g`.
+async function thumbOverlays(e, n, page, vp, g) {
+  const marks = doc.marks[pageKey(e)] || [];
+  if (!marks.length && !(doc.marks.__doc || []).length) return;
+  if (marks.some((m) => m.type === 'te') && !page._cmapValue) { try { page._cmapValue = await contentMap(page); } catch {} }
+  const el = document.createElement('div');
+  el.dataset.n = n; el.setAttribute('aria-hidden', 'true');
+  el.style.cssText = `position:fixed;left:-100000px;top:0;width:${vp.width}px;height:${vp.height}px;visibility:hidden;pointer-events:none`;
+  document.body.appendChild(el);
+  try {
+    const v = { el, entry: e, viewport: vp, page, rendered: true, thumb: true };
+    // Drawn at the thumbnail's scale. What is selected stays so (features keep their own state, a crop under way…);
+    // a selection's outline is a page style, which a picture of the layer does not have.
+    const keep = scale; scale = vp.scale;
+    try { drawMarks(v); for (const f of FEATURE.thumbLayers) { try { f(v); } catch (err) { console.warn(err); } } }
+    finally { scale = keep; }
+    // In the page's order: what goes under the text (blended with it), the mark-up, then what goes over everything.
+    const layers = [...el.querySelectorAll(':scope > svg')].sort((a, b) => thumbZ(a) - thumbZ(b));
+    for (const svg of layers) {
+      if (!svg.childElementCount) continue;
+      const copy = svg.cloneNode(true);
+      copy.setAttribute('xmlns', NS); copy.setAttribute('width', g.canvas.width); copy.setAttribute('height', g.canvas.height);
+      copy.setAttribute('viewBox', `0 0 ${vp.width} ${vp.height}`);
+      const img = new Image();
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+      try { await img.decode(); } catch { continue; }
+      g.globalCompositeOperation = svg.classList.contains('pd-under') ? 'multiply' : 'source-over';
+      g.drawImage(img, 0, 0, g.canvas.width, g.canvas.height);
+    }
+    g.globalCompositeOperation = 'source-over';
+  } finally { el.remove(); }
+}
+const thumbZ = (svg) => (svg.classList.contains('pd-under') ? 1 : svg.classList.contains('marks') ? 4 : 5);
+// After a change, undo or redo, the thumbnails whose page changed are drawn again (a moment later, once).
+let thumbTimer;
+function thumbsLater() { clearTimeout(thumbTimer); thumbTimer = setTimeout(thumbsRefresh, 300); }
+function thumbsRefresh() {
+  if (!doc) return;
+  const dm = JSON.stringify(doc.marks.__doc || []);
+  for (const t of $$('.thumb[data-sig], .pg60-cell[data-sig]')) {
+    const e = doc.pages[+t.dataset.n];
+    if (e && t.dataset.sig !== thumbSig(e, +t.dataset.n, dm)) drawThumb(t);
+  }
+}
+// The chosen pages: those picked in the sidebar when there are several, else the page in view.
+function thumbChosen() { const l = typeof pg60Valid === 'function' ? pg60Valid() : []; return new Set(l.length > 1 ? l : [current]); }
+function markThumb() {
+  const sel = thumbChosen(), a = document.activeElement, focused = a && a.closest && a.closest('#sidePanel .thumb');
+  $$('#sidePanel .thumb').forEach((t) => {
+    const n = +t.dataset.n;
+    t.setAttribute('aria-selected', sel.has(n));
+    if (n === current) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+    t.tabIndex = (focused ? t === focused : n === current) ? 0 : -1;
+  });
+}
+$('#sidePanel').addEventListener('keydown', (e) => {
+  const t = e.target.closest && e.target.closest('#sidePanel .thumb'); if (!t || !doc || e.ctrlKey || e.metaKey) return;
+  const list = $$('#sidePanel .thumb'), k = list.indexOf(t), last = list.length - 1;
+  if (e.altKey) {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault(); e.stopPropagation();
+    if (!thumbChosen().has(k)) { current = k; if (FEATURE.thumbPick) FEATURE.thumbPick(k); }
+    run(e.key === 'ArrowUp' ? 'up' : 'down'); return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault(); e.stopPropagation();
+    goPage(k); if (isPhone()) toggleSidebar(false); else viewer.focus({ preventScroll: true });
+    return;
+  }
+  const to = { ArrowUp: k - 1, ArrowLeft: k - 1, ArrowDown: k + 1, ArrowRight: k + 1, Home: 0, End: last }[e.key];
+  if (to === undefined) return;
+  e.preventDefault(); e.stopPropagation();
+  const n = Math.max(0, Math.min(last, to)), nt = list[n];
+  nt.focus(); nt.scrollIntoView({ block: 'nearest' });
+  if (e.shiftKey && FEATURE.thumbExtend) FEATURE.thumbExtend(n);
+  else { if (FEATURE.thumbPick) FEATURE.thumbPick(n); goPage(n, true); }
+  markThumb();
+});
 let sideOpener = null; // what had focus when the phone sidebar opened; it gets it back on closing
 function toggleSidebar(on) {
   const phone = isPhone();
@@ -2346,7 +2537,7 @@ function toggleSidebar(on) {
 function sideInert(on) { $$('.titlebar, .ribbon, #viewer, .statusbar').forEach((el) => { el.inert = on; }); }
 $('#sidebar').addEventListener('keydown', (e) => {
   if (e.key !== 'Tab' || app.dataset.sidebar !== 'open') return;
-  const fs = $$('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])', $('#sidebar')).filter((el) => !el.disabled && el.getClientRects().length);
+  const fs = $$('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])', $('#sidebar')).filter((el) => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
   if (!fs.length) return;
   const first = fs[0], last = fs[fs.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -2721,7 +2912,7 @@ function thumbMenu(t, at) {
   if (typeof pg60Valid === 'function' && !pg60Valid().includes(n)) pg60SetSel([]);
   const on = (id, o) => ctxCmd(id, { ...o, run: () => { current = n; markThumb(); run(id); } });
   const was = current; current = n; // what can be done to this page
-  const items = [on('rotL'), on('rotR'), '-', on('dup'), on('blank', { label: 'Insert blank page after' }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
+  const items = [on('rotL'), on('rotR'), '-', on('dup'), ctxCmd('blank', { label: 'Insert blank page after', run: () => { current = n; markThumb(); insertBlank(); } }), on('extract'), '-', on('up'), on('down'), '-', on('delPage')];
   current = was;
   openCtx(items, at, t, `Page ${n + 1}`); t.classList.add('ctx-for'); // shows which page the menu is for
   return true;
@@ -2757,7 +2948,7 @@ const typingIn = (el) => !!el && (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el
 // The menu for whatever is at (x, y) on screen; false when there is none (the browser's own menu shows).
 function ctxFor(el, x, y) {
   if (!doc || !el || typingIn(el) || $('#dialog').open) return false;
-  const t = el.closest('#sidePanel .thumb'); if (t) return thumbMenu(t, { x, y });
+  const t = el.closest('#sidePanel .thumb, .pg60-cell'); if (t) return thumbMenu(t, { x, y });
   const pe = el.closest('#pages .page'), v = pe && views[+pe.dataset.n]; if (!v || v.el !== pe) return false;
   const hit = el.closest('svg.marks .mk[data-id]'), m = hit && marksOf(v.entry).find((mm) => mm.id === hit.dataset.id);
   return m ? markMenu(v, m, { x, y }) : pageMenu(v, x, y);
