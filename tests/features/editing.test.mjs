@@ -182,13 +182,13 @@ export default async (h) => {
     ok(bar.y + bar.height <= ed.y || bar.y >= ed.y + ed.height, 'does not cover the line');
     await shot(p, `phone-format-bar-${scheme}.png`);
     // the colours open from one button, in the same row
-    ok(!(await p.isVisible('.txt-bar .txt-sw')), 'swatches folded away');
+    ok(!(await p.isVisible('.txt-bar .txt-cols .swatch')), 'swatches folded away');
     await p.click('.txt-bar [data-tf="colors"]'); await p.waitForTimeout(100);
-    ok(await p.isVisible('.txt-bar .txt-sw'), 'swatches shown');
+    ok(await p.isVisible('.txt-bar .txt-cols .swatch'), 'swatches shown');
     ok((await p.locator('.txt-bar').boundingBox()).height < 48, 'still one row');
     await shot(p, `phone-format-bar-colours-${scheme}.png`);
     await p.click('.txt-bar [data-c="#E03131"]'); await p.waitForTimeout(100);
-    ok(!(await p.isVisible('.txt-bar .txt-sw')), 'folded again after picking');
+    ok(!(await p.isVisible('.txt-bar .txt-cols .swatch')), 'folded again after picking');
     eq(await p.$eval('.txt-bar .txt-dot', (e) => e.style.background), 'rgb(224, 49, 49)', 'the button shows the colour');
     ok(await p.$('.line-editor'), 'still editing');
     await p.ctx.close();
@@ -199,7 +199,7 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('tool_edit')); await p.waitForTimeout(300);
     const b = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Prepared' }).first().boundingBox();
     await p.mouse.click(b.x + 10, b.y + b.height / 2); await p.waitForSelector('.txt-bar');
-    ok(await p.isVisible('.txt-bar .txt-sw') && !(await p.isVisible('.txt-bar [data-tf="colors"]')), 'swatches in the bar');
+    ok(await p.isVisible('.txt-bar .txt-cols .swatch') && !(await p.isVisible('.txt-bar [data-tf="colors"]')), 'swatches in the bar');
     await shot(p, 'desktop-format-bar.png');
     await p.ctx.close();
   });

@@ -926,7 +926,9 @@ cmXfdfInput.addEventListener('change', async () => {
 });
 cmd('cm_export', { label: 'Export comments…', rlabel: 'Export', icon: 'file-up', enabled: has, run: cmExportXfdf });
 cmd('cm_import', { label: 'Import comments…', rlabel: 'Import', icon: 'file-down', enabled: has, run: () => cmXfdfInput.click() });
-C.cm_list.menu = ['cm_list', 'cm_hide', 'cm_export', 'cm_import']; // on the Comments list button's arrow, so the tab still fits a laptop screen
+// On the Comments list button's arrow, so the tab still fits a laptop screen. Not on phones, where the folded tab
+// keeps to about 1.5 screens: there they are in More and on the Comments panel the button opens.
+Object.defineProperty(C.cm_list, 'menu', { configurable: true, get: () => (isPhone() ? undefined : ['cm_list', 'cm_hide', 'cm_export', 'cm_import']) });
 menuAdd('Comment', ['cm_hide', 'cm_export', 'cm_import']);
 TEST_HOOKS.cmImportXfdf = (xml) => cmImportXfdf(xml);
 TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;

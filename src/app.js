@@ -543,6 +543,8 @@ function drawMarks(v) {
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
   }
+  // A thumbnail is a picture of the layer, without the page's styles: no selection box or handles in it.
+  if (v.thumb) return;
   drawSelection(v, svg);
   drawMarkBox(v, svg);
 }

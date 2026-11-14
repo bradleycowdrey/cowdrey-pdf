@@ -986,7 +986,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .swatch { border-color: Canvas; box-shadow: 0 0 0 1px CanvasText; }
   .swatch[aria-pressed="true"], .swatch[aria-checked="true"] { outline: 3px solid Highlight; outline-offset: 2px; }
   .rb[aria-pressed="true"], .rb[data-on], .txt-b[aria-pressed="true"], .ribbon-tabs [aria-selected="true"], .side-tabs [aria-selected="true"], .seg > [aria-selected="true"], .seg > label:has(input:checked),
-  .thumb[aria-current="true"], .doc-item[aria-current="true"] .doc-open, .sig-font[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .thumb[aria-current="page"], .doc-item[aria-current="true"] .doc-open, .sig-font[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   .ribbon-tabs button[aria-selected="true"]::after { forced-color-adjust: none; background: Highlight; }
   .mi:hover, .mi:focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
   .mi > .mchk { color: Highlight; }
@@ -1629,6 +1629,8 @@ function drawMarks(v) {
     if (selMark && selMark.id === m.id) g.classList.add('sel');
     svg.appendChild(g);
   }
+  // A thumbnail is a picture of the layer, without the page's styles: no selection box or handles in it.
+  if (v.thumb) return;
   drawSelection(v, svg);
   drawMarkBox(v, svg);
 }
@@ -8068,7 +8070,9 @@ cmXfdfInput.addEventListener('change', async () => {
 });
 cmd('cm_export', { label: 'Export comments…', rlabel: 'Export', icon: 'file-up', enabled: has, run: cmExportXfdf });
 cmd('cm_import', { label: 'Import comments…', rlabel: 'Import', icon: 'file-down', enabled: has, run: () => cmXfdfInput.click() });
-C.cm_list.menu = ['cm_list', 'cm_hide', 'cm_export', 'cm_import']; // on the Comments list button's arrow, so the tab still fits a laptop screen
+// On the Comments list button's arrow, so the tab still fits a laptop screen. Not on phones, where the folded tab
+// keeps to about 1.5 screens: there they are in More and on the Comments panel the button opens.
+Object.defineProperty(C.cm_list, 'menu', { configurable: true, get: () => (isPhone() ? undefined : ['cm_list', 'cm_hide', 'cm_export', 'cm_import']) });
 menuAdd('Comment', ['cm_hide', 'cm_export', 'cm_import']);
 TEST_HOOKS.cmImportXfdf = (xml) => cmImportXfdf(xml);
 TEST_HOOKS.cmHiddenCount = () => [...CM.hideIds.values()].flat().length;

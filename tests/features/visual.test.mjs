@@ -154,7 +154,7 @@ export default async (h) => {
     eq(await outline('#ribbonBody [data-cmd="tool_highlight"]'), ['solid', true], 'pressed tool');
     eq(await outline('#ribbonTabs [aria-selected="true"]'), ['solid', true], 'ribbon tab');
     eq(await outline('.side-tabs [aria-selected="true"]'), ['solid', true], 'sidebar tab');
-    eq(await outline('.thumb[aria-current="true"]'), ['solid', true], 'current page');
+    eq(await outline('.thumb[aria-current="page"]'), ['solid', true], 'current page');
     eq(await p.$eval('#ribbonBody [data-cmd="tool_pen"]', (e) => getComputedStyle(e).outlineStyle), 'none', 'a tool not pressed');
     await p.click('#menubar > button:has-text("View")'); await p.waitForTimeout(100);
     await p.hover('#popover [data-cmd="zoomIn"]'); eq(await outline('#popover [data-cmd="zoomIn"]'), ['solid', true], 'menu row under the pointer');
