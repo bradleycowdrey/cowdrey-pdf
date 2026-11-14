@@ -48,11 +48,17 @@ export default async (h) => {
     const out = await savedOf(p);
     const t = await texts(out);
     ok(t[1].includes('Quarterly report, page 2'), 'the page text is still there');
-    await reopen(p, out); await showPage(p, 1);
+    // drawn into page 2 only, as tagged content
+    const d = await L.PDFDocument.load(out);
+    const content = (n) => { const c = d.getPage(n).node.Contents(); return (c instanceof L.PDFArray ? c.asArray() : [c]).map((r) => { const st = d.context.lookup(r); return Buffer.from(st instanceof L.PDFRawStream ? L.decodePDFRawStream(st).decode() : st.getContents()).toString('latin1'); }).join('\n'); };
+    ok(/CowdreyPdfPD[\s\S]*1 0\.87\d* 0\.4 rg[\s\S]*EMC/.test(content(1)), 'yellow fill tagged on page 2');
+    ok(!/CowdreyPdfPD/.test(content(0)), 'nothing on page 1');
+    // reopened, it is a setting again (drawn on screen, taken out of the page itself)
+    await reopen(p, out); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await showPage(p, 1);
+    eq((await items(p)).map((m) => [m.type, m.color, m.range]), [['pd_background', '#ffe066', '2']]);
+    eq(await p.$$eval('.page[data-n="1"] svg.pd-under rect', (r) => r.map((x) => x.getAttribute('fill'))), ['#ffe066']);
     const px = (n, x, y) => p.evaluate(([n, x, y]) => { const v = window.__cowdreyPdf.views()[n]; const c = v.el.querySelector('canvas.pdf'); const [a, b] = v.viewport.convertToViewportPoint(x, y); const k = c.width / v.viewport.width; return [...c.getContext('2d').getImageData(Math.round(a * k), Math.round(b * k), 1, 1).data].slice(0, 3); }, [n, x, y]);
-    const bg = await px(1, 20, 20);
-    ok(Math.abs(bg[0] - 255) < 6 && Math.abs(bg[1] - 224) < 6 && Math.abs(bg[2] - 102) < 6, 'page 2 is yellow: ' + bg);
-    ok((await px(0, 20, 20)).every((c) => c > 250), 'page 1 stays white');
+    ok((await px(1, 20, 20)).every((c) => c > 250), 'the page itself no longer has it');
     eq(p.errors, []); await p.ctx.close();
   });
 
@@ -63,8 +69,9 @@ export default async (h) => {
     eq((await overlay(p, 0)).sort(), ['Cowdrey report', 'Page 1 of 3', 'Printed ' + today].sort(), 'on screen');
     let out = await savedOf(p), t = await texts(out);
     for (let k = 0; k < 3; k++) ok(t[k].includes(`Page ${k + 1} of 3`) && t[k].includes('Cowdrey report') && t[k].includes('Printed ' + today), `page ${k + 1}: ${t[k]}`);
-    await reopen(p, out);
-    const tl = await pageText(p); ok(tl.includes('Page 1 of 3') && tl.includes('Cowdrey report'), 'text layer of the reopened PDF: ' + tl);
+    await reopen(p, out); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await p.waitForTimeout(300);
+    const tl = await pageText(p); ok(!tl.includes('Page 1 of 3'), 'taken out of the reopened page: ' + tl);
+    eq((await overlay(p, 0)).sort(), ['Cowdrey report', 'Page 1 of 3', 'Printed ' + today].sort(), 'shown again from its settings');
     // the order changed: numbers follow the pages as saved
     await openPdf(p); await add(p, 'pd_headfoot', {});
     await run(p, 'down'); await p.waitForTimeout(400);
@@ -117,6 +124,43 @@ export default async (h) => {
     eq(await overlay(p, 0), ['SECOND'], 'undo brings it back');
     await p.keyboard.press('Control+Shift+z'); await p.waitForTimeout(300);
     eq(await overlay(p, 0), [], 'redo removes it again');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await h.test('page design: after saving and reopening, the watermark and header can be updated or removed', async () => {
+    const p = await open(); await openPdf(p);
+    await add(p, 'pd_watermark', { text: 'DRAFT (é)' });
+    await add(p, 'pd_headfoot', { tl: 'Acme report' });
+    const out = await savedOf(p);
+    let t = await texts(out);
+    ok(t.every((x) => x.includes('DRAFT (é)') && x.includes('Acme report')), 'drawn on every page');
+    const d = await L.PDFDocument.load(out);
+    const kept = JSON.parse(d.getInfoDict().lookup(L.PDFName.of('CowdreyPdfPD')).decodeText());
+    eq(kept.map((m) => m.type), ['pd_watermark', 'pd_headfoot'], 'settings kept in the file');
+    // reopen: listed in Manage, drawn once (from the settings, not twice)
+    await reopen(p, out); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await p.waitForTimeout(300);
+    eq((await items(p)).map((m) => m.text || m.tl), ['DRAFT (é)', 'Acme report']);
+    eq((await overlay(p, 0)).sort(), ['Acme report', 'DRAFT (é)', 'Page 1 of 3'].sort());
+    ok(!(await pageText(p)).includes('DRAFT'), 'not left in the page');
+    await run(p, 'pd_manage'); await p.waitForSelector('#dialog[open] .pd-row');
+    eq(await p.$$eval('#dialog .pd-row strong', (e) => e.map((x) => x.textContent)), ['Watermark', 'Header & footer']);
+    // update the watermark, remove the header
+    await p.click('#dialog .pd-row:first-child [data-edit]'); await p.waitForSelector('#dialog[open] .pd-form');
+    await p.fill('#dialog [data-k="text"]', 'FINAL'); await p.click('#dialog .dlg-foot button:has-text("Save changes")'); await p.waitForTimeout(300);
+    await run(p, 'pd_manage'); await p.waitForSelector('#dialog[open] .pd-row');
+    await p.click('#dialog .pd-row:last-child [data-remove]'); await p.waitForTimeout(200);
+    await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(200);
+    const out2 = await savedOf(p);
+    t = await texts(out2);
+    ok(t.every((x) => x.filter((s) => s === 'FINAL').length === 1 && !x.some((s) => /DRAFT|Acme|Page \d of/.test(s))), 'updated and removed: ' + JSON.stringify(t));
+    ok(t[0].includes('Quarterly report, page 1'), 'page content kept');
+    // remove everything: no settings left in the file either
+    await reopen(p, out2); await p.evaluate(() => window.__cowdreyPdf.pdOpening()); await p.waitForTimeout(300);
+    await run(p, 'pd_manage'); await p.waitForSelector('#dialog[open] .pd-row');
+    await p.click('#dialog [data-remove]'); await p.waitForTimeout(200); await p.click('#dialog .dlg-foot .btn.primary');
+    const out3 = await savedOf(p);
+    ok((await texts(out3)).every((x) => !x.includes('FINAL')), 'watermark removed');
+    ok(!(await L.PDFDocument.load(out3)).getInfoDict().has(L.PDFName.of('CowdreyPdfPD')), 'no settings left');
     eq(p.errors, []); await p.ctx.close();
   });
 

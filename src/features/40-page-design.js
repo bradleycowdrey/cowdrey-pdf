@@ -212,13 +212,79 @@ FEATURE.savePage.push(async ({ L, out, p, n, entries, ctx }) => {
   if (under.length) {
     // Behind the content: drawn in a stream of its own, which then goes first in the page's list of streams.
     p.getContentStream(false);
-    await pdDrawItems(L, out, p, under, map, r, ctx);
+    pdTag(L, out, p, true); await pdDrawItems(L, out, p, under, map, r, ctx); pdTag(L, out, p, false);
     const contents = p.node.Contents(), ref = p.contentStreamRef, at = contents ? contents.indexOf(ref) : -1;
     if (at > 0) { contents.remove(at); contents.insert(0, ref); }
     p.getContentStream(false); // what's drawn next goes on top again
   }
-  if (over.length) await pdDrawItems(L, out, p, over, map, r, ctx);
+  if (over.length) { pdTag(L, out, p, true); await pdDrawItems(L, out, p, over, map, r, ctx); pdTag(L, out, p, false); }
 });
+/* Kept in the saved PDF, so it can be changed or removed when the file is opened again: what is drawn is marked as
+   an artifact tagged /CowdreyPdfPD, and the settings are a JSON string in the document's Info under the same key.
+   Opening such a file takes the tagged drawing out of the pages and puts the settings back in docMarks(). */
+const PD_KEY = 'CowdreyPdfPD';
+function pdTag(L, out, p, on) {
+  p.pushOperators(on ? L.PDFOperator.of('BDC', [L.PDFName.of('Artifact'), out.context.obj({ Type: 'Pagination', [PD_KEY]: 1 })]) : L.PDFOperator.of('EMC'));
+}
+// ASCII only (\uXXXX for the rest), with \ ( ) escaped for a PDF literal string.
+const pdPdfString = (L, json) => L.PDFString.of(json.replace(/[\u007f-\uffff]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/[\\()]/g, '\\$&'));
+FEATURE.saveDoc.push(async ({ L, out }) => {
+  const items = pdItems(), info = out.getInfoDict(), key = L.PDFName.of(PD_KEY);
+  if (items.length) info.set(key, pdPdfString(L, JSON.stringify(items))); else info.delete(key);
+});
+// Where tagged drawing starts and ends in a content stream: [start, end] of each BDC … EMC tagged /CowdreyPdfPD.
+function pdTaggedSpans(s) {
+  const spans = []; let operands = [], opStart = null, depth = 0, start = 0;
+  for (const t of tokenizeContent(s)) {
+    if (t.t !== 'op') { if (opStart == null) opStart = t.start; operands.push(t); continue; }
+    const at = opStart ?? t.start;
+    if (t.v === 'BDC' || t.v === 'BMC') { if (depth) depth++; else if (operands.some((x) => x.t === 'name' && x.v === PD_KEY)) { depth = 1; start = at; } }
+    else if (t.v === 'EMC' && depth && --depth === 0) spans.push([start, t.end]);
+    operands = []; opStart = null;
+  }
+  return spans;
+}
+// Takes the tagged drawing out of a pdf-lib page. Returns true if there was any.
+function pdStripPage(L, out, p) {
+  const { PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = L, node = p.node;
+  const raw = node.get(PDFName.of('Contents')), r = raw && out.context.lookup(raw);
+  const parts = r instanceof PDFArray ? r.asArray() : raw ? [raw] : [];
+  const text = (st) => { try { const b = st instanceof PDFRawStream ? decodePDFRawStream(st).decode() : st.getContents(); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; } catch { return ''; } };
+  let src = parts.map((x) => { const st = out.context.lookup(x); return st ? text(st) : ''; }).join('\n');
+  if (!src.includes(PD_KEY)) return false;
+  const spans = pdTaggedSpans(src); if (!spans.length) return false;
+  for (const [a, b] of spans.reverse()) src = src.slice(0, a) + ' ' + src.slice(b);
+  const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
+  node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
+  return true;
+}
+let pdOpening = Promise.resolve();
+async function pdReadBack(d) {
+  const pd = pdfDocs.get(0), src = d.sources[0];
+  if (!pd || !src || src.password) return;
+  let raw;
+  try { const md = await pd.getMetadata(), c = md && md.info && md.info.Custom; raw = c && (c instanceof Map ? c.get(PD_KEY) : c[PD_KEY]); } catch { return; }
+  if (typeof raw !== 'string') return;
+  let list; try { list = JSON.parse(raw); } catch { return; }
+  if (!Array.isArray(list)) return;
+  const L = await loadPdfLib();
+  const out = await L.PDFDocument.load(src, { ignoreEncryption: true, updateMetadata: false });
+  if (out.isEncrypted) return;
+  for (const p of out.getPages()) pdStripPage(L, out, p);
+  out.getInfoDict().delete(L.PDFName.of(PD_KEY));
+  const bytes = await out.save();
+  const npd = await loadProtected(bytes, d.name);
+  if (!npd) return;
+  if (doc !== d || pdfDocs.get(0) !== pd) { try { npd.destroy(); } catch {} return; }
+  // The source without the drawing replaces the opened one: the settings draw it again, and saving writes it anew.
+  d.sources[0] = bytes; pdfDocs.set(0, npd); try { pd.destroy(); } catch {}
+  const have = docMarks();
+  for (const m of list) if (m && PD_TYPES[m.type] && m.id && !have.some((x) => x.id === m.id)) have.push({ ...m, rev: uid() });
+  syncHiddenComments(); persist();
+  await layoutPages(true); renderSide();
+}
+FEATURE.onDocShown.push((d) => { pdOpening = pdReadBack(d).catch((e) => console.warn('page design: could not read it back', e)); });
+TEST_HOOKS.pdOpening = () => pdOpening;
 
 /* dialogs */
 const pdField = {
