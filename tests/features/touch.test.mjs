@@ -108,4 +108,24 @@ export default async (h) => {
     ok(/Edit PDF: go to the next line or picture/.test(t) && /Edit PDF: edit that line or select that picture/.test(t), t.slice(0, 200));
     await p.ctx.close();
   });
+
+  await test('phone: menu rows and dialog buttons are 44px for a finger; desktop keeps its sizes', async () => {
+    for (const phone of [true, false]) {
+      const p = await open(phone ? { width: 390, height: 844, touch: true } : {}); await openPdf(p);
+      if (phone) await p.click('.more-btn'); else await p.click('#fileBtn');
+      await p.waitForSelector('#popover:not([hidden]) .mi');
+      const rows = await p.$$eval('#popover .mi', (m) => m.filter((x) => x.getClientRects().length).map((x) => Math.round(x.getBoundingClientRect().height)));
+      ok(rows.length > 3, 'menu rows: ' + rows.length);
+      if (phone) eq(rows.filter((h) => h < 44), [], 'every row 44px'); else ok(Math.max(...rows) < 40, 'desktop rows stay compact: ' + Math.max(...rows));
+      if (phone) await shot(p, 'phone-menu-dark-390.png');
+      await p.keyboard.press('Escape'); await p.evaluate(() => { const pop = document.querySelector('#popover'); if (!pop.hidden) pop.hidden = true; });
+      await run(p, 'pd_watermark'); await p.waitForSelector('#dialog[open]'); await p.waitForTimeout(200);
+      const x = await p.$eval('#dialog .dlg-head .icon-btn', (b) => [Math.round(b.getBoundingClientRect().width), Math.round(b.getBoundingClientRect().height)]);
+      const foot = await p.$$eval('#dialog .dlg-foot .btn', (b) => b.map((x) => Math.round(x.getBoundingClientRect().height)));
+      if (phone) { eq(x, [44, 44], 'Close'); eq(foot.filter((h) => h < 44), [], 'footer buttons: ' + foot); await shot(p, 'phone-dialog-dark-390.png'); }
+      else { eq(x, [34, 34], 'desktop Close'); ok(foot.every((h) => h === 34), 'desktop buttons: ' + foot); }
+      eq(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no sideways scroll');
+      await p.ctx.close();
+    }
+  });
 };
