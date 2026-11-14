@@ -333,7 +333,7 @@ export default async (h) => {
     const before = count(await texts(await savedOf(p)));
     ok(before.every((x) => x.filter((s) => s === 'CONFIDENTIAL').length > 4), 'tiled: ' + before);
     await p.click('[data-rt="protect"]');
-    await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'pelican'); await p.click('#dialog .dlg-foot button:has-text("Mark all")'); await p.waitForTimeout(300);
+    await p.click('[data-cmd="protRedSearch"]'); await p.fill('#dialog input[name=text]', 'pelican'); await p.click('#dialog .dlg-foot button:has-text("Find")'); await p.click('#dialog[open] .dlg-foot button:has-text("Mark")'); await p.waitForTimeout(300);
     // and a box over the middle of page 1, where the watermark crosses it
     await p.click('[data-cmd="protRedArea"]');
     const [a, b] = await h.at(p, 250, 450), [c, d] = await h.at(p, 360, 350);
