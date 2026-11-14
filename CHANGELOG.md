@@ -2,6 +2,13 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 0.3.1
+
+- **Redaction:** the box always covers the whole word, and applying it no longer takes a letter off the text next to it on PDFs that use the standard fonts.
+- **OCR:** Cyrillic and Greek text recognized on a scan copies as words, not letters with spaces between them.
+- **Highlight and Redact text:** a highlight is never added to the next selection when the computer is busy.
+- **Add text** keeps its place among your changes; a newly opened PDF always starts on page 1 in the page box.
+
 ## 0.3.0
 
 **A full PDF editor.** Cowdrey.PDF now covers most of what PDFelement does, still free and on your device. A ribbon (Home, Edit, Comment, Pages, Forms, Protect, Export) holds every tool.
