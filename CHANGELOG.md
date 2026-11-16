@@ -2,6 +2,12 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 0.3.2
+
+- **Share app:** a button in the title bar (and Share Cowdrey.PDF… in Help) to pass Cowdrey.PDF on: the share sheet, or a link or a message to copy.
+- **Share in the ⋯ menu** on a phone: Share… for the PDF, and Share Cowdrey.PDF… with Help.
+- **Share a PDF from the web app** where the browser supports it.
+
 ## 0.3.1
 
 - **Redaction:** the box always covers the whole word, and applying it no longer takes a letter off the text next to it on PDFs that use the standard fonts.

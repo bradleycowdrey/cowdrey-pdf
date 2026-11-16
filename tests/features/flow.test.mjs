@@ -35,7 +35,7 @@ export default async (h) => {
       await p.keyboard.press('Escape');
     }
     const help = await (async () => { await p.click('#helpBtn'); const l = await p.$$eval('#popover [data-cmd]', (e) => e.map((x) => x.dataset.cmd)); await p.keyboard.press('Escape'); return l; })();
-    eq(help, ['sample', 'shortcuts', 'legal', 'about'], 'Help items under ?');
+    eq(help, ['sample', 'shortcuts', 'legal', 'about', 'shareApp'], 'Help items under ?');
     const all = await p.evaluate(() => window.__cowdreyPdf.menus().flatMap(([, ids]) => ids).filter((id) => id !== '-' && !/^theme_/.test(id)));
     const hidden = await p.evaluate((ids) => ids.filter((id) => !window.__cowdreyPdf.cmdShown(id)), all);
     eq(all.filter((id) => !reach.has(id) && !hidden.includes(id)), [], 'menu commands the ribbon cannot reach');

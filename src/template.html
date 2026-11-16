@@ -60,6 +60,12 @@ button { font: inherit; color: inherit; }
 .btn:hover { background: var(--hover); }
 .btn.primary { background: var(--brand); color: #FFFFFF; border-color: transparent; }
 .btn.primary:hover { background: var(--brand-hover); }
+.btn.ghost { position: relative; background: none; border-color: transparent; color: var(--ink-2); }
+.btn.ghost:hover, .btn.ghost[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.btn.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (pointer: coarse) { .btn.ghost::before { content: ""; position: absolute; inset: -5px 0; } } /* a 44px target for a finger */
+.share-head { font-weight: 600; font-size: 14px; color: var(--ink); padding: 6px 8px 2px; }
+.share-blurb { margin: 0; padding: 2px 8px 8px; color: var(--ink-2); font-size: 12.5px; line-height: 1.45; max-width: 260px; }
 .btn.danger { background: var(--danger); color: var(--accent-ink); border-color: transparent; }
 .icon-btn { border: 0; background: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
@@ -381,7 +387,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 /* phones (and phones on their side): the ribbon becomes a scrolling tool row; the sidebar becomes an overlay;
    Undo and Redo sit in the title bar, Appearance moves into More. Keep in step with PHONE_MQ in app.js. */
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  .menubar, .sb-brand, .tb-actions .btn span, .save-state, #themeBtn, .app .ribbon-file, .app #helpBtn { display: none; }
+  .menubar, .sb-brand, .tb-actions .btn span, .save-state, #themeBtn, #shareAppBtn, .app .ribbon-file, .app #helpBtn { display: none; } /* Share Cowdrey.PDF… is in More */
   .titlebar { gap: 8px; padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
   .titlebar .logo { width: 28px; height: 28px; border-radius: 7px; }
   .doc-title { font-size: 16px; }
@@ -491,6 +497,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
       <button class="icon-btn tb-undo" type="button" data-cmd="redo" title="Redo" aria-label="Redo" disabled><i data-lucide="redo-2"></i></button>
       <button class="icon-btn" id="helpBtn" type="button" title="Help" aria-label="Help" aria-haspopup="menu" aria-expanded="false"><i data-lucide="circle-help"></i></button>
       <button class="icon-btn" id="themeBtn" type="button" title="Theme" aria-label="Theme"><i data-lucide="sun-moon"></i></button>
+      <button class="btn ghost" id="shareAppBtn" type="button" title="Share Cowdrey.PDF with someone" aria-label="Share app" aria-haspopup="menu" aria-expanded="false"><i data-lucide="share"></i><span>Share app</span></button>
       <button class="btn" type="button" data-cmd="open" aria-label="Open"><i data-lucide="folder-open"></i><span>Open</span></button>
       <button class="btn primary" type="button" data-cmd="save" id="saveBtn" aria-label="Save PDF"><i data-lucide="download"></i><span>Save PDF</span></button>
       <button class="icon-btn more-btn" id="moreBtn" type="button" title="More" aria-label="More" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>

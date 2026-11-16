@@ -1,7 +1,7 @@
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
 // @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
@@ -3083,10 +3083,31 @@ async function savePdf(copy) {
     window.__lastSaved = bytes; return true;
   } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
 }
+// The web: a browser that can share files (Safari, Chrome on a phone, Edge) shares the saved PDF; Share… is hidden
+// where it cannot.
+function webCanSharePdf() {
+  if (NATIVE || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') return false;
+  try { return !!navigator.canShare({ files: [new File([new Uint8Array(0)], 'Document.pdf', { type: 'application/pdf' })] }); } catch { return false; }
+}
 async function sharePdf() {
   if (!doc) return;
-  try { const bytes = await buildPdf(); if (bytes) await shareFile(bytes, doc.name + '.pdf', 'application/pdf'); }
-  catch (e) { console.error(e); toast(`Could not share: ${e.message || e}`); }
+  let bytes;
+  try { bytes = await buildPdf(); } catch (e) { console.error(e); toast(`Could not share: ${e.message || e}`); return; }
+  if (!bytes) return;
+  if (NATIVE) {
+    try { await shareFile(bytes, doc.name + '.pdf', 'application/pdf'); } catch (e) { console.error(e); toast(`Could not share: ${e.message || e}`); }
+    return;
+  }
+  const file = new File([bytes], safeName(doc.name + '.pdf'), { type: 'application/pdf' });
+  const send = () => navigator.share({ files: [file], title: doc.name });
+  const failed = (e) => { if (e && e.name === 'AbortError') return; console.warn(e); toast('Could not share this PDF. Use Save PDF to save it, then send it.'); };
+  try { await send(); }
+  catch (e) {
+    // Building a big PDF can outlast the click (Safari allows little time): ask again, with the file ready, so the share runs inside a new click.
+    if (!(e && e.name === 'NotAllowedError')) { failed(e); return; }
+    const a = await dialog('Share PDF', '<p>Your PDF is ready to share.</p>', [{ label: 'Cancel' }, { label: 'Share…', value: 'go', primary: true }]);
+    if (a === 'go') { try { await send(); } catch (e2) { failed(e2); } }
+  }
 }
 async function exportImage() {
   const v = views[current]; if (!v) return;
@@ -3801,7 +3822,8 @@ function shortcutsDialog() {
   return dialog('Keyboard shortcuts', `<div style="display:grid;grid-template-columns:1fr auto;gap:6px 18px">${rows.map(row).join('')}</div>`, [{ label: 'Close', primary: true }]);
 }
 cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
-cmd('share', { label: 'Share…', icon: 'share', enabled: has, hidden: !NATIVE, run: sharePdf });
+cmd('share', { label: 'Share…', icon: 'share', enabled: has, get hidden() { return !NATIVE && !webCanSharePdf(); }, run: sharePdf });
+cmd('shareApp', { label: 'Share Cowdrey.PDF…', icon: 'heart', run: () => openShareApp() });
 cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP, run: () => checkForUpdates(true) });
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
@@ -3811,7 +3833,7 @@ const MENUS = [
   ['View', ['sidebar', 'darkPage', '-', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', '-', 'theme_system', 'theme_light', 'theme_dark']],
   ['Comment', ['tool_select', 'tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']], // Signature is under Protect (the Comment tab's Add has it too)
   ['Pages', ['rotL', 'rotR', 'rotAll', '-', 'up', 'down', 'dup', 'blank', 'merge', '-', 'extract', 'delPage']],
-  ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about']],
+  ['Help', ['sample', 'shortcuts', 'legal', '-', 'checkUpdates', 'about', '-', 'shareApp']],
 ];
 const shown = (id) => id === '-' || (C[id] && !C[id].hidden);
 // A toggle (Sidebar, Dark pages…) is a checkbox item and a choice of one (Appearance) a radio item, each with its
@@ -3836,7 +3858,7 @@ const pop = $('#popover');
 let popAnchor = null; // the button that opened the popover; Escape gives it focus back
 // `at`: { x, y, label } opens it at a spot (a right-click menu), above the spot if there is no room below.
 function openPopover(anchor, html, at) {
-  popAnchor = anchor;
+  popAnchor = anchor; pop.removeAttribute('aria-describedby');
   pop.innerHTML = html; pop.hidden = false; pop.classList.toggle('has-chk', !!$('[data-chk]', pop)); icons();
   if (!at && anchor.id) pop.setAttribute('aria-labelledby', anchor.id); else pop.removeAttribute('aria-labelledby');
   if (at && at.label) pop.setAttribute('aria-label', at.label); else pop.removeAttribute('aria-label');
@@ -3852,7 +3874,7 @@ function openPopover(anchor, html, at) {
   }
   const f = $('.pop-sw button[aria-checked="true"], .mi:not([disabled])', pop); f && f.focus();
 }
-function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
+function closePopover() { pop.hidden = true; popAnchor = null; $$('.ctx-for').forEach((t) => t.classList.remove('ctx-for')); $$('.menubar > button, #moreBtn, #fileBtn, #helpBtn, #shareAppBtn, [data-rmenu]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
 // Menu keys: Up and Down (and Home, End) move between items, Left and Right to the next menu, Escape closes and
 // goes back to the menu's button, Tab closes.
 pop.addEventListener('keydown', (e) => {
@@ -3874,12 +3896,14 @@ pop.addEventListener('keydown', (e) => {
 pop.addEventListener('click', (e) => {
   const x = e.target.closest('[data-ctx]');
   if (x) { const it = ctxItems[+x.dataset.ctx], back = popAnchor; closePopover(); if (back && back.isConnected) back.focus({ preventScroll: true }); if (it && !it.disabled) it.run(); return; }
+  const sh = e.target.closest('[data-share]');
+  if (sh) { const back = popAnchor; closePopover(); if (back && back.isConnected && back.getClientRects().length) back.focus({ preventScroll: true }); shareAppAction(sh.dataset.share); return; }
   const sw = e.target.closest('[data-color]');
   if (sw) { pickColor(sw.dataset.color); const now = swatchNow(); $$('[data-color]', pop).forEach((x) => x.setAttribute('aria-checked', x.dataset.color === now)); return; }
   const b = e.target.closest('[data-cmd]'); if (b) run(b.dataset.cmd);
 });
 pop.addEventListener('change', (e) => { if (e.target.matches('[data-colorpick]')) { pickColor(e.target.value.toUpperCase()); closePopover(); } });
-document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, #fileBtn, #helpBtn, [data-rmenu]')) closePopover(); });
+document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.menubar, #moreBtn, #fileBtn, #helpBtn, #shareAppBtn, [data-rmenu]')) closePopover(); });
 // Drawn again when a feature adds a menu (menuAdd).
 function renderMenubar() {
   $('#menubar').innerHTML = MENUS.map(([t], k) => `<button type="button" id="menu-${k}" data-menu="${k}" aria-haspopup="menu" aria-expanded="false" tabindex="${k ? -1 : 0}">${t}</button>`).join('');
@@ -3900,8 +3924,11 @@ $('#menubar').addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (bs[k].getAttribute('aria-expanded') !== 'true') bs[k].click(); }
 });
 // Phones have no menu bar: More (…) in the title bar opens the commands that are only in the menus.
+// Share… (the document) is listed with the file items too, as on Cowdrey.MD's More sheet, though the Export tab has it.
+const IN_MORE = new Set(['share']);
 function moreMenuHtml(menus = MENUS, keep = () => true) {
   const onRibbon = new Set(Object.values(RIBBON).flatMap(([, groups]) => groups.flatMap(([, ids]) => Array.isArray(ids) ? ids.flatMap((id) => [id, ...((C[id] && C[id].menu) || [])]) : [])));
+  IN_MORE.forEach((id) => onRibbon.delete(id));
   return menus.map(([t, ids]) => {
     const k = MENUS.findIndex(([x]) => x === t), only = ids.filter((id) => id !== '-' && shown(id) && !onRibbon.has(id) && keep(id));
     return only.length ? `<div role="group" aria-labelledby="mh-${k}"><div class="mh" id="mh-${k}">${esc(t)}</div>${menuHtml(only)}</div>` : '';
@@ -3926,6 +3953,80 @@ function menuButton(b, html) {
   b.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && b.getAttribute('aria-expanded') !== 'true') { e.preventDefault(); b.click(); } });
 }
 menuButton($('#fileBtn'), fileMenuHtml); menuButton($('#helpBtn'), helpMenuHtml);
+
+/* ---------------- share the app itself ----------------
+   Share app in the title bar, Share Cowdrey.PDF… in Help (the Mac menu bar too) and in More on a phone: the share
+   sheet where there is one, or a link or a message to copy. */
+const APP_URL = 'https://bradcowdrey.com/cowdrey-pdf';
+const MAC_URL = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest';
+const IOS_URL = 'https://testflight.apple.com/join/tr4eD534';
+const SHARE_TEXT = 'Cowdrey.PDF is a free PDF editor by Bradley Cowdrey. Free. Forever.';
+const SHARE_MESSAGE = `${SHARE_TEXT}\n\nUse it in your browser: ${APP_URL}\nGet it for Mac: ${MAC_URL}\nGet it for iPhone and iPad: ${IOS_URL}`;
+const canShareApp = () => !!NATIVE || typeof navigator.share === 'function';
+function shareAppHtml() {
+  const item = (kind, icon, label) => `<button type="button" class="mi" role="menuitem" data-share="${kind}">${ic(icon)}<span>${label}</span><span></span></button>`;
+  return `<div class="share-head" aria-hidden="true">Share Cowdrey.PDF</div><p class="share-blurb" id="shareBlurb">${esc(SHARE_TEXT)} Pass it on to anyone who works with PDFs.</p>`
+    + (canShareApp() ? item('native', 'share', 'Share…') : '')
+    + item('web', 'link', 'Copy link to the web app') + item('mac', 'laptop', 'Copy Mac download link') + item('message', 'message-square-text', 'Copy a message to send');
+}
+// Opens the options under Share app, or under More on a phone (Help and the Mac menu bar have no button of their own
+// to open them from). Escape gives the focus back to that button.
+function openShareApp(anchor) {
+  const b = $('#shareAppBtn'), more = $('#moreBtn');
+  anchor = anchor || (b.getClientRects().length ? b : more.getClientRects().length ? more : b);
+  closePopover();
+  anchor.setAttribute('aria-expanded', 'true');
+  openPopover(anchor, shareAppHtml(), null);
+  pop.removeAttribute('aria-labelledby'); pop.setAttribute('aria-label', 'Share Cowdrey.PDF'); pop.setAttribute('aria-describedby', 'shareBlurb');
+}
+$('#shareAppBtn').addEventListener('click', () => {
+  const b = $('#shareAppBtn'), open = b.getAttribute('aria-expanded') === 'true';
+  closePopover(); if (!open) openShareApp(b);
+});
+$('#shareAppBtn').addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' && e.currentTarget.getAttribute('aria-expanded') !== 'true') { e.preventDefault(); openShareApp(e.currentTarget); } });
+async function copyText(text, done) {
+  let copied = false;
+  try { await navigator.clipboard.writeText(text); copied = true; } catch {
+    const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(t); t.select();
+    try { copied = document.execCommand('copy'); } catch {}
+    t.remove();
+  }
+  toast(copied ? done : 'Could not copy. Your browser did not allow it.');
+  return copied;
+}
+function shareAppAnchor() {
+  const b = [$('#shareAppBtn'), $('#moreBtn')].find((x) => x && x.getClientRects().length);
+  const r = b ? b.getBoundingClientRect() : { left: innerWidth / 2, bottom: 0, width: 0 };
+  return { x: r.left + r.width / 2, y: r.bottom, preferredEdge: 'bottom' };
+}
+const copyLink = () => copyText(APP_URL, 'Link to Cowdrey.PDF copied');
+// The share menu on the Mac and the share sheet on Android (share_text in plugins/sharekit), a link with the app's
+// icon on iPhone and iPad (its shareLink), or the browser's share sheet; a copied link where none of them works.
+async function shareApp() {
+  const text = `${SHARE_TEXT} ${APP_URL}`;
+  try {
+    if (MAC_APP) return await NATIVE.core.invoke('plugin:sharekit|share_text', { text, position: shareAppAnchor() });
+    if (ANDROID_APP) return await NATIVE.core.invoke('plugin:sharekit|share_text', { text, mimeType: 'text/plain', title: 'Cowdrey.PDF' });
+    if (MOBILE_APP) {
+      const icon = ($('.titlebar .logo') || {}).src || '';
+      return await NATIVE.core.invoke('plugin:sharekit|native', { method: 'shareLink', args: { url: APP_URL, title: 'Cowdrey.PDF', text: SHARE_TEXT, ...(/^data:image\//.test(icon) ? { icon } : {}), position: shareAppAnchor() } });
+    }
+    if (typeof navigator.share === 'function') return await navigator.share({ title: 'Cowdrey.PDF', text: SHARE_TEXT, url: APP_URL });
+  } catch (e) {
+    if ((e && e.name === 'AbortError') || /cancel/i.test(String(e))) return;
+    console.warn(e);
+  }
+  copyLink();
+}
+function shareAppAction(kind) {
+  if (kind === 'native') shareApp();
+  else if (kind === 'web') copyLink();
+  else if (kind === 'mac') copyText(MAC_URL, 'Mac download link copied');
+  else if (kind === 'message') copyText(SHARE_MESSAGE, 'Message copied, ready to paste');
+}
+TEST_HOOKS.shareMessage = SHARE_MESSAGE;
+
 // Alt pressed and let go on its own, or F10: to the ribbon's tab row (again: back to the document).
 let altAlone = false;
 document.addEventListener('keydown', (e) => {
