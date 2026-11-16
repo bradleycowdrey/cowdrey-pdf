@@ -7,6 +7,8 @@ Versions follow [Semantic Versioning](https://semver.org). Every platform shares
 - **Share app:** a button in the title bar (and Share Cowdrey.PDF… in Help) to pass Cowdrey.PDF on: the share sheet, or a link or a message to copy.
 - **Share in the ⋯ menu** on a phone: Share… for the PDF, and Share Cowdrey.PDF… with Help.
 - **Share a PDF from the web app** where the browser supports it.
+- **Mac app:** signed with a Developer ID and notarized by Apple, so it opens like any other app.
+- **iPhone and iPad:** on TestFlight at https://testflight.apple.com/join/tr4eD534.
 
 ## 0.3.1
 
