@@ -97,7 +97,7 @@ export default async (h) => {
     for (const choice of ['Cancel', 'Share…']) {
       const q = await open({ init: browser({ share: true, files: true, fail: 'NotAllowedError', once: true }) }); await openPdf(q);
       await q.evaluate(() => { document.querySelector('#toast').textContent = ''; });
-      await q.evaluate(() => window.__cowdreyPdf.run('share')); await q.waitForSelector('#dialog[open]', { timeout: 10000 });
+      await q.evaluate(() => { window.__cowdreyPdf.run('share'); }); await q.waitForSelector('#dialog[open]', { timeout: 10000 });
       eq(await q.$eval('#dialog', (d) => [d.querySelector('h2').textContent, d.querySelector('.dlg-body').textContent, [...d.querySelectorAll('.dlg-foot button')].map((b) => b.textContent)]), ['Share PDF', 'Your PDF is ready to share.', ['Cancel', 'Share…']]);
       await q.click(`#dialog .dlg-foot button:text-is("${choice}")`); await q.waitForTimeout(300);
       const sh = await q.evaluate(() => window.__shared.map((x) => [x.file.name, x.file.size]));
