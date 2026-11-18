@@ -40,7 +40,10 @@ fn save(app: &AppHandle, map: &HashMap<String, String>) {
 }
 
 fn bookmark_for(path: &str) -> Option<Vec<u8>> {
-    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    bookmark_of(&NSURL::fileURLWithPath(&NSString::from_str(path)))
+}
+
+fn bookmark_of(url: &NSURL) -> Option<Vec<u8>> {
     let data = url
         .bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
             NSURLBookmarkCreationOptions::WithSecurityScope,
@@ -95,12 +98,27 @@ pub fn access(app: &AppHandle, path: &str) {
         save(app, &map);
         return;
     };
+    // Where the bookmark points now (the file may have been moved or renamed since it was saved).
+    let now = url.path().map(|p| p.to_string()).unwrap_or_else(|| path.to_string());
     if unsafe { url.startAccessingSecurityScopedResource() } {
-        STARTED.lock().unwrap().get_or_insert_with(HashSet::new).insert(path.to_string());
-        // The file moved or was replaced since: renew the bookmark while access is open.
+        // Access stays open until the app quits; STARTED makes sure it is started only once per file, so each
+        // start is matched by the single release the system makes when the process ends.
+        let mut started = STARTED.lock().unwrap();
+        let started = started.get_or_insert_with(HashSet::new);
+        started.insert(path.to_string());
+        started.insert(now.clone());
+        // The file moved or was replaced since: renew the bookmark from the resolved URL (not the old path,
+        // which may no longer exist) while access is open. If the file moved away from `path`, the bookmark is
+        // filed under its new path and the old entry dropped; otherwise it stays under `path`, the key the page
+        // uses (the resolved path can be spelled differently, e.g. /private/var for /var).
         if stale.as_bool() {
-            if let Some(fresh) = bookmark_for(path) {
-                map.insert(path.to_string(), base64::engine::general_purpose::STANDARD.encode(fresh));
+            if let Some(fresh) = bookmark_of(&url) {
+                let moved = now != path && !std::path::Path::new(path).exists();
+                if moved {
+                    map.remove(path);
+                }
+                let key = if moved { now } else { path.to_string() };
+                map.insert(key, base64::engine::general_purpose::STANDARD.encode(fresh));
                 save(app, &map);
             }
         }

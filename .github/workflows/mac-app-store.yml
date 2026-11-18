@@ -28,6 +28,11 @@ concurrency:
 permissions:
   contents: write
 
+# Every step runs with pipefail (bash -eo pipefail), so a command piped into tee still fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   mas:
     name: Build, sign and upload Cowdrey.PDF for the Mac App Store

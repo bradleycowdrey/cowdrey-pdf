@@ -12,11 +12,12 @@ OUT_DIR, P12_PASSWORD, STATE_IN (state.json of the previous run, if any), BUILD_
 
 Throwaway certificates: each run signs on a fresh machine whose private key dies with it, so each run makes its own
 certificates. Apple caps how many an account may hold, so the IDs this workflow created are kept in state.json on the
-mac-app-store-log branch and revoked by the next run. Certificates made by a person or by other workflows are never
-touched, except, when Apple refuses a new one for being over the limit, ones named "Created via API" that are more
-than a day old (a run of a CI job is never that long).
+mac-app-store-log branch and revoked by the next run. state.json also keeps "history", every certificate ID this
+workflow has ever made. Certificates made by a person or by other workflows (other repositories share the team) are
+never touched: when Apple refuses a new one for being over the limit, only a certificate from that history is revoked
+to make room, and otherwise the run stops with a message for the owner.
 """
-import base64, datetime, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
 import jwt
 from cryptography import x509
@@ -133,17 +134,14 @@ def new_cert(key, kind, state):
         if e.code != 409:
             raise
         print(f'Apple refused a new {kind} certificate: {e}')
-        # Over the limit: free a slot from stale CI certificates of this type (more than a day old, "Created via API").
-        cutoff = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365 - 1)
+        # Over the limit: free a slot only with a certificate this workflow made itself (state.json "history").
+        # Certificates of the same type made by people or by other repositories' CI on the shared team are left alone.
+        ours = set(state.get('history', []))
         freed = False
         for x in list_certs():
             a = x['attributes']
-            name = (a.get('name') or '') + ' ' + (a.get('displayName') or '')
-            exp = a.get('expirationDate')
-            # Apple certificates last a year: created more than a day ago means expiring before now + 364 days.
-            if a.get('certificateType') == kind and 'Created via API' in name and exp and \
-                    datetime.datetime.fromisoformat(exp.replace('Z', '+00:00')) < cutoff:
-                revoke(x['id'], f'stale CI certificate {name.strip()} ({kind})')
+            if a.get('certificateType') == kind and x['id'] in ours and x['id'] not in state['certificates']:
+                revoke(x['id'], f"an earlier certificate of this workflow ({kind})")
                 freed = True
                 break
         if not freed:
@@ -151,6 +149,8 @@ def new_cert(key, kind, state):
                            'Revoke one you no longer use at developer.apple.com > Certificates, then run this again.', 409)
         c = call('POST', '/v1/certificates', body)['data']
     state['certificates'].append(c['id'])
+    if c['id'] not in state.setdefault('history', []):
+        state['history'].append(c['id'])
     der = base64.b64decode(c['attributes']['certificateContent'])
     cert = x509.load_der_x509_certificate(der)
     cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
@@ -197,7 +197,9 @@ def prepare():
 
     # 2. New key, two certificates. state.json is written straight away, so a later failure still lets the next
     #    run revoke them.
-    state = {'certificates': []}
+    # history: every certificate ID this workflow has ever made (the previous run's included), kept across runs.
+    history = list(dict.fromkeys(prev.get('history', []) + prev.get('certificates', [])))
+    state = {'certificates': [], 'history': history}
     state_path = os.path.join(out, 'state.json')
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     password = os.environ['P12_PASSWORD']

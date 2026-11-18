@@ -3645,7 +3645,7 @@ async function makeSample() {
   y = para(p, 'Arrange the pages', H - 120, { size: 24, font: bold, after: 10 });
   y = para(p, 'On the Pages tab you can rotate, move, duplicate, insert and delete pages, add other PDFs at the end, or extract a few pages into a new PDF. Drag the thumbnails in the sidebar to reorder them.', y, { after: 18 });
   y = para(p, 'Everywhere you work', y, { size: 16, font: bold, color: maroon, after: 2 });
-  y = para(p, 'Cowdrey.PDF runs in your browser and as an app for Mac, iPhone, iPad and Android. The pelican on this page is here so Find has something to find.', y, { after: 18 });
+  y = para(p, ((APP_STORE_BUILD || (MOBILE_APP && !ANDROID_APP)) ? 'Cowdrey.PDF runs on Mac, iPhone and iPad, and in your browser.' : 'Cowdrey.PDF runs in your browser and as an app for Mac, iPhone, iPad and Android.') + ' The pelican on this page is here so Find has something to find.', y, { after: 18 });
   para(p, 'bradcowdrey.com/cowdrey-pdf', y, { size: 11, color: maroon });
   pdf.setTitle('Welcome to Cowdrey.PDF'); pdf.setAuthor('Bradley Cowdrey');
   return pdf.save();
