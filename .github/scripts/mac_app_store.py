@@ -188,8 +188,11 @@ def prepare():
                 print(f'Could not delete an old profile: {e}')
     summary = {}
     for x in list_certs():
-        t = x['attributes'].get('certificateType')
+        a = x['attributes']
+        t = a.get('certificateType')
         summary[t] = summary.get(t, 0) + 1
+        if t in ('DISTRIBUTION', 'MAC_APP_DISTRIBUTION', 'MAC_INSTALLER_DISTRIBUTION'):
+            print(f"  {t}: {a.get('name')} / {a.get('displayName')}, expires {a.get('expirationDate')} (…{x['id'][-4:]})")
     print('Certificates on the account now: ' + ', '.join(f'{k} x{v}' for k, v in sorted(summary.items())))
 
     # 2. New key, two certificates. state.json is written straight away, so a later failure still lets the next
@@ -199,7 +202,14 @@ def prepare():
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     password = os.environ['P12_PASSWORD']
     try:
-        app_id, app_cert, app_cn = new_cert(key, 'DISTRIBUTION', state)
+        # The Mac-only application certificate ("3rd Party Mac Developer Application") has its own allowance, so the
+        # Apple Distribution certificates the iPhone build and people use are left alone. Apple Distribution is the
+        # fallback: a Mac App Store profile accepts either.
+        try:
+            app_id, app_cert, app_cn = new_cert(key, 'MAC_APP_DISTRIBUTION', state)
+        except ApiError as e:
+            print(f'No Mac App Distribution certificate ({e}); trying Apple Distribution.')
+            app_id, app_cert, app_cn = new_cert(key, 'DISTRIBUTION', state)
         json.dump(state, open(state_path, 'w'))
         p12(os.path.join(out, 'app.p12'), key, app_cert, password)
         # Its own key: one keychain can't import the same private key twice.
