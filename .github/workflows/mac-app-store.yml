@@ -7,8 +7,8 @@ name: Mac App Store
 on:
   push:
     # main: a new version number makes a new Mac App Store build (and so does a change to this build's own setup).
-    # mac-app-store: the branch this build was set up on, for trying changes before they reach main.
-    branches: [main, mac-app-store]
+    # Only main: a push to any other branch must not upload a build or revoke the certificates main's last run made.
+    branches: [main]
     paths:
       - desktop/src-tauri/tauri.conf.json
       - desktop/src-tauri/tauri.appstore.conf.json
