@@ -8,9 +8,10 @@ on:
       - docs/app-store/**
       - .github/scripts/app_store_listing.py
       - .github/workflows/app-store-listing.yml
-  # After each iPhone or Mac App Store build uploads, attach it to its App Store version once Apple has processed it.
+  # After each iPhone build uploads, attach it to the App Store version once Apple has processed it.
+  # (The Mac App Store workflow fills in the Mac version itself.)
   workflow_run:
-    workflows: ['iPhone app', 'Mac App Store']
+    workflows: ['iPhone app']
     types: [completed]
     branches: [main]
   workflow_dispatch:

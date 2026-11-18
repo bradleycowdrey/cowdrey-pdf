@@ -6,6 +6,8 @@ attaches the newest processed build for the version in tauri.conf.json. It submi
 submitForReview names the exact version, and only after every other step succeeded.
 
 With --build-only (after each iPhone build) it only sets the version number and attaches the build.
+With --mac-only (after each Mac App Store upload) it fills in only the macOS version, which it never submits
+unless listing.json's submitForReviewMac names the exact version.
 If listing.json names a version in withdrawFromReview, that exact version is first taken out of App Review.
 
 Each step runs on its own and reports what happened, so one refusal doesn't stop the rest.
@@ -452,6 +454,14 @@ def mac_build_only():
         step('macOS: version number and copyright')(version_fields.raw)(mv)
         step('macOS: build, newest processed Mac upload of this version')(attach_build.raw)(mv, 'MAC_OS')
 
+
+if '--mac-only' in sys.argv:
+    # After a Mac App Store upload (mac-app-store.yml): only the Mac version's text, screenshots and build.
+    mac_listing()
+    print('\nMac App Store listing for Cowdrey.PDF', VERSION)
+    for status, name, detail in results:
+        print(f"[{status}] {name}" + (f" — {detail}" if detail else ''))
+    sys.exit(0)
 
 if '--build-only' in sys.argv:
     # After an iPhone build: only move the version number and attach the new build. Text and screenshots are

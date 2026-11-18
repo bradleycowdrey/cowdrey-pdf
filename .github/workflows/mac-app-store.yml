@@ -157,6 +157,13 @@ jobs:
           P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: python3 .github/scripts/mac_app_store.py wait-build 2>&1 | tee -a "$LOG"
 
+      # The Mac version of the listing: Mac text and screenshots from docs/app-store/listing.json ("mac") and this
+      # build. Never submitted for review (only if listing.json's submitForReviewMac names the version).
+      - name: Fill in the Mac App Store listing (no submission)
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: python3 .github/scripts/app_store_listing.py --mac-only 2>&1 | tee -a "$LOG"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
