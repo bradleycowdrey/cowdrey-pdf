@@ -5,3 +5,4 @@ desktop/src-tauri/gen/
 .DS_Store
 tests/fixtures/.*.pdf
 desktop/src-tauri/embedded.provisionprofile
+__pycache__/
