@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the Info.plist of the Mac App Store build only (tauri.appstore.conf.json).
+  ITSAppUsesNonExemptEncryption is false: the app ships no encryption of its own for communication. Its only network
+  use (OCR language data) is HTTPS through macOS itself, and Protect > Password encrypts a PDF with the PDF
+  standard's own algorithms (AES/RC4, from pdf-lib), as part of editing a document, which is exempt. This matches
+  the iPhone and iPad build (ios-app.yml), so uploads need no export compliance answers.
+-->
+<plist version="1.0">
+<dict>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

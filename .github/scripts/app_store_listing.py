@@ -227,7 +227,7 @@ def version_fields(v):
 def attach_build(v):
     # Right after an upload, Apple takes 5–30 minutes to process the build: wait for it.
     for _ in range(45):
-        builds = call('GET', f'/v1/builds?filter[app]={APP}&filter[preReleaseVersion.version]={VERSION}&sort=-uploadedDate&limit=10')['data']
+        builds = call('GET', f'/v1/builds?filter[app]={APP}&filter[preReleaseVersion.version]={VERSION}&filter[preReleaseVersion.platform]=IOS&sort=-uploadedDate&limit=10')['data']
         ok = [b for b in builds if b['attributes'].get('processingState') == 'VALID' and not b['attributes'].get('expired')]
         if ok or not any(b['attributes'].get('processingState') == 'PROCESSING' for b in builds) and builds:
             break

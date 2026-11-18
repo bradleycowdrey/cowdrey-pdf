@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "capabilities": ["appstore", "macos-share"]
+    }
+  },
+  "bundle": {
+    "targets": ["app"],
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "./AppStore.entitlements",
+      "infoPlist": "./AppStore.Info.plist",
+      "files": {
+        "embedded.provisionprofile": "./embedded.provisionprofile"
+      }
+    }
+  },
+  "plugins": {
+    "updater": null
+  }
+}

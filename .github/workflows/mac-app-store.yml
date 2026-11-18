@@ -1,0 +1,188 @@
+name: Mac App Store
+
+# The Mac App Store build of Cowdrey.PDF: sandboxed, without the self-updater, signed with throwaway Apple
+# Distribution and Mac Installer Distribution certificates made through the App Store Connect API, packaged as a
+# .pkg and uploaded to App Store Connect (the same app record as iPhone and iPad). Nothing is submitted for review.
+# The Developer ID DMG (mac-app.yml) is built separately and is not affected.
+on:
+  push:
+    # main: a new version number makes a new Mac App Store build (and so does a change to this build's own setup).
+    # mac-app-store: the branch this build was set up on, for trying changes before they reach main.
+    branches: [main, mac-app-store]
+    paths:
+      - desktop/src-tauri/tauri.conf.json
+      - desktop/src-tauri/tauri.appstore.conf.json
+      - desktop/src-tauri/AppStore.entitlements
+      - desktop/src-tauri/AppStore.Info.plist
+      - desktop/src-tauri/capabilities/appstore.json
+      - desktop/src-tauri/src/bookmarks.rs
+      - .github/scripts/mac_app_store.py
+      - .github/workflows/mac-app-store.yml
+  workflow_dispatch:
+
+# One run at a time: each run revokes the certificates the run before it made.
+concurrency:
+  group: mac-app-store
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  mas:
+    name: Build, sign and upload Cowdrey.PDF for the Mac App Store
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APPLE_API_KEY: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      HAS_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY != '' }}
+      # CFBundleVersion: always higher than the last upload (a re-run adds its attempt number).
+      BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the App Store Connect key is set
+        run: |
+          LOG="$RUNNER_TEMP/mac-app-store.log"; SIGN="$RUNNER_TEMP/signing"
+          echo "LOG=$LOG" >> "$GITHUB_ENV"; echo "SIGN=$SIGN" >> "$GITHUB_ENV"
+          if [[ "$HAS_KEY" != true ]]; then echo "::error::The APP_STORE_CONNECT_API_KEY secret is not set." | tee -a "$LOG"; exit 1; fi
+          { echo "Cowdrey.PDF $(node -p "require('./desktop/src-tauri/tauri.conf.json').version") build $BUILD_NUMBER"; xcodebuild -version; echo "macOS SDK $(xcrun --sdk macosx --show-sdk-version)"; sw_vers; } 2>&1 | tee -a "$LOG"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: mac-app-store
+
+      - name: Install build tools and libraries
+        working-directory: desktop
+        run: npm ci 2>&1 | tail -5 | tee -a "$LOG"
+
+      - name: Bundle the web app for offline use
+        working-directory: desktop
+        run: node build.mjs 2>&1 | tee -a "$LOG"
+
+      # The Developer ID build (default features, with the updater) must keep compiling too.
+      - name: Check the Developer ID variant still compiles
+        working-directory: desktop/src-tauri
+        run: cargo check --release --target aarch64-apple-darwin 2>&1 | tail -3 | tee -a "$LOG"
+
+      # Certificates, keys and the provisioning profile, made fresh through the App Store Connect API.
+      - name: Make the signing certificates and the Mac App Store profile
+        id: signing
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          OUT_DIR: ${{ runner.temp }}/signing
+        run: |
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet pyjwt cryptography
+          # The certificate IDs the previous run made are on the mac-app-store-log branch.
+          if git fetch -q --depth 1 origin mac-app-store-log 2>/dev/null; then git show FETCH_HEAD:state.json > "$RUNNER_TEMP/state-in.json" 2>/dev/null || true; fi
+          export STATE_IN="$RUNNER_TEMP/state-in.json"
+          P12_PASSWORD=$(openssl rand -hex 16); echo "::add-mask::$P12_PASSWORD"; echo "P12_PASSWORD=$P12_PASSWORD" >> "$GITHUB_ENV"
+          export P12_PASSWORD
+          python3 .github/scripts/mac_app_store.py prepare 2>&1 | tee -a "$LOG"
+          cp "$OUT_DIR/embedded.provisionprofile" desktop/src-tauri/embedded.provisionprofile
+
+      - name: Put the certificates in a temporary keychain
+        env:
+          APP_SHA1: ${{ steps.signing.outputs.app_sha1 }}
+        run: |
+          KC="$RUNNER_TEMP/mas.keychain-db"; KCPW=$(openssl rand -hex 16); echo "::add-mask::$KCPW"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          for f in app installer; do security import "$SIGN/$f.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/productsign; done
+          # Apple's intermediate certificates, so the new certificates are trusted on this machine.
+          for g in G3 G4 G5 G6; do curl -fsSL -o "$RUNNER_TEMP/wwdr$g.cer" "https://www.apple.com/certificateauthority/AppleWWDRCA$g.cer" && security import "$RUNNER_TEMP/wwdr$g.cer" -k "$KC" >/dev/null 2>&1 || true; done
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "KC=$KC" >> "$GITHUB_ENV"
+          { echo "Signing identities:"; security find-identity -v "$KC"; security find-identity -v -p basic "$KC" | grep -i installer || true; } 2>&1 | tee -a "$LOG"
+
+      # Universal (Apple silicon and Intel), with the App Store configuration: no updater (cargo feature app-store
+      # instead of the default updater), sandbox entitlements, the profile in Contents, and the build number.
+      - name: Build the app
+        working-directory: desktop
+        run: |
+          python3 - <<'PY'
+          import json, os
+          c = json.load(open('src-tauri/tauri.appstore.conf.json'))
+          c['bundle']['macOS']['bundleVersion'] = os.environ['BUILD_NUMBER']
+          json.dump(c, open(os.path.join(os.environ['RUNNER_TEMP'], 'tauri.appstore.build.json'), 'w'), indent=2)
+          PY
+          npx tauri build --ci --target universal-apple-darwin --bundles app --config "$RUNNER_TEMP/tauri.appstore.build.json" --features app-store -- --no-default-features 2>&1 | tee -a "$LOG"
+
+      - name: Sign the app and make the installer package
+        env:
+          APP_SHA1: ${{ steps.signing.outputs.app_sha1 }}
+          INSTALLER_IDENTITY: ${{ steps.signing.outputs.installer_identity }}
+        run: |
+          {
+          APP=desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Cowdrey.PDF.app
+          cp desktop/src-tauri/embedded.provisionprofile "$APP/Contents/embedded.provisionprofile"
+          xattr -cr "$APP"
+          codesign --force --sign "$APP_SHA1" --keychain "$KC" --options runtime --entitlements desktop/src-tauri/AppStore.entitlements "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "Entitlements:"; codesign -d --entitlements - "$APP"
+          echo "Info.plist:"; plutil -p "$APP/Contents/Info.plist" | grep -E 'CFBundle(Identifier|ShortVersionString|Version)|LSApplicationCategoryType|ITSAppUsesNonExemptEncryption|LSMinimumSystemVersion'
+          lipo -archs "$APP/Contents/MacOS/"*
+          productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" --keychain "$KC" "$RUNNER_TEMP/Cowdrey.PDF.pkg"
+          pkgutil --check-signature "$RUNNER_TEMP/Cowdrey.PDF.pkg"
+          ls -l "$RUNNER_TEMP/Cowdrey.PDF.pkg"
+          } 2>&1 | tee -a "$LOG"
+
+      - name: Validate and upload to App Store Connect
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$P8" > ~/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY}.p8
+          PKG="$RUNNER_TEMP/Cowdrey.PDF.pkg"
+          xcrun altool --validate-app -f "$PKG" -t macos --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER" 2>&1 | tee -a "$LOG"
+          xcrun altool --upload-app -f "$PKG" -t macos --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER" 2>&1 | tee -a "$LOG"
+          grep -qiE 'UPLOAD SUCCEEDED|No errors uploading' "$LOG" || { echo "The upload did not report success." | tee -a "$LOG"; exit 1; }
+
+      - name: Wait for App Store Connect to list the build
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: python3 .github/scripts/mac_app_store.py wait-build 2>&1 | tee -a "$LOG"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Cowdrey.PDF-MacAppStore
+          path: ${{ runner.temp }}/Cowdrey.PDF.pkg
+          if-no-files-found: ignore
+
+      - name: Remove the keychain and keys
+        if: always()
+        run: |
+          [[ -n "$KC" ]] && security delete-keychain "$KC" || true
+          rm -rf ~/.appstoreconnect "$SIGN"/*.p12 desktop/src-tauri/embedded.provisionprofile
+
+      # The log (and the IDs of this run's throwaway certificates, for the next run to revoke) go on the
+      # mac-app-store-log branch, so they can be read without signing in to GitHub.
+      - name: Publish the build log
+        if: always()
+        run: |
+          D=$(mktemp -d)
+          if [[ -f "$SIGN/state.json" ]]; then cp "$SIGN/state.json" "$D/state.json"; elif [[ -f "$RUNNER_TEMP/state-in.json" ]]; then cp "$RUNNER_TEMP/state-in.json" "$D/state.json"; fi
+          [[ -f "$LOG" ]] || touch "$LOG"
+          OUT=$(tail -c 200000 "$LOG")
+          # the branch is public: take out the key ID and issuer ID before publishing
+          for S in "$APPLE_API_ISSUER" "$APPLE_API_KEY"; do if [[ -n "$S" ]]; then OUT=${OUT//"$S"/***}; fi; done
+          cd "$D" && git init -q -b mac-app-store-log && printf '%s\n' "$OUT" > mac-app-store.log
+          echo "${{ job.status }} · run ${{ github.run_number }} · build $BUILD_NUMBER · ${{ github.sha }}" > status.txt
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Mac App Store build log, run ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" mac-app-store-log

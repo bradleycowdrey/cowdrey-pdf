@@ -15,6 +15,9 @@ const NATIVE = window.__TAURI__ || null;
 const MOBILE_APP = !!NATIVE && (/iPhone|iPad|iPod|Android/.test(navigator.userAgent) || navigator.maxTouchPoints > 1);
 const ANDROID_APP = MOBILE_APP && /Android/.test(navigator.userAgent);
 const MAC_APP = NATIVE && !MOBILE_APP ? NATIVE : null;
+// The Mac App Store build (its Rust side sets this flag before the page loads): the App Store updates it, so it has no
+// Check for updates and never offers a download.
+const APP_STORE_BUILD = !!MAC_APP && window.__COWDREY_APP_STORE__ === true;
 const b64ToBytes = (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
 const bytesToB64 = (u) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 const $ = (s, r = document) => r.querySelector(s);
@@ -3824,7 +3827,7 @@ function shortcutsDialog() {
 cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
 cmd('share', { label: 'Share…', icon: 'share', enabled: has, get hidden() { return !NATIVE && !webCanSharePdf(); }, run: sharePdf });
 cmd('shareApp', { label: 'Share Cowdrey.PDF…', icon: 'heart', run: () => openShareApp() });
-cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP, run: () => checkForUpdates(true) });
+cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP || APP_STORE_BUILD, run: () => checkForUpdates(true) });
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
@@ -4612,7 +4615,7 @@ const RELEASES_PAGE = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/la
 const RELEASES_API = 'https://api.github.com/repos/bradleycowdrey/cowdrey-pdf/releases/latest';
 const isNewer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
 async function checkForUpdates(manual) {
-  if (!MAC_APP) return;
+  if (!MAC_APP || APP_STORE_BUILD) return;
   if (manual) toast('Checking for updates…');
   if (MAC_APP.updater) {
     let update = null, ok = false;
@@ -4739,6 +4742,6 @@ serial(async () => {
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
   sideNoDoc();
 });
-if (MAC_APP && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
+if (MAC_APP && !APP_STORE_BUILD && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
 // For tests and automation
 window.__cowdreyPdf = { ...TEST_HOOKS, get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; }, contentMap: (n) => contentMap(views[n].page), tokenize: (t) => tokenizeContent(t).length };

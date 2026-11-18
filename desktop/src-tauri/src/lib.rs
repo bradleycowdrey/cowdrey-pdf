@@ -8,6 +8,28 @@ use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, MenuItemKind, Prede
 use tauri::Wry;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
+#[cfg(all(target_os = "macos", feature = "app-store"))]
+mod bookmarks;
+
+/// A file the person handed over (Open panel, Save panel, Finder): in the Mac App Store build, keep a
+/// security-scoped bookmark so it can be reopened and saved back to after a relaunch. Nothing elsewhere.
+#[allow(unused_variables)]
+fn granted(app: &AppHandle, path: &str) {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    bookmarks::remember(app, path);
+}
+
+/// Before the app touches a path it was given in an earlier session (Mac App Store build only).
+#[allow(unused_variables)]
+fn reach(app: &AppHandle, path: &str) {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    bookmarks::access(app, path);
+}
+
+/// True in the Mac App Store build. The page reads it as window.__COWDREY_APP_STORE__ and leaves out
+/// Check for Updates and the update prompts, since the App Store updates the app.
+const APP_STORE: bool = cfg!(feature = "app-store");
+
 /// Files macOS asked us to open (Finder double-click, "Open With", drag onto the Dock icon)
 /// that the page has not picked up yet.
 struct PendingFiles(Mutex<Vec<String>>);
@@ -43,33 +65,44 @@ fn opened(p: &str) -> Option<OpenedFile> {
 }
 
 #[tauri::command]
-fn take_opened_files(state: tauri::State<PendingFiles>) -> Vec<OpenedFile> {
+fn take_opened_files(app: AppHandle, state: tauri::State<PendingFiles>) -> Vec<OpenedFile> {
     let paths = std::mem::take(&mut *state.0.lock().unwrap());
-    paths.iter().filter_map(|p| opened(p)).collect()
+    paths.iter().filter_map(|p| { granted(&app, p); opened(p) }).collect()
 }
 
+/// Reads a file chosen in the Open panel, or reopens a recent one.
 #[tauri::command]
-fn read_text_file(path: String) -> Result<OpenedFile, String> {
-    load(Path::new(&path)).ok_or_else(|| format!("Could not read {path}"))
+fn read_text_file(app: AppHandle, path: String) -> Result<OpenedFile, String> {
+    reach(&app, &path);
+    let f = load(Path::new(&path)).ok_or_else(|| format!("Could not read {path}"))?;
+    granted(&app, &path);
+    Ok(f)
 }
 
 /// When a file was last changed (milliseconds), or 0 if it isn't there: Save checks it before replacing a file.
 #[tauri::command]
-fn file_modified(path: String) -> u64 {
+fn file_modified(app: AppHandle, path: String) -> u64 {
+    reach(&app, &path);
     modified_ms(Path::new(&path))
 }
 
 #[tauri::command]
-fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
+fn write_text_file(app: AppHandle, path: String, contents: String) -> Result<(), String> {
+    reach(&app, &path);
+    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+    granted(&app, &path);
+    Ok(())
 }
 
-/// Writes bytes sent as base64 (Word documents and other binary exports).
+/// Writes bytes sent as base64: Save (back to the document's own file), Save a copy, exports and extracted pages.
 #[tauri::command]
-fn write_binary_file(path: String, base64: String) -> Result<(), String> {
+fn write_binary_file(app: AppHandle, path: String, base64: String) -> Result<(), String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD.decode(base64).map_err(|e| e.to_string())?;
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())
+    reach(&app, &path);
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    granted(&app, &path);
+    Ok(())
 }
 
 fn modified_ms(path: &Path) -> u64 {
@@ -276,7 +309,7 @@ fn submenu(app: &AppHandle, title: &str, items: &[Item]) -> tauri::Result<Submen
 #[tauri::command]
 fn set_menu(app: AppHandle, menus: Vec<MenuSpec>) -> Result<(), String> {
     let build = || -> tauri::Result<Menu<Wry>> {
-        let app_items: Vec<Item> = vec![
+        let mut app_items: Vec<Item> = vec![
             Box::new(MenuItem::with_id(&app, "cmd:about", "About Cowdrey.PDF", true, None::<&str>)?),
             Box::new(MenuItem::with_id(&app, "cmd:checkUpdates", "Check for Updates…", true, None::<&str>)?),
             Box::new(PredefinedMenuItem::separator(&app)?),
@@ -289,6 +322,10 @@ fn set_menu(app: AppHandle, menus: Vec<MenuSpec>) -> Result<(), String> {
             // a custom Quit so the page can save before the app exits (the predefined one skips that)
             Box::new(MenuItem::with_id(&app, "app:quit", "Quit Cowdrey.PDF", true, Some("CmdOrCtrl+Q"))?),
         ];
+        // The App Store updates the Mac App Store build itself.
+        if APP_STORE {
+            app_items.remove(1);
+        }
         let mut subs: Vec<Submenu<Wry>> = vec![submenu(&app, "Cowdrey.PDF", &app_items)?];
         let mut window_added = false;
         for m in &menus {
@@ -360,10 +397,19 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
-    #[cfg(desktop)]
+    // In-place updates for the Developer ID build only (cargo feature "updater", on by default).
+    #[cfg(all(desktop, feature = "updater"))]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+    // Tells the page it runs as the Mac App Store build, before any of its scripts run.
+    let builder = if APP_STORE {
+        builder.plugin(tauri::plugin::Builder::<tauri::Wry>::new("app-store").js_init_script("window.__COWDREY_APP_STORE__ = true;").build())
+    } else {
+        builder
+    };
+    #[cfg(desktop)]
+    let builder = builder
         .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, set_menu_enabled, hold_quit])
         .on_menu_event(|app, event| {
             if event.id().0 == "app:quit" || event.id().0 == "app:closeWindow" {
