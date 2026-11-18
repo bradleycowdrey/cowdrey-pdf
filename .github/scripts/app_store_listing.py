@@ -265,13 +265,37 @@ def whats_new(loc):
         'whatsNew': L['whatsNew']}}})
 
 
-@step('App Review contact and notes (add a phone number by hand)')
+def phone_from_other_apps():
+    """The App Review phone number, copied from another of this team's apps (e.g. Cowdrey.MD) so it is never
+    written in this public repo or printed in the log. None when no app has one yet."""
+    for bundle in L.get('phoneFrom', []):
+        try:
+            other = call('GET', f"/v1/apps?filter[bundleId]={bundle}")['data']
+            if not other:
+                continue
+            for ver in call('GET', f"/v1/apps/{other[0]['id']}/appStoreVersions?filter[platform]=IOS&limit=10")['data']:
+                try:
+                    d = call('GET', f"/v1/appStoreVersions/{ver['id']}/appStoreReviewDetail")['data']
+                except ApiError:
+                    continue
+                if d and d['attributes'].get('contactPhone'):
+                    return d['attributes']['contactPhone']
+        except ApiError:
+            continue
+    return None
+
+
+@step('App Review contact and notes')
 def review(v):
     attrs = dict(L['review'])
     try:
         d = call('GET', f"/v1/appStoreVersions/{v['id']}/appStoreReviewDetail")['data']
     except ApiError:
         d = None
+    if not (d and d['attributes'].get('contactPhone')):
+        phone = phone_from_other_apps()
+        if phone:
+            attrs['contactPhone'] = phone
     if d:
         call('PATCH', f"/v1/appStoreReviewDetails/{d['id']}", {'data': {'type': 'appStoreReviewDetails', 'id': d['id'], 'attributes': attrs}})
     else:
@@ -432,5 +456,5 @@ except ApiError as e:
 print('\nApp Store listing for Cowdrey.PDF', VERSION)
 for status, name, detail in results:
     print(f"[{status}] {name}" + (f" — {detail}" if detail else ''))
-print('\nStill to do in App Store Connect: App Privacy (choose "Data Not Collected"), a phone number for App Review, then Add for Review.')
+print('\nIf App Privacy is not yet set in App Store Connect, choose "Data Not Collected" there.')
 sys.exit(0)

@@ -35,5 +35,8 @@
     ]
   },
   "whatsNew": "Share Cowdrey.PDF from the title bar or the More menu, share a PDF from the share sheet, and fixes to redaction, OCR and highlighting.",
-  "submitForReview": "0.3.2"
+  "submitForReview": "0.3.2",
+  "phoneFrom": [
+    "com.bradcowdrey.cowdreymd"
+  ]
 }
