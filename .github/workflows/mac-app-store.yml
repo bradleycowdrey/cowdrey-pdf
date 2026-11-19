@@ -2,22 +2,14 @@ name: Mac App Store
 
 # The Mac App Store build of Cowdrey.PDF: sandboxed, without the self-updater, signed with throwaway Apple
 # Distribution and Mac Installer Distribution certificates made through the App Store Connect API, packaged as a
-# .pkg and uploaded to App Store Connect (the same app record as iPhone and iPad). Nothing is submitted for review.
+# .pkg and uploaded to App Store Connect (the same app record as iPhone and iPad). It is submitted for review only
+# when docs/app-store/listing.json's submitForReviewMac names the version.
 # The Developer ID DMG (mac-app.yml) is built separately and is not affected.
 on:
   push:
-    # main: a new version number makes a new Mac App Store build (and so does a change to this build's own setup).
     # Only main: a push to any other branch must not upload a build or revoke the certificates main's last run made.
+    # On main, only a new version number makes a new Mac App Store build (checked in the gate job below).
     branches: [main]
-    paths:
-      - desktop/src-tauri/tauri.conf.json
-      - desktop/src-tauri/tauri.appstore.conf.json
-      - desktop/src-tauri/AppStore.entitlements
-      - desktop/src-tauri/AppStore.Info.plist
-      - desktop/src-tauri/capabilities/appstore.json
-      - desktop/src-tauri/src/bookmarks.rs
-      - .github/scripts/mac_app_store.py
-      - .github/workflows/mac-app-store.yml
   workflow_dispatch:
 
 # One run at a time: each run revokes the certificates the run before it made.
@@ -34,8 +26,33 @@ defaults:
     shell: bash
 
 jobs:
+  gate:
+    name: On a push, go on only when the version number changed
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.gate.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: gate
+        run: |
+          GO=true
+          if [[ "${{ github.event_name }}" == push ]]; then
+            BEFORE="${{ github.event.before }}"
+            git cat-file -e "$BEFORE^{commit}" 2>/dev/null || BEFORE=HEAD~1
+            OLD=$(git show "$BEFORE:desktop/src-tauri/tauri.conf.json" 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0)).version" 2>/dev/null || echo none)
+            NEW=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+            echo "Version before this push: $OLD, now: $NEW"
+            [[ "$OLD" == "$NEW" ]] && GO=false
+          fi
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
+          echo "Build for the Mac App Store: $GO"
+
   mas:
     name: Build, sign and upload Cowdrey.PDF for the Mac App Store
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
     env:
@@ -163,8 +180,8 @@ jobs:
         run: python3 .github/scripts/mac_app_store.py wait-build 2>&1 | tee -a "$LOG"
 
       # The Mac version of the listing: Mac text and screenshots from docs/app-store/listing.json ("mac") and this
-      # build. Never submitted for review (only if listing.json's submitForReviewMac names the version).
-      - name: Fill in the Mac App Store listing (no submission)
+      # build. Submitted for review only if listing.json's submitForReviewMac names the version.
+      - name: Fill in the Mac App Store listing
         env:
           P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: python3 .github/scripts/app_store_listing.py --mac-only 2>&1 | tee -a "$LOG"
