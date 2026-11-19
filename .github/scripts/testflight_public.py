@@ -107,7 +107,7 @@ def review_contact():
 
 def newest_build():
     for _ in range(45):
-        bs = call('GET', f'/v1/builds?filter[app]={APP}&filter[preReleaseVersion.version]={VERSION}&sort=-uploadedDate&limit=10')['data']
+        bs = call('GET', f'/v1/builds?filter[app]={APP}&filter[preReleaseVersion.version]={VERSION}&filter[preReleaseVersion.platform]=IOS&sort=-uploadedDate&limit=10')['data']
         ok = [b for b in bs if b['attributes'].get('processingState') == 'VALID' and not b['attributes'].get('expired')]
         if ok:
             return ok[0]

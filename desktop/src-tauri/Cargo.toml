@@ -34,8 +34,22 @@ tauri-plugin-fs = "2"
 tauri-plugin-sharekit = { path = "plugins/sharekit" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
+tauri-plugin-updater = { version = "2", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
+
+# The Mac App Store build only: security-scoped bookmarks, so a sandboxed app can reopen and save back to the
+# files a person opened in an earlier session (see src/bookmarks.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, features = ["NSURL", "NSData", "NSError", "NSString", "NSArray"] }
+
+[features]
+# The Developer ID (DMG) build updates itself from GitHub releases: that is the default, used by mac-app.yml.
+default = ["updater"]
+updater = ["dep:tauri-plugin-updater", "dep:tauri-plugin-process"]
+# The Mac App Store build (mac-app-store.yml): built with --no-default-features --features app-store, so it has
+# no self-updater (the App Store updates it), runs in the App Sandbox and keeps file access through bookmarks.
+app-store = ["dep:objc2", "dep:objc2-foundation"]
 
 [profile.release]
 codegen-units = 1
