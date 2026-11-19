@@ -9,6 +9,8 @@ With --build-only (after each iPhone build) it only sets the version number and 
 With --mac-only (after each Mac App Store upload) it fills in only the macOS version, which it never submits
 unless listing.json's submitForReviewMac names the exact version.
 If listing.json names a version in withdrawFromReview, that exact version is first taken out of App Review.
+A platform whose version is already submitted, in review, approved or on sale is left alone (never edited, recreated
+or resubmitted); the log reports the state of the iOS and the macOS version either way.
 
 Each step runs on its own and reports what happened, so one refusal doesn't stop the rest.
 Environment: APPLE_API_ISSUER, APPLE_API_KEY (key ID), P8 (private key text).
@@ -219,6 +221,25 @@ def editable_version(platform='IOS'):
                                                          'relationships': {'app': rel('apps', APP)}}})['data']
 
 
+OPEN_STATES = ('PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED', 'METADATA_REJECTED', 'INVALID_BINARY')
+PLATFORM_NAME = {'IOS': 'iOS', 'MAC_OS': 'macOS'}
+
+
+def version_state(platform):
+    """The App Store Connect state of this platform's version VERSION, or None when there is no such version."""
+    vs = call('GET', f'/v1/apps/{APP}/appStoreVersions?filter[platform]={platform}&limit=20')['data']
+    v = next((x for x in vs if x['attributes']['versionString'] == VERSION), None)
+    return v and (v['attributes'].get('appStoreState') or v['attributes'].get('appVersionState'))
+
+
+def locked(platform):
+    """True when this platform's version VERSION is already submitted, in review, approved or on sale: then this
+    script leaves that platform's version alone (no edits, no new version, no resubmission)."""
+    st = version_state(platform)
+    print(f'{PLATFORM_NAME[platform]} App Store version {VERSION}: {st or "not created yet"}', flush=True)
+    return bool(st) and st not in OPEN_STATES
+
+
 @step(f'Version number and copyright')
 def version_fields(v):
     call('PATCH', f"/v1/appStoreVersions/{v['id']}", {'data': {'type': 'appStoreVersions', 'id': v['id'], 'attributes': {
@@ -271,9 +292,9 @@ def whats_new(loc, T=L, platform='IOS'):
 
 
 def phone_from_other_apps():
-    """The App Review phone number, copied from another of this team's apps (e.g. Cowdrey.MD) so it is never
-    written in this public repo or printed in the log. None when no app has one yet."""
-    for bundle in L.get('phoneFrom', []):
+    """The App Review phone number, copied from this app's own iPhone record or another of this team's apps
+    (e.g. Cowdrey.MD) so it is never written in this public repo or printed in the log. None when none has one."""
+    for bundle in [L['bundleId']] + L.get('phoneFrom', []):
         try:
             other = call('GET', f"/v1/apps?filter[bundleId]={bundle}")['data']
             if not other:
@@ -297,15 +318,19 @@ def review(v, T=L):
         d = call('GET', f"/v1/appStoreVersions/{v['id']}/appStoreReviewDetail")['data']
     except ApiError:
         d = None
+    note = 'phone already set'
     if not (d and d['attributes'].get('contactPhone')):
         phone = phone_from_other_apps()
-        if phone:
-            attrs['contactPhone'] = phone
+        if not phone:
+            raise ApiError('no App Review phone number: enter one under App Review Information in App Store Connect')
+        attrs['contactPhone'] = phone
+        note = 'phone copied from App Store Connect'
     if d:
         call('PATCH', f"/v1/appStoreReviewDetails/{d['id']}", {'data': {'type': 'appStoreReviewDetails', 'id': d['id'], 'attributes': attrs}})
     else:
         call('POST', '/v1/appStoreReviewDetails', {'data': {'type': 'appStoreReviewDetails', 'attributes': attrs,
                                                             'relationships': {'appStoreVersion': rel('appStoreVersions', v['id'])}}})
+    return f"{attrs.get('contactFirstName')} {attrs.get('contactLastName')}, {attrs.get('contactEmail')}, notes; {note}"
 
 
 def upload_set(loc, display, files):
@@ -341,7 +366,9 @@ def submit_for_review(v, platform='IOS', key='submitForReview'):
     names this exact version and every earlier step succeeded. Then report the state App Store Connect shows."""
     if L.get(key) != VERSION:
         return
-    problems = [n for st, n, _ in results if st != 'OK']
+    # Only this platform's own steps hold it back (the Mac steps are all named "macOS: …").
+    mine = (lambda n: n.startswith('macOS:')) if platform == 'MAC_OS' else (lambda n: not n.startswith('macOS:'))
+    problems = [n for st, n, _ in results if st != 'OK' and mine(n)]
     if problems:
         print('Submit: not submitted, because these steps need attention first: ' + '; '.join(problems))
         return
@@ -351,7 +378,7 @@ def submit_for_review(v, platform='IOS', key='submitForReview'):
     for x in subs:
         st = x['attributes'].get('state')
         if st in ('WAITING_FOR_REVIEW', 'IN_REVIEW') and has_version(x):
-            print(f"Submit: {VERSION} is already submitted ({st}).")
+            print(f"Submit: {PLATFORM_NAME[platform]} {VERSION} is already submitted ({st}).")
             return
     # After a rejection the submission stays open with "unresolved issues": the fixed version goes back in it.
     reopen = next((x for x in subs if x['attributes'].get('state') == 'UNRESOLVED_ISSUES' and has_version(x)), None)
@@ -412,9 +439,9 @@ def submit_for_review(v, platform='IOS', key='submitForReview'):
     for _ in range(15):
         st = call('GET', f"/v1/reviewSubmissions/{draft['id']}")['data']['attributes'].get('state')
         vst = call('GET', f"/v1/appStoreVersions/{v['id']}")['data']['attributes'].get('appStoreState')
-        print(f'Submit: submission is {st}; App Store Connect shows version {VERSION} as {vst}.', flush=True)
+        print(f'Submit: submission is {st}; App Store Connect shows {PLATFORM_NAME[platform]} version {VERSION} as {vst}.', flush=True)
         if vst == 'WAITING_FOR_REVIEW' or st in ('WAITING_FOR_REVIEW', 'IN_REVIEW'):
-            print(f'CONFIRMED: Cowdrey.PDF {VERSION} is Waiting for Review.')
+            print(f'CONFIRMED: Cowdrey.PDF {PLATFORM_NAME[platform]} {VERSION} is Waiting for Review.')
             return
         time.sleep(20)
 
@@ -424,6 +451,9 @@ def mac_listing():
     screenshots and the newest processed Mac build. Never submitted, unless listing.json has submitForReviewMac
     equal to this version."""
     M = {**L, **L['mac'], 'review': {**L['review'], **L['mac'].get('review', {})}}
+    if locked('MAC_OS'):
+        print(f'macOS {VERSION} is already submitted or approved: nothing to change.')
+        return
     try:
         mv = editable_version('MAC_OS')
     except ApiError as e:
@@ -459,6 +489,8 @@ if '--mac-only' in sys.argv:
     # After a Mac App Store upload (mac-app-store.yml): only the Mac version's text, screenshots and build.
     mac_listing()
     print('\nMac App Store listing for Cowdrey.PDF', VERSION)
+    for p in ('IOS', 'MAC_OS'):
+        print(f'State now: {PLATFORM_NAME[p]} App Store version {VERSION} is {version_state(p) or "not created yet"}')
     for status, name, detail in results:
         print(f"[{status}] {name}" + (f" — {detail}" if detail else ''))
     sys.exit(0)
@@ -466,47 +498,58 @@ if '--mac-only' in sys.argv:
 if '--build-only' in sys.argv:
     # After an iPhone build: only move the version number and attach the new build. Text and screenshots are
     # left alone, so edits made by hand in App Store Connect are kept.
-    try:
-        v = editable_version()
-    except ApiError as e:
-        if 'current state' not in str(e):
-            raise
-        print(f'A version is in App Review, so build {VERSION} stays in TestFlight. Once that review is done, run this '
-              'workflow again (or push any change to docs/app-store) to start the next App Store version with it.')
-        sys.exit(0)
-    version_fields(v)
-    attach_build(v)
+    v = None
+    if locked('IOS'):
+        print(f'iOS {VERSION} is already submitted or approved, so this build stays in TestFlight.')
+    else:
+        try:
+            v = editable_version()
+        except ApiError as e:
+            if 'current state' not in str(e):
+                raise
+            print(f'A version is in App Review, so build {VERSION} stays in TestFlight. Once that review is done, run this '
+                  'workflow again (or push any change to docs/app-store) to start the next App Store version with it.')
+    if v:
+        version_fields(v)
+        attach_build(v)
     mac_build_only()
     for status, name, detail in results:
         print(f"[{status}] {name}" + (f" — {detail}" if detail else ''))
     sys.exit(0)
 
 content_rights()
-info = editable_app_info()
-category(info)
-info_text(info)
-age_rating(info)
-price()
-availability()
 withdraw_from_review()
-v = editable_version()
-version_fields(v)
-attach_build(v)
-loc = version_localization(v)
-version_text(loc)
-whats_new(loc)
-review(v)
-for display, files in L['screenshots'].items():
-    step(f'Screenshots: {display}')(upload_set)(loc, display, files)
-try:
-    submit_for_review(v)
-except ApiError as e:
-    print(f'Submit: Apple refused the submission: {e}')
+# An iPhone and iPad version that is already submitted, in review, approved or on sale is left exactly as it is
+# (and so is the app information under review with it): nothing is edited, created or submitted for iOS.
+if locked('IOS'):
+    print(f'iOS {VERSION} is already submitted or approved: the iPhone and iPad version and app information are left alone.')
+else:
+    info = editable_app_info()
+    category(info)
+    info_text(info)
+    age_rating(info)
+    price()
+    availability()
+    v = editable_version()
+    version_fields(v)
+    attach_build(v)
+    loc = version_localization(v)
+    version_text(loc)
+    whats_new(loc)
+    review(v)
+    for display, files in L['screenshots'].items():
+        step(f'Screenshots: {display}')(upload_set)(loc, display, files)
+    try:
+        submit_for_review(v)
+    except ApiError as e:
+        print(f'Submit: Apple refused the submission: {e}')
 # The Mac version comes after the iPhone and iPad one, so nothing on the Mac can hold up their submission.
 if 'mac' in L:
     mac_listing()
 
 print('\nApp Store listing for Cowdrey.PDF', VERSION, '(iPhone, iPad and Mac)' if 'mac' in L else '')
+for p in ('IOS', 'MAC_OS') if 'mac' in L else ('IOS',):
+    print(f'State now: {PLATFORM_NAME[p]} App Store version {VERSION} is {version_state(p) or "not created yet"}')
 for status, name, detail in results:
     print(f"[{status}] {name}" + (f" — {detail}" if detail else ''))
 print('\nIf App Privacy is not yet set in App Store Connect, choose "Data Not Collected" there.')
