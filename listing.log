@@ -1,0 +1,5 @@
+App: Cowdrey.PDF Editor (6834950576), version 1.0.0
+State now: iOS App Store version 0.3.2 is WAITING_FOR_REVIEW
+State now: macOS App Store version 0.3.2 is WAITING_FOR_REVIEW
+Version 1.0.0 waits until 0.3.2 is out of review (iOS 0.3.2 is WAITING_FOR_REVIEW, macOS 0.3.2 is WAITING_FOR_REVIEW).
+Nothing was created, attached, edited or submitted in App Store Connect. Builds of 1.0.0 still go to TestFlight. Once the version in review is released, run this workflow again (or push any change to docs/app-store) to start App Store version 1.0.0.
