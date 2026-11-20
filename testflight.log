@@ -1,0 +1,15 @@
+App: Cowdrey.PDF Editor (6834950576), version 1.0.0
+[OK] TestFlight test information — description, feedback email, links
+[OK] Beta App Review contact — contact copied from the App Store review contact
+[OK] Newest processed build
+     build 1.0.0.13, uploaded 2026-11-20T08:04:33-08:00
+[OK] External group "Public" with a public link
+[OK] What to Test — set
+[OK] Add build 1.0.0.13 to the group
+[OK] Beta App Review — WAITING_FOR_REVIEW
+[OK] Build state — external testing: WAITING_FOR_BETA_REVIEW
+     in the group: build 1.0.0.13 — WAITING_FOR_BETA_REVIEW
+     in the group: build 0.3.2.12 — IN_BETA_TESTING
+     in the group: build 0.3.1.11 — IN_BETA_TESTING
+
+PUBLIC LINK: https://testflight.apple.com/join/tr4eD534
