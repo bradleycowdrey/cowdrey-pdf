@@ -2,6 +2,22 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 1.0.0 — Cowdrey.PDF 1.0
+
+**Cowdrey.PDF 1.0.** Everything since 0.1 in one release: a full PDF viewer and editor, free, on your device, with nothing uploaded.
+
+- **Edit text and pictures in place:** click a line and retype it in its own font, size and colour; reflow paragraphs; find and replace. Add, move, resize, rotate, crop and replace pictures. The old content is taken out of the saved file for good.
+- **Sign and fill forms:** a handwritten signature kept on your device for next time; fill text fields, checkboxes, radio buttons and lists, make your own fields, recognize a form, flatten it.
+- **Annotate:** highlight, underline, strikethrough, pen, shapes, notes, text boxes, callouts, stamps, with a Comments panel for replies and status.
+- **Organise pages:** insert, extract, split, combine, crop, rotate, reorder, duplicate and delete, in an Organize grid; watermark, header and footer, Bates numbering.
+- **OCR** for scanned pages, on the device and offline in the apps.
+- **Protect:** redact text, areas and search results; passwords and permissions; remove hidden information; **compress** (never makes a file bigger).
+- **Share** a PDF from the share sheet, and Cowdrey.PDF itself from the title bar.
+- **Native apps:** for Mac (signed with a Developer ID and notarized by Apple), and for iPhone and iPad (on TestFlight at https://testflight.apple.com/join/tr4eD534 while the App Store version is in review). The Mac App Store version is coming. And on the web at bradcowdrey.com/cowdrey-pdf/app.
+- **Free and on-device:** no account, no upload, open source under the MIT License.
+
+From 1.0 on, versions follow Semantic Versioning strictly, as Cowdrey.MD has since 2.0: major.minor.patch, where a patch fixes things, a minor version adds features, and a major version is a big change.
+
 ## 0.3.2
 
 - **Share app:** a button in the title bar (and Share Cowdrey.PDF… in Help) to pass Cowdrey.PDF on: the share sheet, or a link or a message to copy.

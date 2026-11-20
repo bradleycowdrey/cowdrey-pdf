@@ -1,6 +1,6 @@
 [package]
 name = "cowdrey-pdf"
-version = "0.3.2"
+version = "1.0.0"
 description = "Cowdrey.PDF, a PDF viewer and editor by Bradley Cowdrey"
 authors = ["Bradley Cowdrey"]
 license = "MIT"

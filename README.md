@@ -4,12 +4,14 @@ A PDF viewer and editor by **Bradley Cowdrey** · [bradcowdrey.com](https://brad
 
 Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms and rearrange pages, with nothing leaving your device. Like Cowdrey.MD it is one self-contained web page, wrapped as an app for Mac, iPhone, iPad and Android.
 
+**Version 1.0.** Edit text and pictures in place, sign, fill forms, annotate, organise pages, OCR, redact, compress and share, on the web and in native apps for Mac, iPhone and iPad. See the [changelog](CHANGELOG.md).
+
 **Free. Forever.** Open source under the MIT License.
 
 | | |
 |---|---|
 | **Use it on the web** | [bradcowdrey.com/cowdrey-pdf/app](https://bradcowdrey.com/cowdrey-pdf/app) |
-| **Mac** | [Download Cowdrey.PDF.dmg](https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg) · signed and notarized by Apple |
+| **Mac** | [Download Cowdrey.PDF.dmg](https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg) · signed and notarized by Apple · the Mac App Store version is coming |
 | **iPhone and iPad** | [Install with TestFlight](https://testflight.apple.com/join/tr4eD534) · the App Store version is on its way |
 | **Android** | Coming soon |
 | **Product page** | [bradcowdrey.com/cowdrey-pdf](https://bradcowdrey.com/cowdrey-pdf) |
