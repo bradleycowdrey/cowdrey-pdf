@@ -1,0 +1,559 @@
+== install the app's libraries
+
+added 35 packages, and audited 36 packages in 6s
+
+5 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+== install Playwright and Chromium
+
+added 2 packages in 1s
+Installing dependencies...
+Switching to root user to install dependencies...
+Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [816 kB]
+Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [745 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1475 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [319 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1716 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [346 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1922 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [443 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1199 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [239 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1231 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1792 kB]
+Get:19 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [414 kB]
+Fetched 13.0 MB in 1s (9222 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libasound2t64 is already the newest version (1.2.11-1ubuntu0.3).
+libasound2t64 set to manually installed.
+libatk-bridge2.0-0t64 is already the newest version (2.52.0-1build1).
+libatk-bridge2.0-0t64 set to manually installed.
+libatk1.0-0t64 is already the newest version (2.52.0-1build1).
+libatk1.0-0t64 set to manually installed.
+libatspi2.0-0t64 is already the newest version (2.52.0-1build1).
+libatspi2.0-0t64 set to manually installed.
+libcairo2 is already the newest version (1.18.0-3build1).
+libcairo2 set to manually installed.
+libcups2t64 is already the newest version (2.4.7-1.2ubuntu7.14).
+libcups2t64 set to manually installed.
+libdbus-1-3 is already the newest version (1.14.10-4ubuntu4.1).
+libdbus-1-3 set to manually installed.
+libdrm2 is already the newest version (2.4.125-1ubuntu0.1~24.04.2).
+libdrm2 set to manually installed.
+libglib2.0-0t64 is already the newest version (2.80.0-6ubuntu3.10).
+libglib2.0-0t64 set to manually installed.
+libnspr4 is already the newest version (2:4.35-1.1build1).
+libnspr4 set to manually installed.
+libnss3 is already the newest version (2:3.98-1ubuntu0.3).
+libnss3 set to manually installed.
+libpango-1.0-0 is already the newest version (1.52.1+ds-1build1).
+libpango-1.0-0 set to manually installed.
+libx11-6 is already the newest version (2:1.8.7-1ubuntu0.1).
+libx11-6 set to manually installed.
+libxcb1 is already the newest version (1.15-1ubuntu2).
+libxcb1 set to manually installed.
+libxcomposite1 is already the newest version (1:0.4.5-1build3).
+libxcomposite1 set to manually installed.
+libxdamage1 is already the newest version (1:1.1.6-1build1).
+libxdamage1 set to manually installed.
+libxext6 is already the newest version (2:1.3.4-1build2).
+libxext6 set to manually installed.
+libxfixes3 is already the newest version (1:6.0.0-2build1).
+libxfixes3 set to manually installed.
+libxkbcommon0 is already the newest version (1.6.0-1build1).
+libxkbcommon0 set to manually installed.
+libxrandr2 is already the newest version (2:1.5.2-2build1).
+libxrandr2 set to manually installed.
+xvfb is already the newest version (2:21.1.12-1ubuntu1.9).
+fonts-noto-color-emoji is already the newest version (2.047-0ubuntu0.24.04.1).
+libfontconfig1 is already the newest version (2.15.0-1.1ubuntu2).
+libfontconfig1 set to manually installed.
+libfreetype6 is already the newest version (2.13.2+dfsg-1ubuntu0.2).
+libfreetype6 set to manually installed.
+fonts-liberation is already the newest version (1:2.1.5-3).
+fonts-liberation set to manually installed.
+The following additional packages will be installed:
+  libgl1-mesa-dri libglx-mesa0 mesa-libgallium xfonts-encodings xfonts-utils
+Recommended packages:
+  fonts-ipafont-mincho fonts-tlwg-loma
+The following NEW packages will be installed:
+  fonts-freefont-ttf fonts-ipafont-gothic fonts-tlwg-loma-otf fonts-unifont
+  fonts-wqy-zenhei xfonts-cyrillic xfonts-encodings xfonts-scalable
+  xfonts-utils
+The following packages will be upgraded:
+  libgbm1 libgl1-mesa-dri libglx-mesa0 mesa-libgallium
+4 upgraded, 9 newly installed, 0 to remove and 64 not upgraded.
+Need to get 32.1 MB of archives.
+After this operation, 79.7 MB of additional disk space will be used.
+Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-ipafont-gothic all 00303-21ubuntu1 [3513 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 fonts-freefont-ttf all 20211204+svn4273-2 [5641 kB]
+Get:4 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-tlwg-loma-otf all 1:0.7.3-1 [107 kB]
+Get:5 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-unifont all 1:15.1.01-1build1 [2993 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-wqy-zenhei all 0.9.45-8 [7472 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libgl1-mesa-dri amd64 25.2.8-0ubuntu0.24.04.5 [38.0 kB]
+Get:8 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libglx-mesa0 amd64 25.2.8-0ubuntu0.24.04.5 [110 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libgbm1 amd64 25.2.8-0ubuntu0.24.04.5 [34.2 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 mesa-libgallium amd64 25.2.8-0ubuntu0.24.04.5 [10.8 MB]
+Ign:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 mesa-libgallium amd64 25.2.8-0ubuntu0.24.04.5
+Get:11 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-encodings all 1:1.0.5-0ubuntu2 [578 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-utils amd64 1:7.7+6build3 [94.4 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 xfonts-cyrillic all 1:1.0.5+nmu1 [384 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-scalable all 1:1.0.3-1.3 [304 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 mesa-libgallium amd64 25.2.8-0ubuntu0.24.04.5 [10.8 MB]
+Fetched 28.5 MB in 13min 8s (36.2 kB/s)
+Selecting previously unselected package fonts-ipafont-gothic.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 217092 files and directories currently installed.)
+Preparing to unpack .../00-fonts-ipafont-gothic_00303-21ubuntu1_all.deb ...
+Unpacking fonts-ipafont-gothic (00303-21ubuntu1) ...
+Selecting previously unselected package fonts-freefont-ttf.
+Preparing to unpack .../01-fonts-freefont-ttf_20211204+svn4273-2_all.deb ...
+Unpacking fonts-freefont-ttf (20211204+svn4273-2) ...
+Selecting previously unselected package fonts-tlwg-loma-otf.
+Preparing to unpack .../02-fonts-tlwg-loma-otf_1%3a0.7.3-1_all.deb ...
+Unpacking fonts-tlwg-loma-otf (1:0.7.3-1) ...
+Selecting previously unselected package fonts-unifont.
+Preparing to unpack .../03-fonts-unifont_1%3a15.1.01-1build1_all.deb ...
+Unpacking fonts-unifont (1:15.1.01-1build1) ...
+Selecting previously unselected package fonts-wqy-zenhei.
+Preparing to unpack .../04-fonts-wqy-zenhei_0.9.45-8_all.deb ...
+Unpacking fonts-wqy-zenhei (0.9.45-8) ...
+Preparing to unpack .../05-libgl1-mesa-dri_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking libgl1-mesa-dri:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Preparing to unpack .../06-libglx-mesa0_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking libglx-mesa0:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Preparing to unpack .../07-libgbm1_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking libgbm1:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Preparing to unpack .../08-mesa-libgallium_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking mesa-libgallium:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Selecting previously unselected package xfonts-encodings.
+Preparing to unpack .../09-xfonts-encodings_1%3a1.0.5-0ubuntu2_all.deb ...
+Unpacking xfonts-encodings (1:1.0.5-0ubuntu2) ...
+Selecting previously unselected package xfonts-utils.
+Preparing to unpack .../10-xfonts-utils_1%3a7.7+6build3_amd64.deb ...
+Unpacking xfonts-utils (1:7.7+6build3) ...
+Selecting previously unselected package xfonts-cyrillic.
+Preparing to unpack .../11-xfonts-cyrillic_1%3a1.0.5+nmu1_all.deb ...
+Unpacking xfonts-cyrillic (1:1.0.5+nmu1) ...
+Selecting previously unselected package xfonts-scalable.
+Preparing to unpack .../12-xfonts-scalable_1%3a1.0.3-1.3_all.deb ...
+Unpacking xfonts-scalable (1:1.0.3-1.3) ...
+Setting up mesa-libgallium:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up libgbm1:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up libgl1-mesa-dri:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up fonts-wqy-zenhei (0.9.45-8) ...
+Setting up fonts-freefont-ttf (20211204+svn4273-2) ...
+Setting up fonts-tlwg-loma-otf (1:0.7.3-1) ...
+Setting up xfonts-encodings (1:1.0.5-0ubuntu2) ...
+Setting up fonts-ipafont-gothic (00303-21ubuntu1) ...
+update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+Setting up fonts-unifont (1:15.1.01-1build1) ...
+Setting up libglx-mesa0:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up xfonts-utils (1:7.7+6build3) ...
+Setting up xfonts-cyrillic (1:1.0.5+nmu1) ...
+Setting up xfonts-scalable (1:1.0.3-1.3) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.12) ...
+Processing triggers for man-db (2.12.0-4build2) ...
+Not building database; man-db/auto-update is not 'true'.
+Processing triggers for fontconfig (2.15.0-1.1ubuntu2) ...
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1194/chromium-linux.zip
+|                                                                                |   0% of 173.9 MiB
+|■■■■■■■■                                                                        |  10% of 173.9 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 173.9 MiB
+Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+Downloading FFMPEG playwright build v1011 from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
+|                                                                                |   0% of 2.3 MiB
+|■■■■■■■■                                                                        |  10% of 2.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1194/chromium-headless-shell-linux.zip
+|                                                                                |   0% of 104.3 MiB
+|■■■■■■■■                                                                        |  10% of 104.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 104.3 MiB
+Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+== check index.html is built from src/
+index.html written (1095 KB)
+== make the sample PDF
+tests/fixtures/sample.pdf
+tests/fixtures/protected.pdf
+tests/fixtures/tricky.pdf
+== run the tests
+Trying to parse invalid object: {"line":257,"column":6,"offset":4254})
+Invalid object ref: 31 0 R
+Trying to parse invalid object: {"line":297,"column":6,"offset":4950})
+Invalid object ref: 38 0 R
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Trying to parse invalid object: {"line":272,"column":6,"offset":4484})
+Invalid object ref: 49 0 R
+Trying to parse invalid object: {"line":257,"column":6,"offset":4254})
+Invalid object ref: 27 0 R
+PASS  opens a PDF: pages, thumbnails, page count, title, text layer; nothing fails to load
+PASS  find: counts every match across pages and steps through them
+PASS  mark up: highlight selected text, draw, box, text, note; undo and redo; all saved into the PDF
+PASS  select a mark: move it by dragging, delete it with the Delete key
+PASS  forms: typed values and ticks are kept in the saved PDF; checkbox tick shows
+PASS  pages: rotate, move, duplicate, delete, insert blank; saved PDF follows
+PASS  signature: drawn once, kept for next time, placed as a picture in the PDF
+PASS  library: an opened PDF and its mark-up come back after a reload
+PASS  extract pages: parses ranges
+PASS  phone: the page fits the screen, the sidebar is out of the way, nothing scrolls sideways
+PASS  dark pages and themes
+PASS  Mac app: opens a PDF from Finder, saves back to the same file, menu bar matches the app
+PASS  iPhone app: Save PDF opens the share sheet with the PDF
+PASS  protected PDF: asks for the password, never stores it, saves with or without it as chosen
+PASS  Mac app: a file opened from Finder at launch wins over last time's document
+PASS  Mac app: print, export, extract and share use the Mac, not the browser
+PASS  Mac app: Save a copy leaves the file edited; a file changed elsewhere is not replaced without asking
+PASS  Mac app: quitting with unsaved changes to a file asks first; menu Undo is the app's
+PASS  dialogs wait their turn: a notice during a password question doesn't lose it, and opening carries on
+PASS  drop: if the first PDF doesn't open, the others are not added to the open document
+PASS  phone apps: Print uses the system print dialog; Android "Open with" gets the real file name
+PASS  sample PDF: Try a sample opens a two-page guide with a form and a pelican to find
+PASS  Edit PDF: a line is rewritten in its own font and colour; the saved PDF has only the new text
+PASS  Edit PDF: Escape keeps the edit and Undo takes it back; typing the original back removes the edit; undo brings it back
+PASS  Edit PDF: a picture is moved, resized and deleted; the saved PDF draws it in its new place only
+PASS  Edit PDF: a comment from another app is edited, another deleted; Erase area clears a line
+PASS  Edit PDF: a PDF from Chrome keeps its subset fonts; letters they lack use the closest standard font
+PASS  Edit PDF: saving keeps the next word in another font, lines broken with ', and content stored as an array
+PASS  Edit PDF: the content reader never hangs on a malformed stream
+PASS  Mac App Store build: no Check for updates in Help or the menu bar, and no update check
+PASS  Developer ID build: Check for updates is still there and asks the updater
+PASS  Bookmarks: add (Ctrl+B, named after the heading), rename, add child, set page, drag to nest, delete; saved with the right pages after a page moves
+PASS  Bookmarks: the PDF’s own outline becomes editable on the first change and replaces the old one on save; a deleted page’s bookmark with nothing under it is left out
+PASS  Bookmarks: on a phone the toolbar fits the sidebar and Ctrl+B adds without opening it
+PASS  Bookmarks: untouched, a bookmark whose page is deleted goes from the saved PDF; one with bookmarks under it stays, without a target
+PASS  commands: the web File button lists the File menu only; every menu command has a home on the ribbon
+PASS  commands: on a phone, Home keeps View and Read as their own groups
+PASS  commands: Comment tab has the four text mark-ups together; Area highlight is with the shapes; Signature in Add
+PASS  commands: Edit PDF chooses lines or paragraphs in its menu (a choice of one, kept); only Edit PDF is pressed
+PASS  commands: a single line can be aligned in its own box (right, centre), on screen and in the saved PDF
+PASS  comments: every Comment-tab tool makes a real PDF annotation with its own look, shown again on reopening
+PASS  comments: the Comments panel lists every comment, goes to it, and deletes it (the PDF's own too)
+PASS  comments: no name question; one toast says where to set it; the panel sets the author, filters by type and author and sorts by date
+PASS  comments: on a turned page, typewriter text and stamps stay upright, on screen and in the saved PDF
+PASS  comments: phone width: the Comment tab scrolls, the Comments panel opens, nothing scrolls sideways
+PASS  comments: the pressed swatch is the colour each tool draws; a swatch recolours the selected mark in one undo step; swatches are named
+PASS  comments: a new shape, stroke, callout, typewriter text or stamp is selected after drawing, ready to restyle
+PASS  comments: the Comment tab fits 1440 and 1280 wide windows: Stamp and the Comments list in view (Signature is on Protect)
+PASS  comments: replies and a review status in the Comments panel are saved as replies (/IRT) and read back on reopening
+PASS  signature: Type and Picture besides Draw; the last three are kept; also on the Protect tab
+PASS  create: a blank PDF in the size, orientation and number of pages asked for, named Untitled
+PASS  create: from pictures, one per page in the order picked, fitted or on Letter with margins; added to an open PDF
+PASS  create: dropping pictures (no PDF) makes a PDF from them
+PASS  create: pasting a picture makes a one-page PDF, or with a PDF open adds a page or places it
+PASS  read aloud: speaks the page's sentences with the chosen speed, highlights them, moves on to the next page
+PASS  read aloud: hidden where the device has no speech
+PASS  read mode: hides the ribbon, menus and sidebar; arrows turn pages; Esc and the exit button leave
+PASS  export: every page as PNGs in one STORE .zip; the entries are valid PNGs of the right size
+PASS  export: one page as JPEG at 150 dpi saves a single picture; the Mac app saves through the Mac
+PASS  create and read: phone width, nothing scrolls sideways; the read-aloud bar fits
+PASS  Document properties: shows the file, page size, fonts; edits saved into the Info dictionary and kept after reopening; undo
+PASS  Document properties: saving no longer replaces the PDF title with the file name; a PDF with no title gets the file name
+PASS  Document properties: the security summary of a protected PDF
+PASS  Document properties: on a phone the dialog fits the screen
+PASS  Edit PDF: a click puts the caret where it was; typing inserts there; double click selects a word, triple the line
+PASS  Edit PDF: in paragraph mode and on a phone tap, the caret also goes where the text was touched
+PASS  Edit PDF: on a phone, a tap on small body text that zooms in first still puts the caret at the tap
+PASS  Edit PDF: deleting a picture hides the same draw on screen that the saved file removes (clipped copies, forms)
+PASS  Edit PDF: on the brochure, deleting the page-one picture looks the same on screen and in the saved file
+PASS  Edit PDF: editing part of a mixed-font line moves the next run along; nothing is drawn over it
+PASS  Edit PDF: edited text keeps its render mode, line width, spacing and width scale, on screen and saved
+PASS  Edit PDF: an edited line keeps its place in the reading order (lines and paragraphs)
+PASS  Edit PDF: the format bar shows the line's own colour, pressed
+PASS  Edit PDF: paragraph mode groups double-spaced body text, but not short lines spaced apart
+PASS  Edit PDF: on a phone, a line too small to read is zoomed to at least 14 px while edited, then zoom comes back
+PASS  edit feedback: each tool has its cursor (I-beam for Add text and Note, crosshair for shapes); the hover cursor goes with Edit PDF
+PASS  edit feedback: the hover outline and cursor follow the pointer to where it stops (text over a full-page picture)
+PASS  edit feedback: paragraph mode hover is up to date too
+PASS  edit feedback: Edit PDF faintly outlines every line and picture it can edit; they go when another tool is chosen
+PASS  Edit PDF: keys typed right after clicking a line, while it is still being read, go into the line (not the ribbon)
+PASS  Edit PDF: choosing it reads the drawn pages ahead, so the first click opens the line at once
+PASS  Edit PDF: deleting a picture drawn inside a form leaves the page and its text, on screen and in the saved PDF
+PASS  Edit PDF: moving a picture drawn inside a form moves only the picture
+PASS  text: paragraph mode keeps lines that fitted when one letter is added to the last line
+PASS  Edit PDF: the line editor types in the document's own font
+PASS  phone (dark): the format bar wraps to two rows, every control in view, and does not cover the line being edited
+PASS  phone (light): the format bar wraps to two rows, every control in view, and does not cover the line being edited
+PASS  desktop: the format bar shows its swatches as before (no colour button)
+PASS  keys: Left and Right turn the page only from the page, not on a swatch or ribbon button
+PASS  undo and redo say what they take back: "Undo Watermark" in the menu, "Undid: Watermark" after
+PASS  flow: the web shows the ribbon as its only menu row; File and ? reach every menu command; Alt goes to the tabs
+PASS  flow: File > Close leaves Open a PDF with the file in Recent; Open recent shows the list
+PASS  flow: text mark-up stays on its text: a drag over it selects text; a click selects it; arrows and dragging never move it
+PASS  flow: deleting, moving and duplicating a page shows a toast with Undo
+PASS  flow: the comment-author toast is for comments only, once, and waits for a dialog to close
+PASS  flow: Highlight highlights the selection and keeps the tool in use, else turns on; its tooltip says so
+PASS  flow: before any file, the sidebar shows Recent; the last tab comes back with a document
+PASS  flow: Signature is on Protect and in Comment > Add (one command); Save PDF is in the title bar, not again on Home or Export
+PASS  flow: the sidebar keeps the page in view in view; Organize opens with the Pages tab and Done goes back
+PASS  forms: every kind of field drawn, its properties set, saved as real fields, and fillable when reopened
+PASS  forms: a new field moves, resizes, is deleted with the Delete key, and comes back with undo
+PASS  forms: fields already in the PDF are renamed and deleted; a deleted one leaves the page and the saved form
+PASS  forms: Recognize form proposes fields on blank lines and empty boxes; one click, or Add all, adds them
+PASS  forms: Clear form empties every field; Flatten form makes what is filled in part of the page
+PASS  forms: a new field can be filled in as soon as you leave form design (another tab, Select, Esc or Fill in); a form tool or Edit fields designs it again
+PASS  Pictures: a picture in the PDF is turned, mirrored and cropped from its toolbar; the saved PDF draws it so, clipped
+PASS  Pictures: Save picture as PNG gives the picture’s own pixels; Replace fits a new one in the same box
+PASS  Pictures: on a turned page, Flip horizontal mirrors across the screen, not the paper
+PASS  Pictures: an added picture is selected with Select, turned, moved, resized and replaced; undo and the saved PDF follow
+PASS  Pictures: an added picture is picked with Edit PDF, flipped and cropped; the saved PDF clips it
+PASS  Pictures: the toolbar fits a phone screen and the crop can be cancelled with Escape
+PASS  Add text types on the page: no dialog; Escape keeps it and the Text tool stays; an empty box adds nothing
+PASS  Note opens a small editor on the page, not a dialog; Escape keeps the note and the Note tool; empty adds nothing
+PASS  Selecting text with Select shows a bar (Highlight, Underline, Strikethrough, Redact, Copy); the right-click menu has the same
+PASS  Phone: a selection made by touch shows the bar once it rests; Redact marks the text
+PASS  Dialogs open on their first text field, so typing straight away lands there, and Enter presses the main button
+PASS  Closing Find (Esc or X) gives the focus back to what opened it; a Comments-list item keeps the focus in the list
+PASS  Ribbon: each group is a toolbar with one Tab stop; arrows move within it, Tab to the next group; Down opens a list
+PASS  Commands that do not apply are disabled: Remove security, Delete page, Split, Manage page design, Flatten and Clear form
+PASS  Drag-only tools are placed with Enter: a usual-size one in the middle of the page in view, selected; arrows move it, Alt+Shift+arrows resize it
+PASS  Edit PDF: closing the line editor with Escape or Enter puts the focus on the page, and Tab goes on from there
+PASS  Edit PDF: Tab and Shift+Tab go between the text and the format bar; Ctrl+B, I and U format the line
+PASS  Edit PDF: the format bar has few Tab stops: the swatches and the alignment are radio groups and the size can be typed
+PASS  Mac app: the menu bar greys out commands that do not apply, and sends only what changed
+PASS  Close (Ctrl+W): asks about unsaved changes, then goes back to the start; Recent keeps the document
+PASS  Mac app: File > Close has Cmd+W
+PASS  phone: a tool hint toast goes once the page is tapped or the tool changes; ribbon rows fade at the edge with more
+PASS  phone: touch targets are at least 44px (Stop, the text format bar, title and status bar); desktop keeps its sizes
+PASS  iPhone: a small form field zooms the page so its text is 16px or more, keeps the focus, and the zoom goes back after
+PASS  Android: Back closes the top thing first (dialog, sidebar, tool) and leaves only when nothing is open
+PASS  layout: the five sidebar tabs sit in one row, named by tooltip and for screen readers; a phone shows the names too
+PASS  layout: a phone title bar gives the name its room, cutting the middle (the whole name is the tooltip); the mode chip names the tool
+PASS  layout: Organize hides the sidebar, its bar has Select all and a plain Done (the ribbon has the rest); Done goes back
+PASS  layout: a page's right-click menu (sidebar and Organize, mouse or Shift+F10) has the page commands, and they work on that page
+PASS  layout: the Picture group is tinted as a context group and scrolls into view, whole, when a picture is chosen
+PASS  layout: Fill in has its own icon and is pressed only once chosen; pressed, it goes back to Edit fields
+PASS  layout: Combine is on Home (File, next to Open) and on the Pages tab next to Insert, and both fit at 1440
+PASS  layout: the theme button's name says the theme in use
+PASS  layout: the Mac menu bar has check items only for real switches (never a … command) and no separator at an end or twice
+PASS  layout: moving and deleting pages is read out (the live region), from the keys and the menus
+PASS  layout: All results is one Tab stop (a list box the arrows move through); form fields with no tooltip are named; the ribbon is a named region
+PASS  Links: add a web link (on a rotated page) and a link to a page; saved as real links that follow page moves
+PASS  Links: a link already in the PDF is changed, another deleted; undo; saved PDF and the view follow
+PASS  Links: the PDF's own page links follow their page when pages are reordered, and go when it is deleted
+PASS  look: the format bar's "colour now" swatch has a visible edge on dark and on light
+PASS  look: a split button's arrow is inside its hover and pressed tint (one shape)
+PASS  look: Header & footer shows each place's text in full
+PASS  look: a phone title cut in the middle has no gap before the kept end
+PASS  look: on a phone, the Edit PDF hint toast goes when you leave the tool
+PASS  look: the text format bar never covers the line above the one being edited, and stays in view on a phone
+PASS  look: the text format bar's Font sets a line in a standard font or in another font the page has; the saved PDF uses it
+PASS  look: a paragraph's Font, alignment and Line spacing are kept in the saved PDF
+PASS  look: the Comment tab's groups match the other tabs: 12px names, two rows as tall as a big button, shapes named when there is room
+PASS  text mark-up: a drag past the end of a line marks that line only, once
+PASS  text mark-up: text under a comment from the file, or under your own shape, can be selected and marked
+PASS  selected marks: a dashed box with handles; dragging one resizes the mark in one undo step (both themes, touch)
+PASS  selected marks: named for screen readers, and selecting one is announced
+PASS  mode chip: the status bar says which tool is on and how to use it, until Esc; hints are not toasts
+PASS  comments list: highlight rows show the marked words, also after saving and opening again
+PASS  comments: Hide all hides every comment on screen only; Export and Import carry them as XFDF
+PASS  Protect: Flatten pages says what it flattens, apart from Flatten form
+PASS  comments: Hide, Export and Import are on the Comments list button and in the Comment menu
+PASS  mobile: a finger draws with Draw, Box and Area highlight, and selects text with Highlight and Underline (no scroll takes over)
+PASS  mobile: a phone on its side gets the phone layout, so the document gets most of the height
+PASS  mobile: Undo and Redo sit in the title bar on phones on every tab, disabled when there is nothing to undo
+PASS  mobile: hints on a touch screen never name Esc or Ctrl; Keyboard shortcuts lists Ctrl+D once
+PASS  mobile: the phone sidebar takes focus when it opens, keeps it while open (Tab goes round), and gives it back
+PASS  mobile: menu toggles are checkbox items and Appearance is a radio group, with their checked state
+PASS  mobile: keyboard focus rings are the accent colour on fields, buttons, the menu bar and swatches, in both themes
+PASS  mobile: the Mac app hides the window menu bar once the macOS menu bar has the menus; the web app keeps it
+PASS  mobile: with Note or Stamp chosen, Enter places it in the middle of the page in view, selected, and the arrows move it; pages are named regions
+PASS  OCR: a scanned page is read at 300 dpi; its words become invisible text you can select and find; saved and reopened
+PASS  OCR: undo takes the text away again and redo brings it back; the mark-up stays on the page
+PASS  OCR: Edit PDF rewrites a recognized line; the saved PDF shows the new words and finds only them
+PASS  OCR: a sideways scan turned to read upright is read upright; the text lies on its words
+PASS  OCR: language choice; letters Helvetica lacks (Cyrillic, Greek) are found and copied in the saved PDF
+PASS  OCR: pages with text are skipped unless asked; recognizing again replaces the old layer
+PASS  OCR: Cancel stops a run and changes nothing; an engine that cannot load says so
+PASS  OCR: a protected PDF keeps its password and restrictions after recognizing text
+PASS  OCR: the dialog fits a phone screen
+PASS  saved file: a line edited on word.pdf leaves no trace of the old words in any stream, in every save path
+PASS  saved file: on the brochure, edited and replaced text is gone from every stream
+PASS  saved file: a password-protected PDF saved with its password keeps no trace of an edited line
+PASS  saved file: Ctrl+S while typing in a form field made here keeps the value (and Undo still takes it back)
+PASS  saved file: Ctrl+S while typing keeps the words in every editor (line, paragraph, Add text, note, callout, typewriter, bookmark name)
+PASS  saved file: callout and typewriter /DA is a plain string; every comment's Rect holds its QuadPoints, vertices and leader
+PASS  reopened: our callout and typewriter text can be edited again, keeping where they are and how they look
+PASS  Compress never makes a file bigger: an already compact PDF is saved as it was, and you are told
+PASS  page design: watermark, background, header, footer and Bates are pagination artifacts other editors can find; ours again on reopening
+PASS  page design: a text watermark on chosen pages, in front or tiled behind, on screen and in the saved PDF
+PASS  page design: a background colour goes behind the page on chosen pages, on screen and when saved
+PASS  page design: header & footer with page number, page count and date on every page; numbers follow the saved order
+PASS  page design: Bates numbers with prefix, digits and suffix run across the saved pages in their place
+PASS  page design: Manage lists what was added; edit, remove, undo and redo
+PASS  page design: after saving and reopening, the watermark and header can be updated or removed
+PASS  page design: a picture watermark and a header on a rotated page keep their place; dialogs fit a phone
+PASS  page design: the Watermark, Background, Header & footer and Bates buttons open the one already there; Add another and Remove
+PASS  page design: the dialogs show a live preview of the page, and the page stays visible behind them
+PASS  page design: on a phone the dialogs are one column, with the preview on top, and no choice is cut off
+PASS  page design: applying redactions never cuts letters out of a watermark, header or Bates number added here
+PASS  page design: on a PDF with a password, a watermark added earlier can be changed or removed after reopening
+PASS  icons: each command on the ribbon has its own icon where the meaning differs
+PASS  pages: split into files by ranges, every N pages, and one per page; each part has the right pages
+PASS  pages: insert chosen pages from another PDF after this page; saved PDF has them in place
+PASS  pages: replace a range with pages from another PDF; undo brings the old pages back
+PASS  pages: crop by dragging a box; page shows cropped; CropBox and TrimBox saved; respects rotation; undo
+PASS  pages: reverse page order (all, or just the chosen pages); saved PDF follows
+PASS  pages: Delete pages… takes a range and asks first; Delete on a page in the sidebar asks too
+PASS  pages: several pages chosen in the sidebar are rotated, moved and deleted together
+PASS  pages: the Pages tab has one Rotate, one Delete and one Insert, with their other choices in a list, and fits at 1440
+PASS  pages: Combine PDFs lists this PDF and the added files with their pages; they can be moved and taken out, then are joined in that order
+PASS  pages: Combine PDFs with nothing open opens the first file and adds the rest
+PASS  thumbnails: new form fields look as saved (no black fill, no name tag or handles); links are not drawn
+PASS  page design dialog: the preview shows the page as edited (mark-up and redactions), not the original
+PASS  header & footer: Page number inserted inside a field goes after it; broken fields are caught; saved PDF reads "Page 2 of 3"
+PASS  read aloud: when no voice can speak it stops with a message on the page it began, not skimming to the end
+PASS  read aloud: other errors skip a sentence, but three in a row stop it; it starts on the page in view
+PASS  read aloud: "not allowed" asks for a click
+PASS  search and redact: lists each match with its page and words around it; shows it; unticked ones are not marked
+PASS  Protect: search and redact a figure, an area of a picture and a note; the saved PDF no longer has them
+PASS  Protect: redact a word in a PDF from Chrome, with text on the box; neighbouring words stay in place
+PASS  Protect: mark selected text for redaction; undo and redo applying; patterns find emails and phone numbers
+PASS  Protect: redact on a rotated page: the dragged area and the saved box cover the same words
+PASS  Protect: set an open password and limits; the PDF opens only with it and keeps the limits
+PASS  Protect: remove security from a PDF opened with its password (saving doesn't ask to keep it)
+PASS  Protect: flatten makes form fields and comments part of the page
+PASS  Protect: a redaction box from text stays off the line above on tight leading
+PASS  Protect: compress says when a PDF is already compact, and Compress stays the main button
+PASS  Protect: compress makes a PDF with a large picture smaller, and shows the sizes
+PASS  Protect: remove hidden information: metadata, attachments and scripts
+PASS  Protect: the tab and its dialogs fit a phone screen
+PASS  Protect: redacting part of a see-through JPEG picture keeps it a JPEG with its soft mask; the file does not grow
+PASS  Protect: when Balanced gains next to nothing but Smallest does, Balanced stays chosen and the note says what Smallest would save
+PASS  save: moving a page keeps the file size (fonts and pictures stay shared); deleting one makes it smaller
+PASS  save: bookmarks, named destinations and document info survive deleting and moving pages
+PASS  save: a PDF with no title gets the file name as its title
+PASS  save: filled form fields stay fields after moving, deleting, duplicating pages and adding a blank page
+PASS  save: deleting the page with the fields removes them from the form
+PASS  save: merging another PDF keeps this one's filled fields and adds the other's pages in order
+PASS  saving edits never writes compressed bytes into page content (brochure: line edit, picture delete, watermark; manual: line and paragraph edit)
+PASS  editing the first run of a mixed-style line moves the runs after it as they are (colour, slant, size), on screen and saved
+PASS  a centred title stays centred when edited or replaced; right-aligned text grows left; nothing runs off the page
+PASS  a click at the end of a line on the manual puts the caret at the end (the PDF's own letter widths), and inside it between the right letters
+PASS  Combine: a form field from the added PDF whose name is taken gets its own name, and still works
+PASS  paragraph: Escape on a paragraph that grew keeps it without asking, with Shrink to fit and Undo at hand; Shrink to fit keeps the line spacing
+PASS  applying redaction takes the comments over it off the screen at once
+PASS  share: Share app sits between the theme and Open; its options copy the link, the Mac link and a message
+PASS  share: Share… in Share app only with a share sheet, and it shares the link; Help (?) has Share Cowdrey.PDF…
+PASS  share: on the web, Share… for the document only where the browser shares PDF files; it shares the saved PDF
+PASS  share: phone: More has Share… with the file items and Share Cowdrey.PDF… at the end; the title bar fits at 390px
+PASS  share: Mac app: Help in the menu bar has Share Cowdrey.PDF…, which shares the link with the Mac share menu
+PASS  shell: the ribbon keeps one height on every tab, buttons never overlap, and a wide tab fades at the edge
+PASS  shell: the Comment tab starts Tools, Colour, Style; no Edit group; the Picture group shows only for a picture
+PASS  shell: switching ribbon tabs goes back to Select unless the tool is on that tab; then a form can be filled
+PASS  shell: Escape keeps an edit to a text box; Undo takes it back
+PASS  shell: menus work from the keyboard; ribbon and sidebar tabs are tab lists
+PASS  shell: arrow keys nudge the selected mark (Shift for 10 pt); copy, paste and duplicate it
+PASS  shell: dialogs are named and start on their first field; a disabled button looks disabled; save state is truthful
+PASS  shell: with reduced motion, going to a page jumps straight there
+PASS  shell: phone: the sidebar has a scrim and closes on Escape, a tap outside and its close button
+PASS  shell: phone: More reaches the menu-only commands; buttons are named and big enough; dialog buttons stay in view
+PASS  shell: one name per place: Comment menu, page design under Edit, pictures called pictures
+PASS  text: Escape in the paragraph editor keeps the change and stays in Edit PDF; a second Escape leaves
+PASS  text: paragraph mode edits a whole paragraph, re-wraps it to the block's width, and saves it in its own font
+PASS  text: the format bar makes a line bigger, bold, red and underlined, on screen and in the saved PDF
+PASS  text: Add text with font, bold, centring and a box it wraps in; edited later in place; old text marks still save
+PASS  text: Replace text… replaces a phrase on every page as edited lines, in one undo step; Replace does one at a time
+PASS  text: on a rotated page a paragraph is edited, centred and saved along the page's own lines
+PASS  text: a paragraph that grows past its lines warns, and shrinks to fit or runs on only when asked
+PASS  text: the format bar fits a phone screen
+PASS  Edit PDF: letters missing from the font: whole words use the standard font, and other readers get the exact line
+PASS  thumbnails: show mark-up, page design and redactions; follow undo and redo; still shown after save and reopen
+PASS  pages: after clicking a thumbnail, page commands act on that page, even the last page at a small zoom
+PASS  thumbnails: one Tab stop, a list box; arrows, Home and End move; Shift+arrows choose; Enter goes to the page
+PASS  find: a phrase split across pieces of text is found and shown in the middle of the view; all results list jumps
+PASS  organize: pages in a grid; choose, drag to reorder, rotate and delete the chosen pages; Escape goes back
+PASS  insert blank pages: size, orientation, how many and where; one step to undo
+PASS  phone: a Pages button in the status bar opens the sidebar; choosing a page closes it
+PASS  tidy: the first redaction mark says it is not removed yet, with Apply at hand; later marks do not repeat it
+PASS  tidy: thumbnails have their page's shape before they are drawn (no jump from a short row)
+PASS  tidy: an imported bookmark with no destination is plain (not struck through), with the tooltip No destination
+PASS  tidy: a new bookmark is named after the whole heading, wrapped over two lines
+PASS  tidy: the format bar names fonts as people know them (no subset tag, words apart)
+PASS  drawing: box, oval, line, area highlight, pen and redaction drags stop at the edge of their page
+PASS  Edit PDF from the keyboard: Tab and arrows go through the lines and pictures, Enter edits or selects, Escape leaves
+PASS  Keyboard shortcuts lists the Edit PDF keys
+PASS  phone: menu rows and dialog buttons are 44px for a finger; desktop keeps its sizes
+PASS  dialogs open with the focus on their first field or tab, never on Close (Signature: the Draw tab)
+PASS  status bar: no "Page [ ] of 0" on the start screen; Read aloud scrolls without animation when motion is reduced
+PASS  view: the Hand tool (H) drags the pages around without selecting text or drawing
+PASS  view: Space held down pans with any tool (Pen draws nothing); a tap of Space still scrolls a screen
+PASS  view: Fit page (Ctrl+0), Actual size (Ctrl+1) and Fit width (Ctrl+2); each in the View menu
+PASS  view: Two pages side by side; thumbnails, find, marks and the page box still work
+PASS  view: Single page shows one page at a time; Page Down, the page box and a wheel at the end turn it
+PASS  view: Two pages on the 285-page guide: Fit page shows a whole pair; going to page 100 keeps working
+PASS  view: Attachments lists the files in a PDF (attached and on a page); Save gives each one back
+PASS  view: Attach file adds a file that is kept in the saved PDF; undo takes it back
+PASS  view: page labels show in the page box and thumbnails, and the page box takes a label
+PASS  viewer: Ctrl+wheel zooms around the pointer, not the whole window
+PASS  viewer: a two-finger pinch zooms the pages (touch-action keeps the window still); phones open at fit width
+PASS  viewer: pages far from view give their canvases back, and are drawn again on return
+PASS  viewer: the page box follows scrolling after you type a page into it
+PASS  viewer: the find bar stays at the top of the viewer when a match scrolls the pages (desktop and phone)
+PASS  viewer: toasts sit above bars along the bottom (status bar, read aloud)
+PASS  viewer: opening another document goes back to Select and leaves Edit PDF, Edit fields and Find
+PASS  viewer: right-click menus on a page in the sidebar, on a page and on a mark
+PASS  viewer: right-click menus open from the keyboard (Shift+F10, menu key) and with a long press
+PASS  visual: the Export tab has short labels that fit and no two neighbours with the same icon
+PASS  visual: at 1024 px a mouse wheel and the edge arrows reach the end of the Comment tab; selection groups come last
+PASS  visual: every menu row keeps its icon; toggles show their check in a column of its own
+PASS  visual: one segmented control (sidebar, signature, watermark) and one colour picker (format bar, page design, Comment tab)
+PASS  visual: on a phone the Comment tab is about 1.5 screens wide: Style holds colour, width and fill; Shapes is a split button
+PASS  visual: phone fields are 16 px or more, so iOS never zooms in (page box, find, dialogs, format bar, read-aloud)
+PASS  visual: forced colours keep the swatch colours and outline what is pressed, chosen or current
+PASS  visual: the read-aloud bar has a filled Stop square and a voice list that fits a phone
+PASS  visual: a touch-only phone says Open a PDF, its menus show no shortcuts, and the sidebar tab is Recent
+PASS  every library URL resolves to a file in the pinned packages
+
+317/317 passed
+== open a PDF in the copy the apps ship
+desktop/dist ready (4 libraries: lucide/dist/umd/lucide.min.js, pdfjs-dist/legacy/build/pdf.min.mjs, pdfjs-dist/legacy/build/pdf.worker.min.mjs, @cantoo/pdf-lib/dist/pdf-lib.esm.min.js)
+✓ the app bundle opens a PDF and saves it, offline
