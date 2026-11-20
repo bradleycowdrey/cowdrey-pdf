@@ -2,6 +2,8 @@ name: TestFlight public link
 
 # Keeps a public TestFlight link so anyone can install the iPhone and iPad app before it is on the App Store.
 # After each iPhone build, the new build joins the "Public" tester group and goes to beta review if needed.
+# TestFlight only: App Store versions are only read (for the App Review phone number), never created or changed, so
+# this runs normally while an App Store version is in review.
 on:
   push:
     branches: [main]

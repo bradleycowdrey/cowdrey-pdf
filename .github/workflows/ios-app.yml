@@ -1,5 +1,9 @@
 name: iPhone app
 
+# Builds, signs and uploads to TestFlight only. It never creates, edits or submits an App Store version, so a new
+# version (say 1.0.0) can go to TestFlight testers while an earlier one (say 0.3.2) is in App Review. Afterwards
+# app-store-listing.yml attaches the build to the App Store version, but only when no earlier version is in review.
+
 on:
   push:
     branches: [main]

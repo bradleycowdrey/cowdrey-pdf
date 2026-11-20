@@ -1,11 +1,21 @@
 """Signing and App Store Connect steps for the Mac App Store build of Cowdrey.PDF (mac-app-store.yml).
 
+  check       Before anything is revoked, deleted or uploaded: asks App Store Connect for the app's macOS App Store
+              versions. When one is waiting for review, in review, approved and waiting for release, or being
+              processed for the store, its binary was signed with the certificates of an earlier run; revoking them
+              would turn it into Invalid Binary. Then it writes skip=true to GITHUB_OUTPUT, prints why, and the
+              workflow stops there (successfully). A version that is already on sale (READY_FOR_SALE) does not hold
+              anything up: revoking older certificates does not affect a shipped binary.
   prepare     Checks the app record, adds the macOS platform (a MAC_OS App Store version) when the app has none,
               revokes the throwaway certificates an earlier run of this workflow made, makes a new private key,
               CSR and two certificates (Apple Distribution, Mac Installer Distribution), and a fresh Mac App Store
               provisioning profile for the bundle ID. Writes into OUT_DIR:
                 app.p12, installer.p12 (password in P12_PASSWORD), embedded.provisionprofile, state.json
   wait-build  After the upload, waits until App Store Connect lists the build (BUILD_NUMBER) and prints its state.
+
+prepare refuses to revoke or delete anything while a macOS version is in flight (see check), unless
+BUILD_WHILE_IN_REVIEW=true (the workflow_dispatch input of the same name): then it still keeps the earlier
+certificates and profiles (they stay in state.json for a later run to revoke) and only makes new ones.
 
 Nothing is submitted for review. Environment: APPLE_API_ISSUER, APPLE_API_KEY (key ID), P8 (private key text),
 OUT_DIR, P12_PASSWORD, STATE_IN (state.json of the previous run, if any), BUILD_NUMBER.
@@ -31,6 +41,12 @@ VERSION = json.load(open(os.path.join(ROOT, 'desktop', 'src-tauri', 'tauri.conf.
 BUNDLE = 'com.bradcowdrey.cowdreypdf'
 API = 'https://api.appstoreconnect.apple.com'
 PROFILE_PREFIX = 'Cowdrey.PDF Mac App Store CI'
+# macOS App Store version states whose binary must stay valid: submitted, in review, approved but not yet released,
+# being processed for the store, or rejected (the same build can be resubmitted). appStoreState and the newer
+# appVersionState are both checked.
+IN_FLIGHT = ('READY_FOR_REVIEW', 'WAITING_FOR_REVIEW', 'IN_REVIEW', 'PENDING_DEVELOPER_RELEASE', 'PENDING_APPLE_RELEASE',
+             'PROCESSING_FOR_APP_STORE', 'PROCESSING_FOR_DISTRIBUTION', 'ACCEPTED', 'WAITING_FOR_EXPORT_COMPLIANCE',
+             'PENDING_CONTRACT', 'REJECTED', 'METADATA_REJECTED')
 
 
 def token():
@@ -90,6 +106,40 @@ def ensure_mac_platform(app):
         print(f'Could not add the macOS platform through the API: {e}')
         print('BLOCKER for the owner: in App Store Connect, open Apps > Cowdrey.PDF, click the + next to "iOS App" in the '
               f'sidebar (Add Platform), choose macOS, and enter version {VERSION}. Then run this workflow again.')
+
+
+def mac_in_flight(app):
+    """The macOS App Store versions whose binary must not be invalidated, as (versionString, state) pairs."""
+    vs = call('GET', f"/v1/apps/{app['id']}/appStoreVersions?filter[platform]=MAC_OS&limit=20")['data']
+    out = []
+    for v in vs:
+        a = v['attributes']
+        st = next((x for x in (a.get('appStoreState'), a.get('appVersionState')) if x in IN_FLIGHT), None)
+        if st:
+            out.append((a['versionString'], st))
+    return out
+
+
+def check():
+    """Decide whether this run may revoke certificates and upload. Writes skip=true|false to GITHUB_OUTPUT."""
+    app = app_record()
+    busy = mac_in_flight(app)
+    force = os.environ.get('BUILD_WHILE_IN_REVIEW') == 'true'
+    for v, st in busy:
+        print(f'macOS App Store version {v}: {st}')
+    skip = bool(busy) and not force
+    if skip:
+        v, st = busy[0]
+        print(f'Skipped: macOS {v} is {st}; the Mac App Store build of {VERSION} will be made after it is released.')
+        print('Nothing was revoked, deleted or uploaded. (To build anyway, run this workflow by hand with '
+              '"build_while_in_review"; the certificates of the build in review are then kept.)')
+    elif busy:
+        print(f'Building {VERSION} although macOS {busy[0][0]} is {busy[0][1]} (asked for by hand): '
+              'the earlier certificates and profiles are kept, so the build in review stays valid.')
+    else:
+        print(f'No macOS version is in review or waiting for release: building {VERSION}.')
+    with open(os.environ.get('GITHUB_OUTPUT', os.devnull), 'a') as gh:
+        gh.write(f"skip={'true' if skip else 'false'}\n")
 
 
 def bundle_id():
@@ -169,23 +219,36 @@ def prepare():
     os.makedirs(out, exist_ok=True)
     app = app_record()
     print(f"App: {app['attributes']['name']} ({app['id']}), bundle {BUNDLE}, version {VERSION}")
+    # A macOS version in review (or approved, not yet released) was signed with the previous run's certificates:
+    # revoking them, or deleting its profile, would turn it into Invalid Binary. The workflow's check step stops
+    # before this; this is the second line of defence.
+    busy = mac_in_flight(app)
+    keep_old = bool(busy)
+    if busy and os.environ.get('BUILD_WHILE_IN_REVIEW') != 'true':
+        v, st = busy[0]
+        sys.exit(f'Stopped before revoking anything: macOS {v} is {st}; the Mac App Store build of {VERSION} '
+                 'will be made after it is released.')
     ensure_mac_platform(app)
     bid = bundle_id()
 
-    # 1. Revoke the certificates the previous run of this workflow made, and delete this workflow's old profiles.
+    # 1. Revoke the certificates the previous run of this workflow made, and delete this workflow's old profiles
+    #    (not while a macOS version is in flight: then they are kept, and handed on in state.json).
     try:
         prev = json.load(open(os.environ.get('STATE_IN') or '/nonexistent'))
     except Exception:
         prev = {}
-    for cid in prev.get('certificates', []):
-        revoke(cid, 'the previous run\'s certificate')
-    for p in call('GET', f'/v1/profiles?filter[name]={urllib.parse.quote(PROFILE_PREFIX)}&limit=200')['data']:
-        if p['attributes']['name'].startswith(PROFILE_PREFIX):
-            try:
-                call('DELETE', f"/v1/profiles/{p['id']}")
-                print(f"Deleted the old profile {p['attributes']['name']}")
-            except ApiError as e:
-                print(f'Could not delete an old profile: {e}')
+    if keep_old:
+        print(f'Keeping the previous run\'s certificates and profiles: macOS {busy[0][0]} is {busy[0][1]}.')
+    else:
+        for cid in prev.get('certificates', []):
+            revoke(cid, 'the previous run\'s certificate')
+        for p in call('GET', f'/v1/profiles?filter[name]={urllib.parse.quote(PROFILE_PREFIX)}&limit=200')['data']:
+            if p['attributes']['name'].startswith(PROFILE_PREFIX):
+                try:
+                    call('DELETE', f"/v1/profiles/{p['id']}")
+                    print(f"Deleted the old profile {p['attributes']['name']}")
+                except ApiError as e:
+                    print(f'Could not delete an old profile: {e}')
     summary = {}
     for x in list_certs():
         a = x['attributes']
@@ -199,7 +262,8 @@ def prepare():
     #    run revoke them.
     # history: every certificate ID this workflow has ever made (the previous run's included), kept across runs.
     history = list(dict.fromkeys(prev.get('history', []) + prev.get('certificates', [])))
-    state = {'certificates': [], 'history': history}
+    # Kept certificates stay in "certificates", so the next run (once nothing is in review) revokes them too.
+    state = {'certificates': list(prev.get('certificates', [])) if keep_old else [], 'history': history}
     state_path = os.path.join(out, 'state.json')
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     password = os.environ['P12_PASSWORD']
@@ -258,4 +322,4 @@ def wait_build():
 
 
 if __name__ == '__main__':
-    {'prepare': prepare, 'wait-build': wait_build}[sys.argv[1]]()
+    {'check': check, 'prepare': prepare, 'wait-build': wait_build}[sys.argv[1]]()

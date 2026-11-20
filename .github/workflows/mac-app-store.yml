@@ -5,12 +5,20 @@ name: Mac App Store
 # .pkg and uploaded to App Store Connect (the same app record as iPhone and iPad). It is submitted for review only
 # when docs/app-store/listing.json's submitForReviewMac names the version.
 # The Developer ID DMG (mac-app.yml) is built separately and is not affected.
+# While a macOS version is waiting for review, in review or approved but not released, the run is skipped (see the
+# gate job): revoking the certificates that version was signed with would make it Invalid Binary. To build anyway,
+# run it by hand with build_while_in_review (the earlier certificates are then kept, not revoked).
 on:
   push:
     # Only main: a push to any other branch must not upload a build or revoke the certificates main's last run made.
     # On main, only a new version number makes a new Mac App Store build (checked in the gate job below).
     branches: [main]
   workflow_dispatch:
+    inputs:
+      build_while_in_review:
+        description: 'Build and upload even while a macOS version is in review (its certificates are kept, not revoked)'
+        type: boolean
+        default: false
 
 # One run at a time: each run revokes the certificates the run before it made.
 concurrency:
@@ -27,10 +35,14 @@ defaults:
 
 jobs:
   gate:
-    name: On a push, go on only when the version number changed
+    name: Go on only for a new version number, and never while a macOS version is in review
     runs-on: ubuntu-latest
     outputs:
-      go: ${{ steps.gate.outputs.go }}
+      go: ${{ steps.go.outputs.go }}
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APPLE_API_KEY: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      HAS_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,7 +59,44 @@ jobs:
             [[ "$OLD" == "$NEW" ]] && GO=false
           fi
           echo "go=$GO" >> "$GITHUB_OUTPUT"
+          echo "New version to build for the Mac App Store: $GO"
+
+      # Each build revokes the certificates the build before it was signed with. A macOS version that is waiting
+      # for review, in review or approved but not yet released was signed with them, and revoking them turns it
+      # into Invalid Binary. So while one is, nothing is revoked, deleted or uploaded: the run stops here and
+      # succeeds, and the Mac App Store build of the new version is made after that version is released.
+      - name: Check no macOS version is in review
+        id: review
+        if: steps.gate.outputs.go == 'true' && env.HAS_KEY == 'true'
+        env:
+          P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          BUILD_WHILE_IN_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.build_while_in_review && 'true' || 'false' }}
+        run: |
+          set -o pipefail
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet pyjwt cryptography
+          { echo "Cowdrey.PDF $(node -p "require('./desktop/src-tauri/tauri.conf.json').version"): Mac App Store build check"; python3 .github/scripts/mac_app_store.py check; } 2>&1 | tee "$RUNNER_TEMP/mac-app-store.log"
+
+      - id: go
+        run: |
+          GO="${{ steps.gate.outputs.go }}"
+          [[ "${{ steps.review.outputs.skip }}" == true ]] && GO=false
+          echo "go=$GO" >> "$GITHUB_OUTPUT"
           echo "Build for the Mac App Store: $GO"
+
+      # A skipped build still leaves its log on the mac-app-store-log branch, with state.json exactly as it was
+      # (the certificates of the build in review stay listed there, for a later run to revoke once it is released).
+      - name: Publish the log of the skipped build
+        if: steps.review.outputs.skip == 'true'
+        run: |
+          D=$(mktemp -d)
+          if git fetch -q --depth 1 origin mac-app-store-log 2>/dev/null; then git show FETCH_HEAD:state.json > "$D/state.json" 2>/dev/null || rm -f "$D/state.json"; fi
+          OUT=$(cat "$RUNNER_TEMP/mac-app-store.log")
+          for S in "$APPLE_API_ISSUER" "$APPLE_API_KEY"; do if [[ -n "$S" ]]; then OUT=${OUT//"$S"/***}; fi; done
+          cd "$D" && git init -q -b mac-app-store-log && printf '%s\n' "$OUT" > mac-app-store.log
+          echo "skipped · run ${{ github.run_number }} · ${{ github.sha }}" > status.txt
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Mac App Store build log, run ${{ github.run_number }} (skipped)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" mac-app-store-log
 
   mas:
     name: Build, sign and upload Cowdrey.PDF for the Mac App Store
@@ -105,6 +154,7 @@ jobs:
         env:
           P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
           OUT_DIR: ${{ runner.temp }}/signing
+          BUILD_WHILE_IN_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.build_while_in_review && 'true' || 'false' }}
         run: |
           python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet pyjwt cryptography
           # The certificate IDs the previous run made are on the mac-app-store-log branch.

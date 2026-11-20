@@ -12,6 +12,12 @@ If listing.json names a version in withdrawFromReview, that exact version is fir
 A platform whose version is already submitted, in review, approved or on sale is left alone (never edited, recreated
 or resubmitted); the log reports the state of the iOS and the macOS version either way.
 
+While an earlier version (say 0.3.2) is still in App Review on iOS or macOS (waiting, in review, approved but not yet
+released, or rejected) and the repository has moved on to a new version (say 1.0.0), every mode (the full listing,
+--build-only and --mac-only) does nothing at all: it does not create the new version, attach builds, edit or submit
+anything. It prints the state of both platforms and that the new version waits until the earlier one is out of review,
+and exits successfully. New builds still go to TestFlight (ios-app.yml, testflight-public.yml) in the meantime.
+
 Each step runs on its own and reports what happened, so one refusal doesn't stop the rest.
 Environment: APPLE_API_ISSUER, APPLE_API_KEY (key ID), P8 (private key text).
 """
@@ -84,6 +90,50 @@ def rel(type_, id_):
 app = call('GET', f"/v1/apps?filter[bundleId]={L['bundleId']}")['data'][0]
 APP = app['id']
 print(f"App: {app['attributes']['name']} ({APP}), version {VERSION}")
+
+# States in which an App Store version is still with App Review (or approved and not yet released). A version in one
+# of these must not be touched, and no other version may be started, edited or submitted beside it.
+IN_REVIEW_STATES = ('READY_FOR_REVIEW', 'WAITING_FOR_REVIEW', 'IN_REVIEW', 'PENDING_DEVELOPER_RELEASE', 'PENDING_APPLE_RELEASE',
+                    'PROCESSING_FOR_APP_STORE', 'PROCESSING_FOR_DISTRIBUTION', 'ACCEPTED', 'WAITING_FOR_EXPORT_COMPLIANCE',
+                    'PENDING_CONTRACT', 'REJECTED', 'METADATA_REJECTED')
+
+
+def earlier_version_in_review():
+    """Stop here, changing nothing, when an iOS or macOS version other than VERSION is still in App Review.
+
+    Prints a state line for each platform (the version in review, or else the newest one) and exits successfully."""
+    held, lines = [], []
+    for platform, name in (('IOS', 'iOS'), ('MAC_OS', 'macOS')):
+        vs = call('GET', f'/v1/apps/{APP}/appStoreVersions?filter[platform]={platform}&limit=20')['data']
+        busy = None
+        for v in vs:
+            a = v['attributes']
+            st = next((x for x in (a.get('appStoreState'), a.get('appVersionState')) if x in IN_REVIEW_STATES), None)
+            if st and a['versionString'] != VERSION:
+                busy = (a['versionString'], st)
+                break
+        if busy:
+            held.append((name, busy[0], busy[1]))
+            lines.append(f'State now: {name} App Store version {busy[0]} is {busy[1]}')
+        elif vs:
+            a = vs[0]['attributes']
+            lines.append(f"State now: {name} App Store version {a['versionString']} is {a.get('appStoreState') or a.get('appVersionState')}")
+        else:
+            lines.append(f'State now: no {name} App Store version yet')
+    if not held:
+        return
+    for line in lines:
+        print(line)
+    earlier = sorted({v for _, v, _ in held})
+    print(f"Version {VERSION} waits until {' and '.join(earlier)} {'is' if len(earlier) == 1 else 'are'} out of review "
+          f"({', '.join(f'{n} {v} is {st}' for n, v, st in held)}).")
+    print(f'Nothing was created, attached, edited or submitted in App Store Connect. Builds of {VERSION} still go to '
+          'TestFlight. Once the version in review is released, run this workflow again (or push any change to '
+          f'docs/app-store) to start App Store version {VERSION}.')
+    sys.exit(0)
+
+
+earlier_version_in_review()
 
 
 @step('Content rights: no third-party content')
