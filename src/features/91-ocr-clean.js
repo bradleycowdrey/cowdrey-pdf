@@ -110,16 +110,29 @@ function ocrcTurn90(g, w, h) {
 }
 // The image turned by the matrix (result pixel -> source pixel), with white where it runs off the source.
 function ocrcWarp(g, w, h, m) {
-  // fixed point (16 bits of fraction): a quarter of the time of floating point here
-  const o = new Uint8Array(w * h), F = 65536;
+  // fixed point (16 bits of fraction): a quarter of the time of floating point here; on each row only the stretch
+  // that lands inside the source is worked out (the rest is white)
+  const o = new Uint8Array(w * h).fill(255), F = 65536;
   const [a, b, c, d, e, f] = m, ai = Math.round(a * F), bi = Math.round(b * F), wl = (w - 1) * F, hl = (h - 1) * F;
+  // the first and last u (0..w) at which x0 + u * dx stays in [0, lim)
+  const span = (x0, dx, lim, lo, hi) => {
+    if (dx === 0) return x0 >= 0 && x0 < lim ? [lo, hi] : [0, 0];
+    let u0 = (0 - x0) / dx, u1 = (lim - x0) / dx; if (u0 > u1) [u0, u1] = [u1, u0];
+    return [Math.max(lo, Math.ceil(u0)), Math.min(hi, Math.ceil(u1))];
+  };
   for (let v = 0; v < h; v++) {
-    let x = Math.round((a * .5 + c * (v + .5) + e - .5) * F), y = Math.round((b * .5 + d * (v + .5) + f - .5) * F);
+    const x0 = Math.round((a * .5 + c * (v + .5) + e - .5) * F), y0 = Math.round((b * .5 + d * (v + .5) + f - .5) * F);
+    let [ua, ub] = span(x0, ai, wl, 0, w); [ua, ub] = span(y0, bi, hl, ua, ub);
+    // (rounding at the ends: step in or out by one until the end pixels are inside)
+    while (ua < ub) { const x = x0 + ua * ai, y = y0 + ua * bi; if (x >= 0 && y >= 0 && x < wl && y < hl) break; ua++; }
+    while (ub > ua) { const x = x0 + (ub - 1) * ai, y = y0 + (ub - 1) * bi; if (x >= 0 && y >= 0 && x < wl && y < hl) break; ub--; }
+    let x = x0 + ua * ai, y = y0 + ua * bi;
     const row = v * w;
-    for (let u = 0; u < w; u++, x += ai, y += bi) {
-      if (x < 0 || y < 0 || x >= wl || y >= hl) { o[row + u] = 255; continue; }
-      const x0 = x >> 16, y0 = y >> 16, fx = (x & 0xffff) >> 8, fy = (y & 0xffff) >> 8, i = y0 * w + x0;
-      const p00 = g[i], p01 = g[i + 1], p10 = g[i + w], p11 = g[i + w + 1];
+    for (let u = ua; u < ub; u++, x += ai, y += bi) {
+      const i = (y >> 16) * w + (x >> 16), p00 = g[i], p01 = g[i + 1], p10 = g[i + w], p11 = g[i + w + 1];
+      // (plain paper, most of a page: nothing to blend)
+      if (p00 === p01 && p10 === p11 && p00 === p10) { o[row + u] = p00; continue; }
+      const fx = (x & 0xffff) >> 8, fy = (y & 0xffff) >> 8;
       const top = (p00 << 8) + (p01 - p00) * fx, bot = (p10 << 8) + (p11 - p10) * fx;
       o[row + u] = ((top << 8) + (bot - top) * fy) >> 16;
     }
@@ -128,7 +141,7 @@ function ocrcWarp(g, w, h, m) {
 }
 // Ink (1) or paper (0), Sauvola style: a threshold from the mean and spread around each block of the page (blocks of
 // about 16 px at 300 dpi, a window of 5 x 5 blocks), blended between blocks so no block edges show.
-function ocrcSauvola(g, w, h, k = .3) {
+function ocrcSauvola(g, w, h, k = .3, into = null) {
   const B = Math.max(8, Math.round(Math.min(w, h) / 160)), gw = Math.ceil(w / B), gh = Math.ceil(h / B);
   const S = new Float64Array(gw * gh), SS = new Float64Array(gw * gh), N = new Float64Array(gw * gh);
   // (every other pixel each way is plenty for a mean and a spread)
@@ -151,11 +164,13 @@ function ocrcSauvola(g, w, h, k = .3) {
     const i0 = Math.max(0, Math.min(gw - 2, Math.floor(gx))), i1 = Math.min(gw - 1, i0 + 1), fx = gw > 1 ? gx - i0 : 0;
     TX[by * w + x] = T[by * gw + i0] + (T[by * gw + i1] - T[by * gw + i0]) * fx;
   }
-  const out = new Uint8Array(w * h);
+  // (`into` may be g itself: each pixel is read before it is written)
+  const out = into || new Uint8Array(w * h);
   for (let y = 0; y < h; y++) {
     let gy = (y + .5) / B - .5; if (gy < 0) gy = 0; if (gy > gh - 1) gy = gh - 1;
     const j0 = Math.max(0, Math.min(gh - 2, Math.floor(gy))), fy = gh > 1 ? gy - j0 : 0, j1 = Math.min(gh - 1, j0 + 1), row = y * w, a0 = j0 * w, a1 = j1 * w;
-    for (let x = 0; x < w; x++) { const t0 = TX[a0 + x]; out[row + x] = g[row + x] < t0 + (TX[a1 + x] - t0) * fy ? 1 : 0; }
+    // (white is never under the threshold, which is at most the mean)
+    for (let x = 0; x < w; x++) { const v = g[row + x]; if (v === 255) { out[row + x] = 0; continue; } const t0 = TX[a0 + x]; out[row + x] = v < t0 + (TX[a1 + x] - t0) * fy ? 1 : 0; }
   }
   return out;
 }
@@ -169,18 +184,35 @@ function ocrcOtsuBin(g) {
 // up to twice that size too when nothing else is inked near them (4 x size around): a full stop or the dot of an i
 // always has its letter close by, dust on the glass does not.
 function ocrcDespeckle(bin, w, h, size) {
-  let ink = 0; for (let i = 0; i < bin.length; i++) ink += bin[i];
+  // (paper, most of the page, is skipped four pixels at a time)
+  const n4 = bin.byteOffset % 4 ? 0 : bin.length >> 2, b32 = new Uint32Array(bin.buffer, bin.byteOffset, n4);
+  let ink = 0;
+  for (let i = 0; i < n4; i++) if (b32[i]) { const j = i << 2; ink += bin[j] + bin[j + 1] + bin[j + 2] + bin[j + 3]; }
+  for (let i = n4 << 2; i < bin.length; i++) ink += bin[i];
   const big = size * 2, stack = new Int32Array(ink + 1), keep = new Int32Array(big * big + 1), lone = [];
   let removed = 0;
   for (let start = 0; start < bin.length; start++) {
+    if ((start & 3) === 0 && (start >> 2) < n4 && b32[start >> 2] === 0) { start += 3; continue; }
     if (bin[start] !== 1) continue;
     let sp = 0, kept = 0, small = true, x0 = start % w, x1 = x0, y0 = (start / w) | 0, y1 = y0;
     stack[sp++] = start; bin[start] = 2;
     while (sp) {
-      const p = stack[--sp], x = p % w, y = (p / w) | 0;
+      const p = stack[--sp], y = (p / w) | 0, x = p - y * w;
       if (small) {
         if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
         if (x1 - x0 >= big || y1 - y0 >= big || kept >= keep.length) small = false; else keep[kept++] = p;
+      }
+      if (x > 0 && y > 0 && x < w - 1 && y < h - 1) {
+        // (away from the edges: the 8 neighbours without bounds checks)
+        let q = p - w - 1; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q++; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q++; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q = p - 1; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q = p + 1; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q = p + w - 1; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q++; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        q++; if (bin[q] === 1) { bin[q] = 2; stack[sp++] = q; }
+        continue;
       }
       for (let dy = -1; dy <= 1; dy++) {
         const yy = y + dy; if (yy < 0 || yy >= h) continue;
@@ -239,11 +271,16 @@ function ocrClean(imageData, opts = {}) {
   } else angle = 0;
   let bin = null;
   if (o.binarize) {
-    bin = o.binarize === 'otsu' ? ocrcOtsuBin(g) : ocrcSauvola(g, w, h);
+    bin = o.binarize === 'otsu' ? ocrcOtsuBin(g) : ocrcSauvola(g, w, h, .3, o.keepGray ? null : g);
     if (o.despeckle > 0) ocrcDespeckle(bin, w, h, o.despeckle);
   }
   const outData = new Uint8ClampedArray(w * h * 4), px = new Uint32Array(outData.buffer);
-  if (bin) for (let i = 0; i < w * h; i++) px[i] = bin[i] ? 0xff000000 : 0xffffffff;
+  if (bin) {
+    px.fill(0xffffffff);
+    const n4 = bin.byteOffset % 4 ? 0 : (w * h) >> 2, b32 = new Uint32Array(bin.buffer, bin.byteOffset, n4);
+    for (let i = 0; i < n4; i++) if (b32[i]) for (let j = i << 2, e = j + 4; j < e; j++) if (bin[j]) px[j] = 0xff000000;
+    for (let i = n4 << 2; i < w * h; i++) if (bin[i]) px[i] = 0xff000000;
+  }
   else for (let i = 0; i < w * h; i++) px[i] = 0xff000000 | (g[i] * 0x010101);
   const res = { imageData: typeof ImageData === 'function' ? new ImageData(outData, w, h) : { data: outData, width: w, height: h }, angle: +angle.toFixed(3), turn, width: w, height: h, map, mode };
   if (o.keepGray) res.gray = g;

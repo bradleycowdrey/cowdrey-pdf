@@ -28,6 +28,7 @@ const OCR_PATHS = {
   workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
   corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
   langPath: (lang) => `https://cdn.jsdelivr.net/npm/@tesseract.js-data/${lang}@1.0.0/4.0.0_best_int`,
+  noCache: false, // (true: languages are not kept between runs, as when IndexedDB can't be used; for the tests)
 };
 // Languages with trained data on npm as @tesseract.js-data/<code>@1.0.0.
 const OCR_LANGS = [['eng', 'English'], ['fra', 'French'], ['deu', 'German'], ['spa', 'Spanish'], ['ita', 'Italian'], ['por', 'Portuguese'], ['nld', 'Dutch'],
@@ -61,6 +62,32 @@ function ocrCached(code) {
   });
 }
 
+// A language downloaded here is put where tesseract.js looks first, so its worker is given the plain code. (Given as
+// { code, data }, tesseract.js 5.1.1 loads the data but then starts with the bytes as the language's name, and fails.)
+// It reads the gzipped data as it is. False when it can't be kept (no IndexedDB, as in some private windows).
+// (with no bytes, the language is taken out again: data that would not start is not kept)
+function ocrCacheWrite(code, bytes) {
+  return new Promise((res) => {
+    try {
+      const r = indexedDB.open('keyval-store');
+      r.onupgradeneeded = () => { try { r.result.createObjectStore('keyval'); } catch {} };
+      r.onerror = () => res(false);
+      r.onsuccess = () => {
+        const d = r.result;
+        try {
+          const t = d.transaction('keyval', 'readwrite'), st = t.objectStore('keyval'), key = `./${code}.traineddata`;
+          if (bytes) st.put(bytes, key); else st.delete(key);
+          t.oncomplete = () => { d.close(); res(true); }; t.onerror = t.onabort = () => { d.close(); res(false); };
+        } catch { d.close(); res(false); }
+      };
+    } catch { res(false); }
+  });
+}
+async function ocrGunzip(bytes) {
+  if (!(bytes[0] === 0x1f && bytes[1] === 0x8b)) return bytes;
+  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+}
+
 /* --- the engine --- */
 function ocrLoadScript(src) {
   return new Promise((res, rej) => {
@@ -92,15 +119,37 @@ function ocrMeanConfidence(data) {
   return { score: n ? sum / n : 0, words };
 }
 function ocrTesseract() {
-  let worker = null, listen = null;
+  let worker = null, listen = null, ended = false;
+  // The worker, started with the languages in `langs` (plain codes), and those in `held` (data) written into it.
+  async function openWorker(want, langs, held, onStatus) {
+    if (!langs.length) langs.push('eng');
+    const logger = (m) => { if (listen) listen(m); else if (onStatus) onStatus(m.status, m.progress); };
+    // (tesseract.js 5.1.1 never settles createWorker when its language data fails to start, but tells errorHandler)
+    let fail; const failed = new Promise((_, rej) => { fail = rej; });
+    failed.catch(() => {});
+    const errorHandler = (e) => fail(new Error(String(e)));
+    worker = await Promise.race([failed, window.Tesseract.createWorker(langs, 1, { workerPath: OCR_PATHS.workerPath, corePath: OCR_PATHS.corePath, langPath: OCR_PATHS.langPath('eng'), workerBlobURL: true, logger, errorHandler })]);
+    if (ended) { try { await worker.terminate(); } catch {} worker = null; throw new Error('stopped'); } // (cancelled while starting)
+    if (held.length) {
+      // Data that could not be kept is written straight into the worker's files; the worker keeps `langs` as its list
+      // of the languages it has, so with these added it starts with them and fetches nothing.
+      for (const { code, data } of held) await worker.FS('writeFile', [`./${code}.traineddata`, await ocrGunzip(data)]);
+      langs.push(...held.map((x) => x.code));
+      await Promise.race([failed, worker.reinitialize(want.join('+'))]);
+    }
+  }
   return {
     async start(lang, onStatus) {
       if (!window.Tesseract) await ocrLoadScript(OCR_PATHS.script);
       if (!window.Tesseract || !window.Tesseract.createWorker) throw new Error('The OCR engine did not load');
-      const langs = [];
-      for (const code of ocrLangList(lang)) langs.push(code === 'eng' || await ocrCached(code) ? code : { code, data: await ocrLangData(code, onStatus) });
-      const logger = (m) => { if (listen) listen(m); else if (onStatus) onStatus(m.status, m.progress); };
-      worker = await window.Tesseract.createWorker(langs.length ? langs : ['eng'], 1, { workerPath: OCR_PATHS.workerPath, corePath: OCR_PATHS.corePath, langPath: OCR_PATHS.langPath('eng'), workerBlobURL: true, logger });
+      const want = ocrLangList(lang), langs = [], held = [], fresh = [];
+      for (const code of want) {
+        if (code === 'eng' || (!OCR_PATHS.noCache && await ocrCached(code))) { langs.push(code); continue; }
+        const data = await ocrLangData(code, onStatus);
+        if (!OCR_PATHS.noCache && await ocrCacheWrite(code, data)) { langs.push(code); fresh.push(code); } else held.push({ code, data });
+      }
+      try { await openWorker(want, langs, held, onStatus); }
+      catch (e) { for (const code of fresh) await ocrCacheWrite(code, null); throw e; }
     },
     async recognize(canvas, { onProgress }) {
       listen = (m) => { if (m.status === 'recognizing text' && onProgress) onProgress(m.progress || 0); };
@@ -127,7 +176,7 @@ function ocrTesseract() {
       small.width = flip.width = 0;
       return down.score > up.score + 5 ? { turn: 180, confidence: down.score } : { turn: 0, confidence: up.score };
     },
-    async stop() { const w = worker; worker = null; if (w) try { await w.terminate(); } catch {} },
+    async stop() { ended = true; const w = worker; worker = null; if (w) try { await w.terminate(); } catch {} },
   };
 }
 
@@ -363,7 +412,7 @@ async function ocrCopySource(L, k, results, redo) {
   for (const [i, r] of results) {
     const p = out.getPage(i);
     if (r.image) await ocrReplaceImage(L, out, p, r.image);
-    else if (redo) ocrStripInvisible(L, out, p);
+    else if (redo || r.strip) ocrStripInvisible(L, out, p);
     words += await ocrWritePage(L, out, p, r.lines, r.vp, ctx);
   }
   if (ctx.t3) ctx.t3.finish();
@@ -435,7 +484,13 @@ async function ocrRun({ pages, lang = 'eng', redo = false, orient = false, clean
   const results = new Map(); // src -> Map(i -> { lines, vp, turn, image?, check })
   try {
     set('Getting the text reader ready…', 0);
-    if (engine.start) await engine.start(lang, (status, f) => { const data = /traineddata/.test(status); set(data ? 'Getting the language data…' : 'Getting the text reader ready…', data ? f || 0 : 0); });
+    if (engine.start) {
+      // (Cancel also stops a start that takes long, or never ends)
+      const started = Promise.resolve(engine.start(lang, (status, f) => { const data = /traineddata/.test(status); set(data ? 'Getting the language data…' : 'Getting the text reader ready…', data ? f || 0 : 0); }));
+      started.catch(() => {});
+      await (progress ? Promise.race([started, progress.cancelling]) : started);
+      if (stopped()) { if (engine.stop) await engine.stop(); return { pages: 0, words: 0, skipped, cancelled: true }; }
+    }
   } catch (e) {
     console.warn('OCR could not start', e);
     if (engine.stop) await engine.stop();
@@ -471,7 +526,7 @@ async function ocrRun({ pages, lang = 'eng', redo = false, orient = false, clean
     const nk = doc.sources.length;
     doc.sources.push(bytes); pdfDocs.set(nk, pd);
     ocrPointAt(k, nk, turns);
-    ocrReview.set(nk, { base: k, redo, results: r });
+    ocrReview.set(nk, { base: k, redo, results: ocrCarryReview(k, r) });
   }
   changed(before, 'Recognize text');
   syncHiddenComments();
@@ -485,6 +540,13 @@ async function ocrRun({ pages, lang = 'eng', redo = false, orient = false, clean
 // Each copy made by a run (by source index) keeps what was read, so a word put right is written again from the
 // source the run started from, into a new copy (undo goes back to the copy before, and its list).
 const ocrReview = new Map(); // copy src -> { base, redo, results: Map(i -> page result) }
+// A run on pages of an earlier run's copy: that run's pages with words still to check are kept on the list. They are
+// written again (their layer taken out first, as they are already in the copy) whenever a word is put right.
+function ocrCarryReview(k, results) {
+  const prev = ocrReview.get(k), out = new Map(results);
+  if (prev) for (const [i, x] of prev.results) if (!out.has(i) && x.check.length) out.set(i, { ...x, strip: true });
+  return out;
+}
 const OCRW = { at: -1 };
 function ocrWordItems() {
   const out = [];

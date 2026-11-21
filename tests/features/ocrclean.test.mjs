@@ -146,7 +146,9 @@ export default async (h) => {
       // the text is straight now: the ink of the lines falls into rows
       let inkAll = 0; for (let i = 0; i < px.length; i += 4) if (px[i] < 128) inkAll++;
       // the source corner of a known line start, through the map, lands on ink after cleaning
-      const t0 = performance.now(); const again = window.__cowdreyPdf.ocrClean(id, {}); const ms = performance.now() - t0;
+      // (timed warm, as on the second and later pages of a run: the best of six, since the first few runs also compile
+      // the code)
+      let again, ms = Infinity; for (let k = 0; k < 6; k++) { const t0 = performance.now(); again = window.__cowdreyPdf.ocrClean(id, {}); ms = Math.min(ms, performance.now() - t0); }
       const otsu = window.__cowdreyPdf.ocrClean(id, { binarize: 'otsu' });
       return { angle: res.angle, turn: res.turn, w: res.width, h: res.height, speckLeft, specks: specks.length, dot, inkAll, ms, again: again.angle, otsu: otsu.angle, mode: res.mode };
     });
@@ -157,7 +159,7 @@ export default async (h) => {
     ok(r.inkAll > 100000, 'the letters stay: ' + r.inkAll);
     eq([r.again, r.otsu], [r.angle, r.angle], 'the same answer each time, and with Otsu');
     console.log(`      (clean-up of an A4 page at 300 dpi: ${Math.round(r.ms)} ms here)`);
-    ok(r.ms < 1500, 'fast enough: ' + Math.round(r.ms) + ' ms');
+    ok(r.ms < 300, 'under 300 ms a page: ' + Math.round(r.ms) + ' ms');
     eq(p.errors, []); await p.ctx.close();
   });
 
@@ -297,6 +299,79 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  // A language used for the first time, with the real engine. Its data is served at its jsDelivr address from the
+  // English data under the new name (only English is in desktop/node_modules): it reads English, but is loaded as
+  // "fra". `bad` serves it cut short, as a download that went wrong.
+  async function serveFra(p, state) {
+    const gz = fs.readFileSync(path.join(NM, '@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz'));
+    await p.ctx.route(/\/npm\/@tesseract\.js-data\/fra@1\.0\.0\/4\.0\.0_best_int\/fra\.traineddata\.gz$/, (r) => {
+      state.hits++;
+      return r.fulfill({ body: state.bad ? gz.subarray(0, 4000) : gz, contentType: 'application/gzip', headers: { 'access-control-allow-origin': '*' } });
+    });
+  }
+  // (a run that has not ended after 90 s is reported as hung, rather than holding up the tests)
+  const runRealOrHang = (p, opts) => p.evaluate((o) => { window.__cowdreyPdf.ocrUseEngine(null); return Promise.race([window.__cowdreyPdf.ocrRunHeadless(o), new Promise((r) => setTimeout(() => r({ hung: true }), 90000))]); }, opts);
+  const kept = (p, code) => p.evaluate((code) => new Promise((res) => { const r = indexedDB.open('keyval-store'); r.onerror = () => res(null); r.onupgradeneeded = () => { try { r.result.createObjectStore('keyval'); } catch {} }; r.onsuccess = () => { const d = r.result; try { const q = d.transaction('keyval').objectStore('keyval').count(`./${code}.traineddata`); q.onsuccess = () => { res(q.result > 0); d.close(); }; } catch { res(false); d.close(); } }; }), code);
+  await test('OCR (real engine): a language used for the first time is downloaded once and read with, alone and with English; a bad download fails clearly and is not kept', async () => {
+    if (!realEngine) { console.log('      SKIP: tesseract.js is not in desktop/node_modules (run: cd desktop && npm ci)'); return; }
+    const p = await open(), logs = [], st = { hits: 0, bad: true };
+    p.on('console', (m) => logs.push(m.text()));
+    await serveFra(p, st);
+    const fx = FIX['ocr-skew'];
+    await openBytes(p, fs.readFileSync(path.join(root, 'tests/fixtures/ocr-skew.pdf')), 'Askew.pdf');
+    // a download that went wrong: the run ends, says it could not start, and the data is not kept
+    let r = await runRealOrHang(p, { pages: [0], lang: 'eng+fra' });
+    eq([r.hung, r.failed, r.pages], [undefined, true, 0], 'a bad download fails: ' + JSON.stringify(r));
+    eq(await kept(p, 'fra'), false, 'the bad data is not kept');
+    // French alone, the first time (it used to wait for ever on "Getting the text reader ready…")
+    st.bad = false; st.hits = 0;
+    r = await runRealOrHang(p, { pages: [0], lang: 'fra' });
+    ok(!r.hung && r.pages === 1 && r.words >= 20, 'read with French alone: ' + JSON.stringify(r));
+    eq(st.hits, 1, 'downloaded once');
+    eq(await kept(p, 'fra'), true, 'kept for next time');
+    const t = await pdfText(await savedOf(p));
+    ok(t.includes(fx.lines[0].text), 'read: ' + t);
+    // English and French together: nothing downloaded again, and the French data is loaded (no failure to load it)
+    r = await runRealOrHang(p, { pages: [0], lang: 'eng+fra', redo: true });
+    ok(!r.hung && r.pages === 1 && r.words >= 20, 'read with English and French: ' + JSON.stringify(r));
+    eq(st.hits, 1, 'not downloaded again');
+    eq(logs.filter((l) => /Failed loading language|couldn't load any languages|initialization failed/i.test(l)), [], 'every language loaded');
+    eq(p.errors.filter((e) => !/Failed to load resource/.test(e)), []); await p.ctx.close();
+  });
+  await test('OCR (real engine): a new language is read with even where it cannot be kept on the device', async () => {
+    if (!realEngine) { console.log('      SKIP: tesseract.js is not in desktop/node_modules (run: cd desktop && npm ci)'); return; }
+    const p = await open(), logs = [], st = { hits: 0, bad: false };
+    p.on('console', (m) => logs.push(m.text()));
+    await serveFra(p, st);
+    await openBytes(p, fs.readFileSync(path.join(root, 'tests/fixtures/ocr-skew.pdf')), 'Askew.pdf');
+    await p.evaluate(() => { window.__cowdreyPdf.ocrPaths.noCache = true; });
+    let r = await runRealOrHang(p, { pages: [0], lang: 'fra' });
+    ok(!r.hung && r.pages === 1 && r.words >= 20, 'French alone: ' + JSON.stringify(r));
+    r = await runRealOrHang(p, { pages: [0], lang: 'eng+fra', redo: true });
+    ok(!r.hung && r.pages === 1 && r.words >= 20, 'English and French: ' + JSON.stringify(r));
+    eq([st.hits, await kept(p, 'fra')], [2, false], 'fetched each run, not kept');
+    eq(logs.filter((l) => /Failed loading language|couldn't load any languages|initialization failed/i.test(l)), [], 'every language loaded');
+    eq(p.errors.filter((e) => !/Failed to load resource/.test(e)), []); await p.ctx.close();
+  });
+  await test('OCR: Cancel while the text reader is getting ready ends the run at once; text can be recognized again', async () => {
+    const p = await open();
+    const scan = await makeScan(p, ['Hello world']);
+    await openBytes(p, await scanPdf([scan]));
+    // a reader that never gets ready (as a language that never loads)
+    await p.evaluate(() => { window.__stops = 0; window.__cowdreyPdf.ocrUseEngine({ start: () => new Promise(() => {}), async recognize() { return { lines: [] }; }, async stop() { window.__stops++; } }); });
+    const run = p.evaluate(() => window.__cowdreyPdf.ocrRun({ pages: [0] }));
+    await p.waitForFunction(() => /Getting the text reader ready/.test((document.querySelector('#dialog[open] .ocr-status') || {}).textContent || ''));
+    await p.click('#dialog .dlg-foot button:has-text("Cancel")');
+    const r = await Promise.race([run, new Promise((res) => setTimeout(() => res('still running'), 5000))]);
+    ok(r && r.cancelled, 'the run ended as cancelled: ' + JSON.stringify(r));
+    ok(await p.evaluate(() => window.__stops) >= 1, 'the reader was stopped');
+    ok(/Text recognition stopped/.test(await p.textContent('#toast')), await p.textContent('#toast'));
+    await useFake(p, [scan]);
+    const again = await p.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ pages: [0] }));
+    ok(!again.busy && again.pages === 1 && again.words === 2, 'runs again: ' + JSON.stringify(again));
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   /* ---- (e) Check words ---- */
   await test('OCR: words the reader was unsure of are listed in Check words with a close-up; one put right is saved; next, previous, accept all; undo', async () => {
     const p = await open();
@@ -345,6 +420,30 @@ export default async (h) => {
     saved = await savedOf(p); t = await pdfText(saved);
     ok(t.includes('lazv Pelican today') === false && t.includes('lazv Pelican'), t);
     eq((await PDFDocument.load(saved)).getPageCount(), 1);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('OCR: a second run keeps the first run\'s words in Check words; one put right later keeps the other page as it was', async () => {
+    const p = await open();
+    const a = await makeScan(p, ['Hello Pelican']), b = await makeScan(p, ['Hello World']);
+    await openBytes(p, await scanPdf([a, b]));
+    const unsure = `const l = lines[0].words; l[1] = { ...l[1], text: l[1].text.replace('l', '1'), confidence: 40 }; return lines;`;
+    await useFake(p, [a], { edit: unsure });
+    await p.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ pages: [0] }));
+    eq(await p.evaluate(() => window.__cowdreyPdf.ocrWords().map((w) => [w.text, w.page])), [['Pe1ican', 0]]);
+    await useFake(p, [b], { edit: unsure });
+    await p.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ pages: [1] }));
+    eq(await p.evaluate(() => window.__cowdreyPdf.ocrWords().map((w) => [w.text, w.page])), [['Pe1ican', 0], ['Wor1d', 1]], 'both runs\' words are listed');
+    // the first run's word put right: page 1 has it once, page 2 keeps its own words
+    await p.evaluate(() => window.__cowdreyPdf.run('ocr_words'));
+    await p.waitForSelector('#sidePanel .ocrw-item');
+    await p.fill('[data-ocrw-in="0"]', 'Pelican'); await p.press('[data-ocrw-in="0"]', 'Enter');
+    await p.waitForFunction(() => document.querySelectorAll('#sidePanel .ocrw-item').length === 1);
+    eq(await p.evaluate(() => window.__cowdreyPdf.ocrWords().map((w) => w.text)), ['Wor1d']);
+    eq([await itemsOfPage(p, 0), await itemsOfPage(p, 1)].map((l) => norm(l.join(' '))), ['Hello Pelican', 'Hello Wor1d'], 'each page\'s words once');
+    // and undo brings the first run's guess back to the list
+    await p.evaluate(() => window.__cowdreyPdf.run('undo')); await p.waitForTimeout(700);
+    eq(await p.evaluate(() => window.__cowdreyPdf.ocrWords().map((w) => w.text)), ['Pe1ican', 'Wor1d'], 'undo');
     eq(p.errors, []); await p.ctx.close();
   });
 
