@@ -29,7 +29,14 @@ async function test(name, fn) {
     shot('fail-' + name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40));
     // leave Android's own windows and the app's dialogs for the next scenario
     for (let i = 0; i < 3 && !/cowdreypdf\/.*MainActivity|cowdreypdf.*Activity/.test(A.focused()); i++) { A.back(); await sleep(800); }
-    try { await page.evaluate(() => { const d = document.querySelector('#dialog'); if (d && d.open) d.close(); }); } catch {}
+    await closeDialogs();
+  }
+}
+// Closes the app's dialogs the way Escape or Back does (cancel), so the app's own dialog code finishes them.
+async function closeDialogs() {
+  for (let i = 0; i < 4; i++) {
+    try { if (!(await page.evaluate(() => { const d = document.querySelector('#dialog'); if (!d || !d.open) return false; d.dispatchEvent(new Event('cancel', { cancelable: true })); return true; }))) return; } catch { return; }
+    await sleep(500);
   }
 }
 const ok = (v, m) => { if (!v) throw new Error(m || 'not ok'); };
@@ -123,15 +130,10 @@ async function backToApp() {
 }
 
 /* ---- checks on saved files ---- */
+// The text of a saved PDF, read by opening it in the app (its own pdf.js)
 async function pdfText(bytes) {
-  // through the app's own pdf.js, so no second PDF reader is needed here
-  return page.evaluate(async (b64) => {
-    const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-    // eslint-disable-next-line no-undef
-    const d = await pdfjs.getDocument({ data: u }).promise; const out = []; // (the app's own pdf.js, a global of the page)
-    for (let i = 1; i <= d.numPages; i++) { const tc = await (await d.getPage(i)).getTextContent(); out.push(tc.items.map((x) => x.str).join(' ')); }
-    return out.join('\n');
-  }, Buffer.from(bytes).toString('base64'));
+  await openBytes(bytes, 'Check.pdf');
+  return page.evaluate(async () => { const out = []; for (const v of window.__cowdreyPdf.views()) { const tc = await v.page.getTextContent(); out.push(tc.items.map((x) => x.str).join(' ')); } return out.join('\n'); });
 }
 const ranges = (buf) => [...buf.toString('latin1').matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g)].map((m) => m.slice(1, 5).map(Number));
 // A signature checked with Node's crypto and asn1js only (as tests/features/sign.test.mjs does)
@@ -191,6 +193,7 @@ log(adb('install', '-r', '-g', APK).trim());
 log('test build:', sh(`dumpsys package ${PKG} | grep -m1 versionName`).trim());
 sh(`rm -rf ${A.DL}/*`);
 sh('cmd uimode night yes');
+sh('settings put secure show_ime_with_hard_keyboard 1'); // the on-screen keyboard, as on a phone
 adb('logcat', '-c');
 const SAMPLE = fs.readFileSync(fixture('sample.pdf'));
 const comp = A.component(); log('launcher activity:', comp);
@@ -261,8 +264,9 @@ await test('mark up with a finger: highlight text, draw, a note; undo and redo',
   await A.swipeCss(page, x1, y1, x2, y2, 500);
   await run('tool_note');
   const [nx, ny] = await at(0, 420, 200); await A.tapCss(page, nx, ny);
-  await page.waitForSelector('.page-ask textarea'); await page.fill('.page-ask textarea', 'Check the numbers'); await page.click('.page-ask .btn.primary');
-  await sleep(500);
+  // (on a phone the note is placed at once; where it asks for its text, it gets some)
+  if (await page.waitForSelector('.page-ask textarea', { timeout: 4000 }).catch(() => null)) { await page.fill('.page-ask textarea', 'Check the numbers'); await page.click('.page-ask .btn.primary'); }
+  await sleep(800);
   const m = await marks(); log('  marks:', m.join(', '));
   ok(m.includes('hl') && m.includes('ink') && m.includes('note'), 'highlight, ink and note: ' + m);
   shot('markup-dark');
@@ -311,11 +315,12 @@ await test('Save again: goes straight to the same file; Save as copy and a cance
 await test('Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)', async () => {
   await openBytes(fs.readFileSync(fixture('word.pdf')), 'Pelican report.pdf');
   await run('tool_edit');
-  for (const [find, typed] of [['Budget', 'Budget approved for the whole year'], ['pelican', 'Ο πελεκάνος πετά ψηλά']]) {
+  for (const [find, typed] of [['Budget', 'Budget approved for the whole year'], ['second phase', 'Ο πελεκάνος πετά ψηλά']]) {
     const b = await page.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
     await A.tapCss(page, b.x + 10, b.y + b.height / 2);
     await page.waitForSelector('.line-editor', { timeout: 15000 });
-    await page.keyboard.press('Control+a'); await page.keyboard.insertText(typed); await page.keyboard.press('Enter'); await sleep(800);
+    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('.line-editor'), null, { timeout: 10000 });
+    await page.evaluate(() => document.execCommand('selectAll')); await page.keyboard.insertText(typed); await page.keyboard.press('Enter'); await sleep(800);
   }
   shot('edit-pdf-greek');
   await run('tool_select');
@@ -327,7 +332,11 @@ await test('Edit PDF: a line retyped in Latin and in Greek; the saved PDF has th
 
 await test('forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved', async () => {
   await openBytes(SAMPLE, 'Quarterly report.pdf');
-  await A.tapEl(page, '.annotationLayer input[name="name"]');
+  await page.evaluate(() => getSelection().removeAllRanges());
+  for (let i = 0; i < 3; i++) {
+    await A.tapEl(page, '.annotationLayer input[name="name"]');
+    if (await page.waitForFunction(() => document.activeElement && document.activeElement.name === 'name', null, { timeout: 6000 }).catch(() => null)) break;
+  }
   await sleep(2500);
   const ime = sh('dumpsys input_method | grep -m1 mInputShown').trim();
   const fit = await page.evaluate(() => { const r = document.activeElement.getBoundingClientRect(); return { name: document.activeElement.name, bottom: Math.round(r.bottom), top: Math.round(r.top), vh: Math.round(visualViewport.height), ih: innerHeight, kb: document.documentElement.dataset.keyboard }; });
@@ -386,6 +395,7 @@ await test('OCR with no network: a scanned page is read with the engine and Engl
     await page.click('#dialog .dlg-foot .btn.primary');
     await page.waitForFunction(() => !document.querySelector('#dialog[open] .ocr-prog') && /Text recognized|recognized/i.test(document.querySelector('#toast').textContent), null, { timeout: 300000 });
     log('  toast:', await toastText());
+    await page.waitForSelector('.page[data-n="0"] .textLayer span', { timeout: 20000 }).catch(() => {});
     const t = (await page.$$eval('.page[data-n="0"] .textLayer span', (s) => s.map((x) => x.textContent).join(' '))).replace(/\s+/g, ' ');
     log('  text layer:', t);
     ok(/pelican/i.test(t) && /quick brown fox/i.test(t), 'the words were read');
@@ -401,7 +411,7 @@ await test('certificate signing: import a .p12 through the picker, sign, save; t
   await page.waitForSelector('#dialog[open] #dlgInput', { timeout: 20000 });
   await page.fill('#dlgInput', 'pw1234'); await page.click('#dialog .dlg-foot .btn.primary');
   await page.waitForFunction(() => /Signing ID for Android Signer added/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
-  if (await page.$('#dialog[open]')) await page.evaluate(() => document.querySelector('#dialog').close());
+  await closeDialogs();
   await sleep(500);
   const { bytes } = await saveThroughDialog(async () => {
     await run('sgSign'); await page.waitForSelector('#dialog[open] #sgPlace');
@@ -481,7 +491,7 @@ await test('batch: an action run on a PDF from the picker; the zip comes out thr
   const z = fflate.unzipSync(new Uint8Array(bytes));
   log('  in the zip:', Object.keys(z).join(', '));
   const first = Object.values(z)[0]; ok(first && (await L.PDFDocument.load(first)).getPageCount() >= 1, 'a PDF in the zip');
-  if (await page.$('#dialog[open]')) await page.evaluate(() => document.querySelector('#dialog').close());
+  await closeDialogs();
 });
 
 await test('split into files: one folder picked once, every part saved in it', async () => {
@@ -556,7 +566,7 @@ await test('back: Back closes an open dialog and keeps the app; with nothing ope
 await test('phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars', async () => {
   const r = await page.evaluate(() => {
     const st = getComputedStyle(document.querySelector('.statusbar'));
-    return { over: document.documentElement.scrollWidth - innerWidth, tabs: getComputedStyle(document.querySelector('#ribbonTabs')).overflowX, dark: matchMedia('(prefers-color-scheme: dark)').matches, bg: getComputedStyle(document.body).backgroundColor, sab: getComputedStyle(document.documentElement).getPropertyValue('--sab'), pad: st.paddingBottom, top: getComputedStyle(document.querySelector('.titlebar')).paddingTop };
+    return { over: document.documentElement.scrollWidth - innerWidth, tabs: getComputedStyle(document.querySelector('#ribbonTabs')).overflowX, dark: document.documentElement.dataset.theme === 'dark' || (matchMedia('(prefers-color-scheme: dark)').matches && document.documentElement.dataset.theme !== 'light'), media: matchMedia('(prefers-color-scheme: dark)').matches, bg: getComputedStyle(document.body).backgroundColor, sab: getComputedStyle(document.documentElement).getPropertyValue('--sab'), pad: st.paddingBottom, top: getComputedStyle(document.querySelector('.titlebar')).paddingTop };
   });
   const ins = await page.evaluate(() => window.__TAURI__.core.invoke('plugin:sharekit|native', { method: 'insets', args: {} }));
   log('  ', JSON.stringify(r), 'insets', JSON.stringify(ins));
@@ -609,10 +619,14 @@ await test('relaunch: the library (IndexedDB) and the last document come back af
 });
 
 await test('light mode: the app follows the system theme', async () => {
+  const dark = () => page.evaluate(() => ({ theme: document.documentElement.dataset.theme || '', media: matchMedia('(prefers-color-scheme: dark)').matches, bg: getComputedStyle(document.body).backgroundColor }));
   sh('cmd uimode night no'); await sleep(2500);
-  ok(!(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)), 'light');
+  const l = await dark(); log('  light:', JSON.stringify(l));
   shot('light-mode');
-  sh('cmd uimode night yes'); await sleep(1500);
+  sh('cmd uimode night yes'); await sleep(2500);
+  const d = await dark(); log('  dark again:', JSON.stringify(d));
+  ok(l.theme !== 'dark' && !(l.media && l.theme !== 'light'), 'light');
+  ok(d.theme === 'dark' || (d.media && d.theme !== 'light'), 'dark again');
 });
 
 const passed = results.filter((r) => r[0]).length;

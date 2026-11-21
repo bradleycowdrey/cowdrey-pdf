@@ -6063,17 +6063,20 @@ if (ANDROID) {
 }
 
 /* ---------------- theme ---------------- */
+var androidNight = null; // Android app: whether the phone is in dark mode (var: applyTheme can run before this line)
 function applyTheme() {
   scheduleMacMenu();
   const root = document.documentElement;
   if (S.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
+  // Android's web view can miss the phone's dark mode (prefers-color-scheme stays light): the app says which it is.
+  if (S.theme === 'system' && androidNight != null && androidNight !== matchMedia('(prefers-color-scheme: dark)').matches) root.setAttribute('data-theme', androidNight ? 'dark' : 'light');
   app.dataset.darkpage = S.darkPage ? 'on' : 'off';
   $('#themeBtn').innerHTML = ic({ system: 'sun-moon', light: 'sun', dark: 'moon' }[S.theme]);
   $('#themeBtn').title = { system: 'Theme: match system', light: 'Theme: light', dark: 'Theme: dark' }[S.theme];
   $('#themeBtn').setAttribute('aria-label', $('#themeBtn').title); // its name says the theme now
   icons();
   // Android: light status-bar icons on the dark theme, dark ones on the light theme.
-  if (ANDROID_APP) androidCall('systemBars', { dark: S.theme === 'dark' || (S.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches) }).catch(() => {});
+  if (ANDROID_APP) androidCall('systemBars', { dark: S.theme === 'dark' || (S.theme === 'system' && (androidNight != null ? androidNight : matchMedia('(prefers-color-scheme: dark)').matches)) }).catch(() => {});
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
 window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.handle) { e.preventDefault(); e.returnValue = ''; } });
@@ -27292,19 +27295,26 @@ async function androidUpdates(manual) {
 // bookmarks, tab order, reading order): Android's web view doesn't drag with a finger, so the same drag events are
 // sent here. A finger that moves before the long press scrolls as usual.
 function touchDrag() {
-  let timer = 0, src = null, dt = null, start = null, over = null, active = false;
+  // A long press arms the drag; moving the finger then drags (a long press held still opens the item's menu, as before).
+  let timer = 0, src = null, dt = null, start = null, over = null, armed = false, active = false;
   const fire = (el, type, t) => { try { el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: t.clientX, clientY: t.clientY, dataTransfer: dt })); } catch {} };
-  const reset = () => { clearTimeout(timer); if (src) src.classList.remove('touch-drag'); src = null; over = null; active = false; };
+  const reset = () => { clearTimeout(timer); if (src) src.classList.remove('touch-drag'); src = null; over = null; armed = active = false; };
   document.addEventListener('touchstart', (e) => {
     reset();
     const el = e.touches.length === 1 && e.target.closest && e.target.closest('[draggable="true"]'); if (!el) return;
     const t = e.touches[0]; start = { x: t.clientX, y: t.clientY }; src = el;
-    timer = setTimeout(() => { if (!src) return; active = true; dt = new DataTransfer(); src.classList.add('touch-drag'); fire(src, 'dragstart', start); if (navigator.vibrate) try { navigator.vibrate(12); } catch {} }, 450);
+    timer = setTimeout(() => { if (!src) return; armed = true; src.classList.add('touch-drag'); if (navigator.vibrate) try { navigator.vibrate(12); } catch {} }, 400);
   }, { capture: true, passive: true });
   document.addEventListener('touchmove', (e) => {
-    if (!src) return; const t = e.touches[0];
-    if (!active) { if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) reset(); return; }
+    if (!src) return; const t = e.touches[0], moved = Math.hypot(t.clientX - start.x, t.clientY - start.y);
+    if (!armed) { if (moved > 10) reset(); return; }
     e.preventDefault();
+    if (!active) {
+      if (moved < 8) return;
+      active = true; dt = new DataTransfer();
+      if (!pop.hidden) closePopover(); // the menu a long press opened gives way to the drag
+      fire(src, 'dragstart', start);
+    }
     const el = document.elementFromPoint(t.clientX, t.clientY);
     if (el !== over) { if (over) fire(over, 'dragleave', t); over = el; if (el) fire(el, 'dragenter', t); }
     if (el) fire(el, 'dragover', t);
@@ -27324,11 +27334,11 @@ function touchDrag() {
   };
   document.addEventListener('touchend', (e) => end(e, false), true);
   document.addEventListener('touchcancel', (e) => end(e, true), true);
-  document.addEventListener('contextmenu', (e) => { if (src) e.preventDefault(); }, true);
+  document.addEventListener('contextmenu', (e) => { if (active) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   // If the web view starts a drag of its own, it takes over.
-  document.addEventListener('dragstart', (e) => { if (e.isTrusted && src) { clearTimeout(timer); if (src) src.classList.remove('touch-drag'); src = null; active = false; } }, true);
+  document.addEventListener('dragstart', (e) => { if (e.isTrusted && src) reset(); }, true);
 }
-TEST_HOOKS.touchDrag = touchDrag;
+TEST_HOOKS.touchDrag = touchDrag; TEST_HOOKS.writeOutgoing = writeOutgoing; TEST_HOOKS.listDocs = listDocs; TEST_HOOKS.cmdHidden = (id) => !!(C[id] && C[id].hidden);
 function androidStart() {
   // The system bars and the keyboard: the web view doesn't say how tall the navigation bar is, and doesn't move a
   // field above the keyboard, so the app tells the page (window.__cowdreyInsets) and the field is scrolled into view.
@@ -27341,6 +27351,8 @@ function androidStart() {
   };
   androidCall('insets').then(window.__cowdreyInsets, () => {});
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
+  window.__cowdreyNight = (night) => { androidNight = !!night; applyTheme(); };
+  androidCall('appInfo').then((r) => { if (r && typeof r.night === 'boolean') window.__cowdreyNight(r.night); }, () => {});
   // PDFs shared several at a time (Files, Gmail): Android tells the page, which opens them.
   window.__cowdreyShared = () => serial(takeOpened);
   touchDrag();

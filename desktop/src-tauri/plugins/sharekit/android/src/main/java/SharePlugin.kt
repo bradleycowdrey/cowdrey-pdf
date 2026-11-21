@@ -64,6 +64,10 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
         pdf.destroy()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        pdf.onConfigurationChanged(newConfig)
+    }
+
     // ---- Cowdrey.PDF (see AndroidPdf.kt) ----
 
     @Command fun saveAs(invoke: Invoke) = pdf.saveAs(invoke)

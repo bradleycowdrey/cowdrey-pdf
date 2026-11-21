@@ -354,7 +354,15 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
             if (Build.VERSION.SDK_INT >= 30) activity.packageManager.getInstallSourceInfo(activity.packageName).installingPackageName
             else @Suppress("DEPRECATION") activity.packageManager.getInstallerPackageName(activity.packageName)
         } catch (_: Exception) { null }
-        invoke.resolve(JSObject().apply { put("installer", installer ?: "") })
+        invoke.resolve(JSObject().apply { put("installer", installer ?: ""); put("night", night(activity.resources.configuration)) })
+    }
+
+    private fun night(c: android.content.res.Configuration) =
+        (c.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    /** Dark mode turned on or off while the app is open: the page follows (the web view may not tell it). */
+    fun onConfigurationChanged(c: android.content.res.Configuration) {
+        webView?.evaluateJavascript("window.__cowdreyNight && window.__cowdreyNight(${night(c)})", null)
     }
 
     // ---- several PDFs shared at once ----

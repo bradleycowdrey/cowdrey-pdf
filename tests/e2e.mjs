@@ -319,7 +319,10 @@ await test('phone apps: Print uses the system print dialog; Android "Open with" 
   await waitPages(p); await p.waitForTimeout(400);
   eq(await p.textContent('#docTitle'), 'Lease agreement');
   await p.evaluate(() => window.__cowdreyPdf.run('print')); await p.waitForTimeout(400);
-  eq((await calls(p, /sharekit\|native/)).map(([, a]) => a.method), ['displayName', 'printPage']);
+  // Android prints the PDF itself (tests/features/android.test.mjs has the rest of the Android app)
+  const native = (await calls(p, /sharekit\|native/)).map(([, a]) => a).filter((a) => !['systemBars', 'insets', 'takeSharedFiles', 'ttsAvailable'].includes(a.method));
+  eq(native.map((a) => a.method), ['displayName', 'printPdf']);
+  eq([native[1].args.name, native[1].args.pages], ['Lease agreement.pdf', 3]);
   eq(p.errors, []); await p.ctx.close();
 });
 await test('sample PDF: Try a sample opens a two-page guide with a form and a pelican to find', async () => {
