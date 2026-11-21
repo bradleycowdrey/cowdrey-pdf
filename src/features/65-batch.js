@@ -207,11 +207,13 @@ Object.assign(BATCH_STEPS, {
   pdfa: {
     label: 'Save as PDF/A', icon: 'archive', available: () => typeof pdfaConvert === 'function',
     defaults: () => ({ level: '2b' }),
-    options: (o) => bf.sel('level', 'Kind', o.level, [['2b', 'PDF/A-2b (recommended)'], ['1b', 'PDF/A-1b'], ['3b', 'PDF/A-3b']]),
+    options: (o) => bf.sel('level', 'Kind', o.level, [['2b', 'PDF/A-2b (recommended)'], ['2u', 'PDF/A-2u'], ['3b', 'PDF/A-3b']]),
     summary: (o) => 'PDF/A-' + o.level,
     run(ctx, o) {
       ctx.post.push(async (bytes) => {
-        const r = await pdfaConvert(bytes, { ...o, name: ctx.file.base });
+        const lv = /^[23][bu]$/.test(o.level) ? o.level : '2b';
+        const r = await pdfaConvert(bytes, { part: +lv[0], conformance: lv[1].toUpperCase(), name: ctx.file.base });
+        if (r && r.blocked === 'attachments') throw new Error('PDF/A-2b can’t keep attached files. Choose PDF/A-3b.');
         const out = r && r.bytes ? r.bytes : r instanceof Uint8Array ? r : null;
         if (!out) throw new Error('Could not make a PDF/A file');
         ctx.log('PDF/A-' + o.level);
@@ -596,7 +598,7 @@ async function batchStart(action, inputs, out) {
 /* ----- commands ----- */
 document.body.insertAdjacentHTML('beforeend', '<input type="file" id="batchInput" accept="application/pdf,.pdf" multiple hidden><input type="file" id="batchJson" accept="application/json,.json" hidden>');
 cmd('batch', { label: 'Actions…', rlabel: 'Actions', icon: 'list-video', enabled: () => !batchBusy, run: batchDialog });
-{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('exportText') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'batch'); else menuAdd('File', ['batch']); }
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? Math.max(fm[1].indexOf('picExportAll'), fm[1].indexOf('exportText')) : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'batch'); else menuAdd('File', ['batch']); }
 ribbonAdd('export', 'Batch', ['batch']);
 CHANGE_NAMES.optimize ||= 'Optimize';
 // Tests: run an action on PDFs given as base64, without the dialogs.

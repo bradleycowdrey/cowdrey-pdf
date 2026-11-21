@@ -108,7 +108,8 @@ export default async (h) => {
     const f = path.join(root, 'tests/fixtures', '.batch-action.json');
     fs.writeFileSync(f, await p.evaluate((a) => window.__cowdreyPdf.batchExportJson(a), ACTION));
     await p.evaluate(() => window.__cowdreyPdf.run('batch')); await p.waitForSelector('#dialog[open] .batch-acts');
-    const [chooser] = await Promise.all([p.waitForEvent('filechooser'), answer(p, 'Import…')]);
+    // file-picker interception is turned on asynchronously: give it a moment before the click (as in media.test.mjs)
+    const choosing = p.waitForEvent('filechooser'); await p.waitForTimeout(500); await answer(p, 'Import…'); const chooser = await choosing;
     await chooser.setFiles(f); fs.unlinkSync(f);
     await p.waitForFunction(() => [...document.querySelectorAll('#dialog .batch-act strong')].some((s) => s.textContent === 'Review'), null, { timeout: 5000 });
     eq((await p.evaluate(() => window.__cowdreyPdf.batchSaved())).map((a) => [a.name, a.steps]), [['Review', ACTION.steps]], 'kept in settings');

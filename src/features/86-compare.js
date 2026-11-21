@@ -1010,7 +1010,7 @@ window.addEventListener('resize', () => { if (cmpOn() && cmp) { clearTimeout(cmp
 cmd('compare', { label: 'Compare with another PDF…', rlabel: 'Compare', icon: 'git-compare', enabled: () => has() && !cmpBusy, pressed: cmpOn, run: () => (cmpOn() ? cmpClose() : cmpPick()) });
 { const fm = MENUS.find(([t]) => t === 'File'); if (fm) { const i = fm[1].indexOf('merge'); fm[1].splice(i >= 0 ? i + 1 : fm[1].length, 0, 'compare'); } }
 // (Home is full on a 1440 px screen: its test keeps it so. Compare sits with the other reviewing tools.)
-ribbonAdd('markup', 'Review', ['compare']);
+ribbonAdd('export', 'Compare', ['compare']); // next to Insight (the Comment and Home tabs are full at 1440)
 
 addStyle(`
 .workspace { position: relative; }

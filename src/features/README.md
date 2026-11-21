@@ -34,6 +34,16 @@ Plug in through:
   objects stored, undone and restored with the marks (change them inside `snapshot()`/`changed()` too).
 - `FEATURE.afterRender.push((v) => …)` after a page is drawn; `FEATURE.onDocShown.push((doc) => …)`; `FEATURE.onDocClosed.push(() => …)` when File > Close closes it;
   `(FEATURE.onTab ||= []).push((tab) => …)` when another ribbon tab is chosen.
+- `FEATURE.beforeSave.push(async ({ copy }) => …)` — before Save or Save a copy builds the file: return false to
+  cancel, `{ copy: true }` to save a copy instead, or `{ bytes }` to save those bytes as they are.
+- `FEATURE.onSigField = async ({ entry, field, picture }) => …` — set by 76-sign.js, called by 72-forms-design.js
+  when an empty signature field is clicked while filling in. Return 'picture' (or call `picture()`) for the picture
+  alone; any other answer means it was handled.
+- `FEATURE.picXObject(L, out, m, ctx)` — set by 20-images.js: the picture object a picture mark is drawn from.
+- `FEATURE.markLabels.push((m) => ({ label, text? }) | null)` — what a mark is called, for screen readers and lists.
+- Shared services: 05-fonts.js (`fontsEmbed`, `fontsRuns`, `fontsDraw`, `fontsCovers`) writes any text in embedded
+  Noto subsets; use them behind a `typeof fontsEmbed === 'function'` guard. @cantoo/pdf-lib's standard fonts quietly
+  write '?' for letters they lack.
 - `TEST_HOOKS.name = fn` exposes `fn` to tests as `window.__cowdreyPdf.name`.
 
 Tests: `tests/features/<module>.test.mjs` exporting `export default async (h) => { await h.test('…', async () => {…}) }`

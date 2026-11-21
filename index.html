@@ -1189,7 +1189,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
 // Cowdrey.PDF by Bradley Cowdrey (bradcowdrey.com). A PDF viewer and editor in the spirit of Cowdrey.MD.
 // Pages are shown with pdf.js (Apache 2.0; its legacy build, which also runs on older iPhones, iPads and Android web views) and saved with pdf-lib (MIT). Nothing leaves the device.
 'use strict';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.min.mjs';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs';
 // @cantoo/pdf-lib: pdf-lib (MIT) with password-protected PDFs added, so they can be saved with or without their password.
@@ -13327,11 +13327,13 @@ Object.assign(BATCH_STEPS, {
   pdfa: {
     label: 'Save as PDF/A', icon: 'archive', available: () => typeof pdfaConvert === 'function',
     defaults: () => ({ level: '2b' }),
-    options: (o) => bf.sel('level', 'Kind', o.level, [['2b', 'PDF/A-2b (recommended)'], ['1b', 'PDF/A-1b'], ['3b', 'PDF/A-3b']]),
+    options: (o) => bf.sel('level', 'Kind', o.level, [['2b', 'PDF/A-2b (recommended)'], ['2u', 'PDF/A-2u'], ['3b', 'PDF/A-3b']]),
     summary: (o) => 'PDF/A-' + o.level,
     run(ctx, o) {
       ctx.post.push(async (bytes) => {
-        const r = await pdfaConvert(bytes, { ...o, name: ctx.file.base });
+        const lv = /^[23][bu]$/.test(o.level) ? o.level : '2b';
+        const r = await pdfaConvert(bytes, { part: +lv[0], conformance: lv[1].toUpperCase(), name: ctx.file.base });
+        if (r && r.blocked === 'attachments') throw new Error('PDF/A-2b can’t keep attached files. Choose PDF/A-3b.');
         const out = r && r.bytes ? r.bytes : r instanceof Uint8Array ? r : null;
         if (!out) throw new Error('Could not make a PDF/A file');
         ctx.log('PDF/A-' + o.level);
@@ -13716,7 +13718,7 @@ async function batchStart(action, inputs, out) {
 /* ----- commands ----- */
 document.body.insertAdjacentHTML('beforeend', '<input type="file" id="batchInput" accept="application/pdf,.pdf" multiple hidden><input type="file" id="batchJson" accept="application/json,.json" hidden>');
 cmd('batch', { label: 'Actions…', rlabel: 'Actions', icon: 'list-video', enabled: () => !batchBusy, run: batchDialog });
-{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('exportText') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'batch'); else menuAdd('File', ['batch']); }
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? Math.max(fm[1].indexOf('picExportAll'), fm[1].indexOf('exportText')) : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'batch'); else menuAdd('File', ['batch']); }
 ribbonAdd('export', 'Batch', ['batch']);
 CHANGE_NAMES.optimize ||= 'Optimize';
 // Tests: run an action on PDFs given as base64, without the dialogs.
@@ -16042,7 +16044,7 @@ async function ffdBeforeLooks(L, out, form, ctx) {
       if (base && !wide) { if (base !== 'Helvetica') font = await std(base); else continue; }
       else { try { form.markFieldAsClean(f.ref); } catch {} ffdNeedLooks(L, out); continue; }
     } else {
-      if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, text, { family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
+      if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, { text, family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
       if (!font && wide && !isNew) { try { form.markFieldAsClean(f.ref); } catch {} ffdLookFailed(L, out, f); continue; } // its old look, not question marks
       if (!font && m.font && m.font !== 'Helv') font = await std(FFD_BASE[m.font]);
     }
@@ -17885,11 +17887,14 @@ FEATURE.beforeSave.push(async ({ copy }) => {
   return a === 'copy' && !copy ? { copy: true } : undefined;
 });
 // The forms package calls this when an empty signature field is clicked while filling in: true when handled here.
-FEATURE.onSigField = async ({ field }) => {
+// The forms package passes `picture` (places the picture alone); it treats any answer but 'picture' as handled.
+FEATURE.onSigField = async ({ field, picture }) => {
   const name = field && (field.name || field.fieldName || field.T);
   const a = await dialog('Sign this field', `<p>Sign${name ? ` “${esc(name)}”` : ''} with a certificate (a digital signature others can check), or place a picture of your signature only.</p>`, [{ label: 'Cancel' }, { label: 'Place signature picture only', value: 'picture' }, { label: 'Sign with certificate', value: 'cert', primary: true }]);
   if (a === 'cert') { await sgSign({ field: name }); return true; }
-  return a === 'picture' ? false : true;
+  if (a !== 'picture') return true;
+  if (typeof picture === 'function') { await picture(); return true; }
+  return false;
 };
 
 /* ---- commands ---- */
@@ -22815,7 +22820,7 @@ window.addEventListener('resize', () => { if (cmpOn() && cmp) { clearTimeout(cmp
 cmd('compare', { label: 'Compare with another PDF…', rlabel: 'Compare', icon: 'git-compare', enabled: () => has() && !cmpBusy, pressed: cmpOn, run: () => (cmpOn() ? cmpClose() : cmpPick()) });
 { const fm = MENUS.find(([t]) => t === 'File'); if (fm) { const i = fm[1].indexOf('merge'); fm[1].splice(i >= 0 ? i + 1 : fm[1].length, 0, 'compare'); } }
 // (Home is full on a 1440 px screen: its test keeps it so. Compare sits with the other reviewing tools.)
-ribbonAdd('markup', 'Review', ['compare']);
+ribbonAdd('export', 'Compare', ['compare']); // next to Insight (the Comment and Home tabs are full at 1440)
 
 addStyle(`
 .workspace { position: relative; }
@@ -24390,10 +24395,11 @@ cmd('acAutoTag', { label: 'Add tags automatically', rlabel: 'Add tags', icon: 't
 cmd('acAlt', { label: 'Alt text…', icon: 'image', enabled: has, run: acAltPanel });
 cmd('acOrder', { label: 'Reading order', icon: 'list-ordered', enabled: has, pressed: () => ACC.order, run: () => acOrderToggle() });
 cmd('acSaveUA', { label: 'Save as PDF/UA…', rlabel: 'Save PDF/UA', icon: 'file-check', enabled: has, run: acSaveUA });
-ribbonAdd('export', 'Accessibility', ['acCheck', 'acAutoTag', 'acAlt', 'acOrder', ...(C.bmHeadings ? ['bmHeadings'] : []), 'acSaveUA']);
+ribbonAdd('export', 'Accessibility', ['acCheck', 'acAutoTag', 'acAlt', 'acOrder', ...(C.bmHeadings ? ['bmHeadings'] : []), 'acSaveUA'], null, 'rows');
+RIBBON.export[1].find(([g]) => g === 'Accessibility')[3] = 'keep'; // small buttons on wide screens, big ones on a phone
 menuAdd('Edit', ['acCheck', 'acAutoTag', 'acAlt', 'acOrder']);
 // Save as PDF/UA goes with the other ways to save (File keeps Close last).
-{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('saveCopy') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'acSaveUA'); else ribbonAdd('export', 'Save', ['acSaveUA']); }
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? Math.max(fm[1].indexOf('savePdfa'), fm[1].indexOf('saveCopy')) : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'acSaveUA'); else ribbonAdd('export', 'Save', ['acSaveUA']); }
 TEST_HOOKS.acPlan = async () => (await acPlan(doc.pages));
 TEST_HOOKS.acCheck = async () => acRunCheck();
 TEST_HOOKS.acHeadings = () => acHeadingsList();
@@ -25237,7 +25243,8 @@ cmd('insTable', { label: 'Extract table…', rlabel: 'Extract table', icon: 'tab
 cmd('insFind', { label: 'Find tables…', rlabel: 'Find tables', icon: 'table-properties', enabled: has, run: insFindDialog });
 cmd('insSummary', { label: 'Summarize…', rlabel: 'Summarize', icon: 'text-quote', enabled: has, run: insSummaryDialog });
 cmd('insAsk', { label: 'Ask the document', rlabel: 'Ask', icon: 'message-circle-question', enabled: has, pressed: insAskOpen, run: () => insAskToggle() });
-ribbonAdd('export', 'Insight', ['insTable', 'insFind', 'insSummary', 'insAsk']);
+ribbonAdd('export', 'Insight', ['insTable', 'insFind', 'insSummary', 'insAsk'], null, 'rows');
+RIBBON.export[1].find(([g]) => g === 'Insight')[3] = 'keep'; // small buttons on wide screens, big ones on a phone
 menuAdd('Edit', ['insTable', 'insFind', 'insSummary', 'insAsk']);
 
 addStyle(`

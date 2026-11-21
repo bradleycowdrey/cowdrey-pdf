@@ -1471,10 +1471,11 @@ cmd('acAutoTag', { label: 'Add tags automatically', rlabel: 'Add tags', icon: 't
 cmd('acAlt', { label: 'Alt text…', icon: 'image', enabled: has, run: acAltPanel });
 cmd('acOrder', { label: 'Reading order', icon: 'list-ordered', enabled: has, pressed: () => ACC.order, run: () => acOrderToggle() });
 cmd('acSaveUA', { label: 'Save as PDF/UA…', rlabel: 'Save PDF/UA', icon: 'file-check', enabled: has, run: acSaveUA });
-ribbonAdd('export', 'Accessibility', ['acCheck', 'acAutoTag', 'acAlt', 'acOrder', ...(C.bmHeadings ? ['bmHeadings'] : []), 'acSaveUA']);
+ribbonAdd('export', 'Accessibility', ['acCheck', 'acAutoTag', 'acAlt', 'acOrder', ...(C.bmHeadings ? ['bmHeadings'] : []), 'acSaveUA'], null, 'rows');
+RIBBON.export[1].find(([g]) => g === 'Accessibility')[3] = 'keep'; // small buttons on wide screens, big ones on a phone
 menuAdd('Edit', ['acCheck', 'acAutoTag', 'acAlt', 'acOrder']);
 // Save as PDF/UA goes with the other ways to save (File keeps Close last).
-{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('saveCopy') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'acSaveUA'); else ribbonAdd('export', 'Save', ['acSaveUA']); }
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? Math.max(fm[1].indexOf('savePdfa'), fm[1].indexOf('saveCopy')) : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'acSaveUA'); else ribbonAdd('export', 'Save', ['acSaveUA']); }
 TEST_HOOKS.acPlan = async () => (await acPlan(doc.pages));
 TEST_HOOKS.acCheck = async () => acRunCheck();
 TEST_HOOKS.acHeadings = () => acHeadingsList();

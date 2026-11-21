@@ -4,7 +4,7 @@ A PDF viewer and editor by **Bradley Cowdrey** · [bradcowdrey.com](https://brad
 
 Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms and rearrange pages, with nothing leaving your device. Like Cowdrey.MD it is one self-contained web page, wrapped as an app for Mac, iPhone, iPad and Android.
 
-**Version 1.0.** Edit text and pictures in place, sign, fill forms, annotate, organise pages, OCR, redact, compress and share, on the web and in native apps for Mac, iPhone and iPad. See the [changelog](CHANGELOG.md).
+**Version 1.1.** Edit text in any language, OCR that cleans and straightens scans, certificate signing, real redaction, PDF/A, a form designer, compare, tables and summaries, accessibility tools and batch Actions, on top of everything in 1.0, on the web and in native apps for Mac, iPhone and iPad. See the [changelog](CHANGELOG.md).
 
 **Free. Forever.** Open source under the MIT License.
 
@@ -20,14 +20,22 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 
 ## What it does
 
-- **Read:** smooth scrolling pages, thumbnails, the PDF's outline, find with every match marked, zoom and fit width, dark mode for the app and an optional dark page.
-- **Mark up:** highlight selected text, draw, boxes, text, sticky notes (saved as real PDF comments), signatures (kept on this device for next time) and pictures. Select a mark to move or delete it; undo and redo.
-- **Edit the PDF itself:** click a line to retype it in its own font and colour; move, resize or delete pictures; change or delete comments from other apps; erase any area. Saving removes the old content from the file.
-- **Forms:** fill text fields, checkboxes, radio buttons and lists; the values are saved in the PDF.
-- **Pages:** rotate one or all, move, duplicate, insert blank, add other PDFs at the end, delete, extract a range as a new PDF; drag thumbnails to reorder.
-- **Passwords:** open protected PDFs; when saving, choose whether the copy keeps the password (and its restrictions). Passwords are never stored.
+- **Read:** smooth scrolling pages, thumbnails, the PDF's outline, find with every match marked, zoom and fit width, dark mode for the app and an optional dark page. Video and audio in a PDF play in place; portfolios list their files.
+- **Mark up:** highlight selected text, draw, boxes, text, sticky notes (saved as real PDF comments), stamps (your own pictures, "Approved by" stamps with the date, and a library of your stamps), file attachments, signatures (kept on this device for next time) and pictures. Select a mark to move or delete it; undo and redo.
+- **Edit the PDF itself, in any language:** click a line to retype it in its own font and colour; letters the PDF's font lacks are written in embedded Noto fonts, so Greek, Cyrillic, symbols and (after a one-time download) Chinese, Japanese, Korean, Hindi and Thai save as typed. Text inside forms and kerned lines can be edited too. Right-to-left text (Arabic, Hebrew) can't be saved yet.
+- **Pictures:** move, resize, turn or flip without re-encoding (a JPEG stays the same JPEG), crop for real, replace, and Enhance (brightness, contrast, sharpen, straighten, black and white, remove specks, resample). Export all pictures as a .zip. Deleted pictures leave the file.
+- **OCR:** recognize text in scans on the device. It straightens and cleans the page first, turns sideways and upside-down pages upright, reads up to three languages at once, lists uncertain words under Check words for correction, can replace the scan with a cleaned image, and can run when a scanned PDF opens.
+- **Forms:** fill fields; make new ones and edit the PDF's own (position, look, options, actions); number, date and percent formats, range checks and totals that work as you fill in; tab order; align, distribute, duplicate and copy to pages; a picture in a signature field; export and import form data and comments (XFDF, FDF).
+- **Sign with a certificate (PAdES):** import a .p12/.pfx or make a signing ID on the device, sign in a field or a box, optionally add a trusted timestamp (only a fingerprint is sent, to a server you choose). Signed PDFs are checked when they open, with a Signatures panel. Revocation is not checked and no list of trusted roots is built in.
+- **Redact and protect:** redaction removes the text, hidden text and tags, drawings and letters under the box, and offers to remove the words from bookmarks, comments, form values and properties. Passwords with printing, changes and copying choices, AES-256 or AES-128, and saved settings. A PDF its author limited is followed until you enter its permissions password.
+- **Pages:** rotate one or all, move, duplicate, insert blank, add other PDFs at the end, delete, extract a range as a new PDF; drag thumbnails to reorder. Watermarks, headers and footers and Bates numbers, for odd or even pages, with a different first page and saved presets.
+- **Compare two PDFs:** side by side, scrolled together, with added, removed and changed text, formatting and pictures; save a compare report.
+- **Insight, on the device:** extract tables to CSV or Excel, summarize a document from its own sentences, and ask the document to find the passages that best answer a question. Nothing is sent anywhere, and no AI model writes the answers.
+- **Accessibility:** tags are kept through page changes and added for new content; Add tags automatically, Alt text, Reading order, an Accessibility check with fixes, Save as PDF/UA, and bookmarks from headings.
+- **Archive and metadata:** Save as PDF/A (2b, 2u or 3b) with a built-in check (not a certified validator); Document properties edits title, author, keywords, language, dates, custom properties and how the PDF opens.
+- **Actions and Optimize:** run the same steps on many PDFs at once (Bates numbers across files, OCR, PDF/A, watermark, password, optimize and more); Optimize makes files smaller and never bigger.
 - **Export and share:** a page as an image, all the text, print, or share the PDF.
-- **Save:** Save PDF writes your changes into a PDF. With the pages unchanged, the original is kept (bookmarks, forms, links) and the mark-up is added; otherwise a new PDF is assembled.
+- **Save:** Save PDF writes your changes into a PDF. With the pages unchanged, the original is kept (bookmarks, forms, links) and the mark-up is added; otherwise a new PDF is assembled. A signed PDF is saved so its signatures stay valid when only form values changed, and you are warned before a save would break them.
 - **Library:** every PDF you open is kept on this device, with its mark-up, under Documents.
 
 ## Apps
@@ -36,7 +44,7 @@ The same app runs on the web and, wrapped with Tauri 2, as apps for Mac, iPhone,
 
 ## Built with
 
-pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web views work too), @cantoo/pdf-lib 2.11.1 (MIT; pdf-lib with password support) and Lucide (ISC).
+pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web views work too), @cantoo/pdf-lib 2.11.1 (MIT; pdf-lib with password support), @pdf-lib/fontkit (MIT), Tesseract.js (Apache 2.0), PKI.js and asn1js (BSD-3-Clause), node-forge (BSD-3-Clause or GPL-2.0), fflate (MIT) and Lucide (ISC). Fonts: Noto Sans, Noto Serif, Noto Sans Mono and Noto Sans Symbols, and Arimo, Tinos and Cousine for PDF/A, all under the SIL Open Font License 1.1 (shipped with the apps as `vendor/@expo-google-fonts/*/LICENSE_FONT.txt`).
 
 ## Where it lives
 
@@ -51,6 +59,6 @@ pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web v
 (cd desktop && npm ci)
 python3 build.py          # src/ -> index.html
 node tests/sample.mjs     # makes the test PDFs in tests/fixtures
-node tests/e2e.mjs        # 30 end-to-end tests in Chromium, including the Mac and phone app paths
+node tests/e2e.mjs        # about 480 end-to-end tests in Chromium, including the Mac and phone app paths
 (cd desktop && node build.mjs) && node tests/bundle.mjs   # the copy the apps ship, offline
 ```

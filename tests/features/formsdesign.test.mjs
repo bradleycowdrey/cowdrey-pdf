@@ -251,6 +251,10 @@ export default async (h) => {
     await p.click('[data-rt="forms"]'); await p.click('[data-cmd="ff_sig"]'); await drag(p, [72, 450], [252, 410]);
     await p.click('[data-cmd="ffPreview"]'); await p.waitForTimeout(200);
     const drawSig = async () => {
+      // with certificate signing in the app, it first asks which kind: the picture alone here
+      await p.waitForSelector('#dialog[open]');
+      const pick = p.locator('#dialog[open] button', { hasText: 'Place signature picture only' });
+      if (await pick.count()) await pick.click();
       await p.waitForSelector('#dialog[open] #sigPad');
       ok((await p.textContent('#dialog .ffd-signote')).includes('It is not a digital signature'), 'says what it is');
       const b = await p.$eval('#sigPad', (c) => { const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });

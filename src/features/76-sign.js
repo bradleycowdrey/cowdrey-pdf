@@ -1490,11 +1490,14 @@ FEATURE.beforeSave.push(async ({ copy }) => {
   return a === 'copy' && !copy ? { copy: true } : undefined;
 });
 // The forms package calls this when an empty signature field is clicked while filling in: true when handled here.
-FEATURE.onSigField = async ({ field }) => {
+// The forms package passes `picture` (places the picture alone); it treats any answer but 'picture' as handled.
+FEATURE.onSigField = async ({ field, picture }) => {
   const name = field && (field.name || field.fieldName || field.T);
   const a = await dialog('Sign this field', `<p>Sign${name ? ` “${esc(name)}”` : ''} with a certificate (a digital signature others can check), or place a picture of your signature only.</p>`, [{ label: 'Cancel' }, { label: 'Place signature picture only', value: 'picture' }, { label: 'Sign with certificate', value: 'cert', primary: true }]);
   if (a === 'cert') { await sgSign({ field: name }); return true; }
-  return a === 'picture' ? false : true;
+  if (a !== 'picture') return true;
+  if (typeof picture === 'function') { await picture(); return true; }
+  return false;
 };
 
 /* ---- commands ---- */

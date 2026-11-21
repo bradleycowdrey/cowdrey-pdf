@@ -139,7 +139,8 @@ export default async (h) => {
       const st = d.catalog.lookup(N('StructTreeRoot')), nums = st.lookup(N('ParentTree')).lookup(N('Nums')), arr = nums.lookup(1);
       ok(arr.get(1) === undefined || arr.get(1) === L.PDFNull || d.context.lookup(arr.get(1)) === L.PDFNull, 'no parent tree entry for the removed MCID');
       ok(d.context.lookup(arr.get(0)) instanceof L.PDFDict, 'the public line\'s entry stays');
-      const docEl = st.lookup(N('K')), kids = docEl.lookup(N('K'));
+      let docEl = st.lookup(N('K')); if (docEl instanceof L.PDFArray) docEl = docEl.lookup(0); // a list once the tags are rebuilt
+      const kids = docEl.lookup(N('K'));
       const kidList = kids instanceof L.PDFArray ? kids.asArray() : [kids];
       eq(kidList.map((k) => String(d.context.lookup(k).get(N('S')))), ['/P'], 'the empty element went');
       // text: the word, and the X it partly covered, are gone; the rest stays

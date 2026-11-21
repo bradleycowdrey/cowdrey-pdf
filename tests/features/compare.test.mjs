@@ -31,9 +31,9 @@ export default async (h) => {
   await test('compare: the menu and ribbon open the picker; the chosen PDF is Old, the open one New; the changes are exactly what changed', async () => {
     const p = await open(); await openPdf(p, tmp, 'Invoice v2.pdf');
     ok(await p.evaluate(() => window.__cowdreyPdf.menus().find(([t]) => t === 'File')[1].includes('compare')), 'in the File menu');
-    ok(await p.evaluate(() => window.__cowdreyPdf.ribbon().markup[1].some(([g, ids]) => g === 'Review' && ids.includes('compare'))), 'on the Comment tab, in Review');
+    ok(await p.evaluate(() => window.__cowdreyPdf.ribbon().export[1].some(([g, ids]) => g === 'Compare' && ids.includes('compare'))), 'on the Export tab, next to Insight');
     const requests = []; p.on('request', (r) => { if (!/^(data|blob):/.test(r.url())) requests.push(r.url()); });
-    await p.click('[data-rt="markup"]'); await p.click('#ribbonBody [data-cmd="compare"]');
+    await p.click('[data-rt="export"]'); await p.click('#ribbonBody [data-cmd="compare"]');
     await p.setInputFiles('#cmpInput', { name: 'Invoice v1.pdf', mimeType: 'application/pdf', buffer: OLD });
     await p.waitForSelector('#dialog[open] .cmp-dlg');
     eq(await p.$eval('[data-role="new"]', (e) => e.textContent), 'Invoice v2'); eq(await p.$eval('[data-role="old"]', (e) => e.textContent), 'Invoice v1');

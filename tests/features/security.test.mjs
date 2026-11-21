@@ -111,7 +111,9 @@ export default async (h) => {
       ok(await p.$('#ribbonBody [data-cmd="protOwnerPw"]'), 'Enter permissions password on the Protect tab');
       eq(await en('protUnsecure'), false, 'Remove security needs the permissions password');
       // and in Document properties, under Security
-      await run(p, 'docProps'); await p.waitForSelector('#dialog[open] .prot-unlock');
+      await run(p, 'docProps'); await p.waitForSelector('#dialog[open] .prot-unlock', { state: 'attached' });
+      if (await p.$('#dialog [data-di-tab="file"]')) await p.click('#dialog [data-di-tab="file"]'); // the File tab holds Security
+      await p.waitForSelector('#dialog[open] .prot-unlock');
       await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/sec-docinfo.png' });
       await p.click('#dialog .prot-unlock');
       await p.waitForSelector('#dialog[open] #dlgInput'); eq(await p.textContent('#dialog h2'), 'Enter permissions password');

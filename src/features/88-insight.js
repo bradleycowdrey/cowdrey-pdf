@@ -786,7 +786,8 @@ cmd('insTable', { label: 'Extract table…', rlabel: 'Extract table', icon: 'tab
 cmd('insFind', { label: 'Find tables…', rlabel: 'Find tables', icon: 'table-properties', enabled: has, run: insFindDialog });
 cmd('insSummary', { label: 'Summarize…', rlabel: 'Summarize', icon: 'text-quote', enabled: has, run: insSummaryDialog });
 cmd('insAsk', { label: 'Ask the document', rlabel: 'Ask', icon: 'message-circle-question', enabled: has, pressed: insAskOpen, run: () => insAskToggle() });
-ribbonAdd('export', 'Insight', ['insTable', 'insFind', 'insSummary', 'insAsk']);
+ribbonAdd('export', 'Insight', ['insTable', 'insFind', 'insSummary', 'insAsk'], null, 'rows');
+RIBBON.export[1].find(([g]) => g === 'Insight')[3] = 'keep'; // small buttons on wide screens, big ones on a phone
 menuAdd('Edit', ['insTable', 'insFind', 'insSummary', 'insAsk']);
 
 addStyle(`

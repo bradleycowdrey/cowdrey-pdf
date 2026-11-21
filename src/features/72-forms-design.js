@@ -1358,7 +1358,7 @@ async function ffdBeforeLooks(L, out, form, ctx) {
       if (base && !wide) { if (base !== 'Helvetica') font = await std(base); else continue; }
       else { try { form.markFieldAsClean(f.ref); } catch {} ffdNeedLooks(L, out); continue; }
     } else {
-      if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, text, { family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
+      if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, { text, family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
       if (!font && wide && !isNew) { try { form.markFieldAsClean(f.ref); } catch {} ffdLookFailed(L, out, f); continue; } // its old look, not question marks
       if (!font && m.font && m.font !== 'Helv') font = await std(FFD_BASE[m.font]);
     }

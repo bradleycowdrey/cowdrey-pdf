@@ -39,7 +39,9 @@ export default async (h) => {
     const hit = await p.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return !!(e && e.closest('.ffd-sighit')); }, [x, y]);
     ok(!hit, 'nothing to click over the signed field');
     // the empty one still takes a picture
-    await p.click('.ffd-layer .ffd-sighit'); await p.waitForSelector('#dialog[open] #sigPad');
+    await p.click('.ffd-layer .ffd-sighit'); await p.waitForSelector('#dialog[open]');
+    { const pick = p.locator('#dialog[open] button', { hasText: 'Place signature picture only' }); if (await pick.count()) await pick.click(); }
+    await p.waitForSelector('#dialog[open] #sigPad');
     const b = await p.$eval('#sigPad', (c) => { const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
     await p.mouse.move(b[0] + 40, b[1] + b[3] / 2); await p.mouse.down(); await p.mouse.move(b[0] + b[2] - 40, b[1] + 20, { steps: 6 }); await p.mouse.up();
     await p.click('#dialog .btn.primary'); await p.waitForTimeout(250);
