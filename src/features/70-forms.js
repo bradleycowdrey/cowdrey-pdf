@@ -7,6 +7,9 @@
    screen and takes it out of the page when saving (the core does this for comments), and an 'ffmod' document mark
    that takes the field out of the form. Renaming one and changing its tooltip, required and read-only settings is an
    'ffmod' document mark too. 'ffflat' (a document mark) flattens the form when saving.
+   The form designer (72-forms-design.js) edits fields already in the PDF through 'ffx' proxy marks (one for each
+   widget), adds appearance, format, validation, calculation and action settings to both kinds, tab order, layout
+   tools, signature pictures and XFDF; this file calls into it where the two meet (names start with ffd).
    Recognize form looks for blank lines (underscores, drawn lines), empty boxes and ☐ characters and proposes fields
    there; they are only added when you click them, or Add all. */
 const FF_KINDS = {
@@ -30,13 +33,14 @@ let ffLastRadio = null;      // the group the next radio button joins
 const ffIsTool = () => /^ff_/.test(app.dataset.tool || '');
 const ffAllMarks = () => doc ? Object.entries(doc.marks).filter(([k]) => k !== '__doc').flatMap(([, l]) => l) : [];
 const ffMarks = () => ffAllMarks().filter((m) => m.type === 'ff');
+const ffIsField = (m) => !!m && (m.type === 'ff' || m.type === 'ffx'); // a new field, or a field from the PDF being changed
 const ffMods = () => doc ? docMarks().filter((m) => m.type === 'ffmod') : [];
 const ffFlat = () => !!doc && docMarks().some((m) => m.type === 'ffflat');
 const ffModOf = (name) => ffMods().find((m) => m.name === name);
 const ffShown = (name) => { const m = ffModOf(name); return m && m.newName ? m.newName : name; };
 const ffBox = (m) => [Math.min(m.x1, m.x2), Math.min(m.y1, m.y2), Math.max(m.x1, m.x2), Math.max(m.y1, m.y2)];
 const ffClean = (s) => String(s || '').trim().replace(/\./g, '_');
-const ffFind = (id) => { for (const v of views) { const m = marksOf(v.entry).find((x) => x.id === id); if (m) return { v, m }; } for (const [k, l] of Object.entries(doc.marks)) { if (k === '__doc') continue; const m = l.find((x) => x.id === id); if (m) return { v: null, m, key: k }; } return null; };
+const ffFind = (id) => { if (!doc) return null; for (const v of views) { const m = marksOf(v.entry).find((x) => x.id === id); if (m) return { v, m }; } for (const [k, l] of Object.entries(doc.marks)) { if (k === '__doc') continue; const m = l.find((x) => x.id === id); if (m) return { v: null, m, key: k }; } return null; };
 
 // Every name in use: fields in the PDF (renamed ones by their new name, deleted ones not) and new fields.
 function ffNames(exceptId) {
@@ -70,7 +74,7 @@ FEATURE.onDocShown.push(() => { ffSelX = null; ffProposals = []; ffBar(); ffLast
    tab. Otherwise (Select, Esc, another tab, or Fill in) they can be filled in at once, like the fields already in
    the PDF; what is typed is the field's value. */
 const ffDesign = () => S.ribbon === 'forms' && ffIsTool();
-const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list']);
+const FF_FILLABLE = new Set(['text', 'date', 'check', 'radio', 'combo', 'list', 'sig']);
 function ffRedrawAll() { selectMark(null); views.forEach((v) => { if (v.rendered) { drawMarks(v); ffLayer(v); } }); }
 (FEATURE.onTab ||= []).push(() => { ffFillOn = false; ffRedrawAll(); });
 // Choosing a form tool designs the form; Select (or Esc) fills it in.
@@ -85,32 +89,53 @@ function ffPreview() {
 }
 Object.assign(TOOL_HINTS, { ff_edit: 'Click a field to select it; double-click for its properties' });
 for (const k of Object.keys(FF_KINDS)) TOOL_HINTS['ff_' + k] = 'Drag on the page';
-// An HTML control over a new field, to fill it in. A change is kept like any other (undo takes it back).
+// An HTML control over a new field (or a field from the PDF being changed), to fill it in. A change is kept like any
+// other (undo takes it back). A field with a number, date… format shows its value formatted, and the value as typed
+// while it has the focus; calculations run after each change (see the form designer).
 function ffFillControl(m, fs) {
   let el;
-  if (m.kind === 'text' || m.kind === 'date') {
-    el = document.createElement(m.multi ? 'textarea' : 'input'); el.value = m.val || '';
-    if (m.max > 0) el.maxLength = m.max;
+  const fmt = typeof ffdFormatter === 'function' ? ffdFormatter(m) : null;
+  if (m.kind === 'sig') {
+    el = document.createElement('button'); el.type = 'button';
+    if (m.pic) { const im = document.createElement('img'); im.src = m.pic.data; im.alt = ''; el.appendChild(im); }
+    else el.textContent = 'Sign here';
+    el.addEventListener('click', () => { if (typeof ffdSignField === 'function') ffdSignField(m); });
+  } else if (m.kind === 'text' || m.kind === 'date') {
+    el = document.createElement(m.multi ? 'textarea' : 'input'); el.value = fmt && m.val !== '' && m.val != null ? fmt(m.val) : m.val || '';
+    if (m.max > 0 && !fmt) el.maxLength = m.max;
+    if (m.pw && el.tagName === 'INPUT') el.type = 'password';
     if (m.kind === 'date') el.placeholder = m.fmt || FF_DATE_FORMATS[0];
+    if (m.nospell) el.spellcheck = false;
+    if (fmt) { // the value as typed while editing it, formatted otherwise
+      el.addEventListener('focus', () => { const all = el.selectionStart === 0 && el.selectionEnd === el.value.length; el.value = m.val || ''; if (m.max > 0) el.maxLength = m.max; if (all) el.select(); });
+      el.addEventListener('blur', () => { el.removeAttribute('maxlength'); if (el.value === (m.val || '') && m.val) el.value = fmt(m.val); });
+    }
   } else if (m.kind === 'check' || m.kind === 'radio') {
     el = document.createElement('input'); el.type = m.kind === 'check' ? 'checkbox' : 'radio'; el.checked = !!m.val;
   } else {
     el = document.createElement('select'); if (m.kind === 'list') el.size = Math.max(2, (m.opts || []).length);
+    if (m.kind === 'list' && m.multisel) el.multiple = true;
     for (const o of m.opts || []) el.appendChild(Object.assign(document.createElement('option'), { value: o, textContent: o }));
     el.value = m.val || ''; if (!(m.opts || []).includes(m.val)) el.selectedIndex = -1;
   }
   el.className = 'ff-ctl ff-ctl-' + m.kind; el.style.fontSize = fs + 'px';
-  el.setAttribute('aria-label', m.tip || m.name); el.dataset.field = m.name;
+  if (m.q && el.tagName !== 'SELECT') el.style.textAlign = ['left', 'center', 'right'][m.q] || '';
+  if (m.color && m.kind !== 'sig') el.style.color = m.color;
+  el.setAttribute('aria-label', m.tip || (m.type === 'ffx' ? ffShown(m.name) : m.name)); el.dataset.field = m.type === 'ffx' ? ffShown(m.name) : m.name;
   if (m.ro) el.disabled = true;
   if (m.req) el.required = true;
   el.addEventListener('pointerdown', (e) => e.stopPropagation()); // fill it in, don't select or move it
-  el.addEventListener('change', () => {
+  if (m.kind !== 'sig') el.addEventListener('change', () => {
     const before = snapshot(), val = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
     if (m.kind !== 'radio' && m.val === val) return; // kept already (by a save while it still had focus)
-    if (m.kind === 'radio') { for (const r of ffMarks()) if (r.kind === 'radio' && r.name === m.name) r.val = r.id === m.id; }
-    else m.val = val;
+    // Format and validation: a value that is not allowed is not kept (as other apps do), and says why
+    if (typeof ffdCheckValue === 'function' && ffdCheckValue(m, val) === false) { el.value = m.val || ''; return; }
+    const same = (r) => r !== m && r.type === m.type && r.kind === m.kind && r.name === m.name; // one field, several places
+    if (m.kind === 'radio') { for (const r of ffAllMarks()) if (r.type === m.type && r.kind === 'radio' && r.name === m.name) r.val = r.id === m.id; }
+    else { m.val = val; for (const r of ffAllMarks()) if (same(r)) r.val = val; }
+    if (typeof ffdAfterFill === 'function') ffdAfterFill(m);
     changed(before);
-    if (m.kind === 'radio') views.forEach((v) => v.rendered && drawMarks(v));
+    views.forEach((v) => v.rendered && drawMarks(v));
   });
   return el;
 }
@@ -118,11 +143,13 @@ function ffFillControl(m, fs) {
 // again with the marks.
 function ffFillLayer(v) {
   let lay = v.el.querySelector('.ff-fill-layer');
-  const list = !doc || ffFlat() || ffDesign() ? [] : marksOf(v.entry).filter((m) => m.type === 'ff' && FF_FILLABLE.has(m.kind));
+  const list = !doc || ffFlat() || ffDesign() ? [] : marksOf(v.entry).filter((m) => ffIsField(m) && FF_FILLABLE.has(m.kind));
   if (!list.length) { if (lay) lay.remove(); return; }
   if (!lay) { lay = document.createElement('div'); lay.className = 'ff-fill-layer'; v.el.appendChild(lay); }
-  if (lay.contains(document.activeElement) && lay.__sig === JSON.stringify(list) + scale) return; // typing in it: leave it
-  lay.__sig = JSON.stringify(list) + scale;
+  const sig = JSON.stringify(list) + scale;
+  if (lay.contains(document.activeElement) && lay.__sig === sig) return; // typing in it: leave it
+  if (lay.__sig === sig && lay.children.length === list.length) return; // nothing to change
+  lay.__sig = sig;
   const had = [...lay.children].indexOf(document.activeElement); // a tick moved focus nowhere: keep it on that field
   lay.innerHTML = '';
   for (const m of list) {
@@ -138,42 +165,53 @@ function ffFillLayer(v) {
   if (had >= 0 && lay.children[had]) lay.children[had].focus({ preventScroll: true });
 }
 
-/* ---- drawing new fields (they look as they will once saved) ---- */
+/* ---- drawing new fields (they look as they will once saved), and fields from the PDF being changed ---- */
 function ffDraw(v, m, svg) {
   ffHookSvg(v, svg);
   // A thumbnail shows the field as it will print: no name tag, no handles, no tint (v.thumb).
-  const flat = ffFlat() || !!v.thumb, filling = !flat && !ffDesign() && FF_FILLABLE.has(m.kind);
+  const flat = ffFlat() || !!v.thumb, filling = !flat && !ffDesign() && FF_FILLABLE.has(m.kind), s = scale;
   const [X0, Y0, X1, Y1] = ffBox(m);
   const pts = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]].map(([x, y]) => toView(v, x, y));
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-  const g = svgEl('g', { class: (filling ? 'ff-fill ' : 'mk ') + 'ff-mk' + (flat ? ' ff-flat' : '') });
+  const g = svgEl('g', { class: (filling ? 'ff-fill ' : 'mk ') + 'ff-mk' + (flat ? ' ff-flat' : '') + (m.type === 'ffx' ? ' ffx-mk' : '') });
+  const shownName = m.type === 'ffx' ? ffShown(m.name) : m.name;
+  const bgOf = (dflt) => (m.bg ? m.bg : dflt), bcOf = (dflt) => (m.bc === '' ? 'none' : m.bc || dflt), bw = (m.bw ?? 1) * s;
   const d = ((totalRot(v) - (m.rot || 0)) % 360 + 360) % 360;
   const lw = d % 180 ? h : w, lh = d % 180 ? w : h, cx = x + w / 2, cy = y + h / 2;
   const inner = svgEl('g', { transform: `rotate(${d} ${cx} ${cy}) translate(${cx - lw / 2} ${cy - lh / 2})` });
-  const s = scale, fs = (m.size || (m.kind === 'list' ? 9 : Math.min(12, Math.max(6, (lh / s) * .62)))) * s;
-  const txt = (str, tx, ty, attrs = {}) => { const t = svgEl('text', { x: tx, y: ty, 'font-size': fs, 'font-family': 'Helvetica, Arial, sans-serif', fill: '#111', ...attrs }); t.textContent = str; return t; };
+  const fs = (m.size || (m.kind === 'list' ? 9 : Math.min(12, Math.max(6, (lh / s) * .62)))) * s;
+  const family = m.font === 'TiRo' ? '"Times New Roman", Times, serif' : m.font === 'Cour' ? '"Courier New", Courier, monospace' : 'Helvetica, Arial, sans-serif';
+  const fmt = typeof ffdFormatter === 'function' ? ffdFormatter(m) : null;
+  const txt = (str, tx, ty, attrs = {}) => { const t = svgEl('text', { x: tx, y: ty, 'font-size': fs, 'font-family': family, fill: m.color || '#111', ...attrs }); t.textContent = str; return t; };
   const clipId = 'ffc' + m.id;
   const clip = svgEl('clipPath', { id: clipId }); clip.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh })); inner.appendChild(clip);
   const body = svgEl('g', { 'clip-path': `url(#${clipId})` });
   if (filling) {
-    if (m.kind !== 'radio') inner.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh, fill: m.kind === 'check' || m.kind === 'list' ? '#fff' : 'none', stroke: m.kind === 'check' ? '#000' : FF_BORDER, 'stroke-width': s }));
+    if (m.kind !== 'radio') inner.appendChild(svgEl('rect', { x: 0, y: 0, width: lw, height: lh, fill: bgOf(m.kind === 'check' || m.kind === 'list' ? '#fff' : 'none'), stroke: bcOf(m.kind === 'check' ? '#000' : FF_BORDER), 'stroke-width': bw }));
     g.appendChild(inner);
+    if (typeof ffdDecorate === 'function') ffdDecorate(v, m, g, x, y, w, h);
     return g;
   }
   if (m.kind === 'radio') {
     inner.appendChild(svgEl('rect', { class: 'ff-hit', x: 0, y: 0, width: lw, height: lh, fill: flat ? 'transparent' : 'rgba(174, 23, 71, .06)' }));
     const r = Math.min(lw, lh) / 2 - .5 * s;
-    inner.appendChild(svgEl('circle', { cx: lw / 2, cy: lh / 2, r, fill: '#fff', stroke: '#000', 'stroke-width': s }));
-    if (m.val) inner.appendChild(svgEl('circle', { cx: lw / 2, cy: lh / 2, r: r * .45, fill: '#000' }));
+    inner.appendChild(svgEl('circle', { cx: lw / 2, cy: lh / 2, r, fill: bgOf('#fff'), stroke: bcOf('#000'), 'stroke-width': bw }));
+    if (m.val && (!m.style || m.style === 'circle')) inner.appendChild(svgEl('circle', { cx: lw / 2, cy: lh / 2, r: r * .45, fill: m.color || '#000' }));
+    else if (m.val && typeof ffdStyleMark === 'function') inner.appendChild(ffdStyleMark(m.style, lw, lh, m.color || '#000'));
   } else {
     const fill = m.kind === 'button' ? '#BFBFBF' : m.kind === 'check' ? '#fff' : 'rgba(174, 23, 71, .06)';
-    inner.appendChild(svgEl('rect', { class: 'ff-box', x: 0, y: 0, width: lw, height: lh, fill: flat && fill.startsWith('rgba') ? 'transparent' : fill, stroke: m.kind === 'check' || m.kind === 'button' ? '#000' : FF_BORDER, 'stroke-width': s }));
-    if (m.kind === 'check' && m.val) inner.appendChild(svgEl('path', { d: `M${lw * .2} ${lh * .52} L${lw * .42} ${lh * .74} L${lw * .8} ${lh * .26}`, fill: 'none', stroke: '#000', 'stroke-width': Math.max(1, lw * .12) }));
+    inner.appendChild(svgEl('rect', { class: 'ff-box', x: 0, y: 0, width: lw, height: lh, fill: m.bg ? m.bg : flat && fill.startsWith('rgba') ? 'transparent' : fill, stroke: bcOf(m.kind === 'check' || m.kind === 'button' ? '#000' : FF_BORDER), 'stroke-width': bw }));
+    if (m.kind === 'check' && m.val && m.style && m.style !== 'check' && typeof ffdStyleMark === 'function') inner.appendChild(ffdStyleMark(m.style, lw, lh, m.color || '#000'));
+    else if (m.kind === 'check' && m.val) inner.appendChild(svgEl('path', { d: `M${lw * .2} ${lh * .52} L${lw * .42} ${lh * .74} L${lw * .8} ${lh * .26}`, fill: 'none', stroke: m.color || '#000', 'stroke-width': Math.max(1, lw * .12) }));
     if (m.kind === 'text' || m.kind === 'date') {
-      const shown = m.val || (m.kind === 'date' && !flat ? m.fmt || FF_DATE_FORMATS[0] : '');
-      if (m.multi && m.val) m.val.split('\n').forEach((line, k) => body.appendChild(txt(line, 2 * s, fs * (1 + k * 1.15) + s)));
-      else if (shown) body.appendChild(txt(shown, 2 * s, lh / 2 + fs * .35, m.val ? {} : { fill: '#8C8C99' }));
+      const val = m.val && fmt ? fmt(m.val) : m.pw && m.val ? '•'.repeat(String(m.val).length) : m.val;
+      const shown = val || (m.kind === 'date' && !flat ? m.fmt || FF_DATE_FORMATS[0] : '');
+      const anchor = m.q === 1 ? { 'text-anchor': 'middle' } : m.q === 2 ? { 'text-anchor': 'end' } : {}, tx = m.q === 1 ? lw / 2 : m.q === 2 ? lw - 2 * s : 2 * s;
+      if (m.comb && m.max > 0 && val && !m.multi) [...String(val)].slice(0, m.max).forEach((c, k) => body.appendChild(txt(c, (k + .5) * lw / m.max, lh / 2 + fs * .35, { 'text-anchor': 'middle' })));
+      else if (m.multi && val) String(val).split('\n').forEach((line, k) => body.appendChild(txt(line, tx, fs * (1 + k * 1.15) + s, anchor)));
+      else if (shown) body.appendChild(txt(shown, tx, lh / 2 + fs * .35, m.val ? anchor : { fill: '#8C8C99', ...anchor }));
+      if (m.comb && m.max > 1) for (let k = 1; k < m.max; k++) inner.appendChild(svgEl('line', { x1: k * lw / m.max, y1: 0, x2: k * lw / m.max, y2: lh, stroke: bcOf(FF_BORDER), 'stroke-width': s * .6 }));
     }
     if (m.kind === 'combo') {
       if (m.val) body.appendChild(txt(m.val, 2 * s, lh / 2 + fs * .35));
@@ -185,12 +223,14 @@ function ffDraw(v, m, svg) {
       body.appendChild(txt(o, 2 * s, ty + fs * .9));
     });
     if (m.kind === 'button') body.appendChild(txt(m.label || 'Button', lw / 2, lh / 2 + fs * .35, { 'text-anchor': 'middle' }));
-    if (m.kind === 'sig' && !flat) body.appendChild(txt('Sign here', 4 * s, lh - 6 * s, { fill: '#8C8C99', 'font-size': Math.min(12 * s, lh * .4) }));
+    if (m.kind === 'sig' && m.pic) { const k = Math.min(lw / m.pic.w, lh / m.pic.h); body.appendChild(svgEl('image', { href: m.pic.data, x: (lw - m.pic.w * k) / 2, y: (lh - m.pic.h * k) / 2, width: m.pic.w * k, height: m.pic.h * k })); }
+    else if (m.kind === 'sig' && !flat) body.appendChild(txt('Sign here', 4 * s, lh - 6 * s, { fill: '#8C8C99', 'font-size': Math.min(12 * s, lh * .4) }));
   }
   inner.appendChild(body);
   g.appendChild(inner);
   // The field's name, while a form tool is chosen (not part of the PDF)
-  if (!flat) g.appendChild(ffTag(x, y, m.name));
+  if (!flat) g.appendChild(ffTag(x, y, shownName));
+  if (typeof ffdDecorate === 'function' && !v.thumb) ffdDecorate(v, m, g, x, y, w, h);
   if (!v.thumb && selMark && selMark.id === m.id) for (const [k, [hx, hy]] of pts.entries()) {
     const hd = svgEl('rect', { class: 'ff-handle ui-only', x: hx - 5, y: hy - 5, width: 10, height: 10, rx: 2 });
     hd.addEventListener('pointerdown', (e) => ffResize(e, v, m, k));
@@ -234,7 +274,8 @@ function ffResize(e, v, m, k) {
   const corners = [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]], fixed = corners[(k + 2) % 4];
   let moved = false;
   const move = (ev) => {
-    const [px, py] = toPdf(v, ...localPoint(ev, v));
+    let [px, py] = toPdf(v, ...localPoint(ev, v));
+    if (S.ffdSnap) { px = Math.round(px / 4) * 4; py = Math.round(py / 4) * 4; } // Snap to grid (Forms tab, Layout)
     m.x1 = fixed[0]; m.y1 = fixed[1]; m.x2 = px; m.y2 = py;
     if (Math.abs(m.x2 - m.x1) < 6) m.x2 = m.x1 + (m.x2 < m.x1 ? -6 : 6);
     if (Math.abs(m.y2 - m.y1) < 6) m.y2 = m.y1 + (m.y2 < m.y1 ? -6 : 6);
@@ -305,6 +346,7 @@ for (const [kind, K] of Object.entries(FF_KINDS)) {
   cmd(t, { label: K.label, icon: K.icon, enabled: has, pressed: () => app.dataset.tool === t, run: () => { setTool(t); ffLoadKnown(); } });
 }
 FEATURE.tools.ff_edit = { down: (e, v) => { // Edit fields: pick a new field (the fields already in the PDF have their own layer)
+  if (typeof ffdEditDown === 'function' && ffdEditDown(e, v)) return; // several fields: Shift-click, or a box dragged round them
   const hit = e.target.closest && e.target.closest('.ff-mk');
   ffSelectX(null);
   if (!hit) { selectMark(null); return; }
@@ -332,13 +374,15 @@ function ffLayer(v) {
   s.setAttribute('viewBox', `0 0 ${v.viewport.width} ${v.viewport.height}`);
   s.innerHTML = '';
   const gone = ffGone(v.entry), flat = ffFlat();
+  const proxied = new Set(marksOf(v.entry).filter((m) => m.type === 'ffx').map((m) => m.ref));
+  if (typeof ffdSync === 'function') ffdSync(v, proxied);
   for (const a of v.ffWidgets || []) {
-    if (gone.has(a.id) || flat) continue;
+    if (gone.has(a.id) || flat || proxied.has(a.id)) continue;
     const [x0, y0, x1, y1] = a.rect, pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => toView(v, x, y));
     const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), x = Math.min(...xs), y = Math.min(...ys);
     const g = svgEl('g', { class: 'ffx-g' });
     const r = svgEl('rect', { class: 'ffx' + (ffSelX === a.fieldName ? ' sel' : ''), x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y });
-    r.dataset.name = a.fieldName; g.appendChild(r);
+    r.dataset.name = a.fieldName; r.dataset.ref = a.id; g.appendChild(r);
     g.appendChild(ffTag(x, y, ffShown(a.fieldName)));
     s.appendChild(g);
   }
@@ -361,6 +405,8 @@ function ffLayerDown(e, v) {
   if (pg) { e.preventDefault(); e.stopPropagation(); ffAddProposals([pg.dataset.pid]); return; }
   const r = e.target.closest('.ffx'); if (!r || !ffIsTool()) return;
   e.preventDefault(); e.stopPropagation();
+  // Shift-click adds it to the selection; a drag moves it (the field becomes one the designer changes)
+  if (typeof ffdOutlineDown === 'function' && ffdOutlineDown(e, v, r.dataset.ref, r.dataset.name)) return;
   selectMark(null); ffSelectX(r.dataset.name);
   if (ffIsDouble(e, 'x:' + r.dataset.name)) ffOnRelease(e, () => ffPropsExisting(r.dataset.name));
 }
@@ -376,8 +422,9 @@ FEATURE.afterRender.push((v) => {
   if (ms && !ms.__ffObs) { ms.__ffObs = new MutationObserver(() => ffLayer(v)); ms.__ffObs.observe(ms, { childList: true }); }
 });
 
-async function ffDeleteExisting(name) {
-  const before = snapshot(), done = new Set();
+// quiet: part of a bigger change (the caller takes the snapshot and says what was done)
+async function ffDeleteExisting(name, quiet) {
+  const before = quiet ? null : snapshot(), done = new Set();
   for (const entry of doc.pages) {
     const key = pageKey(entry); if (done.has(key)) continue; done.add(key);
     let annots = []; try { annots = await (await pageOf(entry)).getAnnotations({ intent: 'display' }); } catch {}
@@ -385,12 +432,19 @@ async function ffDeleteExisting(name) {
     for (const a of annots) if (a.annotationType === pdfjs.AnnotationType.WIDGET && a.fieldName === name && !gone.has(a.id)) marksOf(entry).push({ id: uid(), type: 'ae', ref: a.id, rect: a.rect, subtype: 'Widget', deleted: true });
   }
   const md = ffModOf(name); if (md) md.del = true; else docMarks().push({ id: uid(), type: 'ffmod', name, del: true });
-  ffSelX = null; changed(before);
+  for (const l of Object.values(doc.marks)) for (let k = l.length - 1; k >= 0; k--) if (l[k] && l[k].type === 'ffx' && l[k].name === name) l.splice(k, 1);
+  if (selMark && !selectedMark()) selMark = null;
+  ffSelX = null; if (quiet) return;
+  changed(before);
+  views.forEach((v) => v.rendered && drawMarks(v));
   syncHiddenComments();
   toast('Field deleted');
 }
 function ffDeleteSelected() {
   if (ffSelX) return ffDeleteExisting(ffSelX);
+  const m = selMark && selectedMark();
+  if (m && m.type === 'ffx') return ffDeleteExisting(m.name);
+  if (typeof ffdSelCount === 'function' && ffdSelCount() > 1) return ffdDeleteSelection();
   if (selMark) deleteSelected();
 }
 document.addEventListener('keydown', (e) => {
@@ -404,78 +458,14 @@ document.addEventListener('keydown', (e) => {
 const ffChk = (id, label, on) => `<label class="ff-chk"><input type="checkbox" id="${id}"${on ? ' checked' : ''}> ${esc(label)}</label>`;
 const ffInp = (id, label, value, attrs = '') => `<label class="field"><span>${esc(label)}</span><input id="${id}" value="${esc(value ?? '')}" autocomplete="off" ${attrs}></label>`;
 const ffSel = (id, label, opts, value) => `<label class="field"><span>${esc(label)}</span><select id="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(value) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
-async function ffProps(id) {
-  const f = ffFind(id); if (!f || f.m.type !== 'ff') return;
-  const m = f.m, k = m.kind, K = FF_KINDS[k];
-  const sizes = FF_SIZES.map((n) => [n, n ? n + ' pt' : 'Auto']);
-  let html = `<div class="ff-props">${ffInp('ffName', k === 'radio' ? 'Group name' : 'Name', m.name)}${ffInp('ffTip', 'Tooltip', m.tip, 'placeholder="Shown on hover"')}`;
-  if (k === 'text') html += ffInp('ffVal', 'Default value', m.val);
-  if (k === 'date') html += ffSel('ffFmt', 'Date format', FF_DATE_FORMATS.map((x) => [x, x]), m.fmt) + ffInp('ffVal', 'Default value', m.val, `placeholder="${esc(m.fmt)}"`);
-  if (k === 'combo' || k === 'list') html += `<label class="field ff-wide"><span>Options, one per line</span><textarea id="ffOpts" rows="4">${esc((m.opts || []).join('\n'))}</textarea></label>` + ffInp('ffVal', 'Default choice', m.val, 'placeholder="None"');
-  if (k === 'check' || k === 'radio') html += ffInp('ffExp', 'Export value', m.exp);
-  if (k === 'button') html += ffInp('ffLabel', 'Label', m.label) + ffSel('ffAct', 'When clicked', [['none', 'Nothing'], ['reset', 'Reset the form'], ['url', 'Open a link']], m.act) + ffInp('ffUrl', 'Link', m.url, 'placeholder="https://"');
-  if (k === 'text') html += ffInp('ffMax', 'Maximum characters', m.max || '', 'type="number" min="0" placeholder="No limit"');
-  if (k !== 'check' && k !== 'radio' && k !== 'sig') html += ffSel('ffSize', 'Font size', sizes, m.size || 0);
-  html += `<div class="ff-checks ff-wide">${k === 'text' ? ffChk('ffMulti', 'Multiple lines', m.multi) : ''}${k === 'check' ? ffChk('ffOn', 'Ticked to start with', m.val) : ''}${k === 'radio' ? ffChk('ffOn', 'Chosen to start with', m.val) : ''}${ffChk('ffReq', 'Required', m.req)}${ffChk('ffRo', 'Read-only', m.ro)}</div></div>`;
-  const a = await dialog(`${K.label} properties`, html, [{ label: 'Delete field', value: 'delete', danger: true }, { label: 'Cancel' }, { label: 'Save', value: 'save', primary: true }], (dlg) => {
-    const act = $('#ffAct', dlg), url = $('#ffUrl', dlg);
-    if (act && url) { const sync = () => { url.closest('.field').hidden = act.value !== 'url'; }; act.onchange = sync; sync(); }
-    const fmt = $('#ffFmt', dlg); if (fmt) fmt.onchange = () => { $('#ffVal', dlg).placeholder = fmt.value; };
-    setTimeout(() => { const n = $('#ffName', dlg); n.focus(); n.select(); }, 0);
-  });
-  const dlg = $('#dialog');
-  if (a === 'delete') { const before = snapshot(); const list = f.key ? doc.marks[f.key] : marksOf(f.v.entry); list.splice(list.indexOf(m), 1); selMark = null; views.forEach((v) => v.rendered && drawMarks(v)); changed(before); toast('Field deleted'); return; }
-  if (a !== 'save') return;
-  const val = (sel) => { const e = $(sel, dlg); return e ? e.value : undefined; }, on = (sel) => { const e = $(sel, dlg); return e ? e.checked : undefined; };
-  const before = snapshot();
-  let name = ffClean(val('#ffName')) || m.name;
-  if (name !== m.name) {
-    const used = ffNames(m.id);
-    // Radio buttons with the same name are one group; anything else needs a name of its own.
-    const sameGroup = k === 'radio' && ffMarks().some((r) => r.id !== m.id && r.kind === 'radio' && r.name === name);
-    if (used.has(name) && !sameGroup) { let n = 2; while (used.has(`${name} ${n}`)) n++; toast(`A field is already called ${name}. This one is ${name} ${n}.`); name = `${name} ${n}`; }
-  }
-  m.name = name; if (k === 'radio') ffLastRadio = name;
-  m.tip = val('#ffTip').trim(); m.req = on('#ffReq'); m.ro = on('#ffRo');
-  if (val('#ffSize') !== undefined) m.size = +val('#ffSize') || 0;
-  if (k === 'text') { m.multi = on('#ffMulti'); m.max = Math.max(0, parseInt(val('#ffMax'), 10) || 0); m.val = m.max ? val('#ffVal').slice(0, m.max) : val('#ffVal'); if (!m.multi) m.val = m.val.replace(/\n/g, ' '); }
-  if (k === 'date') { m.fmt = val('#ffFmt'); m.val = val('#ffVal').trim(); }
-  if (k === 'combo' || k === 'list') {
-    m.opts = [...new Set(val('#ffOpts').split('\n').map((x) => x.trim()).filter(Boolean))];
-    const d = val('#ffVal').trim(); m.val = m.opts.includes(d) ? d : '';
-    if (d && !m.val) toast(`${d} is not one of the options, so nothing is chosen to start with`);
-  }
-  if (k === 'check' || k === 'radio') {
-    m.exp = ffClean(val('#ffExp')) || (k === 'check' ? 'Yes' : m.exp); m.val = on('#ffOn');
-    if (k === 'radio' && m.val) for (const r of ffMarks()) if (r !== m && r.kind === 'radio' && r.name === m.name) r.val = false;
-  }
-  if (k === 'button') { m.label = val('#ffLabel'); m.act = val('#ffAct'); m.url = val('#ffUrl').trim(); if (m.act === 'url' && m.url && !/^[a-z][a-z0-9+.-]*:/i.test(m.url)) m.url = 'https://' + m.url; }
-  views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
-  toast('Field updated');
-}
-async function ffPropsExisting(name) {
-  const v = views.find((vv) => (vv.ffWidgets || []).some((a) => a.fieldName === name));
-  const a0 = v && v.ffWidgets.find((a) => a.fieldName === name); if (!a0) return;
-  const md = ffModOf(name) || {};
-  const html = `<div class="ff-props">${ffInp('ffName', 'Name', ffShown(name))}${ffInp('ffTip', 'Tooltip', md.tip ?? a0.alternativeText ?? '', 'placeholder="Shown on hover"')}<div class="ff-checks ff-wide">${ffChk('ffReq', 'Required', md.req ?? a0.required)}${ffChk('ffRo', 'Read-only', md.ro ?? a0.readOnly)}</div></div>`;
-  const a = await dialog('Field properties', html, [{ label: 'Delete field', value: 'delete', danger: true }, { label: 'Cancel' }, { label: 'Save', value: 'save', primary: true }], (dlg) => setTimeout(() => { const n = $('#ffName', dlg); n.focus(); n.select(); }, 0));
-  if (a === 'delete') return ffDeleteExisting(name);
-  if (a !== 'save') return;
-  const dlg = $('#dialog');
-  let newName = ffClean($('#ffName', dlg).value) || ffShown(name);
-  if (newName !== ffShown(name) && ffNames().has(newName)) { toast(`A field is already called ${newName}`); newName = ffShown(name); }
-  const before = snapshot();
-  let mod = ffModOf(name); if (!mod) { mod = { id: uid(), type: 'ffmod', name }; docMarks().push(mod); }
-  mod.newName = newName === name ? undefined : newName;
-  mod.tip = $('#ffTip', dlg).value.trim(); mod.req = $('#ffReq', dlg).checked; mod.ro = $('#ffRo', dlg).checked;
-  changed(before); views.forEach((vv) => ffLayer(vv));
-  toast('Field updated');
-}
+// The properties dialog (General, Appearance, Options, Actions, Format, Validate, Calculate) is the form designer's.
+async function ffProps(id) { const f = ffFind(id); if (f && ffIsField(f.m)) return ffdProps(f.m); }
+async function ffPropsExisting(name) { return ffdProps(null, name); }
 function ffPropsSelected() {
   if (ffSelX) return ffPropsExisting(ffSelX);
-  if (selMark) { const f = ffFind(selMark.id); if (f && f.m.type === 'ff') ffProps(f.m.id); }
+  if (selMark) { const f = ffFind(selMark.id); if (f && ffIsField(f.m)) ffProps(f.m.id); }
 }
-const ffSelectedNew = () => { if (!selMark || !doc) return false; const f = ffFind(selMark.id); return !!f && f.m.type === 'ff'; };
+const ffSelectedNew = () => { if (!selMark || !doc) return false; const f = ffFind(selMark.id); return !!f && ffIsField(f.m); };
 
 /* ---- Recognize form ---- */
 async function ffScanPage(entry) {
@@ -598,7 +588,7 @@ async function ffClear() {
     pd.annotationStorage.setValue(f.id, { value }); n++;
   }
   const before = snapshot(); let k = 0;
-  for (const m of ffMarks()) if (m.val && m.kind !== 'button') { m.val = typeof m.val === 'boolean' ? false : ''; k++; }
+  for (const m of ffAllMarks().filter(ffIsField)) if (m.val && m.kind !== 'button' && m.kind !== 'sig') { m.val = typeof m.val === 'boolean' ? false : ''; k++; }
   if (k) changed(before); else setSaved(false);
   for (const v of views) if (v.rendered) rerenderView(v);
   toast(n || k ? 'Form cleared' : 'This PDF has no fields to clear');
@@ -671,7 +661,7 @@ function ffPlace(L, m, bw) {
         : { x: X0 + b, y: Y0 + b, width: W - bw, height: H - bw };
   return { ...o, borderWidth: bw, rotate: L.degrees(r) };
 }
-async function ffSaveNew(L, out, form, list) {
+async function ffSaveNew(L, out, form, list, ctx = {}) {
   const { PDFName, PDFHexString, PDFString, PDFDict, rgb } = L, c = out.context;
   const grey = rgb(.55, .55, .6), black = rgb(0, 0, 0), white = rgb(1, 1, 1);
   const names = new Set(form.getFields().map((f) => f.getName()));
@@ -681,9 +671,27 @@ async function ffSaveNew(L, out, form, list) {
     if (m.req) f.enableRequired();
     if (m.ro) f.enableReadOnly();
   };
-  const groups = new Map();
+  const groups = new Map(), copies = new Map(), refs = ctx.ffRefs || (ctx.ffRefs = new Map()), made = [];
+  // The widgets each new field got (for tab order, signature pictures and the designer's settings)
+  const seen = new Set(), rec = (m, f) => {
+    for (const w of f.acroField.getWidgets()) { const r = c.getObjectRef(w.dict); if (r && !seen.has(r.tag)) { seen.add(r.tag); refs.set(m.id, r); } }
+    made.push({ m, f });
+  };
   for (const { p, m } of list) {
     if (m.kind === 'radio') { const g = groups.get(m.name) || []; g.push({ p, m }); groups.set(m.name, g); continue; }
+    // A copy on another page (Copy to pages…) is another widget of the same field: one field, its widgets as /Kids
+    const key = m.cp ? 'cp:' + m.cp : m.cpOf ? 'of:' + m.cpOf : null, first = key && copies.get(key);
+    const of = !first && m.cpOf && typeof ffdFieldNamed === 'function' ? ffdFieldNamed(form, m.cpOf) : null;
+    if (first || of) {
+      const f = first ? first.f : of, base = first ? first.m : m;
+      try {
+        const o = { ...ffPlace(L, m, m.bw ?? 1), borderColor: m.kind === 'check' || m.kind === 'button' ? black : grey, textColor: black, backgroundColor: m.kind === 'check' ? white : m.kind === 'button' ? rgb(.75, .75, .75) : undefined };
+        if (m.kind === 'button') f.addToPage(base.label || 'Button', p, o); else f.addToPage(p, o);
+        rec(m, f);
+      } catch (e) { console.warn('form field copy', m.name, e); }
+      if (!first && key) copies.set(key, { m, f });
+      continue;
+    }
     const name = unique(ffClean(m.name) || FF_KINDS[m.kind].base);
     if (m.kind === 'text' || m.kind === 'date') {
       const f = form.createTextField(name);
@@ -692,6 +700,7 @@ async function ffSaveNew(L, out, form, list) {
       if (m.val) { f.setText(m.max ? m.val.slice(0, m.max) : m.val); f.acroField.dict.set(PDFName.of('DV'), PDFHexString.fromText(m.val)); }
       f.addToPage(p, { ...ffPlace(L, m, 1), borderColor: grey, backgroundColor: undefined, textColor: black });
       if (m.size) f.setFontSize(m.size);
+      rec(m, f); if (key) copies.set(key, { m, f });
       if (m.kind === 'date') {
         const js = (s) => c.obj({ S: 'JavaScript', JS: PDFString.of(s) });
         const fmt = m.fmt || FF_DATE_FORMATS[0];
@@ -707,21 +716,21 @@ async function ffSaveNew(L, out, form, list) {
         if (ap instanceof PDFDict) for (const k of ['N', 'D']) { const s = ap.lookup(PDFName.of(k)); if (s instanceof PDFDict && s.get(PDFName.of('Yes'))) { s.set(PDFName.of(exp), s.get(PDFName.of('Yes'))); s.delete(PDFName.of('Yes')); } }
       }
       if (m.val) { f.check(); f.acroField.dict.set(PDFName.of('DV'), PDFName.of(exp)); }
-      common(f, m);
+      common(f, m); rec(m, f); if (key) copies.set(key, { m, f });
     } else if (m.kind === 'combo' || m.kind === 'list') {
       const f = m.kind === 'combo' ? form.createDropdown(name) : form.createOptionList(name);
       if (m.opts && m.opts.length) f.setOptions(m.opts);
       if (m.val && (m.opts || []).includes(m.val)) { f.select(m.val); f.acroField.dict.set(PDFName.of('DV'), PDFHexString.fromText(m.val)); }
       f.addToPage(p, { ...ffPlace(L, m, 1), borderColor: grey, backgroundColor: m.kind === 'list' ? white : undefined, textColor: black });
       if (m.size) f.setFontSize(m.size);
-      common(f, m);
+      common(f, m); rec(m, f); if (key) copies.set(key, { m, f });
     } else if (m.kind === 'button') {
       const f = form.createButton(name);
       f.addToPage(m.label || 'Button', p, { ...ffPlace(L, m, 1), borderColor: black, backgroundColor: rgb(.75, .75, .75), textColor: black });
       if (m.size) f.setFontSize(m.size);
       const action = m.act === 'reset' ? c.obj({ S: 'ResetForm' }) : m.act === 'url' && m.url ? c.obj({ S: 'URI', URI: PDFString.of(m.url) }) : null;
       if (action) for (const w of f.acroField.getWidgets()) w.dict.set(PDFName.of('A'), action);
-      common(f, m);
+      common(f, m); rec(m, f); if (key) copies.set(key, { m, f });
     } else if (m.kind === 'sig') {
       // pdf-lib has no way to make a signature field: an empty /Sig field, with its widget and a border to sign in.
       const [X0, Y0, X1, Y1] = ffBox(m), w = X1 - X0, h = Y1 - Y0, r = ((m.rot || 0) % 360 + 360) % 360;
@@ -732,6 +741,7 @@ async function ffSaveNew(L, out, form, list) {
       const ref = c.register(dict);
       p.node.addAnnot(ref);
       out.catalog.getOrCreateAcroForm().addField(ref);
+      refs.set(m.id, ref); made.push({ m, f: null, ref });
     }
   }
   for (const [gname, items] of groups) {
@@ -741,6 +751,7 @@ async function ffSaveNew(L, out, form, list) {
     for (const { p, m } of items) {
       let exp = ffClean(m.exp) || 'Choice', e = exp, k = 2; while (used.has(e)) e = `${exp}${k++}`; used.add(e);
       g.addOptionToPage(e, p, { ...ffPlace(L, m, 1), borderColor: black, backgroundColor: white, textColor: black });
+      rec(m, g); (ctx.ffExpOf ||= new Map()).set(m.id, e);
       if (m.val) chosen = e;
     }
     const lead = items[0].m;
@@ -749,11 +760,14 @@ async function ffSaveNew(L, out, form, list) {
     if (lead.req || items.some((x) => x.m.req)) g.enableRequired();
     if (items.some((x) => x.m.ro)) g.enableReadOnly();
   }
+  // The designer's settings: appearance, options, format, validation, calculation, actions
+  if (typeof ffdApplyNew === 'function') for (const { m, f, ref } of made) { try { await ffdApplyNew(L, out, form, m, f, ref, ctx); } catch (e) { console.warn('form field settings', m.name, e); } }
 }
-FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
+FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => {
   ffFixAcroForm(L, out, pages); // always: pages moved, deleted or copied in change which fields the PDF has
-  const news = ctx.ffNew || [], mods = ffMods(), flat = ffFlat();
-  if (!news.length && !mods.length && !flat) return;
+  const news = ctx.ffNew || [], mods = ffMods(), flat = ffFlat(), proxies = ctx.ffxList || [];
+  const designed = typeof ffdNeedsSave === 'function' && ffdNeedsSave(ctx);
+  if (!news.length && !mods.length && !flat && !proxies.length && !designed) return;
   const { PDFName, PDFHexString } = L;
   const form = out.getForm();
   for (const md of mods) {
@@ -766,8 +780,14 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
       if (md.ro != null) md.ro ? f.enableReadOnly() : f.disableReadOnly();
     } catch (e) { console.warn('form field', md.name, e); }
   }
-  if (news.length) await ffSaveNew(L, out, form, news);
-  try { form.updateFieldAppearances(); } catch (e) { console.warn('field appearances', e); }
+  // Fields from the PDF the designer changed: rewritten in place (or made again as another kind)
+  if (typeof ffdSaveExisting === 'function') await ffdSaveExisting(L, out, form, proxies, pages, entries, ctx);
+  if (news.length) await ffSaveNew(L, out, form, news, ctx);
+  if (typeof ffdBeforeLooks === 'function') await ffdBeforeLooks(L, out, form, ctx);
+  // Each field's look on its own: one that can't be drawn (a character the font doesn't have) doesn't stop the others
+  let font = null; try { font = form.getDefaultFont(); } catch {}
+  for (const f of form.getFields()) { try { if (font && f.needsAppearancesUpdate()) f.defaultUpdateAppearances(font); } catch (e) { console.warn('field appearance', f.getName(), e); if (typeof ffdLookFailed === 'function') ffdLookFailed(L, out, f); } }
+  if (typeof ffdAfterLooks === 'function') await ffdAfterLooks(L, out, form, pages, entries, ctx);
   if (flat) form.flatten({ updateFieldAppearances: false });
 });
 
