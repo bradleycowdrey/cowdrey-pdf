@@ -18,7 +18,8 @@
    Documents and saving keep them. Saving writes them into the Info dictionary and the catalog.
    Producer and modified date: the app writes its own name and the time of saving on every save. A producer or a
    modification date typed here is used by the next save (Save, Save a copy, PDF/A, PDF/X) instead, then let go,
-   so later saves are stamped as usual again.
+   so later saves are stamped as usual again. The Modified field shows the file's own date; leaving it as it is is
+   not a change (the save stamps its own time).
    XMP: when the file had a packet, it is changed in place (pdfaPatchXmp, 84-pdfa.js): only the properties whose
    value differs from the final Info dictionary are rewritten, so a file whose properties were not touched keeps its
    packet as it was, except for the producer, the modification and metadata dates and the instance id, which follow
@@ -197,7 +198,7 @@ function diValue(info, f) { const m = diMark(); return m && m[f] != null ? m[f] 
 const diExtra = (info, meta) => {
   const m = diMark() || {}, view = { ...meta.view, ...(m.view || {}) };
   const created = m.created != null ? (m.created ? new Date(m.created) : null) : diDateObj(info.CreationDate);
-  return { creator: m.creator != null ? m.creator : String(info.Creator ?? ''), producer: m.producer != null ? m.producer : String(info.Producer ?? ''), labels: m.labels || meta.labels || [], xmp: m.xmp != null ? m.xmp : meta.xmp || '', lang: m.lang != null ? m.lang : meta.lang || '', created: diLocal(created), modified: m.modified ? diLocal(new Date(m.modified)) : '', custom: m.custom || meta.custom || {}, view };
+  return { creator: m.creator != null ? m.creator : String(info.Creator ?? ''), producer: m.producer != null ? m.producer : String(info.Producer ?? ''), labels: m.labels || meta.labels || [], xmp: m.xmp != null ? m.xmp : meta.xmp || '', lang: m.lang != null ? m.lang : meta.lang || '', created: diLocal(created), modified: m.modified ? diLocal(new Date(m.modified)) : diLocal(diDateObj(info.ModDate)), custom: m.custom || meta.custom || {}, view };
 };
 // Does the document change what the pages show (so a PDF/A claim the file had may no longer hold)? Marks on pages,
 // document-wide changes other than these properties, and pages added, moved, deleted or copied in from another file
@@ -232,7 +233,7 @@ async function diShow() {
       <label class="field"><span>Language</span><input type="text" data-dx="lang" value="${esc(x.lang)}" list="diLangs" placeholder="For example en or fr-CA" autocomplete="off" spellcheck="false"></label>
       <datalist id="diLangs">${DI_LANGS.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('')}</datalist>
       <label class="field"><span>Created</span><input type="datetime-local" step="1" data-dx="created" value="${esc(x.created)}"></label>
-      <label class="field"><span>Modified</span><input type="datetime-local" step="1" data-dx="modified" value="${esc(x.modified)}"><small class="di-hint">Leave empty to use the time you save. A date is used for the next save only.</small></label></div>
+      <label class="field"><span>Modified</span><input type="datetime-local" step="1" data-dx="modified" value="${esc(x.modified)}"><small class="di-hint">Each save stamps the time you save. A date you type is used for the next save only.</small></label></div>
     </section>
     <section class="di-panel" id="di-p-custom" role="tabpanel" aria-labelledby="di-t-custom" hidden>
       <p class="di-note">Your own properties, saved in the file's document information. Other apps show them as custom properties.</p>
@@ -282,6 +283,16 @@ async function diShow() {
     const tabs = $$('[data-di-tab]', dlg);
     const choose = (b) => { for (const t of tabs) { const on = t === b; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; $('#di-p-' + t.dataset.diTab, dlg).hidden = !on; } };
     tabs.forEach((b) => b.addEventListener('click', () => choose(b)));
+    // Done with XMP that is not valid XML: the dialog stays open on that tab, so what was typed isn't lost
+    const xmpBox = $('[data-dx="xmp"]', dlg), xmpWas = xmpBox ? xmpBox.value : '';
+    dlg.addEventListener('click', (e) => {
+      if (!xmpBox || !e.target.closest('.dlg-foot .btn.primary')) return;
+      const t = xmpBox.value.trim();
+      if (!t || t === xmpWas.trim() || pdfaReadXmp(xmpBox.value).ok) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      const tb = tabs.find((b) => b.dataset.diTab === 'xmp'); if (tb) choose(tb);
+      xmpBox.focus(); toast('The XMP is not valid XML. Correct it, or Cancel.');
+    }, true);
     $('.di-tabs', dlg).addEventListener('keydown', (e) => tabKeys(e, tabs, (b) => { choose(b); b.focus(); }));
     // keywords: each one a chip, with a button that takes it out of the list
     const kw = $('[data-di="keywords"]', dlg), chips = $('[data-chips]', dlg);
@@ -348,7 +359,11 @@ function diSet(vals, info, meta = { custom: {}, view: {}, lang: '' }) {
     const same = fileC ? d && Math.abs(+d - Math.floor(+fileC / 1000) * 1000) < 1000 : !x.created;
     if (!same) { if (!x.created) next.created = ''; else if (d && !Number.isNaN(+d)) next.created = d.toISOString(); }
   }
-  if (x.modified) { const d = new Date(x.modified); if (!Number.isNaN(+d)) next.modified = d.toISOString(); }
+  // the field shows the file's own date; only a different one is a change (empty: the time of saving, as always)
+  if (x.modified) {
+    const fileM = diDateObj(info.ModDate), d = new Date(x.modified);
+    if (!Number.isNaN(+d) && !(fileM && Math.abs(+d - Math.floor(+fileM / 1000) * 1000) < 1000)) next.modified = d.toISOString();
+  }
   if (vals.custom) {
     const map = {}, skipped = [];
     for (const [k0, v] of vals.custom) {

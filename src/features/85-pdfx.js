@@ -104,7 +104,10 @@ async function pdfxCheck(bytes, opts = {}) {
     const x = pdfaXmpOf(L, out);
     if (!x) { bad('PDF/X-4 needs XMP metadata.'); return; }
     if (!/pdfxid:GTS_PDFXVersion(>|=")\s*PDF\/X-4/.test(x)) bad('The XMP metadata doesn\'t say PDF/X-4 (pdfxid:GTS_PDFXVersion).');
-    for (const k of ['xmp:CreateDate', 'xmp:ModifyDate', 'xmp:MetadataDate']) if (!x.includes('<' + k + '>')) bad(`The XMP metadata has no ${k}.`);
+    // ISO 15930-7, 6.7.2: the dates, a title, and the document's identity (DocumentID, VersionID, RenditionClass)
+    const r = pdfaReadXmp(x), fv = (ns, n) => { const k = r.foreignName.findIndex((m, i) => m === n && r.foreignNs[i] === ns); return k < 0 ? '' : r.foreign[k].replace(/<[^>]*>/g, '').trim(); };
+    const has = (k) => { const [p, n] = k.split(':'); return String(r.props[k] ?? fv(PDFA_NS[p], n)).trim() !== ''; };
+    for (const k of ['xmp:CreateDate', 'xmp:ModifyDate', 'xmp:MetadataDate', 'dc:title', 'xmpMM:DocumentID', 'xmpMM:VersionID', 'xmpMM:RenditionClass']) if (r.ok ? !has(k) : !x.includes('<' + k + '>')) bad(`The XMP metadata has no ${k}.`);
   });
   problems.passed = passed; problems.checks = names.length;
   return problems;

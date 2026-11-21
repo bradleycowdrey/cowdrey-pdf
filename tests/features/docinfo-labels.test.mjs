@@ -59,6 +59,9 @@ export default async (h) => {
     // not XML: refused, nothing else lost
     await props(p); await p.click('#dialog [data-di-tab="xmp"]'); await p.fill('#dialog [data-dx="xmp"]', '<x:xmpmeta><broken'); await answer(p, 'Done');
     await p.waitForFunction(() => /not valid XML/.test(document.querySelector('#toast, .toast')?.textContent || document.body.textContent));
+    // the dialog stays open on the XMP tab with the text as typed
+    ok(await p.$('#dialog[open]'), 'the dialog stays open'); eq(await p.inputValue('#dialog [data-dx="xmp"]'), '<x:xmpmeta><broken');
+    await answer(p, 'Cancel'); await p.waitForTimeout(150);
     eq((await PDFDocument.load(await savedOf(p), { updateMetadata: false })).getTitle(), 'New title');
     eq(p.errors, []); await p.ctx.close();
   });

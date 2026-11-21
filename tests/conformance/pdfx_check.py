@@ -236,11 +236,45 @@ def main(kind, path):
         if not x: p.append('no XMP metadata')
         else:
             if not re.search(r'pdfxid:GTS_PDFXVersion(>|=")\s*PDF/X-4', x): p.append('no pdfxid:GTS_PDFXVersion PDF/X-4')
-            for k in ('xmp:CreateDate', 'xmp:ModifyDate', 'xmp:MetadataDate'):
-                if '<' + k + '>' not in x and k + '="' not in x: p.append('no ' + k)
+            # ISO 15930-7, 6.7.2: dates, title and the document identity (DocumentID, VersionID, RenditionClass)
+            vals = xmp_values(x)
+            if vals is None: p.append('XMP is not well-formed XML')
+            else:
+                for k in ('xmp:CreateDate', 'xmp:ModifyDate', 'xmp:MetadataDate', 'dc:title', 'xmpMM:DocumentID', 'xmpMM:VersionID', 'xmpMM:RenditionClass'):
+                    if not vals.get(k, '').strip(): p.append('no ' + k)
             if isinstance(xmp, Stream) and '/Filter' in xmp.stream_dict: p.append('XMP is compressed')
-        rule('X-4: XMP with pdfxid:GTS_PDFXVersion and dates', p)
+        rule('X-4: XMP with pdfxid:GTS_PDFXVersion, dates, dc:title, DocumentID, VersionID, RenditionClass', p)
     print(json.dumps({'ok': not failed, 'version': VERSION[kind], 'failed': failed, 'passed': passed}))
+
+
+XMP_NS = {'http://purl.org/dc/elements/1.1/': 'dc', 'http://ns.adobe.com/xap/1.0/': 'xmp', 'http://ns.adobe.com/xap/1.0/mm/': 'xmpMM',
+          'http://ns.adobe.com/pdf/1.3/': 'pdf', 'http://www.npes.org/pdfx/ns/id/': 'pdfxid'}
+RDF = '{http://www.w3.org/1999/02/22-rdf-syntax-ns#}'
+
+
+def xmp_values(x):
+    """{'prefix:name': text} for the top-level properties of every rdf:Description (element or attribute form);
+    the text of an rdf:Alt/Seq/Bag is its items joined. None when the packet is not well-formed."""
+    import xml.etree.ElementTree as ET
+    i = x.find('<x:xmpmeta'); i = i if i >= 0 else x.find('<rdf:RDF')
+    j = x.rfind('</x:xmpmeta>'); end = '</x:xmpmeta>'
+    if j < 0: j = x.rfind('</rdf:RDF>'); end = '</rdf:RDF>'
+    if i < 0 or j < 0: return None
+    try: root = ET.fromstring(x[i:j + len(end)])
+    except ET.ParseError: return None
+    out = {}
+    def key(tag):
+        if not tag.startswith('{'): return None
+        ns, n = tag[1:].split('}', 1)
+        return XMP_NS[ns] + ':' + n if ns in XMP_NS else None
+    for d in root.iter(RDF + 'Description'):
+        for a, v in d.attrib.items():
+            k = key(a)
+            if k: out[k] = v
+        for c in d:
+            k = key(c.tag)
+            if k: out[k] = ' '.join(t.strip() for t in c.itertext() if t.strip())
+    return out
 
 
 if __name__ == '__main__':

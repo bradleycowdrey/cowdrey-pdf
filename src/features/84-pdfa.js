@@ -8,7 +8,9 @@
      keeps or edits metadata; extra = { pdfa: { part, conformance }, pdfua: { part }, extensions: [schema…],
      props: [{ ns, prefix, name, value }], keepClaims, strict } lets PDF/A and PDF/UA add their own schemas.
      pdfaPatchXmp(L, out, opts) changes only what differs in the file's own packet (12-docinfo.js uses it when the
-     file had one), so properties the app doesn't manage keep their exact form.
+     file had one), so properties the app doesn't manage keep their exact form. A PDF/A packet leaves out pdf:Trapped
+     (PDF/A predefines no such property; Info's Trapped stays). extra.version (PDF/X-4) adds xmpMM:VersionID and
+     xmpMM:RenditionClass, which ISO 15930-7 asks for with the document id, the dates and the title.
    - pdfaConvert(bytes, { part, conformance, intent: 'srgb' | 'cmyk', pdfx: '1a' | '3' | '4', scripts: 'remove' |
      'refuse' }) -> { bytes, fixes: [text] } or { blocked: 'attachments' | 'scripts' | 'profile', problems? }: the
      conversion (used by the batch tools too). It refuses (blocked 'profile', a plain reason for each problem) what it
@@ -16,13 +18,17 @@
      CMYK one (PDF/A), RGB in PDF/X-1a, transparency in PDF/A-1b, X-1a and X-3, 16-bit and JPEG 2000 pictures in those
      PDF 1.4 kinds, attachments and layers where they are not allowed. scripts: 'refuse' stops at JavaScript and
      forbidden actions (the dialogs ask before removing them); 'remove', the default, removes them.
-     PDF/A-1 also gets the CIDSet and CharSet lists its font subsets need. Fonts that were not embedded (the standard 14 that page design, Add text, stamps and form
+     PDF/A-1 also gets the CIDSet and CharSet lists its font subsets need. PDF/A-2u and 3u: a CID TrueType font
+     whose ToUnicode map misses a glyph the pages show (a ligature, say) gets it from the font program's own cmap
+     and GSUB tables (f + t -> "ft"); a glyph that can't be named is reported by the check, not saved silently. Fonts that were not embedded (the standard 14 that page design, Add text, stamps and form
      fields use) are replaced by metric-compatible embedded fonts: Arimo for Helvetica, Tinos for Times, Cousine for
      Courier (SIL Open Font License, from the pinned @expo-google-fonts packages; the desktop and mobile bundle
      vendors them with every other jsDelivr file). They are cut down here to the Latin glyphs a simple font can
      address, keeping glyph ids, so the font's own cmap and widths stay right (fontkit's subsetter drops the cmap,
      which a simple TrueType font needs, so it isn't used). Symbol, ZapfDingbats and fonts with no Latin substitute
-     are reported, not replaced.
+     are reported, not replaced. PDF/A-1 allows a TrueType font no /Differences, so a stand-in whose codes mean
+     other characters than WinAnsi (a form's PDFDocEncoding) is made symbolic there: no Encoding, and its own
+     program with one (3,0) cmap from those codes to the glyphs.
    - pdfaCheck(bytes, { part, conformance }?) -> [{ rule, severity, page?, fix?, text }] with .passed (rule names):
      a built-in check, not a certified validator.
    - The sRGB output intent profile (ICC v2, matrix/TRC with a 1024-point curve) is made in code, so no profile file
@@ -96,7 +102,7 @@ function pdfaXmpOf(L, out) {
 }
 // Reads a packet: { ok, props: { 'dc:title': value… } (text of simple and first-item values), foreign: [xml], claims }
 function pdfaReadXmp(xml) {
-  const r = { ok: false, props: {}, foreign: [], foreignNs: [], declared: new Set(), extensionXml: '' };
+  const r = { ok: false, props: {}, foreign: [], foreignNs: [], foreignName: [], declared: new Set(), extensionXml: '' };
   if (!xml || typeof DOMParser === 'undefined') return r;
   const start = xml.indexOf('<x:xmpmeta') >= 0 ? xml.indexOf('<x:xmpmeta') : xml.indexOf('<rdf:RDF');
   const endTag = xml.indexOf('</x:xmpmeta>') >= 0 ? '</x:xmpmeta>' : '</rdf:RDF>';
@@ -114,7 +120,7 @@ function pdfaReadXmp(xml) {
       if (!a.namespaceURI || a.namespaceURI === PDFA_NS.rdf || a.namespaceURI === 'http://www.w3.org/2000/xmlns/' || a.namespaceURI === 'http://www.w3.org/XML/1998/namespace') continue;
       const p = prefixOf(a.namespaceURI), key = p ? `${p}:${a.localName}` : null;
       if (key && PDFA_MANAGED.has(key)) { r.props[key] = a.value; continue; }
-      r.foreign.push(`<${a.prefix || 'ns'}:${a.localName} xmlns:${a.prefix || 'ns'}="${pdfaXml(a.namespaceURI)}">${pdfaXml(a.value)}</${a.prefix || 'ns'}:${a.localName}>`); r.foreignNs.push(a.namespaceURI);
+      r.foreign.push(`<${a.prefix || 'ns'}:${a.localName} xmlns:${a.prefix || 'ns'}="${pdfaXml(a.namespaceURI)}">${pdfaXml(a.value)}</${a.prefix || 'ns'}:${a.localName}>`); r.foreignNs.push(a.namespaceURI); r.foreignName.push(a.localName);
     }
     for (const el of [...d.children]) {
       const p = prefixOf(el.namespaceURI), key = p ? `${p}:${el.localName}` : null;
@@ -124,7 +130,7 @@ function pdfaReadXmp(xml) {
         for (const u of el.getElementsByTagNameNS(PDFA_NS.pdfaSchema, 'namespaceURI')) r.declared.add(u.textContent.trim());
         continue;
       }
-      r.foreign.push(new XMLSerializer().serializeToString(el)); r.foreignNs.push(el.namespaceURI);
+      r.foreign.push(new XMLSerializer().serializeToString(el)); r.foreignNs.push(el.namespaceURI); r.foreignName.push(el.localName);
     }
   }
   return r;
@@ -148,14 +154,21 @@ function pdfaWriteXmp(L, out, extra = {}) {
   // Several authors in the packet stay several while Info's Author is still their joined list (not in a PDF/A file,
   // where dc:creator must be the Author text as one entry).
   const oldAuthors = old.props['dc:creator#list'] || [], claimsA = !!(extra.strict || extra.pdfa || (extra.keepClaims && old.props['pdfaid:part']));
+  // pdf:Trapped is not one of the properties PDF/A predefines (it needs an extension schema, and Info's Trapped need
+  // not be repeated in the XMP), so a PDF/A packet leaves it out; other packets (PDF/X, plain saves) keep it.
+  const strictA = !!(extra.strict || extra.pdfa);
   const authors = author == null ? [] : !claimsA && oldAuthors.length > 1 && [';', '; ', ',', ', '].some((j) => oldAuthors.join(j).trim() === author.trim()) ? oldAuthors : [author];
   const el = (name, v) => (v == null || v === '' ? '' : `<${name}>${pdfaXml(v)}</${name}>`);
   const alt = (name, v) => (v == null ? '' : `<${name}><rdf:Alt><rdf:li xml:lang="x-default">${pdfaXml(v)}</rdf:li></rdf:Alt></${name}>`);
   const blocks = [];
   blocks.push(`<rdf:Description rdf:about="" xmlns:dc="${PDFA_NS.dc}">${el('dc:format', 'application/pdf')}${alt('dc:title', title)}${author != null ? `<dc:creator><rdf:Seq>${authors.map((a) => `<rdf:li>${pdfaXml(a)}</rdf:li>`).join('')}</rdf:Seq></dc:creator>` : ''}${alt('dc:description', subject)}${lang ? `<dc:language><rdf:Bag><rdf:li>${pdfaXml(lang)}</rdf:li></rdf:Bag></dc:language>` : ''}</rdf:Description>`);
   blocks.push(`<rdf:Description rdf:about="" xmlns:xmp="${PDFA_NS.xmp}">${el('xmp:CreatorTool', creator)}${el('xmp:CreateDate', created)}${el('xmp:ModifyDate', modified)}${el('xmp:MetadataDate', modified || pdfaIso(new Date()))}</rdf:Description>`);
-  blocks.push(`<rdf:Description rdf:about="" xmlns:pdf="${PDFA_NS.pdf}">${el('pdf:Producer', producer)}${keywords != null ? `<pdf:Keywords>${pdfaXml(keywords)}</pdf:Keywords>` : ''}${/^(True|False|Unknown)$/.test(trapped || '') ? el('pdf:Trapped', trapped) : ''}</rdf:Description>`);
-  blocks.push(`<rdf:Description rdf:about="" xmlns:xmpMM="${PDFA_NS.xmpMM}">${el('xmpMM:DocumentID', docId)}${el('xmpMM:InstanceID', 'uuid:' + pdfaUuid())}</rdf:Description>`);
+  blocks.push(`<rdf:Description rdf:about="" xmlns:pdf="${PDFA_NS.pdf}">${el('pdf:Producer', producer)}${keywords != null ? `<pdf:Keywords>${pdfaXml(keywords)}</pdf:Keywords>` : ''}${!strictA && /^(True|False|Unknown)$/.test(trapped || '') ? el('pdf:Trapped', trapped) : ''}</rdf:Description>`);
+  // extra.version (PDF/X-4, ISO 15930-7): xmpMM:VersionID and xmpMM:RenditionClass, the version counting up from the
+  // packet's own when it had a number.
+  const oldVer = old.foreignName.indexOf('VersionID') >= 0 && old.foreignNs[old.foreignName.indexOf('VersionID')] === PDFA_NS.xmpMM ? (/>\s*(\d+)\s*</.exec(old.foreign[old.foreignName.indexOf('VersionID')]) || [])[1] : null;
+  const mm = extra.version ? { VersionID: oldVer ? String(+oldVer + 1) : '1', RenditionClass: 'default' } : null;
+  blocks.push(`<rdf:Description rdf:about="" xmlns:xmpMM="${PDFA_NS.xmpMM}">${el('xmpMM:DocumentID', docId)}${el('xmpMM:InstanceID', 'uuid:' + pdfaUuid())}${mm ? el('xmpMM:VersionID', mm.VersionID) + el('xmpMM:RenditionClass', mm.RenditionClass) : ''}</rdf:Description>`);
   // Conformance claims: the ones asked for, or (keepClaims) the ones the file had.
   const pdfa = extra.pdfa || (extra.keepClaims && old.props['pdfaid:part'] ? { part: old.props['pdfaid:part'], conformance: old.props['pdfaid:conformance'] } : null);
   const pdfua = extra.pdfua || (extra.keepClaims && old.props['pdfuaid:part'] ? { part: old.props['pdfuaid:part'] } : null);
@@ -165,7 +178,7 @@ function pdfaWriteXmp(L, out, extra = {}) {
   // Properties the app doesn't manage: kept, except (strict, for PDF/A) those PDF/A doesn't know.
   const strict = !!(extra.strict || extra.pdfa);
   const drop = new Set(extra.dropNs || []);
-  const kept = old.foreign.filter((x, k) => (!strict || PDFA_PREDEFINED.has(old.foreignNs[k])) && !drop.has(old.foreignNs[k]));
+  const kept = old.foreign.filter((x, k) => (!strict || PDFA_PREDEFINED.has(old.foreignNs[k])) && !drop.has(old.foreignNs[k]) && !(mm && old.foreignNs[k] === PDFA_NS.xmpMM && old.foreignName[k] in mm));
   if (kept.length) blocks.push(`<rdf:Description rdf:about="">${kept.join('')}</rdf:Description>`);
   const ext = [...(extra.extensions || [])];
   if (pdfa && pdfua && !ext.some((s) => s.ns === PDFUA_EXTENSION.ns)) ext.push(PDFUA_EXTENSION);
@@ -377,10 +390,14 @@ function pdfaTtf(bytes) {
   f.cmap = map; f.gid = (u) => map.get(u) || 0;
   return f;
 }
-function pdfaTtfSubset(f, unicodes) {
+// codes (optional): a symbolic font's own code -> Unicode list ([256]). The cmap is then one (3,0) Windows Symbol
+// table mapping 0xF000 + code to the glyph, which is what a symbolic TrueType font with no Encoding (PDF/A-1, 6.3.7)
+// is read through.
+function pdfaTtfSubset(f, unicodes, codes = null) {
   const { bytes, view: v, tables } = f;
   const gids = new Set([0]), pairs = [];
-  for (const u of [...new Set(unicodes)].sort((a, b) => a - b)) { const g = f.gid(u); if (g && u < 0xFFFF) { gids.add(g); pairs.push([u, g]); } }
+  if (codes) codes.forEach((u, c) => { const g = u == null ? 0 : f.gid(u); if (g) { gids.add(g); pairs.push([0xF000 + c, g]); } });
+  else for (const u of [...new Set(unicodes)].sort((a, b) => a - b)) { const g = f.gid(u); if (g && u < 0xFFFF) { gids.add(g); pairs.push([u, g]); } }
   // composite glyphs need their parts
   const stack = [...gids];
   while (stack.length) {
@@ -403,7 +420,7 @@ function pdfaTtfSubset(f, unicodes) {
   for (const [u, g] of pairs) { const s = segs[segs.length - 1]; if (s && u === s[1] + 1 && g === s[3] + (u - s[0])) s[1] = u; else segs.push([u, u, 0, g]); }
   segs.push([0xFFFF, 0xFFFF, 0, 1]);
   const sc = segs.length, cl = 16 + sc * 8, cmap = new Uint8Array(12 + cl), cv = new DataView(cmap.buffer);
-  cv.setUint16(2, 1); cv.setUint16(4, 3); cv.setUint16(6, 1); cv.setUint32(8, 12);
+  cv.setUint16(2, 1); cv.setUint16(4, 3); cv.setUint16(6, codes ? 0 : 1); cv.setUint32(8, 12);
   const o4 = 12, es = Math.floor(Math.log2(sc)), sr = 2 * 2 ** es;
   cv.setUint16(o4, 4); cv.setUint16(o4 + 2, cl); cv.setUint16(o4 + 6, sc * 2); cv.setUint16(o4 + 8, sr); cv.setUint16(o4 + 10, es); cv.setUint16(o4 + 12, sc * 2 - sr);
   segs.forEach(([s, e, , g], i) => { cv.setUint16(o4 + 14 + i * 2, e); cv.setUint16(o4 + 16 + sc * 2 + i * 2, s); cv.setUint16(o4 + 16 + sc * 4 + i * 2, (g - s) & 0xFFFF); });
@@ -484,6 +501,107 @@ function pdfaToUnicodeCMap(uni) {
   const rows = []; uni.forEach((u, c) => { if (u != null && u > 0 && u !== 0xFEFF && u !== 0xFFFE) rows.push(`<${c.toString(16).padStart(2, '0').toUpperCase()}> <${(u > 0xFFFF ? String.fromCodePoint(u).split('').map((x) => x.charCodeAt(0).toString(16).padStart(4, '0')).join('') : u.toString(16).padStart(4, '0')).toUpperCase()}>`); });
   let body = ''; for (let i = 0; i < rows.length; i += 100) { const part = rows.slice(i, i + 100); body += `${part.length} beginbfchar\n${part.join('\n')}\nendbfchar\n`; }
   return `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n${body}endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n`;
+}
+
+// A ToUnicode CMap's mappings: Map(code -> text). bfchar and both forms of bfrange.
+function pdfaCMapRead(text) {
+  const m = new Map(), hex = (h) => { h = h.replace(/\s+/g, ''); if (h.length <= 2) return h ? String.fromCharCode(parseInt(h, 16)) : ''; let t = ''; for (let i = 0; i + 4 <= h.length; i += 4) t += String.fromCharCode(parseInt(h.slice(i, i + 4), 16)); return t; };
+  for (const blk of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) for (const r of blk[1].matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]*)>/g)) m.set(parseInt(r[1].replace(/\s+/g, ''), 16), hex(r[2]));
+  for (const blk of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    for (const r of blk[1].matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>\s*(?:<([0-9A-Fa-f\s]*)>|\[([^\]]*)\])/g)) {
+      const a = parseInt(r[1].replace(/\s+/g, ''), 16), b = parseInt(r[2].replace(/\s+/g, ''), 16);
+      if (b - a > 0xFFFF || b < a) continue;
+      if (r[4] != null) { const list = [...r[4].matchAll(/<([0-9A-Fa-f\s]*)>/g)].map((x) => hex(x[1])); for (let c = a; c <= b && c - a < list.length; c++) m.set(c, list[c - a]); continue; }
+      const t = hex(r[3]); if (!t) continue;
+      for (let c = a; c <= b; c++) m.set(c, t.slice(0, -1) + String.fromCharCode(t.charCodeAt(t.length - 1) + (c - a)));
+    }
+  }
+  return m;
+}
+// A ToUnicode mapping PDF/A accepts: present, and not U+0000, U+FEFF or U+FFFE (ISO 19005-2, 6.2.11.7.2). An empty
+// one (<0005> <>, which pdf-lib writes for a glyph whose text another glyph carries, as in Arabic joining) is
+// accepted, as veraPDF accepts it.
+const pdfaGoodText = (t) => typeof t === 'string' && !/[\u0000\uFEFF\uFFFE]/.test(t);
+// What each glyph of a TrueType/OpenType program stands for: Map(gid -> text). From the cmap, then from the GSUB
+// substitutions that make glyphs the cmap doesn't reach: ligatures (f + t -> "ft"), single and alternate forms.
+function pdfaGlyphTexts(f) {
+  const t = new Map();
+  for (const [u, g] of f.cmap) if (!t.has(g) || u < t.get(g).codePointAt(0)) t.set(g, String.fromCodePoint(u));
+  const G = f.tables.GSUB; if (!G) return t;
+  const v = f.view, n = f.bytes.length, u16 = (o) => (o + 2 <= n ? v.getUint16(o) : 0);
+  const cover = (o) => {
+    const out = []; const fmt = u16(o);
+    if (fmt === 1) for (let i = 0, c = u16(o + 2); i < c; i++) out.push(u16(o + 4 + i * 2));
+    else if (fmt === 2) for (let i = 0, c = u16(o + 2); i < c; i++) { const a = o + 4 + i * 6, s0 = u16(a), e = u16(a + 2); for (let g = s0; g <= e && out.length < 65536; g++) out.push(g); }
+    return out;
+  };
+  const singles = [], ligs = [];
+  try {
+    const ll = G.off + u16(G.off + 8);
+    for (let i = 0, lc = u16(ll); i < lc; i++) {
+      const lo = ll + u16(ll + 2 + i * 2); let type = u16(lo);
+      for (let k = 0, sc = u16(lo + 4); k < sc; k++) {
+        let so = lo + u16(lo + 6 + k * 2), st = type;
+        if (type === 7) { st = u16(so + 2); so += v.getUint32(so + 4); }
+        const fmt = u16(so), cov = cover(so + u16(so + 2));
+        if (st === 1 && fmt === 1) { const d = v.getInt16(so + 4); for (const g of cov) singles.push([g, (g + d) & 0xFFFF]); }
+        else if (st === 1 && fmt === 2) cov.forEach((g, j) => { if (j < u16(so + 4)) singles.push([g, u16(so + 6 + j * 2)]); });
+        else if (st === 3 && fmt === 1) cov.forEach((g, j) => { if (j >= u16(so + 4)) return; const a = so + u16(so + 6 + j * 2); for (let q = 0, c = u16(a); q < c; q++) singles.push([g, u16(a + 2 + q * 2)]); });
+        else if (st === 4 && fmt === 1) cov.forEach((g, j) => {
+          if (j >= u16(so + 4)) return; const ls = so + u16(so + 6 + j * 2);
+          for (let q = 0, c = u16(ls); q < c; q++) { const lg = ls + u16(ls + 2 + q * 2), cc = u16(lg + 2), comps = [g]; for (let r = 1; r < cc; r++) comps.push(u16(lg + 4 + (r - 1) * 2)); ligs.push([u16(lg), comps]); }
+        });
+      }
+    }
+  } catch { return t; }
+  for (let pass = 0; pass < 4; pass++) {
+    let more = false;
+    for (const [a, b] of singles) if (t.has(a) && !t.has(b)) { t.set(b, t.get(a)); more = true; }
+    for (const [g, comps] of ligs) if (!t.has(g) && comps.every((c) => t.has(c))) { t.set(g, comps.map((c) => t.get(c)).join('')); more = true; }
+    if (!more) break;
+  }
+  return t;
+}
+// A Type 0 font's two-byte codes (Identity-H/V, or an embedded CMap): the CIDs a set of shown strings uses, or null
+// when its encoding is not one this reads.
+function pdfaCidsShown(L, f, strings) {
+  const e = f.lookup(L.PDFName.of('Encoding')), nm = pdfaName(L, e);
+  if (!(e instanceof L.PDFStream) && !/^Identity-[HV]$/.test(nm || '')) return null;
+  const cids = new Set();
+  for (const s of strings || []) for (let i = 0; i + 1 < s.length; i += 2) cids.add((s.charCodeAt(i) << 8) | s.charCodeAt(i + 1));
+  return cids;
+}
+// PDF/A-2u, 3u: a CID TrueType font gets a Unicode mapping for every glyph it shows, from its own program, keeping
+// the mappings it had. Returns 'fixed' (mappings added), 'ok' (nothing missing) or 'unmapped' (none could be found).
+function pdfaCidUnicode(L, out, f, strings) {
+  const { PDFName, PDFDict, PDFArray, PDFStream } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
+  const cids = pdfaCidsShown(L, f, strings); if (!cids || !cids.size) return 'ok';
+  const tu = f.lookup(N('ToUnicode')), had = tu instanceof PDFStream ? pdfaCMapRead(pdfaLatin1(pdfaStreamBytes(L, tu) || new Uint8Array())) : new Map();
+  const missing = [...cids].filter((c) => !pdfaGoodText(had.get(c)));
+  if (!missing.length) return 'ok';
+  const ds = f.lookup(N('DescendantFonts')), cid = ds instanceof PDFArray && ds.size() ? look(ds.get(0)) : null;
+  if (!(cid instanceof PDFDict) || pdfaName(L, cid.get(N('Subtype'))) !== 'CIDFontType2') return 'unmapped';
+  const fd = cid.lookup(N('FontDescriptor')), ff = fd instanceof PDFDict ? fd.lookup(N('FontFile2')) : null; if (!(ff instanceof PDFStream)) return 'unmapped';
+  let prog; try { prog = pdfaTtf(pdfaStreamBytes(L, ff)); } catch { return 'unmapped'; }
+  const m = cid.lookup(N('CIDToGIDMap')), mb = m instanceof PDFStream ? pdfaStreamBytes(L, m) : null;
+  const gid = (c) => (mb ? (c * 2 + 1 < mb.length ? (mb[c * 2] << 8) | mb[c * 2 + 1] : 0) : c);
+  const texts = pdfaGlyphTexts(prog);
+  let left = 0;
+  for (const c of missing) { const t = texts.get(gid(c)); if (pdfaGoodText(t)) had.set(c, t); else left++; }
+  if (left === missing.length) return 'unmapped';
+  // every mapping, written again as bfchar rows (two-byte codes)
+  const hex4 = (t) => [...t].map((ch) => { const cp = ch.codePointAt(0); return cp > 0xFFFF ? ch.split('').map((x) => x.charCodeAt(0).toString(16).padStart(4, '0')).join('') : cp.toString(16).padStart(4, '0'); }).join('').toUpperCase();
+  const rows = [...had].filter(([, t]) => pdfaGoodText(t)).sort((a, b) => a[0] - b[0]).map(([c, t]) => `<${c.toString(16).padStart(4, '0').toUpperCase()}> <${hex4(t)}>`);
+  let body = ''; for (let i = 0; i < rows.length; i += 100) { const part = rows.slice(i, i + 100); body += `${part.length} beginbfchar\n${part.join('\n')}\nendbfchar\n`; }
+  const cmap = `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n${body}endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n`;
+  f.set(N('ToUnicode'), out.context.register(out.context.flateStream(pdfaBytes(cmap))));
+  return 'fixed'; // any still unmapped are reported by the check
+}
+// The strings each font shows anywhere (pages and comment appearances): Map(font -> Set).
+function pdfaShownText(seen) {
+  const all = new Map();
+  for (const r of [...seen.pages, ...seen.annots.map((x) => x.rec)]) for (const [f, set] of r.text) { let s = all.get(f); if (!s) all.set(f, (s = new Set())); for (const x of set) s.add(x); }
+  return all;
 }
 
 /* ----- the replacement fonts ----- */
@@ -574,7 +692,7 @@ function pdfaBadAction(L, d) {
 /* ----- what the pages draw with: colour spaces, transparency, 16-bit and JPEG 2000 pictures ----- */
 // A record of what some content uses: { RGB, CMYK, Gray (device colours not remapped by a Default colour space),
 // icc: Set(N), iccV4, cie, spot, alpha: Set(why), bits16, jpx }
-const pdfaRec = () => ({ RGB: false, CMYK: false, Gray: false, icc: new Set(), iccV4: false, cie: false, spot: false, alpha: new Set(), bits16: false, jpx: false });
+const pdfaRec = () => ({ RGB: false, CMYK: false, Gray: false, icc: new Set(), iccV4: false, cie: false, spot: false, alpha: new Set(), bits16: false, jpx: false, text: new Map() });
 const PDFA_INLINE_CS = { RGB: 'DeviceRGB', G: 'DeviceGray', CMYK: 'DeviceCMYK', I: 'Indexed' };
 function pdfaUseCs(L, out, cs, res, rec, depth = 0) {
   const { PDFName, PDFArray, PDFDict, PDFStream } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
@@ -626,7 +744,9 @@ function pdfaScan(L, out, bytes, res, rec, seen, depth = 0) {
   const { PDFDict, PDFStream, PDFName, PDFNumber } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
   const sub = (kind, name) => { const d = res instanceof PDFDict ? res.lookup(N(kind)) : null; return d instanceof PDFDict ? look(d.get(N(name))) : null; };
   let toks; try { toks = tokenizeContent(pdfaLatin1(bytes)); } catch { return; }
-  let ops = [], bi = null;
+  let ops = [], bi = null, font = null; const fontStack = [];
+  // the strings each font shows (font dictionary -> Set of byte strings), for the Unicode checks
+  const shown = (str) => { if (!(font instanceof PDFDict)) return; let set = rec.text.get(font); if (!set) rec.text.set(font, (set = new Set())); set.add(str); };
   const form = (s) => {
     if (!(s instanceof PDFStream) || seen.has(s)) return; seen.add(s);
     const g = s.dict.lookup(N('Group')); if (g instanceof PDFDict && pdfaName(L, g.get(N('S'))) === 'Transparency') rec.alpha.add('transparency group');
@@ -639,6 +759,10 @@ function pdfaScan(L, out, bytes, res, rec, seen, depth = 0) {
     if (t.t !== 'op') { ops.push(t); continue; }
     const v = t.v, last = ops[ops.length - 1];
     if (v === 'BI') bi = [];
+    else if (v === 'q') fontStack.push(font);
+    else if (v === 'Q') { if (fontStack.length) font = fontStack.pop(); }
+    else if (v === 'Tf') { const nm = ops.find((o) => o.t === 'name'); if (nm) font = sub('Font', nm.v); }
+    else if (v === 'Tj' || v === "'" || v === '"' || v === 'TJ') { for (const o of ops) if (o.t === 'str') shown(o.v); }
     else if (v === 'rg' || v === 'RG') pdfaUseCs(L, out, 'DeviceRGB', res, rec);
     else if (v === 'k' || v === 'K') pdfaUseCs(L, out, 'DeviceCMYK', res, rec);
     else if (v === 'g' || v === 'G') pdfaUseCs(L, out, 'DeviceGray', res, rec);
@@ -1047,9 +1171,12 @@ async function pdfaConvert(bytes, opts = {}) {
     return fd instanceof PDFDict && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => fd.get(N(k)));
   };
   const unicodeFix = P.kind === 'A' && conformance === 'U';
+  const shownText = unicodeFix ? pdfaShownText(seen) : new Map();
   for (const [f] of fonts) {
     const sub = pdfaName(L, f.get(N('Subtype')));
     if (embedded(f)) {
+      // PDF/A-2u, 3u: CID fonts get a mapping for every glyph shown that has none, from the font program.
+      if (unicodeFix && sub === 'Type0' && pdfaCidUnicode(L, out, f, shownText.get(f)) === 'fixed') fix('Added text mappings (ToUnicode) to fonts');
       // PDF/A-2u, 3u: simple fonts get a ToUnicode map from their encoding when every code can be named.
       if (unicodeFix && sub !== 'Type0' && sub !== 'Type3' && !f.get(N('ToUnicode'))) {
         const { uni, unknown } = pdfaFontUnicodes(L, f);
@@ -1072,15 +1199,33 @@ async function pdfaConvert(bytes, opts = {}) {
       const name = `${tag}+${psName}`;
       descriptors.set(key, { name, ref: ctx.register(ctx.obj({ Type: 'FontDescriptor', FontName: name, Flags: flags, FontBBox: ttf.bbox.map((x) => Math.round(x * k)), ItalicAngle: ttf.italicAngle, Ascent: Math.round(ttf.ascent * k), Descent: Math.round(ttf.descent * k), CapHeight: Math.round(ttf.capHeight * k), XHeight: Math.round(ttf.xHeight * k), StemV: style & 1 ? 140 : 80, FontFile2: program })) });
     }
-    const desc = descriptors.get(key), was = (pdfaName(L, f.get(N('BaseFont'))) || '').replace(/^[A-Z]{6}\+/, '');
+    let desc = descriptors.get(key);
+    const was = (pdfaName(L, f.get(N('BaseFont'))) || '').replace(/^[A-Z]{6}\+/, '');
     const { uni, named } = pdfaFontUnicodes(L, f);
-    if (!named) {
+    const differs = !named && uni.some((u, c) => u != null && u !== PDFA_ENC.WinAnsiEncoding[c]);
+    if (differs && P.kind === 'A' && part === 1) {
+      // PDF/A-1 (6.3.7) lets a non-symbolic TrueType font name only WinAnsi or MacRoman, with no Differences. A font
+      // whose codes mean other characters (a form's PDFDocEncoding, say) becomes a symbolic font instead: no
+      // Encoding, and a font program of its own whose (3,0) cmap maps each code to its glyph.
+      const sig = key + ':' + uni.map((u) => (u == null ? '' : u.toString(36))).join(',');
+      if (!descriptors.has(sig)) {
+        const symProg = pdfaTtfSubset(ttf, null, uni), base = descriptors.get(key);
+        const ref = ctx.register(ctx.flateStream(symProg, { Length1: symProg.length }));
+        const tag = Array.from({ length: 6 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
+        const name = `${tag}+${psName}`, fd = look(base.ref).clone(ctx);
+        const fl = fd.lookup(N('Flags')).asNumber();
+        fd.set(N('FontName'), N(name)); fd.set(N('Flags'), PDFNumber.of((fl & ~32) | 4)); fd.set(N('FontFile2'), ref);
+        descriptors.set(sig, { name, ref: ctx.register(fd), symbolic: true });
+      }
+      desc = descriptors.get(sig);
+      f.delete(N('Encoding'));
+    } else if (!named) {
       // Encoding: WinAnsi plus the codes that differ from it, named from the Adobe Glyph List.
       const diffs = []; let last = -2;
       uni.forEach((u, c) => { if (u == null || u === PDFA_ENC.WinAnsiEncoding[c]) return; if (c !== last + 1) diffs.push(c); diffs.push(N(pdfaUnicodeToName(u))); last = c; });
       f.set(N('Encoding'), diffs.length ? ctx.obj({ Type: 'Encoding', BaseEncoding: 'WinAnsiEncoding', Differences: diffs.map((x) => (typeof x === 'number' ? PDFNumber.of(x) : x)) }) : N('WinAnsiEncoding'));
     }
-    const enc = named ? uni : uni.map((u, c) => (u == null ? PDFA_ENC.WinAnsiEncoding[c] : u));
+    const enc = named || desc.symbolic ? uni : uni.map((u, c) => (u == null ? PDFA_ENC.WinAnsiEncoding[c] : u));
     let first = enc.findIndex((u) => u != null); if (first < 0) first = 32;
     let lastC = 255; while (lastC > first && enc[lastC] == null) lastC--;
     const widths = []; for (let c = first; c <= lastC; c++) widths.push(Math.round(ttf.adv(enc[c] == null ? 0 : ttf.gid(enc[c])) * 1000 / ttf.upem));
@@ -1125,7 +1270,7 @@ async function pdfaConvert(bytes, opts = {}) {
     if (!pdfaText(L, info, 'Title')) info.set(N('Title'), PDFHexString.fromText(opts.name || 'Untitled'));
     const props = [{ ns: 'http://ns.adobe.com/pdfx/1.3/', prefix: 'pdfx', name: 'GTS_PDFXVersion', value: P.gts }];
     if (P.pdfx === '4') props.push({ ns: 'http://www.npes.org/pdfx/ns/id/', prefix: 'pdfxid', name: 'GTS_PDFXVersion', value: P.gts });
-    pdfaWriteXmp(L, out, { props: [...props, ...(opts.props || [])], dropNs: [PDFA_NS.pdfaid, ...props.map((x) => x.ns)] });
+    pdfaWriteXmp(L, out, { props: [...props, ...(opts.props || [])], dropNs: [PDFA_NS.pdfaid, ...props.map((x) => x.ns)], version: P.pdfx === '4' });
   } else {
     pdfaWriteXmp(L, out, { pdfa: { part, conformance }, pdfua: part >= 2 && xmpBefore.props['pdfuaid:part'] ? { part: xmpBefore.props['pdfuaid:part'] } : null, extensions: opts.extensions, props: opts.props });
     if (xmpBefore.foreign.some((x, k) => !PDFA_PREDEFINED.has(xmpBefore.foreignNs[k]))) fix('Removed metadata PDF/A doesn\'t know');
@@ -1191,6 +1336,7 @@ async function pdfaCheck(bytes, opts) {
       else if (xv !== iv) bad(`The ${label} differs between the document properties and the XMP metadata.`);
     }
   });
+  rule('xmp-trapped', () => { if (xmp.props['pdf:Trapped'] != null && !(xmp.declared.has(PDFA_NS.pdf) && /<pdfaProperty:name>\s*Trapped\s*</.test(xmp.extensionXml))) bad('The XMP metadata has pdf:Trapped, which PDF/A doesn\'t know without an extension schema.'); });
   rule('xmp-schemas', () => { const odd = new Set(xmp.foreignNs.filter((ns) => !PDFA_PREDEFINED.has(ns) && !xmp.declared.has(ns))); if (odd.size) bad(`The XMP metadata uses schemas PDF/A doesn't know: ${[...odd].join(', ')}.`); });
   rule('output-intent', () => {
     const oi = cat.lookup(N('OutputIntents')); const list = oi instanceof PDFArray ? oi.asArray().map(look).filter((o) => o instanceof PDFDict && pdfaName(L, o.get(N('S'))) === 'GTS_PDFA1') : [];
@@ -1235,8 +1381,22 @@ async function pdfaCheck(bytes, opts) {
     }
   });
   if (conf === 'U') rule('tounicode', () => {
+    const shownText = pdfaShownText(pdfaInspect(L, out));
     for (const [f, w] of fonts) {
-      const sub = pdfaName(L, f.get(N('Subtype'))); if (f.get(N('ToUnicode'))) continue;
+      const sub = pdfaName(L, f.get(N('Subtype')));
+      const name = () => (pdfaName(L, f.get(N('BaseFont'))) || w.key).replace(/^[A-Z]{6}\+/, '');
+      const tu = f.lookup(N('ToUnicode'));
+      if (tu instanceof PDFStream && shownText.get(f)) {
+        // every glyph the pages show has a usable mapping (ISO 19005-2, 6.2.11.7.2)
+        const map = pdfaCMapRead(pdfaLatin1(pdfaStreamBytes(L, tu) || new Uint8Array()));
+        let codes;
+        if (sub === 'Type0') codes = pdfaCidsShown(L, f, shownText.get(f));
+        else { codes = new Set(); for (const s of shownText.get(f)) for (const ch of s) codes.add(ch.charCodeAt(0)); }
+        const uni = sub !== 'Type0' && sub !== 'Type3' ? pdfaFontUnicodes(L, f).uni : null;
+        const bad1 = codes ? [...codes].filter((c) => !pdfaGoodText(map.get(c)) && !(uni && uni[c] != null && !map.has(c))) : [];
+        if (bad1.length) bad(`Font ${name()} shows ${bad1.length === 1 ? 'a glyph' : bad1.length + ' glyphs'} with no Unicode mapping (code ${bad1.slice(0, 3).map((c) => c.toString(16).toUpperCase().padStart(sub === 'Type0' ? 4 : 2, '0')).join(', ')}), so that text can't be searched or copied reliably.`, { page: w.page, fix: 'manual' });
+      }
+      if (f.get(N('ToUnicode'))) continue;
       if (sub !== 'Type0' && sub !== 'Type3') { const { unknown } = pdfaFontUnicodes(L, f); const enc = f.get(N('Encoding')); if (enc && !unknown.length) continue; }
       if (sub === 'Type0') { const e = pdfaName(L, f.get(N('Encoding'))); if (e && /^Uni|UCS2/.test(e)) continue; }
       bad(`Font ${(pdfaName(L, f.get(N('BaseFont'))) || w.key).replace(/^[A-Z]{6}\+/, '')} has no Unicode mapping, so its text can't be searched or copied reliably.`, { page: w.page, fix: 'manual' });
@@ -1306,6 +1466,23 @@ async function pdfaCheck(bytes, opts) {
         const sub = pdfaName(L, f.get(N('Subtype'))), base = pdfaName(L, f.get(N('BaseFont'))) || '';
         if ((sub === 'Type1' || sub === 'MMType1') && /^[A-Z]{6}\+/.test(base)) { const fd = f.lookup(N('FontDescriptor')); if (fd instanceof PDFDict && fd.get(N('FontFile')) && !fd.get(N('CharSet'))) bad(`Font ${base.slice(7)} doesn't list its glyphs (CharSet).`, { page: w.page }); }
         if (sub === 'Type0') { const ds = f.lookup(N('DescendantFonts')); const cid = ds instanceof PDFArray && ds.size() ? look(ds.get(0)) : null; const fd = cid instanceof PDFDict ? cid.lookup(N('FontDescriptor')) : null; const nm = fd instanceof PDFDict ? pdfaName(L, fd.get(N('FontName'))) || '' : ''; if (/^[A-Z]{6}\+/.test(nm) && !fd.get(N('CIDSet'))) bad(`Font ${nm.slice(7)} doesn't list its glyphs (CIDSet).`, { page: w.page }); }
+      }
+    });
+    // 6.3.7: a non-symbolic TrueType font names WinAnsi or MacRoman with no Differences; a symbolic one has no
+    // Encoding and its program one cmap table.
+    rule('truetype-encoding', () => {
+      for (const [f, w] of fonts) {
+        if (pdfaName(L, f.get(N('Subtype'))) !== 'TrueType') continue;
+        const fd = f.lookup(N('FontDescriptor')), fl = fd instanceof PDFDict ? fd.lookup(N('Flags')) : null, name = (pdfaName(L, f.get(N('BaseFont'))) || w.key).replace(/^[A-Z]{6}\+/, '');
+        const symbolic = fl instanceof PDFNumber && !!(fl.asNumber() & 4), enc = f.lookup(N('Encoding'));
+        if (!symbolic) {
+          const base = enc instanceof PDFDict ? pdfaName(L, enc.get(N('BaseEncoding'))) : pdfaName(L, enc);
+          if (!/^(WinAnsi|MacRoman)Encoding$/.test(base || '') || (enc instanceof PDFDict && enc.get(N('Differences')))) bad(`Font ${name}: a TrueType font in PDF/A-1 must use WinAnsi or MacRoman encoding, with no changes to it.`, { page: w.page, fix: 'manual' });
+        } else {
+          if (enc) bad(`Font ${name}: a symbolic TrueType font in PDF/A-1 can't name an encoding.`, { page: w.page, fix: 'manual' });
+          const ff = fd instanceof PDFDict ? fd.lookup(N('FontFile2')) : null, b = ff instanceof PDFStream ? pdfaStreamBytes(L, ff) : null;
+          if (b) { try { const t = pdfaTtf(b), n = t.view.getUint16(t.tables.cmap.off + 2); if (n !== 1) bad(`Font ${name}: a symbolic TrueType font in PDF/A-1 must have exactly one cmap table (it has ${n}).`, { page: w.page, fix: 'manual' }); } catch {} }
+        }
       }
     });
     rule('no-layers', () => { if (cat.get(N('OCProperties'))) bad('The file has layers (optional content), which PDF/A-1 doesn\'t allow.', { fix: 'manual' }); });

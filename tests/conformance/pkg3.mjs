@@ -167,6 +167,31 @@ for (const [id, check, f, kind] of POS) {
   if (!r.file) { record(id, check, f, false, 'no file: ' + JSON.stringify(r.dialogs)); continue; }
   want(r.file, kind.a || 'x' + kind.x, id, `${f} → ${kind.a ? 'PDF/A-' + kind.a : 'PDF/X-' + kind.x}`);
 }
+// The same PDF/A inputs with Info /Trapped /False (reportlab, Distiller and PDF/X tools write it): pdf:Trapped must not
+// reach a PDF/A packet without an extension schema.
+for (const [id, , f, kind] of POS.filter((x) => x[3].a)) {
+  p = await app(); await openFile(p, fx['trap-' + f]);
+  const r = await exportVia(p, kind, `${id}-trap-${f}.pdf`);
+  if (!r.file) { record(id, POS.find((x) => x[0] === id)[1], `${f} with Info /Trapped`, false, 'no file: ' + JSON.stringify(r.dialogs)); continue; }
+  want(r.file, kind.a, id, `${f} with Info /Trapped /False → PDF/A-${kind.a}`);
+}
+// The repository's Word export (a CID TrueType font with an "ft" ligature glyph its ToUnicode map leaves out) as 2u
+// and 3u: the mapping is found in the font's own ligature table.
+for (const [id, a] of [['P3-05', '2u'], ['P3-06', '3u']]) {
+  p = await app(); await openFile(p, path.join(root, 'tests/fixtures/word.pdf'));
+  const r = await exportVia(p, { a }, `${id}-word-${a}.pdf`);
+  if (!r.file) { record(id, POS.find((x) => x[0] === id)[1], `tests/fixtures/word.pdf → PDF/A-${a}`, false, 'no file: ' + JSON.stringify(r.dialogs)); continue; }
+  want(r.file, a, id, `tests/fixtures/word.pdf (ligature glyph with no ToUnicode entry) → PDF/A-${a}`);
+}
+// Not a matrix row: a form whose field appearances use Helvetica (not embedded) with a /Differences encoding. PDF/A-1
+// allows no Differences on a TrueType font, so the stand-in font is made symbolic there.
+const FORM = 'Form fields (Helvetica, not embedded, with /Differences) as PDF/A-1b, 2b, 3b';
+for (const [f, a] of [['form', '1b'], ['form', '2b'], ['form', '3b'], ['trap-form', '1b']]) {
+  p = await app(); await openFile(p, fx[f]);
+  const r = await exportVia(p, { a }, `P3-R1-${f}-${a}.pdf`);
+  if (!r.file) { record('P3-R1', FORM, `${f} → PDF/A-${a}`, false, 'no file: ' + JSON.stringify(r.dialogs)); continue; }
+  want(r.file, a, 'P3-R1', `${f} → PDF/A-${a}`);
+}
 // 10-13. Negatives: a clear refusal in the app, and no file
 const NEG = [
   ['P3-10', 'RGB-only content as PDF/A-1b with a CMYK output intent → refused', 'neg-rgb', { a: '1b', intent: 'cmyk' }, /uses RGB colours/],
@@ -263,10 +288,12 @@ const PRODUCER = /^Cowdrey\.PDF \d+\.\d+\.\d+ \(bradcowdrey\.com\)$/;
   const setOk = c1 && c1.toISOString() === tz && m1 && m1.toISOString() === tzm && x1.includes(tz.replace(/\.000Z$/, 'Z')) && x1.includes(tzm.replace(/\.000Z$/, 'Z'));
   p = await app(); await openFile(p, f1, 'Annual.pdf');
   const v = await readProps(p);
+  // Done with the dialog untouched (its Modified field shows the file's date): not a change, so the save stamps now
+  await props(p); await done(p);
   const before = Date.now();
   const f2 = await saveVia(p, `${id}-reexport.pdf`), d2 = await load(f2), c2 = d2.getCreationDate(), m2 = d2.getModificationDate(), x2 = xmpText(d2);
   const autoOk = c2 && c2.toISOString() === tz && m2 && +m2 >= Math.floor(before / 1000) * 1000 - 1000 && x2.includes(pdfaIsoNode(m2));
-  record(id, check, 'set, saved, reopened, re-exported', setOk && v.created === '2020-01-02T03:04:05' && autoOk, `set: created ${c1 && c1.toISOString()}, modified ${m1 && m1.toISOString()} (XMP in step ${x1.includes(tzm.replace(/\.000Z$/, 'Z'))}); reopened dialog created ${v.created}; re-export: created ${c2 && c2.toISOString()}, modified ${m2 && m2.toISOString()} (now; XMP ModifyDate ${/<xmp:ModifyDate>([^<]*)/.exec(x2)?.[1]})`);
+  record(id, check, 'set, saved, reopened, re-exported', setOk && v.created === '2020-01-02T03:04:05' && v.modified === '2021-02-03T04:05:06' && autoOk, `set: created ${c1 && c1.toISOString()}, modified ${m1 && m1.toISOString()} (XMP in step ${x1.includes(tzm.replace(/\.000Z$/, 'Z'))}); reopened dialog created ${v.created}, modified ${v.modified}; re-export: created ${c2 && c2.toISOString()}, modified ${m2 && m2.toISOString()} (now; XMP ModifyDate ${/<xmp:ModifyDate>([^<]*)/.exec(x2)?.[1]})`);
 }
 function pdfaIsoNode(d) { return d.toISOString().replace(/\.\d{3}Z$/, 'Z'); }
 {
@@ -348,6 +375,16 @@ for (const k of ALL) {
   if (r.file) want(r.file, k.a || 'x' + k.x, 'P3-20', `blank page → ${kindName(k)}`); else record('P3-20', 'Single blank page, every profile', kindName(k), false, JSON.stringify(r.dialogs));
 }
 for (const k of ALL) {
+  p = await app(); await openFile(p, fx['trap-blank'], 'Blank.pdf');
+  const r = await exportVia(p, k, `P3-20-trap-blank-${k.a || 'x' + k.x}.pdf`);
+  if (r.file) want(r.file, k.a || 'x' + k.x, 'P3-20', `blank page with Info /Trapped → ${kindName(k)}`); else record('P3-20', 'Single blank page, every profile', kindName(k) + ' (Trapped)', false, JSON.stringify(r.dialogs));
+}
+{
+  p = await app(); await openFile(p, fx['trap-annots'], 'Annotations.pdf');
+  const r = await exportVia(p, { a: '1b' }, 'P3-21-trap-annots-1b.pdf');
+  if (r.file) want(r.file, '1b', 'P3-21', 'highlight + note + ink, Info /Trapped → PDF/A-1b'); else record('P3-21', 'Existing annotations kept by every profile', 'PDF/A-1b (Trapped)', false, JSON.stringify(r.dialogs));
+}
+for (const k of ALL) {
   p = await app(); await openFile(p, fx.annots, 'Annotations.pdf');
   const r = await exportVia(p, k, `P3-21-annots-${k.a || 'x' + k.x}.pdf`);
   if (!r.file) { record('P3-21', 'Existing annotations kept by every profile', kindName(k), false, JSON.stringify(r.dialogs)); continue; }
@@ -364,7 +401,7 @@ log('validating', pending.length, 'files');
 const byV = {}; for (const x of pending) (byV[x.v] ||= []).push(x);
 const vera = {};
 for (const v of Object.keys(byV).filter((v) => !v.startsWith('x'))) { log('veraPDF', v, byV[v].length, 'files'); Object.assign(vera, veraPdf(jar, v, byV[v].map((x) => x.file))); }
-const CHECKS = { 'P3-01': POS[0][1], 'P3-02': POS[1][1], 'P3-03': POS[2][1], 'P3-04': POS[3][1], 'P3-05': POS[4][1], 'P3-06': POS[5][1], 'P3-07': POS[6][1], 'P3-08': POS[7][1], 'P3-09': POS[8][1], 'P3-13': NEG[3][1], 'P3-19': 'Scale: 50-page scanned PDF, full export, memory reasonable', 'P3-20': 'Single blank page, every profile', 'P3-21': 'Existing annotations kept by every profile' };
+const CHECKS = { 'P3-01': POS[0][1], 'P3-02': POS[1][1], 'P3-03': POS[2][1], 'P3-04': POS[3][1], 'P3-05': POS[4][1], 'P3-06': POS[5][1], 'P3-07': POS[6][1], 'P3-08': POS[7][1], 'P3-09': POS[8][1], 'P3-13': NEG[3][1], 'P3-19': 'Scale: 50-page scanned PDF, full export, memory reasonable', 'P3-20': 'Single blank page, every profile', 'P3-21': 'Existing annotations kept by every profile', 'P3-R1': FORM };
 for (const x of pending) {
   if (x.v.startsWith('x')) {
     const r = pdfxCheck(x.v.slice(1), x.file);

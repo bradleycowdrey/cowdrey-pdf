@@ -200,5 +200,28 @@ export async function makeFixtures(A, outDir) {
     d.catalog.set(N('Metadata'), d.context.register(d.context.stream(Buffer.from(xmp, 'utf8'), { Type: 'Metadata', Subtype: 'XML' })));
     await save(d, 'docinfo.pdf');
   }
+  // ---- a form as reportlab writes one: a text field and a check box whose appearances use Helvetica, not embedded,
+  // with a PDFDocEncoding-like /Differences encoding (codes 24-31 and 128-160 differ from WinAnsi)
+  {
+    const d = await newDoc('Form'); const p = d.addPage([595, 842]); const ctx = d.context; addType1(d, p, 780);
+    const diffs = [24, 'breve', 'caron', 'circumflex', 'dotaccent', 'hungarumlaut', 'ogonek', 'ring', 'tilde', 39, 'quotesingle', 96, 'grave', 128, 'bullet', 'dagger', 'daggerdbl', 'ellipsis', 'emdash', 'endash', 'florin', 'fraction', 'guilsinglleft', 'guilsinglright', 'minus', 'perthousand', 'quotedblbase', 'quotedblleft', 'quotedblright', 'quoteleft', 'quoteright', 'quotesinglbase', 'trademark', 'fi', 'fl', 'Lslash', 'OE', 'Scaron', 'Ydieresis', 'Zcaron', 'dotlessi', 'lslash', 'oe', 'scaron', 'zcaron', 160, 'Euro'];
+    const helv = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Name: 'Helv', Encoding: ctx.obj({ Type: 'Encoding', Differences: diffs.map((x) => (typeof x === 'number' ? PDFNumber.of(x) : N(x))) }) }));
+    const zadb = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'ZapfDingbats', Name: 'ZaDb' }));
+    const ap = (ops, bbox, font) => ctx.register(ctx.flateStream(Buffer.from(ops, 'latin1'), { Type: 'XObject', Subtype: 'Form', BBox: bbox, Resources: ctx.obj({ Font: ctx.obj(font) }) }));
+    const txAp = ap('/Tx BMC q 0.8 0.8 1 rg 0 0 200 20 re f 0 G 1 w 0.5 0.5 199 19 re S BT /Helv 12 Tf 0 g 3 5 Td (Ada \\200 Lovelace) Tj ET Q EMC', [0, 0, 200, 20], { Helv: helv });
+    const onAp = ap('q 0 G 1 w 0.5 0.5 19 19 re S BT /Helv 14 Tf 0 g 4 4 Td (X) Tj ET Q', [0, 0, 20, 20], { Helv: helv });
+    const offAp = ap('q 0 G 1 w 0.5 0.5 19 19 re S Q', [0, 0, 20, 20], {});
+    const tx = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: PDFString.of('name'), V: PDFHexString.fromText('Ada • Lovelace'), DA: PDFString.of('/Helv 12 Tf 0 g'), Rect: [100, 700, 300, 720], F: 4, P: p.ref, MK: ctx.obj({ BG: [0.8, 0.8, 1] }), AP: ctx.obj({ N: txAp }) }));
+    const cb = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Btn', T: PDFString.of('agree'), V: 'Yes', AS: 'Yes', DA: PDFString.of('/ZaDb 0 Tf 0 g'), Rect: [100, 660, 120, 680], F: 4, P: p.ref, AP: ctx.obj({ N: ctx.obj({ Yes: onAp, Off: offAp }) }) }));
+    annot(d, p, tx); annot(d, p, cb);
+    d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [tx, cb], DA: PDFString.of('/Helv 0 Tf 0 g'), DR: ctx.obj({ Font: ctx.obj({ Helv: helv, ZaDb: zadb }) }) }));
+    await save(d, 'form.pdf');
+  }
+  // ---- Info /Trapped /False, as reportlab, Distiller and PDF/X tools write it: copies of the PDF/A inputs
+  for (const n of ['a1b', 'a2b', 'a3b', 'a1bu', 'a2u', 'a3u', 'blank', 'annots', 'form']) {
+    const d = await PDFDocument.load(fs.readFileSync(files[n]), { updateMetadata: false });
+    d.getInfoDict().set(N('Trapped'), N('False'));
+    const f = path.join(outDir, `trap-${n}.pdf`); fs.writeFileSync(f, await d.save({ useObjectStreams: false })); files[`trap-${n}`] = f;
+  }
   return files;
 }

@@ -475,6 +475,40 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('PDF/A and X-4 metadata: no pdf:Trapped in a PDF/A packet; X-4 has VersionID and RenditionClass; a form font with /Differences is symbolic in PDF/A-1; a ligature gets its Unicode in 2u', async () => {
+    // a form as reportlab writes one: Helvetica (not embedded) with /Differences, and Info /Trapped /False
+    const d = await L.PDFDocument.create(); const pg = d.addPage([400, 300]), ctx = d.context;
+    const helv = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: ctx.obj({ Type: 'Encoding', Differences: [PDFNumber.of(128), N('bullet'), N('dagger')] }) }));
+    const ap = ctx.register(ctx.flateStream(Buffer.from('/Tx BMC BT /Helv 12 Tf 2 5 Td (Ada \\200 L) Tj ET EMC', 'latin1'), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 20], Resources: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    const w = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: PDFString.of('name'), V: PDFString.of('Ada'), DA: PDFString.of('/Helv 12 Tf 0 g'), Rect: [50, 200, 250, 220], F: 4, P: pg.ref, AP: ctx.obj({ N: ap }) }));
+    pg.node.set(N('Annots'), ctx.obj([w])); d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [w], DR: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    d.setTitle('Form'); d.getInfoDict().set(N('Trapped'), N('False'));
+    const bytes = Array.from(await d.save());
+    const p = await open();
+    const r = await p.evaluate(async ([b, word]) => {
+      const H = window.__cowdreyPdf, o = {};
+      for (const [k, opts] of [['a1b', { part: 1, conformance: 'B' }], ['a2b', { part: 2, conformance: 'B' }], ['x4', { pdfx: '4' }]]) {
+        const c = await H.pdfaConvert(new Uint8Array(b), opts); if (!c.bytes) return { blocked: k + ' ' + JSON.stringify(c) };
+        o[k] = { bytes: Array.from(c.bytes), problems: (await (opts.pdfx ? H.pdfxCheck : H.pdfaCheck)(c.bytes, opts)).filter((x) => x.severity === 'error').map((x) => x.rule + ': ' + x.text) };
+      }
+      const w2 = await H.pdfaConvert(new Uint8Array(word), { part: 2, conformance: 'U' });
+      o.word = { before: (await H.pdfaCheck(new Uint8Array(word), { part: 2, conformance: 'U' })).filter((x) => x.rule === 'tounicode').map((x) => x.text), after: (await H.pdfaCheck(w2.bytes, { part: 2, conformance: 'U' })).filter((x) => x.severity === 'error').map((x) => x.rule + ': ' + x.text) };
+      return o;
+    }, [bytes, Array.from(Buffer.from(fixture('word.pdf'), 'base64'))]);
+    ok(!r.blocked, r.blocked); for (const k of ['a1b', 'a2b', 'x4']) eq(r[k].problems, [], k);
+    const xmpOf = async (b) => { const x = await L.PDFDocument.load(new Uint8Array(b), { updateMetadata: false }); return [x, streamBytes(x.catalog.lookup(N('Metadata'))).toString('utf8')]; };
+    const [a1, x1] = await xmpOf(r.a1b.bytes), [, x2] = await xmpOf(r.a2b.bytes), [, x4] = await xmpOf(r.x4.bytes);
+    ok(!x1.includes('pdf:Trapped') && !x2.includes('pdf:Trapped'), 'no pdf:Trapped in the PDF/A packets');
+    eq(nameOf(a1.getInfoDict().get(N('Trapped'))), 'False', 'Info keeps Trapped');
+    ok(x4.includes('<pdf:Trapped>False</pdf:Trapped>') && x4.includes('<xmpMM:VersionID>1</xmpMM:VersionID>') && x4.includes('<xmpMM:RenditionClass>default</xmpMM:RenditionClass>'), x4);
+    // the stand-in for Helvetica: symbolic, no Encoding, in PDF/A-1
+    const f1 = a1.context.lookup(a1.catalog.lookup(N('AcroForm')).lookup(N('DR')).lookup(N('Font')).get(N('Helv')));
+    ok(!f1.get(N('Encoding')) && f1.lookup(N('FontDescriptor')).lookup(N('Flags')).asNumber() & 4, 'symbolic, no Encoding');
+    ok(r.word.before.some((t) => /Carlito-Regular.*code 005B/.test(t)), JSON.stringify(r.word.before));
+    eq(r.word.after, [], 'word.pdf as 2u');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('PDF/A: veraPDF (when installed: $VERAPDF names its jar or script) finds the output compliant', async () => {
     const jar = process.env.VERAPDF, file = path.join(tmp, 'pdfa-2b.pdf');
     if (!jar || !fs.existsSync(jar) || !fs.existsSync(file)) { console.log('      (veraPDF not installed: set VERAPDF to its jar to run it; skipped)'); return; }
