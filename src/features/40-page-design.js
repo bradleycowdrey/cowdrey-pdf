@@ -12,20 +12,33 @@ const PD_FONTS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']];
 const PD_MM = 72 / 25.4;
 const PD_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const PD_DATES = ['d mmmm yyyy', 'mmmm d, yyyy', 'dd/mm/yyyy', 'mm/dd/yyyy', 'yyyy-mm-dd', 'd/m/yy'];
-// Characters the standard PDF fonts can write (WinAnsi); anything else shows as "?" on screen and in the file.
-const PD_ANSI = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
-const pdClean = (s) => [...String(s)].map((c) => { const k = c.codePointAt(0); return (k >= 32 && k <= 126) || (k >= 160 && k <= 255) || PD_ANSI.includes(c) ? c : '?'; }).join('');
+const PD_PARITY = [['all', 'All pages'], ['odd', 'Odd pages'], ['even', 'Even pages']];
 const pdDefaults = {
-  pd_watermark: () => ({ kind: 'text', text: 'CONFIDENTIAL', font: 'sans', bold: true, size: 64, color: '#E03131', scale: 50, opacity: 30, rotation: 45, layout: 'center', front: 'front', range: '' }),
-  pd_background: () => ({ kind: 'color', color: '#FFF3BF', fit: 'stretch', opacity: 100, range: '' }),
-  pd_headfoot: () => ({ tl: '', tc: '', tr: '', bl: '', bc: 'Page <<page>> of <<pages>>', br: '', font: 'sans', bold: false, size: 10, color: '#333333', dateFmt: 'd mmmm yyyy', mTop: 12, mBottom: 12, mSide: 18, start: 1, range: '' }),
-  pd_bates: () => ({ prefix: 'ABC', start: 1, digits: 6, suffix: '', slot: 'br', font: 'sans', bold: false, size: 10, color: '#111111', mTop: 12, mBottom: 12, mSide: 18, range: '' }),
+  pd_watermark: () => ({ kind: 'text', text: 'CONFIDENTIAL', font: 'sans', bold: true, size: 64, color: '#E03131', scale: 50, opacity: 30, rotation: 45, layout: 'center', front: 'front', range: '', parity: 'all' }),
+  pd_background: () => ({ kind: 'color', color: '#FFF3BF', fit: 'stretch', opacity: 100, range: '', parity: 'all' }),
+  pd_headfoot: () => ({ tl: '', tc: '', tr: '', bl: '', bc: 'Page <<page>> of <<pages>>', br: '', font: 'sans', bold: false, size: 10, color: '#333333', dateFmt: 'd mmmm yyyy', mTop: 12, mBottom: 12, mSide: 18, start: 1, range: '', parity: 'all', firstDiff: false, ftl: '', ftc: '', ftr: '', fbl: '', fbc: '', fbr: '' }),
+  pd_bates: () => ({ prefix: 'ABC', start: 1, digits: 6, suffix: '', slot: 'br', font: 'sans', bold: false, size: 10, color: '#111111', mTop: 12, mBottom: 12, mSide: 18, range: '', parity: 'all' }),
 };
 const pdLastUsed = {};
 
 function pdItems() { return doc ? docMarks().filter((m) => PD_TYPES[m.type]).sort((a, b) => PD_ORDER.indexOf(a.type) - PD_ORDER.indexOf(b.type)) : []; }
-// The pages (0-based, in order) an item is on, out of N.
-function pdPages(m, N) { return m.range && m.range.trim() ? parseRange(m.range, N).sort((a, b) => a - b) : [...Array(N).keys()]; }
+// The pages (0-based, in order) an item's range covers, out of N; and those it is on (odd or even pages only, by
+// their number in the saved file).
+function pdRange(m, N) { return m.range && m.range.trim() ? parseRange(m.range, N).sort((a, b) => a - b) : [...Array(N).keys()]; }
+function pdPages(m, N) { const r = pdRange(m, N); return m.parity === 'odd' ? r.filter((n) => n % 2 === 0) : m.parity === 'even' ? r.filter((n) => n % 2 === 1) : r; }
+// What the file, title and author fields say: the file's name, and its Title and Author (as changed in Document
+// properties, else as in the PDF; the title falls back to the file's name, as saving does).
+let pdMetaRead = { title: '', author: '' };
+function pdMeta() {
+  if (!doc) return { file: '', title: '', author: '' };
+  const di = docMarks().find((m) => m.type === 'docinfo') || {};
+  return { file: doc.name + '.pdf', title: di.title ?? (pdMetaRead.title || doc.name), author: di.author ?? pdMetaRead.author ?? '' };
+}
+FEATURE.onDocShown.push(async (d) => {
+  pdMetaRead = { title: '', author: '' };
+  try { const md = await pdfDocs.get(0).getMetadata(), i = (md && md.info) || {}; if (doc === d) pdMetaRead = { title: String(i.Title || '').trim(), author: String(i.Author || '').trim() }; } catch {}
+  if (doc === d && pdItems().length) pdRefreshAll();
+});
 function pdDate(fmt, d = new Date()) {
   const D = d.getDate(), M = d.getMonth() + 1, Y = d.getFullYear(), p2 = (x) => String(x).padStart(2, '0');
   return fmt.replace(/yyyy|yy|mmmm|mm|m|dd|d/g, (t) => ({ yyyy: Y, yy: p2(Y % 100), mmmm: PD_MONTHS[M - 1], mm: p2(M), m: M, dd: p2(D), d: D }[t]));
@@ -34,8 +47,9 @@ const pdBates = (m, num) => `${m.prefix || ''}${String(num).padStart(Math.max(1,
 // A place in a header's text moved out of any field it falls inside (to the field's end).
 function pdOutside(s, at) { for (const mt of String(s).matchAll(/<<[^<>]*>>/g)) if (at > mt.index && at < mt.index + mt[0].length) return mt.index + mt[0].length; return at; }
 // Text with a broken field in it ("<<pa<<page>>ge>>"): what is left of << or >> once the real fields are taken out.
-const pdBroken = (s) => /<<|>>/.test(String(s || '').replace(/<<\s*(pages|page|date)\s*>>/gi, ''));
-function pdTokens(s, page, pages, date) { return String(s).replace(/<<\s*(pages|page|date)\s*>>/gi, (_, t) => ({ page, pages, date }[t.toLowerCase()])); }
+const PD_TOKEN = /<<\s*(pages|page|date|file|title|author)\s*>>/gi;
+const pdBroken = (s) => /<<|>>/.test(String(s || '').replace(PD_TOKEN, ''));
+function pdTokens(s, page, pages, date, meta = pdMeta()) { return String(s).replace(PD_TOKEN, (_, t) => String({ page, pages, date, ...meta }[t.toLowerCase()] ?? '')); }
 
 // Centres for a tiled watermark: a grid turned with the watermark, rows offset by half a step, covering the page.
 function pdTiles(W, H, a, stepX, stepY, reach) {
@@ -49,11 +63,12 @@ function pdTiles(W, H, a, stepX, stepY, reach) {
 // What to draw on page n of N, a W×H page as seen: { under: [...], over: [...] } of
 // { kind: 'rect' | 'text' | 'image', x, y (bottom left / baseline start), angle (degrees, anticlockwise), … }.
 // `list` is the settings to draw (the document's, or a dialog's preview of them).
-function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
+function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems(), meta = pdMeta()) {
   const under = [], over = [];
   for (const m of list) {
     const pages = pdPages(m, N), k = pages.indexOf(n);
     if (k < 0) continue;
+    const range = pdRange(m, N), kr = range.indexOf(n);
     const op = Math.max(0, Math.min(100, m.opacity ?? 100)) / 100;
     if (m.type === 'pd_background') {
       if (m.kind === 'image' && m.data) {
@@ -70,7 +85,7 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
         w = W * Math.max(1, +m.scale || 50) / 100; h = w * m.ih / m.iw;
         item = (cx, cy) => ({ kind: 'image', data: m.data, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, w, h, angle: +m.rotation || 0, opacity: op, art: 'Watermark' });
       } else {
-        const text = pdClean(m.text || ''), size = Math.max(1, +m.size || 48);
+        const text = String(m.text || ''), size = Math.max(1, +m.size || 48);
         if (!text.trim()) continue;
         w = measure(text, m.font, m.bold, size); h = size * .7;
         item = (cx, cy) => ({ kind: 'text', text, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, angle: +m.rotation || 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: op, art: 'Watermark' });
@@ -80,11 +95,13 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
     } else {
       const size = Math.max(1, +m.size || 10), slots = {};
       if (m.type === 'pd_headfoot') {
-        const first = Math.round(+m.start || 1), date0 = pdDate(m.dateFmt || PD_DATES[0], date);
-        for (const [s] of PD_SLOTS) if (m[s]) slots[s] = pdTokens(m[s], first + k, first + pages.length - 1, date0);
+        // page numbers count every page of the range (an odd-pages header on page 3 says 3); the first page of
+        // its pages has its own header and footer when asked (or none)
+        const first = Math.round(+m.start || 1), date0 = pdDate(m.dateFmt || PD_DATES[0], date), own = m.firstDiff && k === 0;
+        for (const [s] of PD_SLOTS) { const v = own ? m['f' + s] : m[s]; if (v) slots[s] = pdTokens(v, first + kr, first + range.length - 1, date0, meta); }
       } else slots[m.slot || 'br'] = pdBates(m, Math.max(0, Math.round(+m.start || 0)) + k);
       for (const [s, raw] of Object.entries(slots)) {
-        const text = pdClean(raw); if (!text.trim()) continue;
+        const text = String(raw); if (!text.trim()) continue;
         const tw = measure(text, m.font, m.bold, size), side = (+m.mSide || 0) * PD_MM;
         const x = s[1] === 'l' ? side : s[1] === 'r' ? W - side - tw : (W - tw) / 2;
         const y = s[0] === 't' ? H - (+m.mTop || 0) * PD_MM - size * .75 : (+m.mBottom || 0) * PD_MM + size * .22;
@@ -167,6 +184,13 @@ addStyle(`
 .pd-form .sw-row input[type="color"] { padding: 0; border: 0; height: 100%; }
 .pd-form .sw-row { min-height: 36px; }
 .pd-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; }
+.pd-presets { display: flex; flex-wrap: wrap; align-items: end; gap: 0 10px; margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--line); }
+.pd-presets .field { margin: 4px 0; min-width: 0; flex: 1 1 160px; }
+.pd-presets .field > span { font-size: 12px; color: var(--ink-3); }
+.pd-presets .field select, .pd-presets .field input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 100%; box-sizing: border-box; }
+.pd-presets .btn { height: 36px; margin: 4px 0; }
+.pd-presets .btn[hidden], .pd-first[hidden] { display: none; }
+.pd-top > .pd-check { display: inline-flex; height: auto; margin: 2px 0 4px; }
 .pd-tokens { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 6px; font-size: 12px; color: var(--ink-3); }
 .pd-tokens .btn { height: 26px; padding: 0 10px; font-size: 12px; }
 .pd-pic { display: flex; gap: 10px; align-items: center; }
@@ -212,8 +236,7 @@ dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: non
 }
 `);
 
-/* saving */
-const PD_STD = { sans: ['Helvetica', 'HelveticaBold'], serif: ['TimesRoman', 'TimesRomanBold'], mono: ['Courier', 'CourierBold'] };
+/* saving: text in embedded Unicode fonts (Noto Sans, Serif or Mono for Sans, Serif and Mono), as subsets */
 function pdRgb(L, hex) { const n = parseInt(String(hex || '#000000').slice(1), 16) || 0; return L.rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); }
 // Each run of items of one kind is marked as a pagination artifact of that kind (Watermark, Header, Footer), which
 // other editors look for to update or remove them, and tagged as ours (see pdTag).
@@ -228,7 +251,7 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
       let im = ctx.images.get(it.data);
       if (!im) { im = await out.embedPng(it.data); ctx.images.set(it.data, im); }
       p.drawImage(im, { x, y, width: it.w, height: it.h, opacity: it.opacity, rotate });
-    } else p.drawText(it.text, { x, y, size: it.size, font: ctx.pdFonts.get((it.font || 'sans') + (it.bold ? 'b' : '')), color: pdRgb(L, it.color), opacity: it.opacity, rotate });
+    } else fontsDraw(L, p, ctx.pdRuns.get(pdRunKey(it.text, it.font, it.bold)), { x, y, size: it.size, color: pdRgb(L, it.color), opacity: it.opacity, rotate: (it.angle + r) % 360 });
   }
   if (tag) pdTag(L, out, p, false);
 }
@@ -236,16 +259,18 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
 // cuts letters out of it; page design from an earlier save is taken out when the file is opened (see pdReadBack).
 FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   const items = pdItems(); if (!items.length) return;
-  ctx.pdFonts ||= new Map();
-  for (const m of items) {
-    const key = (m.font || 'sans') + (m.bold ? 'b' : '');
-    if ((m.type !== 'pd_background' && !(m.type === 'pd_watermark' && m.kind === 'image')) && !ctx.pdFonts.has(key)) ctx.pdFonts.set(key, await out.embedFont(L.StandardFonts[PD_STD[m.font || 'sans'][m.bold ? 1 : 0]]));
-  }
   const box = p.getCropBox(), r = ((Math.round(p.getRotation().angle / 90) * 90) % 360 + 360) % 360;
   const W = r % 180 ? box.height : box.width, H = r % 180 ? box.width : box.height;
   // From the page as seen (x right, y up) to the page's own space, which is turned by its /Rotate (clockwise).
   const map = (x, y) => r === 0 ? [box.x + x, box.y + y] : r === 90 ? [box.x + box.width - y, box.y + x] : r === 180 ? [box.x + box.width - x, box.y + box.height - y] : [box.x + y, box.y + box.height - x];
-  const { under, over } = pdLayout(n, entries.length, W, H, (text, fam, bold, size) => ctx.pdFonts.get((fam || 'sans') + (bold ? 'b' : '')).widthOfTextAtSize(text, size));
+  // The texts on this page first (their fonts are chosen and embedded once), then the layout measured in them.
+  ctx.pdRuns ||= new Map();
+  const date = new Date(), meta = pdMeta(), first = pdLayout(n, entries.length, W, H, () => 0, date, items, meta);
+  for (const it of [...first.under, ...first.over]) {
+    const k = it.kind === 'text' && pdRunKey(it.text, it.font, it.bold);
+    if (k && !ctx.pdRuns.has(k)) ctx.pdRuns.set(k, await fontsRuns(out, it.text, { family: it.font || 'sans', bold: !!it.bold }));
+  }
+  const { under, over } = pdLayout(n, entries.length, W, H, (text, fam, bold, size) => fontsWidth(ctx.pdRuns.get(pdRunKey(text, fam, bold)), size), date, items, meta);
   if (under.length) {
     // Behind the content: drawn in a stream of its own, which then goes first in the page's list of streams.
     p.getContentStream(false);
@@ -256,6 +281,7 @@ FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   }
   if (over.length) await pdDrawItems(L, out, p, over, map, r, ctx);
 });
+const pdRunKey = (text, fam, bold) => `${fam || 'sans'}${bold ? 'b' : ''}:${text}`;
 /* Kept in the saved PDF, so it can be changed or removed when the file is opened again: what is drawn is marked as
    an artifact tagged /CowdreyPdfPD, and the settings are a JSON string in the document's Info under the same key.
    Opening such a file takes the tagged drawing out of the pages and puts the settings back in docMarks(). */
@@ -342,7 +368,7 @@ const pdField = {
   check: (k, label, val) => `<label class="field pd-check"><input data-k="${k}" type="checkbox"${val ? ' checked' : ''}><span>${label}</span></label>`,
   slider: (k, label, val) => `<label class="field"><span>${label} <b data-out="${k}">${val}%</b></span><input data-k="${k}" type="range" min="0" max="100" step="5" value="${esc(val)}"></label>`,
   seg: (k, val, opts) => `<div class="seg pd-seg pd-wide" role="radiogroup">${opts.map(([v, t]) => `<label><input type="radio" name="pd-${k}" data-k="${k}" value="${v}"${v === val ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`,
-  range: (val) => pdField.text('range', 'Pages', val, { ph: 'All pages, or e.g. 1-3, 5' }),
+  range: (val, m = {}) => pdField.text('range', 'Pages', val, { ph: 'All pages, or e.g. 1-3, 5' }) + pdField.sel('parity', 'Odd or even', m.parity || 'all', PD_PARITY),
   font: (m) => pdField.sel('font', 'Font', m.font, PD_FONTS) + pdField.num('size', 'Size (pt)', m.size, 4, 400) + pdField.color('color', 'Colour', m.color) + pdField.check('bold', 'Bold', m.bold),
   margins: (m) => pdField.num('mTop', 'Top margin (mm)', m.mTop, 0, 200, .5) + pdField.num('mBottom', 'Bottom margin (mm)', m.mBottom, 0, 200, .5) + pdField.num('mSide', 'Side margins (mm)', m.mSide, 0, 200, .5),
 };
@@ -377,17 +403,17 @@ function pdBody(type, m) {
     ${F.slider('opacity', 'Opacity', m.opacity)}${F.num('rotation', 'Rotation (°)', m.rotation, -360, 360)}
     ${F.sel('layout', 'Position', m.layout, [['center', 'Centre of the page'], ['tile', 'Tiled across the page']])}
     ${F.sel('front', 'Layer', m.front, [['front', 'In front of the page'], ['behind', 'Behind the page']])}
-    ${F.range(m.range)}</div>`;
+    ${F.range(m.range, m)}</div>`;
   if (type === 'pd_background') return `<div class="pd-form">${F.seg('kind', m.kind, [['color', 'Colour'], ['image', 'Picture']])}
     <div class="pd-form pd-wide" data-show="kind=color"${m.kind !== 'color' ? ' hidden' : ''}>${F.color('color', 'Colour', m.color, PALE_COLORS)}</div>
     <div class="pd-form pd-wide" data-show="kind=image"${m.kind !== 'image' ? ' hidden' : ''}>${pdPicField(m, 'Picture')}${F.sel('fit', 'Size', m.fit, [['stretch', 'Fill the page'], ['fit', 'Fit inside the page']])}</div>
-    ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range)}</div>
+    ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range, m)}</div>
     <p class="pd-note">The background goes behind everything on the page.</p>`;
   if (type === 'pd_headfoot') return `<div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
-    ${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>`;
+    ${F.font(m)}${F.margins(m)}${F.range(m.range, m)}</div>`;
   return `<div class="pd-form">${F.text('prefix', 'Prefix', m.prefix)}${F.text('suffix', 'Suffix', m.suffix)}${F.num('start', 'Start number', m.start, 0, 999999999999)}${F.num('digits', 'Digits', m.digits, 1, 12)}
     <div class="pd-sample pd-wide" data-sample></div>
-    ${F.sel('slot', 'Position', m.slot, PD_SLOTS)}${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>
+    ${F.sel('slot', 'Position', m.slot, PD_SLOTS)}${F.font(m)}${F.margins(m)}${F.range(m.range, m)}</div>
     <p class="pd-note">Numbers run across the saved PDF's pages in order.</p>`;
 }
 // What goes across the whole dialog, above the settings and the preview (under the preview on a phone): the six places of a header and footer, so
@@ -395,15 +421,18 @@ function pdBody(type, m) {
 function pdTop(type, m) {
   if (type !== 'pd_headfoot') return '';
   return `<div class="pd-top"><div class="pd-slots">${PD_SLOTS.map(([k, t]) => pdField.text(k, t, m[k])).join('')}</div>
-    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
-    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p></div>`;
+    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button><button type="button" class="btn" data-token="<<file>>">File name</button><button type="button" class="btn" data-token="<<title>>">Title</button><button type="button" class="btn" data-token="<<author>>">Author</button></div>
+    <p class="pd-err" data-pd-err role="alert" hidden>A field is broken. Delete it, then use Insert.</p>
+    ${pdField.check('firstDiff', 'Different first page', m.firstDiff)}
+    <div class="pd-first" data-first${m.firstDiff ? '' : ' hidden'}><p class="pd-note">On the first page (leave empty for none):</p><div class="pd-slots">${PD_SLOTS.map(([k, t]) => pdField.text('f' + k, t, m['f' + k])).join('')}</div></div></div>`;
 }
 function pdCheck(type, m) {
   if (m.range && m.range.trim() && !parseRange(m.range, doc.pages.length).length) return 'Check the pages: use numbers like 1-3, 5';
   if ((type === 'pd_watermark' || type === 'pd_background') && m.kind === 'image' && !m.data) return 'Choose a picture first';
   if (type === 'pd_watermark' && m.kind === 'text' && !String(m.text || '').trim()) return 'Type the watermark text';
-  if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim())) return 'Type a header or footer in at least one place';
-  if (type === 'pd_headfoot' && PD_SLOTS.some(([k]) => pdBroken(m[k]))) return 'A page number, page count or date field is broken. Delete it and insert it again.';
+  if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim()) && !(m.firstDiff && PD_SLOTS.some(([k]) => String(m['f' + k] || '').trim()))) return 'Type a header or footer in at least one place';
+  if (type === 'pd_headfoot' && PD_SLOTS.some(([k]) => pdBroken(m[k]) || (m.firstDiff && pdBroken(m['f' + k])))) return 'A field is broken. Delete it and insert it again.';
+  if (m.range && m.range.trim() && !pdPages(m, doc.pages.length).length) return 'None of those pages are odd or even as chosen';
   return null;
 }
 // A small picture of one page in the dialog, with the settings being changed drawn on it (by pdLayout, as on the page
@@ -455,7 +484,7 @@ async function pdEdit(type, existing) {
     : [{ label: 'Cancel' }, { label: PD_VERB[type][0], value: 'ok', primary: true }];
   do {
     const title = existing ? PD_VERB[type][3] : PD_TYPES[type];
-    const res = await dialog(title, `<div class="pd-wrap">${pdTop(type, m)}<div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
+    const res = await dialog(title, `<div class="pd-wrap">${pdTop(type, m)}<div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}${pdPresetsHtml(type)}</div>`, actions, (dlg) => {
       // The dialog element is reused: listen on its body, which is new for each dialog.
       const body = $('.dlg-body', dlg);
       dlg.classList.add('pd-dialog');
@@ -464,17 +493,19 @@ async function pdEdit(type, existing) {
       const preview = pdPreview(dlg, type, m, existing);
       const sync = () => {
         pdRead(dlg, m);
-        const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
+        const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdBates(m, Math.max(0, Math.round(+m.start || 0)))}`;
         // A field that was typed over or split is marked, and the dialog can't be confirmed until it is fixed.
         let bad = false;
-        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; el.title = el.value; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        for (const [k0] of PD_SLOTS) for (const k of [k0, 'f' + k0]) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; el.title = el.value; const b = pdBroken(el.value) && (k === k0 || m.firstDiff); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        const fp = $('[data-first]', dlg); if (fp) fp.hidden = !m.firstDiff;
         const pb = $('.dlg-foot .btn.primary', dlg); if (pb && type === 'pd_headfoot') pb.disabled = bad;
         const note = $('[data-pd-err]', dlg); if (note) note.hidden = !bad;
         preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
       body.addEventListener('click', (e) => { const s = e.target.closest('[data-pdc]'); if (!s) return; const i = $(`input[data-k="${s.dataset.pdc}"]`, body); i.value = s.dataset.c.toLowerCase(); i.dispatchEvent(new Event('input', { bubbles: true })); });
-      body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
+      body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k || 'f' + k === e.target.dataset.k)) focusSlot = e.target; });
+      pdPresetsSetup(dlg, type, m, sync);
       // A field goes in at the caret, but never inside another field ("Page <<pa|ge>>" puts it after "<<page>>").
       for (const b of $$('[data-token]', dlg)) b.onclick = () => {
         const el = focusSlot || $('[data-k="bc"]', dlg), tok = b.dataset.token;
@@ -494,6 +525,8 @@ async function pdEdit(type, existing) {
     if (res !== 'ok') return;
     err = pdCheck(type, m);
     if (err) toast(err);
+    // Letters that need a font fetched first (Chinese, Japanese…): asked now, not when saving. Without it, back to the dialog.
+    else if (!(await fontsEnsure(pdTexts(type, m)))) { err = 'font'; if (!fontsRtl(pdTexts(type, m))) toast('That text needs its font to be downloaded first.'); }
   } while (err);
   const before = snapshot();
   m.rev = uid();
@@ -505,6 +538,57 @@ async function pdEdit(type, existing) {
   pdLastUsed[type] = keep;
   pdRefreshAll();
   toast(PD_VERB[type][existing ? 2 : 1]);
+}
+// Every text a setting can write (its fields filled in), to check its fonts.
+function pdTexts(type, m) {
+  if (type === 'pd_watermark') return m.kind === 'text' ? String(m.text || '') : '';
+  if (type === 'pd_bates') return pdBates(m, 0);
+  if (type !== 'pd_headfoot') return '';
+  return PD_SLOTS.flatMap(([k]) => [m[k], m.firstDiff ? m['f' + k] : '']).filter(Boolean).map((v) => pdTokens(v, 1, 1, pdDate(m.dateFmt || PD_DATES[0]))).join(' ');
+}
+/* Presets: settings kept by name, per kind (store key pdPresets), to use again in any PDF. Pictures are not kept. */
+const pdPresetList = (type) => ((store.get('pdPresets', {}) || {})[type] || []).filter((x) => x && x.name && x.m);
+const pdPresetOpts = (list) => `<option value="">${list.length ? 'Choose a preset' : 'No presets yet'}</option>${list.map((x, k) => `<option value="${k}">${esc(x.name)}</option>`).join('')}`;
+function pdPresetsHtml(type) {
+  if (type === 'pd_background') return '';
+  const list = pdPresetList(type);
+  return `<div class="pd-top pd-presets"><label class="field"><span>Preset</span><select data-preset>${pdPresetOpts(list)}</select></label>
+    <label class="field"><span>Save these settings as</span><input type="text" data-preset-name placeholder="Preset name" autocomplete="off"></label>
+    <button type="button" class="btn" data-preset-save>Save preset</button><button type="button" class="btn" data-preset-drop${list.length ? '' : ' hidden'}>Forget preset</button></div>`;
+}
+// Puts settings into the dialog's fields (as pdRead reads them).
+function pdFill(dlg, m) {
+  for (const el of $$('[data-k]', dlg)) {
+    const k = el.dataset.k; if (!(k in m)) continue;
+    if (el.type === 'checkbox') el.checked = !!m[k];
+    else if (el.type === 'radio') el.checked = String(m[k]) === el.value;
+    else el.value = m[k] ?? '';
+  }
+  for (const el of $$('[data-show]', dlg)) { const [k, v] = el.dataset.show.split('='); el.hidden = m[k] !== v; }
+}
+function pdPresetsSetup(dlg, type, m, sync) {
+  const sel = $('[data-preset]', dlg); if (!sel) return;
+  const name = $('[data-preset-name]', dlg), drop = $('[data-preset-drop]', dlg);
+  const redraw = (pick = '') => { const list = pdPresetList(type); sel.innerHTML = pdPresetOpts(list); sel.value = pick; drop.hidden = !list.length; };
+  const write = (list) => { const all = store.get('pdPresets', {}) || {}; all[type] = list; store.set('pdPresets', all); };
+  sel.addEventListener('change', (e) => {
+    e.stopPropagation();
+    const x = sel.value === '' ? null : pdPresetList(type)[+sel.value]; if (!x) return;
+    Object.assign(m, x.m); pdFill(dlg, m); name.value = x.name; sync();
+  });
+  $('[data-preset-save]', dlg).onclick = () => {
+    const n = name.value.trim(); if (!n) { toast('Type a name for the preset'); name.focus(); return; }
+    pdRead(dlg, m);
+    const keep = {}; for (const [k, v] of Object.entries(m)) if (!['id', 'rev', 'type', 'data', 'iw', 'ih', 'range'].includes(k)) keep[k] = v;
+    const list = pdPresetList(type).filter((x) => x.name !== n); list.push({ name: n, m: keep }); write(list);
+    redraw(String(list.length - 1)); toast(`Preset “${n}” saved`);
+  };
+  drop.onclick = () => {
+    const list = pdPresetList(type), k = sel.value === '' ? -1 : +sel.value;
+    if (k < 0) { toast('Choose the preset to forget'); return; }
+    const [x] = list.splice(k, 1); write(list); redraw(); toast(`Preset “${x.name}” forgotten`);
+  };
+  for (const el of [sel, name]) el.addEventListener('input', (e) => e.stopPropagation());
 }
 function pdRemove(id) {
   const list = docMarks(), k = list.findIndex((x) => x.id === id); if (k < 0) return;

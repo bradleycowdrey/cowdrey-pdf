@@ -3456,7 +3456,7 @@ function pageFonts(L, out, pageNode) {
     const cm = tu ? parseCMap(text(tu)) : { map: new Map(), bytes: type0 ? 2 : 1 };
     const rev = new Map(); for (const [code, u] of cm.map) if (u && !rev.has(u)) rev.set(u, code);
     // widths, for working out where each piece of text starts
-    const widths = new Map(); let dw = type0 ? 1000 : 0;
+    const widths = new Map(); let dw = type0 ? 1000 : 0, stdRev = null;
     if (type0) {
       const df = d.lookup(PDFName.of('DescendantFonts')); const cid = df instanceof PDFArray ? df.lookup(0) : null;
       if (cid instanceof PDFDict) {
@@ -3467,9 +3467,13 @@ function pageFonts(L, out, pageNode) {
     } else {
       const fc = d.lookup(PDFName.of('FirstChar')), W = d.lookup(PDFName.of('Widths'));
       if (fc instanceof PDFNumber && W instanceof PDFArray) W.asArray().forEach((w, j) => widths.set(fc.asNumber() + j, out.context.lookup(w).asNumber()));
-      else if (!W) { dw = 500; stdWidths(L, baseName(d.lookup(PDFName.of('BaseFont'))), widths); } // one of the 14 standard fonts: their own widths
+      else if (!W) {
+        dw = 500; stdWidths(L, baseName(d.lookup(PDFName.of('BaseFont'))), widths); // one of the 14 standard fonts: their own widths
+        // and, written in WinAnsi (as pdf-lib writes them), every letter of that encoding
+        if (String(d.lookup(PDFName.of('Encoding')) || '') === '/WinAnsiEncoding') stdRev = stdLetters(L, baseName(d.lookup(PDFName.of('BaseFont'))));
+      }
     }
-    fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw, hasToUnicode: !!tu });
+    fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw, hasToUnicode: !!tu, stdRev });
   }
   const fontWidth = (name, str) => {
     const f = fonts.get(name), out2 = [], b = f ? f.bytes : 1;
@@ -3481,7 +3485,17 @@ function pageFonts(L, out, pageNode) {
 const baseName = (n) => String(n || '').replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
 // The widths of one of the 14 standard fonts (which a PDF may name without giving its widths), by code in its
 // built-in encoding (WinAnsi for the Latin ones, as pdf-lib writes them).
-const stdWidthCache = new Map();
+const stdWidthCache = new Map(), stdLetterCache = new Map();
+// The letters a standard Latin font writes in WinAnsi: letter -> code. Null for the others (Symbol, ZapfDingbats).
+function stdLetters(L, name) {
+  if (!L.StandardFontEmbedder || !(L.StandardFontValues || []).includes(name) || /Symbol|Zapf/.test(name)) return null;
+  if (!stdLetterCache.has(name)) {
+    const r = new Map();
+    try { const e = L.StandardFontEmbedder.for(name); for (const [cp, [code]] of Object.entries(e.encoding.unicodeMappings)) { const u = String.fromCodePoint(+cp); if (!r.has(u)) r.set(u, code); } } catch {}
+    stdLetterCache.set(name, r.size ? r : null);
+  }
+  return stdLetterCache.get(name);
+}
 function stdWidths(L, name, into) {
   if (!L.StandardFontEmbedder || !(L.StandardFontValues || []).includes(name)) return;
   let w = stdWidthCache.get(name);
@@ -3505,18 +3519,32 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   const lines = edits.filter((m) => m.type === 'te'), pics = edits.filter((m) => m.type === 'ie');
   const rgbOf = (hex) => { const n = parseInt(String(hex || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map((x) => PDFNumber.of(+x.toFixed(4))); };
   const O = (name, args = []) => PDFOperator.of(name, args);
-  // 0. Each edited line's new text, made first so it can go in the old text's place.
-  const newOps = new Map();
-  for (const m of lines) {
-    const ops = m.emit || (m.text.trim() ? await teOps(L, out, node, m, fonts, ctx) : null);
-    if (ops && ops.length) newOps.set(m.id, ops);
-  }
   // 1. Take edited lines and changed pictures out of the page's own content.
+  // pdf-lib wraps a page's content in q … Q (so what is drawn after it starts from a clean state) the first time it
+  // adds to the page's resources: done now, so the content read here has the wrapper and keeps it.
+  node.normalize && node.normalize();
   // Contents may be one stream, an array of them, or a reference to such an array.
   const streamsOf = () => { const raw = node.get(PDFName.of('Contents')); const r = raw && out.context.lookup(raw); return r instanceof PDFArray ? r.asArray() : raw ? [raw] : []; };
   const parts = streamsOf();
   let src = parts.map((r) => { const st = out.context.lookup(r); return st ? text(st) : ''; }).join('\n');
   const cut = [], removed = new Set(), hidden = new Set(), anchor = new Map(), moves = new Map(), shifted = new Set();
+  // Lines found in the page's own content (their show operators), and in forms it draws (their font, and the place
+  // after the form is drawn, where the new text goes)
+  const found = new Map(), formFont = new Map(), formAnchor = new Map(), formsCopied = new Set();
+  // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
+  // within the line (not at its end, where a word in another font or a link may follow).
+  const matchLine = (op, fmap) => {
+    const f = fmap.get(op.font);
+    for (const m of lines) {
+      const fr = lineFrame(m), dx = op.origin[0] - fr.o[0], dy = op.origin[1] - fr.o[1];
+      // across the baseline, square to it (a slanted line's own v axis leans)
+      const along = dx * fr.u[0] + dy * fr.u[1], perp = -dx * fr.u[1] + dy * fr.u[0];
+      if (perp < -fr.size * .35 || perp > fr.size * .35 || along < -Math.max(1, fr.size * .3) || along > m.width - Math.min(1, fr.size * .1)) continue;
+      if (m.font && f && f.base && baseName(f.base) !== baseName(m.font)) continue;
+      return m;
+    }
+    return null;
+  };
   const resOf = (R) => { const x = R instanceof PDFDict ? R : null; return { xo: x && x.lookup(PDFName.of('XObject')) instanceof PDFDict ? x.lookup(PDFName.of('XObject')) : null, eg: x && x.lookup(PDFName.of('ExtGState')) instanceof PDFDict ? x.lookup(PDFName.of('ExtGState')) : null }; };
   const pageRes = resOf(node.Resources && node.Resources()), xo = pageRes.xo;
   const subOf = (o) => (o && o.dict ? String(o.dict.lookup(PDFName.of('Subtype'))) : '');
@@ -3545,59 +3573,98 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   };
   // A picture inside a form (a page background often is): the form is copied without it, and the page draws the copy.
   let formN = 0;
-  const formCut = (dict, name, ctm, depth) => {
+  // `res`: the resources the form is drawn with (its parent's), which a form without resources of its own uses.
+  const formCut = (dict, name, ctm, depth, res) => {
     const st = dict && dict.lookup(PDFName.of(name));
     if (!st || !st.dict || depth > 5 || subOf(st) !== '/Form') return null;
     const M = st.dict.lookup(PDFName.of('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = out.context.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
     const R = st.dict.lookup(PDFName.of('Resources')), own = resOf(R), fx = own.xo || dict;
-    const fxo = fx instanceof PDFDict ? fx : null;
-    let fsrc = text(st); const fcut = [], ids = [];
-    walkContent(fsrc, fontWidth, null, (im) => {
+    const fxo = fx instanceof PDFDict ? fx : null, fres = R instanceof PDFDict ? R : res instanceof PDFDict ? res : null;
+    let fsrc = text(st); const fcut = [], ids = [], subs = []; // subs: copies of forms this one draws
+    // The form's own fonts (or the page's, when it has none): its text is matched with edited lines like the page's,
+    // and taken out of the copy, so the old words are not left in the file under the new ones.
+    const ff = R instanceof PDFDict && R.lookup(PDFName.of('Font')) instanceof PDFDict ? pageFonts(L, out, { Resources: () => R }) : { fonts, fontWidth };
+    const onText = lines.length ? (op) => {
+      const m = matchLine(op, ff.fonts); if (!m || teShifted(m)) return;
+      fcut.push([op.start, op.end, op.keep]); ids.push(m.id); removed.add(m.id); if (op.invisible) hidden.add(m.id);
+      if (!formFont.has(m.id)) formFont.set(m.id, ff.fonts.get(op.font));
+    } : null;
+    walkContent(fsrc, ff.fontWidth, onText, (im) => {
       const o = !im.inline && fxo && fxo.lookup(PDFName.of(im.name)), sub = im.inline ? '/Image' : subOf(o);
       if (sub === '/Image') {
         if (im.inline ? im.mask : isMask(o)) return;
         const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
         if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); }
-      } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
+      } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1, fres); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); subs.push(h); } }
     }, mul(fm, ctm), (g) => softMask(own.eg, g, depth + 1));
     if (!ids.length) return null;
     fcut.sort((a, b) => b[0] - a[0]);
     for (const [a, b, keep] of fcut) fsrc = fsrc.slice(0, a) + keep + fsrc.slice(b);
     const entries = {}; for (const [k, val] of st.dict.entries()) { const n = k.asString().slice(1); if (!['Length', 'Filter', 'DecodeParms'].includes(n)) entries[n] = val; }
+    // The copies of inner forms are named in this copy's own resources (the original form and its resources, which
+    // other pages may draw, are left as they were).
+    if (subs.length) {
+      const r2 = out.context.obj({}), x2 = out.context.obj({});
+      if (fres) for (const [k, val] of fres.entries()) r2.set(k, val);
+      if (fxo) for (const [k, val] of fxo.entries()) x2.set(k, val);
+      for (const h of subs) x2.set(PDFName.of(h.key.slice(1)), h.ref);
+      r2.set(PDFName.of('XObject'), x2);
+      entries.Resources = r2;
+    }
     const bytes = new Uint8Array(fsrc.length); for (let i = 0; i < fsrc.length; i++) bytes[i] = fsrc.charCodeAt(i) & 255;
     const ref = out.context.register(out.context.flateStream(bytes, entries));
     let key;
-    if (depth === 0) key = node.newXObject('CPDFFm', ref).toString();
-    else { key = `/CPDFFm${++formN}x${Date.now() % 100000}`; fxo.set(PDFName.of(key.slice(1)), ref); }
-    return { key, ids };
+    if (depth === 0) { key = node.newXObject('CPDFFm', ref).toString(); formsCopied.add(name); }
+    else key = `/CPDFFm${++formN}x${Date.now() % 100000}`;
+    return { key, ids, ref };
   };
   let ops = null;
   try {
     ops = walkContent(src, fontWidth, (op) => {
-      // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
-      // within the line (not at its end, where a word in another font or a link may follow).
-      const f = fonts.get(op.font);
-      for (const m of lines) {
-        const fr = lineFrame(m), dx = op.origin[0] - fr.o[0], dy = op.origin[1] - fr.o[1];
-        // across the baseline, square to it (a slanted line's own v axis leans)
-        const along = dx * fr.u[0] + dy * fr.u[1], perp = -dx * fr.u[1] + dy * fr.u[0];
-        if (perp < -fr.size * .35 || perp > fr.size * .35 || along < -Math.max(1, fr.size * .3) || along > m.width - Math.min(1, fr.size * .1)) continue;
-        if (m.font && f && f.base && baseName(f.base) !== baseName(m.font)) continue;
-        if (teShifted(m)) { if (!moves.has(m.id)) moves.set(m.id, []); moves.get(m.id).push(op); break; }
-        cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id);
-        if (!anchor.has(m.id)) anchor.set(m.id, op);
-        break;
-      }
+      const m = matchLine(op, fonts); if (!m) return;
+      if (teShifted(m)) { if (!moves.has(m.id)) moves.set(m.id, []); moves.get(m.id).push(op); return; }
+      if (!found.has(m.id)) found.set(m.id, []);
+      found.get(m.id).push(op);
     }, (im) => {
-      if (!pics.length) return;
-      if (im.inline) { if (!im.mask) { const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); } } return; }
+      if (!pics.length && !lines.length) return;
+      if (im.inline) { if (!im.mask && pics.length) { const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); } } return; }
       const o = xo && xo.lookup(PDFName.of(im.name)), sub = subOf(o);
-      if (sub === '/Form') { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
+      if (sub === '/Form') {
+        const h = formCut(xo, im.name, im.ctm, 0, node.Resources && node.Resources()); if (!h) return;
+        cut.push([im.start, im.end, ` ${h.key} Do `]);
+        for (const id of h.ids) if (formFont.has(id) && !formAnchor.has(id)) formAnchor.set(id, { at: im.end, ctm: im.ctm });
+        return;
+      }
+      if (!pics.length) return;
       if (sub !== '/Image' || isMask(o)) return;
       const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
       if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
     }, undefined, (g) => pics.length && softMask(pageRes.eg, g, 1));
-  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); anchor.clear(); moves.clear(); ops = null; }
+  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); hidden.clear(); anchor.clear(); moves.clear(); found.clear(); formFont.clear(); formAnchor.clear(); formsCopied.clear(); ops = null; }
+  // Each line found: a line changed in part of one operator keeps the rest of it as it was (codes and kerning);
+  // otherwise its operators come out, and it is set again after its text object.
+  const inPlace = new Set();
+  for (const [id, list] of found) {
+    const m = lines.find((x) => x.id === id);
+    const rep = list.length === 1 && !formFont.has(id) ? await teInPlace(L, out, node, m, list[0], src, fonts) : null;
+    if (rep != null) { cut.push([list[0].start, list[0].end, rep]); removed.add(id); inPlace.add(id); continue; }
+    for (const op of list) { cut.push([op.start, op.end, op.keep]); removed.add(id); if (op.invisible) hidden.add(id); if (!anchor.has(id)) anchor.set(id, op); }
+  }
+  // 0. Each edited line's new text (a line from a form in the form's own font, which the page is given too).
+  const newOps = new Map();
+  for (const m of lines) {
+    if (inPlace.has(m.id) || !(m.emit || m.text.trim())) continue;
+    let fmap = fonts;
+    const ffo = formFont.get(m.id);
+    if (ffo && !m.emit) fmap = new Map([['', { ...ffo, key: node.newFontDictionary('CPDFF', ffo.ref) }], ...fonts]);
+    const list = m.emit || await teOps(L, out, node, m, fmap, ctx);
+    if (list && list.length) newOps.set(m.id, list);
+  }
+  const placing = new Set(['Td', 'TD', 'Tm', 'T*', "'", '"', 'BT', 'ET', 'Do', 'BI', 'q', 'Q']);
+  const afterInPlace = (op) => {
+    let e = -1; for (const id of inPlace) { const o = found.get(id)[0]; if (o.end <= op.start && o.end > e) e = o.end; }
+    return e >= 0 && !tokenizeContent(src.slice(e, op.start)).some((t) => t.t === 'op' && placing.has(t.v));
+  };
   // Text that only moves along (after an edited run) keeps its own drawing: each of its show operators is moved
   // by a TJ offset before it and moved back after it, inside the text object. ' and " start a new line first (the
   // offset would be lost), so a line drawn with them is typeset again instead.
@@ -3608,7 +3675,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       removed.add(id); continue;
     }
     const k = +(-(m.dx || 0) * 1000 / (Math.hypot(m.tm[0], m.tm[1]) || 1)).toFixed(3);
-    for (const op of list) { cut.push([op.start, op.start, `[${k}] TJ `]); cut.push([op.end, op.end, ` [${-k}] TJ`]); }
+    // Text drawn on from where a line changed in place ends (same text object, nothing that sets the position in
+    // between) already moves with its new width: no offset for it.
+    for (const op of list) if (!afterInPlace(op)) { cut.push([op.start, op.start, `[${k}] TJ `]); cut.push([op.end, op.end, ` [${-k}] TJ`]); }
     removed.add(id); shifted.add(id);
   }
   // The new text of each line found, right after the text object it was in (back in page space there).
@@ -3620,8 +3689,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     // Text whose original is clipped and covered instead (OCR text over a scan, text in a form) goes on top.
     if (group.some((x) => !removed.has(x.id) || hidden.has(x.id) || x.ocr)) return;
     const op = group.map((x) => anchor.get(x.id)).filter(Boolean).sort((a, b) => a.start - b.start)[0];
-    if (!op || !ops) return;
-    const at = ops.etEnd[op.bt] ?? op.end, c = op.ctm, det = c[0] * c[3] - c[1] * c[2];
+    const fa = !op && group.length === 1 && formAnchor.get(id);
+    if ((!op && !fa) || !ops) return;
+    const at = fa ? fa.at : ops.etEnd[op.bt] ?? op.end, c = fa ? fa.ctm : op.ctm, det = c[0] * c[3] - c[1] * c[2];
     if (Math.abs(det) < 1e-9) return;
     const id6 = c.every((n, k) => Math.abs(n - [1, 0, 0, 1, 0, 0][k]) < 1e-9);
     const inv = [c[3] / det, -c[1] / det, -c[2] / det, c[0] / det, (c[2] * c[5] - c[3] * c[4]) / det, (c[1] * c[4] - c[0] * c[5]) / det].map(fmt);
@@ -3634,6 +3704,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     for (const [a, b, keep] of cut) src = src.slice(0, a) + (keep || ' ') + src.slice(b);
     const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
     node.set(PDFName.of('Contents'), out.context.obj([out.context.register(out.context.flateStream(bytes))])); // an array, as pdf-lib expects once the page has new resources
+    teDropForms(L, out, node, formsCopied, src);
   }
   // 2. Anything not found there (text inside a form, an erased area) is clipped out.
   // Invisible OCR text was removed, but what shows is the scan under it: that is clipped and covered too.
@@ -3663,37 +3734,144 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   for (const [id, list] of newOps) if (!placed.has(id) && !shifted.has(id)) p.pushOperators(...list);
   void PDFRef; void PDFRawStream; void PDFHexString; void StandardFonts;
 }
-// An edited line drawn again: in the PDF's own font where it has the letters, else the closest standard font, with
+// Forms the page now draws a copy of (with an edited line or a picture taken out): the page no longer names the
+// original, unless it still draws it somewhere else, so the original (with the old words) is not written. The page
+// gets resources of its own for that (other pages may share the ones it had).
+function teDropForms(L, out, node, names, src) {
+  const { PDFName, PDFDict } = L;
+  if (!names.size) return;
+  const res = node.Resources && node.Resources(), xd = res && res.lookup(PDFName.of('XObject'));
+  if (!(xd instanceof PDFDict)) return;
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const gone = [...names].filter((n) => !new RegExp('/' + reEsc(n) + '\\s*Do\\b').test(src));
+  if (!gone.length) return;
+  const x2 = out.context.obj({}), r2 = out.context.obj({});
+  for (const [k, v] of xd.entries()) if (!gone.includes(k.asString().slice(1))) x2.set(k, v);
+  for (const [k, v] of res.entries()) r2.set(k, v);
+  r2.set(PDFName.of('XObject'), x2);
+  node.set(PDFName.of('Resources'), r2);
+}
+// An edited line drawn again: in the PDF's own font where it has the letters, else an embedded Unicode font, with
 // the original's text state (render mode and outline, character and word spacing; its width scale and rise are in
 // its matrix). Returns the operators, in page space.
 async function teOps(L, out, node, m, fonts, ctx) {
-  const { PDFOperator, PDFNumber, PDFHexString, StandardFonts } = L;
+  const { PDFOperator, PDFNumber, PDFHexString } = L;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (n) => PDFNumber.of(+(+n).toFixed(4));
+  const f = teOwnFont(m, fonts), runs = glyphRuns(m.text, f && f.rev);
+  // Letters the PDF's own font lacks (or all of them, for OCR, Type3 and standard fonts) are set in an embedded
+  // Unicode font of the same style (sans, serif or mono; bold, italic), never as '?'.
+  const style = teSubStyle(L, out, m, fonts), set = [];
+  let lost = false;
+  for (const r of runs) {
+    if (r.own) set.push({ own: true, hex: PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join('')) });
+    else { const rs = await fontsRuns(out, r.chars.join(''), style); if (rs.lost) lost = true; for (const s of rs) set.push({ font: s.font, hex: s.font.encodeText(s.text) }); }
+  }
+  // (with letters no font has left out, the line's text for readers still has them)
+  const mixed = lost || (set.length > 1 && set.some((s) => s.font !== set[0].font));
+  // The original's text state; what else the page set before (invisible text, rise) must not apply to the new line.
+  const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', teAt(m).map(N))];
+  for (const s of set) ops.push(O('Tf', [s.own ? f.key : fontsKey(node, s.font), N(1)]), O('Tj', [s.hex]));
+  ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
+  void ctx;
+  return ops;
+}
+// The PDF's own font for a line (with the letters it really has, as `rev`), unless it draws nothing visible (OCR
+// text), is a Type3 font or is one of the 14 standard fonts (which can't write most letters). Null when none.
+function teOwnFont(m, fonts) {
   const want = baseName(m.font);
-  // The PDF's own font, unless it draws nothing visible (OCR text) or is a Type3 font
   let f = m.ocr || m.type3 || /glyphless/i.test(want) ? null : [...fonts.values()].find((x) => baseName(x.base) === want);
   if (f) {
     // Only letters this font really has: from its ToUnicode, and for a simple font without one, from what pdf.js read.
     const rev = new Map(f.hasToUnicode ? f.rev : []);
     if (!f.type0) for (const [u, code] of Object.entries(m.codes || {})) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
+    if (f.stdRev) for (const [u, code] of f.stdRev) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
     f = rev.size ? { ...f, rev } : null;
   }
-  const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
-  const runs = glyphRuns(m.text, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
-  // The original's text state; what else the page set before (invisible text, rise) must not apply to the new line.
-  const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', teAt(m).map(N))];
-  for (const r of runs) {
-    if (r.own) {
-      ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
-    } else {
-      let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); }
-      const key = node.newFontDictionary ? node.newFontDictionary('CPDF', sf.ref) : (() => { throw new Error('no font dictionary'); })();
-      let hex; try { hex = sf.encodeText(r.chars.join('')); } catch { hex = sf.encodeText(r.chars.map((c) => (/[\x20-\x7E]/.test(c) ? c : '?')).join('')); }
-      ops.push(O('Tf', [key, N(1)]), O('Tj', [hex]));
+  return f;
+}
+// The style of the font that stands in for a line's own: its family, bold and italic, from what pdf.js read and from
+// the PDF's FontDescriptor (fixed pitch, serif, italic, weight) and name.
+function teSubStyle(L, out, m, fonts) {
+  const want = baseName(m.font), f0 = want && [...fonts.values()].find((x) => baseName(x.base) === want);
+  const d = f0 ? fontsStyleOf(L, out, out.context.lookup(f0.ref), f0.base) : null;
+  return { family: d && d.family !== 'sans' && m.fam === 'sans' ? d.family : m.fam || 'sans', bold: !!m.bold || !!(d && d.bold), italic: !!m.italic || !!(d && d.italic) };
+}
+// A line changed in only part of one TJ operator (in the line's own font, read back as the line's
+// original text): the operator written again with what did not change kept as it was (its codes, and the kerning
+// numbers between them), and only the changed run set anew, in the same text object, colour and text state. The
+// run is in the PDF's own font when it has every letter, else in an embedded Unicode font (switching back after).
+// Returns the operator's new source, or null when the line must be set again as a whole.
+async function teInPlace(L, out, node, m, op, src, fonts) {
+  if (!op || op.o !== 'TJ' || op.invisible || m.dx || m.grp || m.emit || m.ocr || m.type3 || !String(m.text).trim()) return null;
+  const f = fonts.get(op.font); if (!f || baseName(f.base) !== baseName(m.font)) return null;
+  const own = teOwnFont(m, fonts); if (!own) return null;
+  // the operator's pieces: strings (their codes and the letters each code reads as) and numbers
+  const toks = tokenizeContent(src.slice(op.start, op.end)).filter((t) => t.t === 'str' || t.t === 'num');
+  const els = op.o === 'Tj' ? toks.filter((t) => t.t === 'str').slice(-1) : toks;
+  const back = new Map(); for (const [u, c] of own.rev) if (!back.has(c)) back.set(c, u);
+  const units = [], seq = []; // seq: { num } | { unit: index }
+  for (const t of els) {
+    if (t.t === 'num') { seq.push({ num: t.v }); continue; }
+    for (let i = 0; i + f.bytes <= t.v.length; i += f.bytes) {
+      let code = 0; for (let k = 0; k < f.bytes; k++) code = code * 256 + t.v.charCodeAt(i + k);
+      const u = f.map.get(code) ?? back.get(code); if (u == null || u === '') return null;
+      seq.push({ unit: units.length }); units.push({ code, text: u });
     }
   }
-  ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
-  return ops;
+  const a0 = [...units.map((x) => x.text).join('')], b0 = [...String(m.text)];
+  if (a0.join('') !== m.orig || !units.length) return null;
+  // what is the same at the start and at the end, in whole codes (a ligature is one code for two letters)
+  let p = 0; while (p < a0.length && p < b0.length && a0[p] === b0[p]) p++;
+  let s = 0; while (s < a0.length - p && s < b0.length - p && a0[a0.length - 1 - s] === b0[b0.length - 1 - s]) s++;
+  const cum = [0]; for (const u0 of units) cum.push(cum[cum.length - 1] + [...u0.text].length);
+  let ua = 0; while (ua < units.length && cum[ua + 1] <= p) ua++;
+  let ub = units.length; while (ub > ua && a0.length - cum[ub - 1] <= s) ub--;
+  // a run that needs another font takes in its whole words (so search and copy find them whole)
+  let P = cum[ua], S = a0.length - cum[ub];
+  const mid = () => b0.slice(P, b0.length - S).join('');
+  const ownHas = (t) => [...t].every((ch) => own.rev.has(ch));
+  if (!ownHas(mid())) {
+    while (ua > 0 && !/\s/.test(units[ua - 1].text)) ua--;
+    while (ub < units.length && !/\s/.test(units[ub].text)) ub++;
+    P = cum[ua]; S = a0.length - cum[ub];
+  }
+  if (P + S > b0.length) return null;
+  const middle = mid(), hex = (codes) => '<' + codes.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join('') + '>';
+  // pieces of TJ in the original font: kept codes and numbers; the new run between them
+  const pre = [], post = []; let seen = 0; // seen: the codes before this piece
+  for (const it of seq) {
+    if (it.unit != null) {
+      if (it.unit < ua) pre.push({ code: units[it.unit].code });
+      else if (it.unit >= ub) post.push({ code: units[it.unit].code });
+      seen = it.unit + 1; continue;
+    }
+    // a number between two kept codes (or before the first, after the last) is kept; one at or in the change is not
+    if (seen === 0 || (seen < ua)) pre.push({ num: it.num });
+    else if (seen === units.length || seen > ub) post.push({ num: it.num });
+  }
+  const arr = (list) => { const out2 = []; let codes = []; for (const x of list) { if (x.code != null) codes.push(x.code); else { if (codes.length) out2.push(hex(codes)); codes = []; out2.push(String(+x.num.toFixed(3))); } } if (codes.length) out2.push(hex(codes)); return out2; };
+  const pieces = [];
+  const ownRuns = glyphRuns(middle, own.rev), style = teSubStyle(L, out, m, fonts);
+  const mids = [];
+  for (const r of ownRuns) {
+    if (r.own) mids.push({ own: true, codes: r.chars });
+    else {
+      const rs = await fontsRuns(out, r.chars.join(''), style);
+      if (rs.lost) return null; // letters no font has: the line is set again, with its text for readers
+      for (const x of rs) mids.push({ font: x.font, text: x.text });
+    }
+  }
+  // all in the PDF's own font: one TJ, as it was
+  if (mids.every((x) => x.own)) return ` [${[...arr(pre), ...(middle ? [hex(mids.flatMap((x) => x.codes))] : []), ...arr(post)].join(' ')}] TJ `;
+  const tf = `/${op.font} ${+(+op.fs).toFixed(4)} Tf`;
+  if (pre.length) pieces.push(`[${arr(pre).join(' ')}] TJ`);
+  for (const x of mids) {
+    if (x.own) { pieces.push(`${tf} [${hex(x.codes)}] TJ`); continue; }
+    pieces.push(`${fontsKey(node, x.font).toString()} ${+(+op.fs).toFixed(4)} Tf ${x.font.encodeText(x.text).toString()} Tj`);
+  }
+  pieces.push(tf);
+  if (post.length) pieces.push(`[${arr(post).join(' ')}] TJ`);
+  return ' ' + pieces.join(' ') + ' ';
 }
 // The colours (and, for outlined text, line width) a new line is drawn with.
 function teStateOps(L, m) {
@@ -4072,6 +4250,7 @@ function saveDropUnused(L, out) {
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
   await commitEditing();
+  if (typeof fontsSaveStarts === 'function') fontsSaveStarts(); // a font download said no to is asked about again
   const L = await loadPdfLib();
   // Only protected files whose pages are still in the document count.
   const used = new Set(doc.pages.map((e) => e.src));
@@ -4272,7 +4451,7 @@ async function savePdf(copy) {
     } else download(bytes, doc.name + (copy ? ' (copy)' : '') + '.pdf');
     if (!copy) setSaved(true);
     window.__lastSaved = bytes; return true;
-  } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
+  } catch (e) { if (!e || e.name !== 'FontsError') console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
 }
 // The web: a browser that can share files (Safari, Chrome on a phone, Edge) shares the saved PDF; Share… is hidden
 // where it cannot.
@@ -5774,6 +5953,336 @@ function applyTheme() {
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
 window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.handle) { e.preventDefault(); e.returnValue = ''; } });
 
+// ---- src/features/05-fonts.js
+/* ---------------- fonts: Unicode fonts for text written into the PDF ----------------
+   Text typed into a PDF (Edit PDF, Add text, Replace text, watermarks, headers and footers, Bates numbers) is written
+   in an embedded font that has its letters, as a subset (only the letters used), so it reads back exactly in every
+   PDF reader. pdf-lib writes such a font as Type0 / Identity-H with a ToUnicode map.
+     fontsKit()                     fontkit (@pdf-lib/fontkit, pinned), loaded once
+     fontsBytes(family, style)      a font file: 'sans' | 'serif' | 'mono' (Noto Sans, Noto Serif, Noto Sans Mono,
+                                    bundled with the apps), 'symbols' | 'symbols2', or a script font fetched on demand
+     fontsEmbed(out, {family, bold, italic, text})   that font embedded (subset) in pdf-lib document `out`
+     fontsFor(text, style)          the face that has every letter of `text` (the family first)
+     fontsCovers(font, text)        whether a font (pdf-lib, or fontkit) has every letter
+     fontsRuns(out, text, style)    `text` split into runs, each with an embedded font that has its letters; with
+                                    style.std (a standard pdf-lib font), the runs it can write stay in it
+   Noto Sans CJK (Chinese, Japanese, Korean), Devanagari and Thai are fetched the first time such letters are written,
+   after asking, and kept in this browser (IndexedDB); nothing else leaves the device for it. Right-to-left scripts
+   need shaping and ordering that is not done yet: saving them is refused with a plain message (no broken text). */
+const FONTS_KIT_URL = 'https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
+// Bundled (desktop/build.mjs copies them into the apps): whole TrueType files, Latin, Greek and Cyrillic.
+const FONTS_FACES = {
+  sans: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/400Regular/NotoSans_400Regular.ttf',
+  'sans-b': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/700Bold/NotoSans_700Bold.ttf',
+  'sans-i': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/400Regular_Italic/NotoSans_400Regular_Italic.ttf',
+  'sans-bi': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/700Bold_Italic/NotoSans_700Bold_Italic.ttf',
+  serif: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-serif@0.4.2/400Regular/NotoSerif_400Regular.ttf',
+  'serif-b': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-serif@0.4.2/700Bold/NotoSerif_700Bold.ttf',
+  'serif-i': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-serif@0.4.2/400Regular_Italic/NotoSerif_400Regular_Italic.ttf',
+  'serif-bi': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-serif@0.4.2/700Bold_Italic/NotoSerif_700Bold_Italic.ttf',
+  mono: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-mono@0.4.2/400Regular/NotoSansMono_400Regular.ttf',
+  'mono-b': 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-mono@0.4.2/700Bold/NotoSansMono_700Bold.ttf',
+  symbols: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-symbols@0.4.1/400Regular/NotoSansSymbols_400Regular.ttf',
+  symbols2: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans-symbols-2@0.4.1/400Regular/NotoSansSymbols2_400Regular.ttf',
+};
+// Fetched on demand only (never bundled): one pinned file each. The address is put together at run time, so the
+// apps' build leaves it online.
+const FONTS_CDN = 'https://cdn.jsdelivr.net/';
+const FONTS_MORE = {
+  sc: { name: 'Chinese', mb: 10.6, path: 'npm/@expo-google-fonts/noto-sans-sc@0.4.4/400Regular/NotoSansSC_400Regular.ttf' },
+  jp: { name: 'Japanese', mb: 5.8, path: 'npm/@expo-google-fonts/noto-sans-jp@0.4.4/400Regular/NotoSansJP_400Regular.ttf' },
+  kr: { name: 'Korean', mb: 6.2, path: 'npm/@expo-google-fonts/noto-sans-kr@0.4.4/400Regular/NotoSansKR_400Regular.ttf' },
+  deva: { name: 'Hindi', mb: 0.3, path: 'npm/@expo-google-fonts/noto-sans-devanagari@0.4.2/400Regular/NotoSansDevanagari_400Regular.ttf' },
+  thai: { name: 'Thai', mb: 0.1, path: 'npm/@expo-google-fonts/noto-sans-thai@0.4.2/400Regular/NotoSansThai_400Regular.ttf' },
+};
+const fontsMoreUrl = (k) => (fontsUrlOver[k] || FONTS_CDN + FONTS_MORE[k].path);
+const fontsUrlOver = {}; // tests point a download at a local file
+// (U+FEFF, the byte order mark often in pasted text, is not right-to-left)
+const FONTS_RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]|\p{Script=Arabic}|\p{Script=Hebrew}|\p{Script=Syriac}|\p{Script=Thaana}|\p{Script=Nko}/u;
+const fontsHan = /[\p{Script=Han}　-〿㈀-㏿！-｠]/u, fontsKana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u, fontsHangul = /\p{Script=Hangul}/u;
+// The on-demand fonts a letter could come from, the likeliest first.
+function fontsMoreFor(ch, text = '') {
+  const lang = (navigator.language || '').toLowerCase();
+  if (fontsHangul.test(ch)) return ['kr'];
+  if (fontsKana.test(ch)) return ['jp'];
+  if (/\p{Script=Devanagari}/u.test(ch)) return ['deva'];
+  if (/\p{Script=Thai}/u.test(ch)) return ['thai'];
+  if (fontsHan.test(ch)) {
+    const order = fontsKana.test(text) || lang.startsWith('ja') ? ['jp', 'sc', 'kr'] : fontsHangul.test(text) || lang.startsWith('ko') ? ['kr', 'sc', 'jp'] : ['sc', 'jp', 'kr'];
+    const have = order.filter((k) => fontsHave.has(k)); // one already here first, so no second download
+    return [...have, ...order.filter((k) => !have.includes(k))];
+  }
+  return [];
+}
+class FontsError extends Error { constructor(m) { super(m); this.name = 'FontsError'; } }
+const fontsRtl = (text) => FONTS_RTL.test(String(text || ''));
+const FONTS_RTL_MSG = 'Right-to-left text (Arabic, Hebrew) can’t be saved in the PDF yet. Remove it to save.';
+
+/* loading */
+// The same as the OCR engine's loader: a script tag, removed again when it fails.
+function fontsLoadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    s.onload = () => res(); s.onerror = () => { s.remove(); rej(new Error('Could not load ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+let fontsKitP = null;
+// fontkit, adapted for @cantoo/pdf-lib: that version asks a subset for its bytes with encode() and no stream, which
+// @pdf-lib/fontkit 1.1.1 does through a stream instead; the subset is written into a stream here and read back at once.
+function fontsKit() {
+  return fontsKitP || (fontsKitP = (async () => {
+    if (!window.fontkit) await fontsLoadScript(FONTS_KIT_URL);
+    const raw = window.fontkit;
+    if (!raw || !raw.create) throw new Error('The font engine did not load');
+    const subsetBytes = (P, sub) => {
+      const ES = P.encodeStream.call({ encode() {} }).constructor, s = new ES(), parts = [];
+      s.push = (b) => { if (b) parts.push(new Uint8Array(b.buffer, b.byteOffset, b.length).slice()); return true; };
+      P.encode.call(sub, s); s.flush();
+      const out = new Uint8Array(parts.reduce((a, b) => a + b.length, 0)); let o = 0;
+      for (const p of parts) { out.set(p, o); o += p.length; }
+      return out;
+    };
+    const create = (...a) => {
+      const f = raw.create(...a), cs = f.createSubset;
+      if (typeof cs === 'function') f.createSubset = function () {
+        const sub = cs.call(this), P = Object.getPrototypeOf(sub);
+        if (P.encodeStream && P.encode && P.encode.length >= 1) sub.encode = function (st) { return st ? P.encode.call(this, st) : subsetBytes(P, this); };
+        return sub;
+      };
+      return f;
+    };
+    return { ...raw, create };
+  })().catch((e) => { fontsKitP = null; throw e; }));
+}
+const fontsFiles = new Map(); // face key -> Promise<Uint8Array>
+const fontsHave = new Set(); // on-demand fonts here (fetched, or kept in this browser)
+// On-demand fonts the person said no to: not asked again on their own this session (fontsNo), nor again in the same
+// save (fontsNoSave, emptied when a save starts), so the next save asks again.
+const fontsNo = new Set(), fontsNoSave = new Set();
+function fontsSaveStarts() { fontsNoSave.clear(); }
+const fontsFaceKey = (family, { bold, italic } = {}) => {
+  if (FONTS_MORE[family] || family === 'symbols' || family === 'symbols2') return family;
+  const fam = ['sans', 'serif', 'mono'].includes(family) ? family : 'sans';
+  const k = fam + (bold && italic ? '-bi' : bold ? '-b' : italic ? '-i' : '');
+  return FONTS_FACES[k] ? k : FONTS_FACES[fam + (bold ? '-b' : '')] ? fam + (bold ? '-b' : '') : fam;
+};
+async function fontsFetch(url) {
+  const r = await fetch(url); if (!r.ok) throw new Error('Could not load the font (' + r.status + ')');
+  return new Uint8Array(await r.arrayBuffer());
+}
+// The font file for a family and style (see the top). An on-demand font is read from this browser, or downloaded
+// after asking (null when the person says no).
+// auto: asked on its own (not for a save), so not again once the person said no.
+function fontsBytes(family, style = {}, auto = false) {
+  const k = fontsFaceKey(family, style);
+  if (!fontsFiles.has(k)) {
+    const p = FONTS_MORE[k] ? fontsMoreBytes(k, true, auto) : fontsFetch(FONTS_FACES[k]);
+    fontsFiles.set(k, p);
+    p.then((b) => { if (!b) fontsFiles.delete(k); }, () => fontsFiles.delete(k));
+  }
+  return fontsFiles.get(k);
+}
+// Kept in this browser once downloaded: IndexedDB, a store of its own.
+let fontsDbP = null;
+function fontsDb() {
+  return fontsDbP || (fontsDbP = new Promise((res, rej) => {
+    const r = indexedDB.open('cowdrey.pdf.fonts', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('fonts');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }).catch((e) => { fontsDbP = null; throw e; }));
+}
+async function fontsDbDo(mode, fn) {
+  const d = await fontsDb();
+  return new Promise((res, rej) => { const tx = d.transaction('fonts', mode), q = fn(tx.objectStore('fonts')); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); });
+}
+async function fontsMoreBytes(k, ask = true, auto = false) {
+  let b = null;
+  try { const rec = await fontsDbDo('readonly', (s) => s.get(k)); if (rec && rec.url === fontsMoreUrl(k) && rec.bytes) b = new Uint8Array(rec.bytes); } catch {}
+  if (b) { fontsHave.add(k); return b; }
+  if (!ask || fontsNoSave.has(k) || (auto && fontsNo.has(k))) return null;
+  const F = FONTS_MORE[k], size = F.mb >= 1 ? `${Math.round(F.mb)} MB` : `${Math.max(1, Math.round(F.mb * 1000))} KB`;
+  const a = await dialog(`${F.name} letters need a font`, `<p>${F.name} letters need a font download (${size}). Download once?</p><p class="fonts-note">It is kept on this device for next time. Only the font is downloaded; your PDF stays here.</p>`,
+    [{ label: 'Not now' }, { label: 'Download', value: 'yes', primary: true }]);
+  if (a !== 'yes') { fontsNo.add(k); fontsNoSave.add(k); return null; }
+  toast(`Downloading the ${F.name} font…`);
+  try { b = await fontsFetch(fontsMoreUrl(k)); }
+  catch (e) { toast(`The ${F.name} font could not be downloaded. Check the connection and try again.`); throw e; }
+  try { await fontsDbDo('readwrite', (s) => s.put({ url: fontsMoreUrl(k), bytes: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }, k)); } catch (e) { console.warn('fonts: could not keep the font on this device', e); }
+  fontsHave.add(k);
+  toast(`${F.name} font ready`);
+  return b;
+}
+// The on-demand fonts here already (kept from before), so choosing a font needs no question.
+// (kept under the address it came from: a font from another address is fetched again)
+async function fontsReadKept() {
+  try { const recs = await fontsDbDo('readonly', (st) => st.getAll()), keys = await fontsDbDo('readonly', (st) => st.getAllKeys()); (keys || []).forEach((k, i) => { if (FONTS_MORE[k] && recs[i] && recs[i].url === fontsMoreUrl(k)) fontsHave.add(k); }); } catch {}
+}
+let fontsKnown = fontsReadKept();
+
+/* faces: each font file read once (to know which letters it has) */
+const fontsFaces = new Map(); // face key -> Promise<fontkit font | null>
+function fontsFace(key) {
+  if (!fontsFaces.has(key)) {
+    const [fam, st] = key.split('-');
+    const p = (async () => { const b = await fontsBytes(fam, { bold: /b/.test(st || ''), italic: /i/.test(st || '') }); return b ? (await fontsKit()).create(b) : null; })();
+    fontsFaces.set(key, p); p.then((f) => { if (!f) fontsFaces.delete(key); }, () => fontsFaces.delete(key));
+  }
+  return fontsFaces.get(key);
+}
+// Whether a font has every letter of a text (spaces and line breaks aside): a pdf-lib font (a standard one when it can
+// write them), or a fontkit font.
+function fontsCovers(font, text) {
+  const s = [...String(text || '')].filter((c) => !/[\s​-‍﻿]/.test(c)).join('');
+  if (!font) return false;
+  if (!s) return true;
+  const fk = font.hasGlyphForCodePoint ? font : font.embedder && font.embedder.font && font.embedder.font.hasGlyphForCodePoint ? font.embedder.font : null;
+  if (fk) return [...s].every((c) => fk.hasGlyphForCodePoint(c.codePointAt(0)));
+  // a standard font: what its encoding (WinAnsi) has (pdf-lib would write '?' for the rest)
+  const enc = font.embedder && font.embedder.encoding;
+  if (enc && enc.canEncodeUnicodeCodePoint) return [...s].every((c) => enc.canEncodeUnicodeCodePoint(c.codePointAt(0)));
+  try { font.encodeText(s); return true; } catch { return false; }
+}
+// The faces to try for a text, in order: the family in its style, its plain style, the symbol fonts, then for each
+// letter the script fonts that are fetched on demand.
+function fontsChain(text, style = {}) {
+  const fam = ['sans', 'serif', 'mono'].includes(style.family) ? style.family : 'sans';
+  const keys = [fontsFaceKey(fam, style), fontsFaceKey(fam), ...(fam === 'sans' ? [] : [fontsFaceKey('sans', style), 'sans']), 'symbols2', 'symbols'];
+  // (one download a letter at most: the likeliest font, or one that is here already)
+  for (const ch of String(text || '')) { const ks = fontsMoreFor(ch, text); keys.push(...ks.filter((k) => fontsHave.has(k)), ...ks.slice(0, 1)); }
+  return [...new Set(keys)];
+}
+// The face that has every letter of a text: its key and the fontkit font (the family's own when none has them all).
+async function fontsFor(text, style = {}) {
+  if (fontsRtl(text)) throw new FontsError(FONTS_RTL_MSG);
+  await fontsKnown;
+  const chain = fontsChain(text, style);
+  for (const k of chain) { const f = await fontsFace(k); if (f && fontsCovers(f, text)) return { key: k, font: f }; }
+  return { key: chain[0], font: await fontsFace(chain[0]) };
+}
+// Fonts embedded in a pdf-lib document, per document and face (pdf-lib writes the letters used once, at the end).
+const fontsEmbedded = new WeakMap(); // out -> Map(face key -> Promise<PDFFont>)
+async function fontsEmbedKey(out, key) {
+  let m = fontsEmbedded.get(out); if (!m) fontsEmbedded.set(out, m = new Map());
+  if (!m.has(key)) {
+    const p = (async () => {
+      const kit = await fontsKit();
+      if (!out.fontkit) out.registerFontkit(kit);
+      const [fam, st] = key.split('-'), b = await fontsBytes(fam, { bold: /b/.test(st || ''), italic: /i/.test(st || '') });
+      if (!b) throw new FontsError(`${(FONTS_MORE[key] || {}).name || 'These'} letters need the font download to be saved.`);
+      return out.embedFont(b, { subset: true });
+    })();
+    m.set(key, p); p.catch(() => m.delete(key));
+  }
+  return m.get(key);
+}
+// An embedded font for a family and style; with `text`, a face that has its letters (see fontsFor).
+async function fontsEmbed(out, { family = 'sans', bold = false, italic = false, text = '' } = {}) {
+  const key = text ? (await fontsFor(text, { family, bold, italic })).key : fontsFaceKey(family, { bold, italic });
+  return fontsEmbedKey(out, key);
+}
+// A text in runs of one font each: [{ text, font, std }]. Words stay in one font where one has all their letters
+// (a word split between fonts is found and copied in pieces by some readers); spaces go with the run before them.
+// style: { family, bold, italic, std?, measure? } (std: a standard pdf-lib font, kept for what it can write;
+// measure: only measuring, so nothing is said about letters left out).
+async function fontsRuns(out, text, style = {}) {
+  text = String(text || '');
+  if (fontsRtl(text)) throw new FontsError(FONTS_RTL_MSG);
+  await fontsKnown;
+  text = text.replace(/\uFEFF/g, ''); // a byte order mark from pasted text: nothing to draw
+  const runs = [], chain = fontsChain(text, style);
+  let lost = false;
+  const pick = async (s) => {
+    if (style.std && fontsCovers(style.std, s)) return 'std';
+    for (const k of chain) { const f = await fontsFace(k); if (f && fontsCovers(f, s)) return k; }
+    return null;
+  };
+  const push = (key, s) => { const last = runs[runs.length - 1]; if (last && last.key === key) last.text += s; else runs.push({ key, text: s }); };
+  for (const tok of text.match(/\s+|\S+/g) || []) {
+    if (/^\s+$/.test(tok)) { push(runs.length ? runs[runs.length - 1].key : (await pick(' ')) || chain[0], tok); continue; }
+    const k = await pick(tok);
+    if (k) { push(k, tok); continue; }
+    // No one font has the whole word: each letter in the first that has it. A letter only a font that was not
+    // downloaded has stops the save (it would be an empty box). One no font has (most emoji) is left out of the
+    // drawing (it would be an empty box, read back as nothing useful); runs.lost says so, and Edit PDF keeps it in
+    // the line's ActualText, which some readers copy.
+    for (const ch of tok) {
+      const k1 = await pick(ch);
+      if (!k1) {
+        const want = fontsMoreFor(ch, text)[0]; if (want) throw new FontsError(`${FONTS_MORE[want].name} letters need the font download to be saved.`);
+        if (!/[\u200B-\u200D\u2060\uFE00-\uFE0F\uFEFF]/.test(ch)) lost = true;
+        continue;
+      }
+      push(k1, ch);
+    }
+  }
+  for (const r of runs) { r.std = r.key === 'std'; r.font = r.std ? style.std : await fontsEmbedKey(out, r.key); }
+  if (lost) { runs.lost = true; if (!style.measure) fontsSayLost(); }
+  return runs;
+}
+// Said once in a while (a save may write many lines).
+let fontsLostAt = 0;
+function fontsSayLost() { if (Date.now() - fontsLostAt > 5000) toast('Some letters (like emoji) have no font here and were left out of the PDF.'); fontsLostAt = Date.now(); }
+// The width of runs at a size, in points (with character spacing tc, as text is drawn).
+const fontsWidth = (runs, size, tc = 0) => runs.reduce((w, r) => w + r.font.widthOfTextAtSize(r.text, size) + [...r.text].length * tc, 0);
+// The page's resource name for a font (one per font and page, however often it is used).
+const fontsKeys = new WeakMap(); // page node -> Map(font ref tag -> PDFName)
+function fontsKey(node, font) {
+  let m = fontsKeys.get(node); if (!m) fontsKeys.set(node, m = new Map());
+  const t = font.ref.tag || String(font.ref);
+  if (!m.has(t)) m.set(t, node.newFontDictionary('CPDFU', font.ref));
+  return m.get(t);
+}
+// Runs drawn on a pdf-lib page, one after the other along the baseline from (x, y), turned `rotate` degrees.
+function fontsDraw(L, p, runs, { x, y, size, rotate = 0, ...opts }) {
+  const a = rotate * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  let d = 0;
+  for (const r of runs) {
+    if (r.text) p.drawText(r.text, { ...opts, x: x + c * d, y: y + s * d, size, font: r.font, rotate: L.degrees(rotate) });
+    d += r.font.widthOfTextAtSize(r.text, size);
+  }
+  return d;
+}
+// The style of a font in a PDF, from its FontDescriptor (fixed pitch, serif, italic, weight, stem width) and its name.
+function fontsStyleOf(L, out, fontDict, name = '') {
+  const { PDFName, PDFDict, PDFArray, PDFNumber } = L;
+  let d = fontDict instanceof PDFDict ? fontDict : null;
+  const df = d && d.lookup(PDFName.of('DescendantFonts'));
+  if (df instanceof PDFArray && df.lookup(0) instanceof PDFDict) d = df.lookup(0);
+  const fd = d && d.lookup(PDFName.of('FontDescriptor')), num = (k) => { const v = fd instanceof PDFDict && fd.lookup(PDFName.of(k)); return v instanceof PDFNumber ? v.asNumber() : null; };
+  const flags = num('Flags') || 0, weight = num('FontWeight'), stem = num('StemV'), angle = num('ItalicAngle');
+  const n = baseName(name || (fontDict instanceof PDFDict ? fontDict.lookup(PDFName.of('BaseFont')) : '')) + ' ' + (fd instanceof PDFDict ? String(fd.lookup(PDFName.of('FontFamily')) || '') : '');
+  const named = stdFamily(n);
+  const family = /courier|mono|consol|menlo/i.test(n) || (flags & 1 && !/sans|serif/i.test(n)) ? 'mono' : named !== 'sans' ? named : !/sans|arial|helvetica|calibri|carlito|verdana|segoe|roboto/i.test(n) && flags & 2 ? 'serif' : 'sans';
+  const bold = /bold|black|heavy|semibold|demi/i.test(n) || !!(flags & (1 << 18)) || (weight != null && weight >= 600) || (stem != null && stem >= 120);
+  const italic = /italic|oblique/i.test(n) || !!(flags & (1 << 6)) || (angle != null && angle < -3);
+  return { family, bold, italic };
+}
+// Before saving: the fonts a text will need are here (downloaded after asking, if need be). Says why not when they aren't.
+async function fontsEnsure(text, auto = false) {
+  text = String(text || '');
+  if (fontsRtl(text)) { toast(FONTS_RTL_MSG); return false; }
+  await fontsKnown;
+  const need = new Set();
+  for (const ch of text) { const ks = fontsMoreFor(ch, text); if (ks.length && !ks.some((k) => fontsHave.has(k))) need.add(ks[0]); }
+  for (const k of need) { try { if (!(await fontsBytes(k, {}, auto))) return false; } catch { return false; } }
+  return true;
+}
+// Typing letters an on-demand font has asks for it once the editor closes (not while typing); right-to-left text
+// is said to be unsupported then too.
+document.addEventListener('focusout', (e) => {
+  const el = e.target;
+  if (!el || !el.matches || !el.matches('.line-editor, .txt-editor')) return;
+  const text = el.matches('.txt-editor') ? el.value : el.textContent;
+  if (!text || !/[^\x00-ɏ\s]/.test(text)) return;
+  setTimeout(() => { fontsEnsure(text, true).catch(() => {}); }, 0);
+}, true);
+addStyle('.fonts-note { font-size: 12px; color: var(--ink-3); }');
+TEST_HOOKS.fontsUrl = (k, url) => { if (url) fontsUrlOver[k] = url; else delete fontsUrlOver[k]; fontsFiles.delete(k); fontsFaces.delete(k); fontsHave.delete(k); fontsNo.delete(k); fontsNoSave.delete(k); fontsKnown = fontsReadKept(); return fontsKnown; };
+TEST_HOOKS.fontsFor = async (text, style) => (await fontsFor(text, style)).key;
+TEST_HOOKS.fontsBytes = async (family, style) => { const b = await fontsBytes(family, style); return b ? b.length : 0; };
+TEST_HOOKS.fontsHave = () => [...fontsHave];
+
 // ---- src/features/10-text.js
 /* ---------------- text editing: paragraphs, formatting, text boxes, find and replace ----------------
    What this adds to the Edit PDF tool and the Text tool:
@@ -5789,12 +6298,11 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
    The module wraps a few core functions (onEditDown, onEditHover, openLineEditor, closeLineEditor, addText,
    editText): each wrapper calls the core one for everything it doesn't handle. */
 const TXT_SWATCHES = INK_COLORS;
-const TXT_FAMS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ['page', 'Same as the page']];
+const TXT_FAMS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ['page', 'Same as the PDF']];
 const txtStdName = (fam, bold, italic) => ({ sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[fam] || 'Helvetica') + (bold && italic ? (fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : bold ? 'Bold' : italic ? (fam === 'serif' ? 'Italic' : 'Oblique') : '');
 const txtRound = (n) => Math.round(n * 10) / 10;
 const txtHexRgb = (hex) => { const n = parseInt(String(hex || '#111111').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const txtVec = (r) => { const a = r * Math.PI / 180; return { right: [Math.cos(a), Math.sin(a)], down: [Math.sin(a), -Math.cos(a)] }; };
-const txtSafe = (s) => s.replace(/[^\x20-\x7E\xA0-\xFF–—‘’“”•…€]/g, '?');
 const txtEditing = new Set(); // ids of marks whose editor is open (their text isn't drawn underneath)
 
 /* ---- wrapping and measuring ---- */
@@ -5850,7 +6358,24 @@ function txtStdFont(name) {
   if (!txtStdFonts.has(name)) txtStdFonts.set(name, (async () => { const L = await loadPdfLib(); const d = await L.PDFDocument.create(); return d.embedFont(L.StandardFonts[name] || L.StandardFonts.Helvetica); })());
   return txtStdFonts.get(name);
 }
-const txtStdWidth = (font, size) => (s) => { try { return font.widthOfTextAtSize(s, size); } catch { return font.widthOfTextAtSize(txtSafe(s), size); } };
+// A standard font's width of a string; letters it can't write are measured in the embedded fonts that stand in for
+// them (extra: pdf-lib fonts, the first that has a letter is used, as fontsRuns picks them when saving).
+const txtStdWidth = (font, size, extra = []) => (s) => {
+  if (fontsCovers(font, s)) return font.widthOfTextAtSize(s, size);
+  let w = 0;
+  for (const ch of s) {
+    const f = fontsCovers(font, ch) ? font : extra.find((x) => fontsCovers(x, ch)) || extra[0];
+    try { w += f ? f.widthOfTextAtSize(ch, size) : size * .55; } catch { w += size * .55; }
+  }
+  return w;
+};
+// The embedded fonts a text box's letters need beyond its standard font, in a scratch document (to measure them).
+let txtScratch = null;
+async function txtExtraFonts(text, style) {
+  if (!/[^\x00-\xFF]/.test(text)) return [];
+  const L = await loadPdfLib(); txtScratch ||= await L.PDFDocument.create();
+  try { return [...new Set((await fontsRuns(txtScratch, text, { ...style, measure: true })).map((r) => r.font))]; } catch { return []; }
+}
 // Lines joined into a paragraph: a line ending in a hyphen runs straight on.
 const txtJoin = (strs) => strs.reduce((a, s, k) => (k === 0 ? s : /-$/.test(a) ? a + s : a + ' ' + s), '');
 
@@ -6010,32 +6535,31 @@ FEATURE.markTypes.tpara = {
 async function txtDrawPara(L, out, p, m, ctx) {
   const { PDFNumber, PDFHexString, PDFOperator, StandardFonts, rgb } = L;
   const node = p.node, { fonts } = pageFonts(L, out, node), want = baseName(m.font);
-  let f = m.std || m.ocr || m.type3 || /glyphless/i.test(want) ? null : [...fonts.values()].find((x) => baseName(x.base) === want);
-  if (f) {
-    const rev = new Map(f.hasToUnicode ? f.rev : []);
-    if (!f.type0) for (const [u, code] of Object.entries(m.codes || {})) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
-    f = rev.size ? { ...f, rev } : null;
-  }
+  // the PDF's own font, with the letters it has (as for an edited line)
+  const f = m.std || !want ? null : teOwnFont(m, fonts);
+  // Letters the own font lacks: a standard font when one was asked for (a standard face, or bold or italic the font
+  // isn't) and it can write them, else an embedded Unicode font of the same style, never '?'.
   const stdName = txtStdName(m.fam, m.bold, m.italic);
   const std = async () => { let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); } return sf; };
+  const style = { family: m.fam || 'sans', bold: !!m.bold, italic: !!m.italic };
   const F = txtFrame(m), t0 = m.src[0].tm, hs = Math.hypot(t0[0], t0[1]) * F.k;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (n) => PDFNumber.of(+(+n).toFixed(4));
   const col = txtHexRgb(m.color), all = [];
   for (let i = 0; i < m.lines.length; i++) {
     const line = m.lines[i]; if (!line.trim()) continue;
-    const runs = glyphRuns(line, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
-    let w = 0;
-    for (const r of runs) {
-      if (r.own) { r.w = r.chars.reduce((s, c) => s + (f.widths.get(c) ?? f.dw), 0) / 1000; continue; }
-      const sf = await std(); r.sf = sf;
-      try { r.hex = sf.encodeText(r.chars.join('')); r.w = sf.widthOfTextAtSize(r.chars.join(''), 1); } catch { const s = txtSafe(r.chars.join('')); r.hex = sf.encodeText(s); r.w = sf.widthOfTextAtSize(s, 1); }
+    const runs = [];
+    for (const r of glyphRuns(line, f && f.rev)) {
+      if (r.own) { runs.push({ ...r, w: r.chars.reduce((s, c) => s + (f.widths.get(c) ?? f.dw), 0) / 1000 }); continue; }
+      for (const x of await fontsRuns(out, r.chars.join(''), { ...style, std: m.std ? await std() : null })) runs.push({ own: false, chars: [...x.text], sf: x.font, hex: x.font.encodeText(x.text), w: x.font.widthOfTextAtSize(x.text, 1) });
     }
+    const mixed = runs.length > 1 && runs.some((r) => (r.own ? 'own' : r.sf) !== (runs[0].own ? 'own' : runs[0].sf));
+    let w = 0;
     for (const r of runs) w += (r.w + r.chars.length * (m.tc || 0)) * hs;
     const x = txtLineX(m, w), org = txtOrigin(F, i, x);
     const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
-      else ops.push(O('Tf', [node.newFontDictionary('CPDF', r.sf.ref), N(1)]), O('Tj', [r.hex]));
+      else ops.push(O('Tf', [fontsKey(node, r.sf), N(1)]), O('Tj', [r.hex]));
     }
     ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
     all.push(...ops);
@@ -6059,24 +6583,26 @@ FEATURE.markTypes.text = {
     return g;
   },
   async save({ L, out, p, m, ctx }) {
-    const { StandardFonts, degrees, rgb } = L;
+    const { StandardFonts, rgb } = L;
     const name = txtStdName(m.fam || 'sans', m.bold, m.italic);
     let font = ctx.std.get(name); if (!font) { font = await out.embedFont(StandardFonts[name] || StandardFonts.Helvetica); ctx.std.set(name, font); }
-    const { right, down } = txtVec(m.rot), color = rgb(...txtHexRgb(m.color)), width = txtStdWidth(font, m.size);
+    const { right, down } = txtVec(m.rot), color = rgb(...txtHexRgb(m.color));
     const lines = txtBoxLines(m), bw = m.bw || 0;
-    lines.forEach((line, k) => {
-      if (!line) return;
-      const w = width(line), off = m.size * (.85 + k * 1.2), dx = bw ? Math.max(0, bw - w) * txtAlignK(m.align) : 0;
+    // In the standard font where it can write the letters, the rest in embedded Unicode fonts of the same style.
+    const style = { family: m.fam || 'sans', bold: !!m.bold, italic: !!m.italic, std: font };
+    for (let k = 0; k < lines.length; k++) {
+      const line = lines[k]; if (!line) continue;
+      const runs = await fontsRuns(out, line, style), w = fontsWidth(runs, m.size);
+      const off = m.size * (.85 + k * 1.2), dx = bw ? Math.max(0, bw - w) * txtAlignK(m.align) : 0;
       const x = m.x + down[0] * off + right[0] * dx, y = m.y + down[1] * off + right[1] * dx;
-      try { p.drawText(line, { x, y, size: m.size, font, color, rotate: degrees(m.rot) }); }
-      catch { p.drawText(txtSafe(line), { x, y, size: m.size, font, color, rotate: degrees(m.rot) }); }
+      fontsDraw(L, p, runs, { x, y, size: m.size, color, rotate: m.rot });
       if (m.underline) { const u = m.size * .12; p.drawLine({ start: { x: x + down[0] * u, y: y + down[1] * u }, end: { x: x + down[0] * u + right[0] * w, y: y + down[1] * u + right[1] * w }, thickness: Math.max(.5, m.size * .06), color }); }
-    });
+    }
   },
 };
 // Lines, their widths and the box width, with the standard font's own widths (so alignment in the PDF is exact).
 async function txtLayoutBox(m) {
-  const font = await txtStdFont(txtStdName(m.fam || 'sans', m.bold, m.italic)), width = txtStdWidth(font, m.size);
+  const font = await txtStdFont(txtStdName(m.fam || 'sans', m.bold, m.italic)), width = txtStdWidth(font, m.size, await txtExtraFonts(m.text, { family: m.fam || 'sans', bold: !!m.bold, italic: !!m.italic }));
   m.lines = txtWrap(m.text, m.w || 0, width);
   m.lw = m.lines.map((s) => txtRound(width(s)));
   m.bw = m.w || Math.max(0, ...m.lw);
@@ -8471,20 +8997,33 @@ const PD_FONTS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']];
 const PD_MM = 72 / 25.4;
 const PD_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const PD_DATES = ['d mmmm yyyy', 'mmmm d, yyyy', 'dd/mm/yyyy', 'mm/dd/yyyy', 'yyyy-mm-dd', 'd/m/yy'];
-// Characters the standard PDF fonts can write (WinAnsi); anything else shows as "?" on screen and in the file.
-const PD_ANSI = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
-const pdClean = (s) => [...String(s)].map((c) => { const k = c.codePointAt(0); return (k >= 32 && k <= 126) || (k >= 160 && k <= 255) || PD_ANSI.includes(c) ? c : '?'; }).join('');
+const PD_PARITY = [['all', 'All pages'], ['odd', 'Odd pages'], ['even', 'Even pages']];
 const pdDefaults = {
-  pd_watermark: () => ({ kind: 'text', text: 'CONFIDENTIAL', font: 'sans', bold: true, size: 64, color: '#E03131', scale: 50, opacity: 30, rotation: 45, layout: 'center', front: 'front', range: '' }),
-  pd_background: () => ({ kind: 'color', color: '#FFF3BF', fit: 'stretch', opacity: 100, range: '' }),
-  pd_headfoot: () => ({ tl: '', tc: '', tr: '', bl: '', bc: 'Page <<page>> of <<pages>>', br: '', font: 'sans', bold: false, size: 10, color: '#333333', dateFmt: 'd mmmm yyyy', mTop: 12, mBottom: 12, mSide: 18, start: 1, range: '' }),
-  pd_bates: () => ({ prefix: 'ABC', start: 1, digits: 6, suffix: '', slot: 'br', font: 'sans', bold: false, size: 10, color: '#111111', mTop: 12, mBottom: 12, mSide: 18, range: '' }),
+  pd_watermark: () => ({ kind: 'text', text: 'CONFIDENTIAL', font: 'sans', bold: true, size: 64, color: '#E03131', scale: 50, opacity: 30, rotation: 45, layout: 'center', front: 'front', range: '', parity: 'all' }),
+  pd_background: () => ({ kind: 'color', color: '#FFF3BF', fit: 'stretch', opacity: 100, range: '', parity: 'all' }),
+  pd_headfoot: () => ({ tl: '', tc: '', tr: '', bl: '', bc: 'Page <<page>> of <<pages>>', br: '', font: 'sans', bold: false, size: 10, color: '#333333', dateFmt: 'd mmmm yyyy', mTop: 12, mBottom: 12, mSide: 18, start: 1, range: '', parity: 'all', firstDiff: false, ftl: '', ftc: '', ftr: '', fbl: '', fbc: '', fbr: '' }),
+  pd_bates: () => ({ prefix: 'ABC', start: 1, digits: 6, suffix: '', slot: 'br', font: 'sans', bold: false, size: 10, color: '#111111', mTop: 12, mBottom: 12, mSide: 18, range: '', parity: 'all' }),
 };
 const pdLastUsed = {};
 
 function pdItems() { return doc ? docMarks().filter((m) => PD_TYPES[m.type]).sort((a, b) => PD_ORDER.indexOf(a.type) - PD_ORDER.indexOf(b.type)) : []; }
-// The pages (0-based, in order) an item is on, out of N.
-function pdPages(m, N) { return m.range && m.range.trim() ? parseRange(m.range, N).sort((a, b) => a - b) : [...Array(N).keys()]; }
+// The pages (0-based, in order) an item's range covers, out of N; and those it is on (odd or even pages only, by
+// their number in the saved file).
+function pdRange(m, N) { return m.range && m.range.trim() ? parseRange(m.range, N).sort((a, b) => a - b) : [...Array(N).keys()]; }
+function pdPages(m, N) { const r = pdRange(m, N); return m.parity === 'odd' ? r.filter((n) => n % 2 === 0) : m.parity === 'even' ? r.filter((n) => n % 2 === 1) : r; }
+// What the file, title and author fields say: the file's name, and its Title and Author (as changed in Document
+// properties, else as in the PDF; the title falls back to the file's name, as saving does).
+let pdMetaRead = { title: '', author: '' };
+function pdMeta() {
+  if (!doc) return { file: '', title: '', author: '' };
+  const di = docMarks().find((m) => m.type === 'docinfo') || {};
+  return { file: doc.name + '.pdf', title: di.title ?? (pdMetaRead.title || doc.name), author: di.author ?? pdMetaRead.author ?? '' };
+}
+FEATURE.onDocShown.push(async (d) => {
+  pdMetaRead = { title: '', author: '' };
+  try { const md = await pdfDocs.get(0).getMetadata(), i = (md && md.info) || {}; if (doc === d) pdMetaRead = { title: String(i.Title || '').trim(), author: String(i.Author || '').trim() }; } catch {}
+  if (doc === d && pdItems().length) pdRefreshAll();
+});
 function pdDate(fmt, d = new Date()) {
   const D = d.getDate(), M = d.getMonth() + 1, Y = d.getFullYear(), p2 = (x) => String(x).padStart(2, '0');
   return fmt.replace(/yyyy|yy|mmmm|mm|m|dd|d/g, (t) => ({ yyyy: Y, yy: p2(Y % 100), mmmm: PD_MONTHS[M - 1], mm: p2(M), m: M, dd: p2(D), d: D }[t]));
@@ -8493,8 +9032,9 @@ const pdBates = (m, num) => `${m.prefix || ''}${String(num).padStart(Math.max(1,
 // A place in a header's text moved out of any field it falls inside (to the field's end).
 function pdOutside(s, at) { for (const mt of String(s).matchAll(/<<[^<>]*>>/g)) if (at > mt.index && at < mt.index + mt[0].length) return mt.index + mt[0].length; return at; }
 // Text with a broken field in it ("<<pa<<page>>ge>>"): what is left of << or >> once the real fields are taken out.
-const pdBroken = (s) => /<<|>>/.test(String(s || '').replace(/<<\s*(pages|page|date)\s*>>/gi, ''));
-function pdTokens(s, page, pages, date) { return String(s).replace(/<<\s*(pages|page|date)\s*>>/gi, (_, t) => ({ page, pages, date }[t.toLowerCase()])); }
+const PD_TOKEN = /<<\s*(pages|page|date|file|title|author)\s*>>/gi;
+const pdBroken = (s) => /<<|>>/.test(String(s || '').replace(PD_TOKEN, ''));
+function pdTokens(s, page, pages, date, meta = pdMeta()) { return String(s).replace(PD_TOKEN, (_, t) => String({ page, pages, date, ...meta }[t.toLowerCase()] ?? '')); }
 
 // Centres for a tiled watermark: a grid turned with the watermark, rows offset by half a step, covering the page.
 function pdTiles(W, H, a, stepX, stepY, reach) {
@@ -8508,11 +9048,12 @@ function pdTiles(W, H, a, stepX, stepY, reach) {
 // What to draw on page n of N, a W×H page as seen: { under: [...], over: [...] } of
 // { kind: 'rect' | 'text' | 'image', x, y (bottom left / baseline start), angle (degrees, anticlockwise), … }.
 // `list` is the settings to draw (the document's, or a dialog's preview of them).
-function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
+function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems(), meta = pdMeta()) {
   const under = [], over = [];
   for (const m of list) {
     const pages = pdPages(m, N), k = pages.indexOf(n);
     if (k < 0) continue;
+    const range = pdRange(m, N), kr = range.indexOf(n);
     const op = Math.max(0, Math.min(100, m.opacity ?? 100)) / 100;
     if (m.type === 'pd_background') {
       if (m.kind === 'image' && m.data) {
@@ -8529,7 +9070,7 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
         w = W * Math.max(1, +m.scale || 50) / 100; h = w * m.ih / m.iw;
         item = (cx, cy) => ({ kind: 'image', data: m.data, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, w, h, angle: +m.rotation || 0, opacity: op, art: 'Watermark' });
       } else {
-        const text = pdClean(m.text || ''), size = Math.max(1, +m.size || 48);
+        const text = String(m.text || ''), size = Math.max(1, +m.size || 48);
         if (!text.trim()) continue;
         w = measure(text, m.font, m.bold, size); h = size * .7;
         item = (cx, cy) => ({ kind: 'text', text, x: cx - c * w / 2 + s * h / 2, y: cy - s * w / 2 - c * h / 2, angle: +m.rotation || 0, size, font: m.font, bold: !!m.bold, color: m.color, opacity: op, art: 'Watermark' });
@@ -8539,11 +9080,13 @@ function pdLayout(n, N, W, H, measure, date = new Date(), list = pdItems()) {
     } else {
       const size = Math.max(1, +m.size || 10), slots = {};
       if (m.type === 'pd_headfoot') {
-        const first = Math.round(+m.start || 1), date0 = pdDate(m.dateFmt || PD_DATES[0], date);
-        for (const [s] of PD_SLOTS) if (m[s]) slots[s] = pdTokens(m[s], first + k, first + pages.length - 1, date0);
+        // page numbers count every page of the range (an odd-pages header on page 3 says 3); the first page of
+        // its pages has its own header and footer when asked (or none)
+        const first = Math.round(+m.start || 1), date0 = pdDate(m.dateFmt || PD_DATES[0], date), own = m.firstDiff && k === 0;
+        for (const [s] of PD_SLOTS) { const v = own ? m['f' + s] : m[s]; if (v) slots[s] = pdTokens(v, first + kr, first + range.length - 1, date0, meta); }
       } else slots[m.slot || 'br'] = pdBates(m, Math.max(0, Math.round(+m.start || 0)) + k);
       for (const [s, raw] of Object.entries(slots)) {
-        const text = pdClean(raw); if (!text.trim()) continue;
+        const text = String(raw); if (!text.trim()) continue;
         const tw = measure(text, m.font, m.bold, size), side = (+m.mSide || 0) * PD_MM;
         const x = s[1] === 'l' ? side : s[1] === 'r' ? W - side - tw : (W - tw) / 2;
         const y = s[0] === 't' ? H - (+m.mTop || 0) * PD_MM - size * .75 : (+m.mBottom || 0) * PD_MM + size * .22;
@@ -8626,6 +9169,13 @@ addStyle(`
 .pd-form .sw-row input[type="color"] { padding: 0; border: 0; height: 100%; }
 .pd-form .sw-row { min-height: 36px; }
 .pd-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 8px; }
+.pd-presets { display: flex; flex-wrap: wrap; align-items: end; gap: 0 10px; margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--line); }
+.pd-presets .field { margin: 4px 0; min-width: 0; flex: 1 1 160px; }
+.pd-presets .field > span { font-size: 12px; color: var(--ink-3); }
+.pd-presets .field select, .pd-presets .field input { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 100%; box-sizing: border-box; }
+.pd-presets .btn { height: 36px; margin: 4px 0; }
+.pd-presets .btn[hidden], .pd-first[hidden] { display: none; }
+.pd-top > .pd-check { display: inline-flex; height: auto; margin: 2px 0 4px; }
 .pd-tokens { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 6px; font-size: 12px; color: var(--ink-3); }
 .pd-tokens .btn { height: 26px; padding: 0 10px; font-size: 12px; }
 .pd-pic { display: flex; gap: 10px; align-items: center; }
@@ -8671,8 +9221,7 @@ dialog.pd-dialog::backdrop { backdrop-filter: none; -webkit-backdrop-filter: non
 }
 `);
 
-/* saving */
-const PD_STD = { sans: ['Helvetica', 'HelveticaBold'], serif: ['TimesRoman', 'TimesRomanBold'], mono: ['Courier', 'CourierBold'] };
+/* saving: text in embedded Unicode fonts (Noto Sans, Serif or Mono for Sans, Serif and Mono), as subsets */
 function pdRgb(L, hex) { const n = parseInt(String(hex || '#000000').slice(1), 16) || 0; return L.rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); }
 // Each run of items of one kind is marked as a pagination artifact of that kind (Watermark, Header, Footer), which
 // other editors look for to update or remove them, and tagged as ours (see pdTag).
@@ -8687,7 +9236,7 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
       let im = ctx.images.get(it.data);
       if (!im) { im = await out.embedPng(it.data); ctx.images.set(it.data, im); }
       p.drawImage(im, { x, y, width: it.w, height: it.h, opacity: it.opacity, rotate });
-    } else p.drawText(it.text, { x, y, size: it.size, font: ctx.pdFonts.get((it.font || 'sans') + (it.bold ? 'b' : '')), color: pdRgb(L, it.color), opacity: it.opacity, rotate });
+    } else fontsDraw(L, p, ctx.pdRuns.get(pdRunKey(it.text, it.font, it.bold)), { x, y, size: it.size, color: pdRgb(L, it.color), opacity: it.opacity, rotate: (it.angle + r) % 360 });
   }
   if (tag) pdTag(L, out, p, false);
 }
@@ -8695,16 +9244,18 @@ async function pdDrawItems(L, out, p, items, map, r, ctx) {
 // cuts letters out of it; page design from an earlier save is taken out when the file is opened (see pdReadBack).
 FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   const items = pdItems(); if (!items.length) return;
-  ctx.pdFonts ||= new Map();
-  for (const m of items) {
-    const key = (m.font || 'sans') + (m.bold ? 'b' : '');
-    if ((m.type !== 'pd_background' && !(m.type === 'pd_watermark' && m.kind === 'image')) && !ctx.pdFonts.has(key)) ctx.pdFonts.set(key, await out.embedFont(L.StandardFonts[PD_STD[m.font || 'sans'][m.bold ? 1 : 0]]));
-  }
   const box = p.getCropBox(), r = ((Math.round(p.getRotation().angle / 90) * 90) % 360 + 360) % 360;
   const W = r % 180 ? box.height : box.width, H = r % 180 ? box.width : box.height;
   // From the page as seen (x right, y up) to the page's own space, which is turned by its /Rotate (clockwise).
   const map = (x, y) => r === 0 ? [box.x + x, box.y + y] : r === 90 ? [box.x + box.width - y, box.y + x] : r === 180 ? [box.x + box.width - x, box.y + box.height - y] : [box.x + y, box.y + box.height - x];
-  const { under, over } = pdLayout(n, entries.length, W, H, (text, fam, bold, size) => ctx.pdFonts.get((fam || 'sans') + (bold ? 'b' : '')).widthOfTextAtSize(text, size));
+  // The texts on this page first (their fonts are chosen and embedded once), then the layout measured in them.
+  ctx.pdRuns ||= new Map();
+  const date = new Date(), meta = pdMeta(), first = pdLayout(n, entries.length, W, H, () => 0, date, items, meta);
+  for (const it of [...first.under, ...first.over]) {
+    const k = it.kind === 'text' && pdRunKey(it.text, it.font, it.bold);
+    if (k && !ctx.pdRuns.has(k)) ctx.pdRuns.set(k, await fontsRuns(out, it.text, { family: it.font || 'sans', bold: !!it.bold }));
+  }
+  const { under, over } = pdLayout(n, entries.length, W, H, (text, fam, bold, size) => fontsWidth(ctx.pdRuns.get(pdRunKey(text, fam, bold)), size), date, items, meta);
   if (under.length) {
     // Behind the content: drawn in a stream of its own, which then goes first in the page's list of streams.
     p.getContentStream(false);
@@ -8715,6 +9266,7 @@ FEATURE.savePageLate.push(async ({ L, out, p, n, entries, ctx }) => {
   }
   if (over.length) await pdDrawItems(L, out, p, over, map, r, ctx);
 });
+const pdRunKey = (text, fam, bold) => `${fam || 'sans'}${bold ? 'b' : ''}:${text}`;
 /* Kept in the saved PDF, so it can be changed or removed when the file is opened again: what is drawn is marked as
    an artifact tagged /CowdreyPdfPD, and the settings are a JSON string in the document's Info under the same key.
    Opening such a file takes the tagged drawing out of the pages and puts the settings back in docMarks(). */
@@ -8801,7 +9353,7 @@ const pdField = {
   check: (k, label, val) => `<label class="field pd-check"><input data-k="${k}" type="checkbox"${val ? ' checked' : ''}><span>${label}</span></label>`,
   slider: (k, label, val) => `<label class="field"><span>${label} <b data-out="${k}">${val}%</b></span><input data-k="${k}" type="range" min="0" max="100" step="5" value="${esc(val)}"></label>`,
   seg: (k, val, opts) => `<div class="seg pd-seg pd-wide" role="radiogroup">${opts.map(([v, t]) => `<label><input type="radio" name="pd-${k}" data-k="${k}" value="${v}"${v === val ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div>`,
-  range: (val) => pdField.text('range', 'Pages', val, { ph: 'All pages, or e.g. 1-3, 5' }),
+  range: (val, m = {}) => pdField.text('range', 'Pages', val, { ph: 'All pages, or e.g. 1-3, 5' }) + pdField.sel('parity', 'Odd or even', m.parity || 'all', PD_PARITY),
   font: (m) => pdField.sel('font', 'Font', m.font, PD_FONTS) + pdField.num('size', 'Size (pt)', m.size, 4, 400) + pdField.color('color', 'Colour', m.color) + pdField.check('bold', 'Bold', m.bold),
   margins: (m) => pdField.num('mTop', 'Top margin (mm)', m.mTop, 0, 200, .5) + pdField.num('mBottom', 'Bottom margin (mm)', m.mBottom, 0, 200, .5) + pdField.num('mSide', 'Side margins (mm)', m.mSide, 0, 200, .5),
 };
@@ -8836,17 +9388,17 @@ function pdBody(type, m) {
     ${F.slider('opacity', 'Opacity', m.opacity)}${F.num('rotation', 'Rotation (°)', m.rotation, -360, 360)}
     ${F.sel('layout', 'Position', m.layout, [['center', 'Centre of the page'], ['tile', 'Tiled across the page']])}
     ${F.sel('front', 'Layer', m.front, [['front', 'In front of the page'], ['behind', 'Behind the page']])}
-    ${F.range(m.range)}</div>`;
+    ${F.range(m.range, m)}</div>`;
   if (type === 'pd_background') return `<div class="pd-form">${F.seg('kind', m.kind, [['color', 'Colour'], ['image', 'Picture']])}
     <div class="pd-form pd-wide" data-show="kind=color"${m.kind !== 'color' ? ' hidden' : ''}>${F.color('color', 'Colour', m.color, PALE_COLORS)}</div>
     <div class="pd-form pd-wide" data-show="kind=image"${m.kind !== 'image' ? ' hidden' : ''}>${pdPicField(m, 'Picture')}${F.sel('fit', 'Size', m.fit, [['stretch', 'Fill the page'], ['fit', 'Fit inside the page']])}</div>
-    ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range)}</div>
+    ${F.slider('opacity', 'Opacity', m.opacity)}${F.range(m.range, m)}</div>
     <p class="pd-note">The background goes behind everything on the page.</p>`;
   if (type === 'pd_headfoot') return `<div class="pd-form">${F.sel('dateFmt', 'Date format', m.dateFmt, PD_DATES.map((f) => [f, pdDate(f)]))}${F.num('start', 'First page number', m.start, 0, 99999)}
-    ${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>`;
+    ${F.font(m)}${F.margins(m)}${F.range(m.range, m)}</div>`;
   return `<div class="pd-form">${F.text('prefix', 'Prefix', m.prefix)}${F.text('suffix', 'Suffix', m.suffix)}${F.num('start', 'Start number', m.start, 0, 999999999999)}${F.num('digits', 'Digits', m.digits, 1, 12)}
     <div class="pd-sample pd-wide" data-sample></div>
-    ${F.sel('slot', 'Position', m.slot, PD_SLOTS)}${F.font(m)}${F.margins(m)}${F.range(m.range)}</div>
+    ${F.sel('slot', 'Position', m.slot, PD_SLOTS)}${F.font(m)}${F.margins(m)}${F.range(m.range, m)}</div>
     <p class="pd-note">Numbers run across the saved PDF's pages in order.</p>`;
 }
 // What goes across the whole dialog, above the settings and the preview (under the preview on a phone): the six places of a header and footer, so
@@ -8854,15 +9406,18 @@ function pdBody(type, m) {
 function pdTop(type, m) {
   if (type !== 'pd_headfoot') return '';
   return `<div class="pd-top"><div class="pd-slots">${PD_SLOTS.map(([k, t]) => pdField.text(k, t, m[k])).join('')}</div>
-    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button></div>
-    <p class="pd-err" data-pd-err role="alert" hidden>A page number, page count or date field is broken. Delete it, then use Insert.</p></div>`;
+    <div class="pd-tokens"><span>Insert:</span><button type="button" class="btn" data-token="<<page>>">Page number</button><button type="button" class="btn" data-token="<<pages>>">Page count</button><button type="button" class="btn" data-token="<<date>>">Date</button><button type="button" class="btn" data-token="<<file>>">File name</button><button type="button" class="btn" data-token="<<title>>">Title</button><button type="button" class="btn" data-token="<<author>>">Author</button></div>
+    <p class="pd-err" data-pd-err role="alert" hidden>A field is broken. Delete it, then use Insert.</p>
+    ${pdField.check('firstDiff', 'Different first page', m.firstDiff)}
+    <div class="pd-first" data-first${m.firstDiff ? '' : ' hidden'}><p class="pd-note">On the first page (leave empty for none):</p><div class="pd-slots">${PD_SLOTS.map(([k, t]) => pdField.text('f' + k, t, m['f' + k])).join('')}</div></div></div>`;
 }
 function pdCheck(type, m) {
   if (m.range && m.range.trim() && !parseRange(m.range, doc.pages.length).length) return 'Check the pages: use numbers like 1-3, 5';
   if ((type === 'pd_watermark' || type === 'pd_background') && m.kind === 'image' && !m.data) return 'Choose a picture first';
   if (type === 'pd_watermark' && m.kind === 'text' && !String(m.text || '').trim()) return 'Type the watermark text';
-  if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim())) return 'Type a header or footer in at least one place';
-  if (type === 'pd_headfoot' && PD_SLOTS.some(([k]) => pdBroken(m[k]))) return 'A page number, page count or date field is broken. Delete it and insert it again.';
+  if (type === 'pd_headfoot' && !PD_SLOTS.some(([k]) => String(m[k] || '').trim()) && !(m.firstDiff && PD_SLOTS.some(([k]) => String(m['f' + k] || '').trim()))) return 'Type a header or footer in at least one place';
+  if (type === 'pd_headfoot' && PD_SLOTS.some(([k]) => pdBroken(m[k]) || (m.firstDiff && pdBroken(m['f' + k])))) return 'A field is broken. Delete it and insert it again.';
+  if (m.range && m.range.trim() && !pdPages(m, doc.pages.length).length) return 'None of those pages are odd or even as chosen';
   return null;
 }
 // A small picture of one page in the dialog, with the settings being changed drawn on it (by pdLayout, as on the page
@@ -8914,7 +9469,7 @@ async function pdEdit(type, existing) {
     : [{ label: 'Cancel' }, { label: PD_VERB[type][0], value: 'ok', primary: true }];
   do {
     const title = existing ? PD_VERB[type][3] : PD_TYPES[type];
-    const res = await dialog(title, `<div class="pd-wrap">${pdTop(type, m)}<div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}</div>`, actions, (dlg) => {
+    const res = await dialog(title, `<div class="pd-wrap">${pdTop(type, m)}<div class="pd-main">${pdBody(type, m)}</div>${pdPreviewHtml}${pdPresetsHtml(type)}</div>`, actions, (dlg) => {
       // The dialog element is reused: listen on its body, which is new for each dialog.
       const body = $('.dlg-body', dlg);
       dlg.classList.add('pd-dialog');
@@ -8923,17 +9478,19 @@ async function pdEdit(type, existing) {
       const preview = pdPreview(dlg, type, m, existing);
       const sync = () => {
         pdRead(dlg, m);
-        const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdClean(pdBates(m, Math.max(0, Math.round(+m.start || 0))))}`;
+        const s = $('[data-sample]', dlg); if (s) s.textContent = `First page: ${pdBates(m, Math.max(0, Math.round(+m.start || 0)))}`;
         // A field that was typed over or split is marked, and the dialog can't be confirmed until it is fixed.
         let bad = false;
-        for (const [k] of PD_SLOTS) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; el.title = el.value; const b = pdBroken(el.value); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        for (const [k0] of PD_SLOTS) for (const k of [k0, 'f' + k0]) { const el = $(`[data-k="${k}"]`, dlg); if (!el) continue; el.title = el.value; const b = pdBroken(el.value) && (k === k0 || m.firstDiff); bad ||= b; if (b) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); }
+        const fp = $('[data-first]', dlg); if (fp) fp.hidden = !m.firstDiff;
         const pb = $('.dlg-foot .btn.primary', dlg); if (pb && type === 'pd_headfoot') pb.disabled = bad;
         const note = $('[data-pd-err]', dlg); if (note) note.hidden = !bad;
         preview().catch(() => {});
       };
       body.addEventListener('input', sync); body.addEventListener('change', sync);
       body.addEventListener('click', (e) => { const s = e.target.closest('[data-pdc]'); if (!s) return; const i = $(`input[data-k="${s.dataset.pdc}"]`, body); i.value = s.dataset.c.toLowerCase(); i.dispatchEvent(new Event('input', { bubbles: true })); });
-      body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k)) focusSlot = e.target; });
+      body.addEventListener('focusin', (e) => { if (e.target.dataset && PD_SLOTS.some(([k]) => k === e.target.dataset.k || 'f' + k === e.target.dataset.k)) focusSlot = e.target; });
+      pdPresetsSetup(dlg, type, m, sync);
       // A field goes in at the caret, but never inside another field ("Page <<pa|ge>>" puts it after "<<page>>").
       for (const b of $$('[data-token]', dlg)) b.onclick = () => {
         const el = focusSlot || $('[data-k="bc"]', dlg), tok = b.dataset.token;
@@ -8953,6 +9510,8 @@ async function pdEdit(type, existing) {
     if (res !== 'ok') return;
     err = pdCheck(type, m);
     if (err) toast(err);
+    // Letters that need a font fetched first (Chinese, Japanese…): asked now, not when saving. Without it, back to the dialog.
+    else if (!(await fontsEnsure(pdTexts(type, m)))) { err = 'font'; if (!fontsRtl(pdTexts(type, m))) toast('That text needs its font to be downloaded first.'); }
   } while (err);
   const before = snapshot();
   m.rev = uid();
@@ -8964,6 +9523,57 @@ async function pdEdit(type, existing) {
   pdLastUsed[type] = keep;
   pdRefreshAll();
   toast(PD_VERB[type][existing ? 2 : 1]);
+}
+// Every text a setting can write (its fields filled in), to check its fonts.
+function pdTexts(type, m) {
+  if (type === 'pd_watermark') return m.kind === 'text' ? String(m.text || '') : '';
+  if (type === 'pd_bates') return pdBates(m, 0);
+  if (type !== 'pd_headfoot') return '';
+  return PD_SLOTS.flatMap(([k]) => [m[k], m.firstDiff ? m['f' + k] : '']).filter(Boolean).map((v) => pdTokens(v, 1, 1, pdDate(m.dateFmt || PD_DATES[0]))).join(' ');
+}
+/* Presets: settings kept by name, per kind (store key pdPresets), to use again in any PDF. Pictures are not kept. */
+const pdPresetList = (type) => ((store.get('pdPresets', {}) || {})[type] || []).filter((x) => x && x.name && x.m);
+const pdPresetOpts = (list) => `<option value="">${list.length ? 'Choose a preset' : 'No presets yet'}</option>${list.map((x, k) => `<option value="${k}">${esc(x.name)}</option>`).join('')}`;
+function pdPresetsHtml(type) {
+  if (type === 'pd_background') return '';
+  const list = pdPresetList(type);
+  return `<div class="pd-top pd-presets"><label class="field"><span>Preset</span><select data-preset>${pdPresetOpts(list)}</select></label>
+    <label class="field"><span>Save these settings as</span><input type="text" data-preset-name placeholder="Preset name" autocomplete="off"></label>
+    <button type="button" class="btn" data-preset-save>Save preset</button><button type="button" class="btn" data-preset-drop${list.length ? '' : ' hidden'}>Forget preset</button></div>`;
+}
+// Puts settings into the dialog's fields (as pdRead reads them).
+function pdFill(dlg, m) {
+  for (const el of $$('[data-k]', dlg)) {
+    const k = el.dataset.k; if (!(k in m)) continue;
+    if (el.type === 'checkbox') el.checked = !!m[k];
+    else if (el.type === 'radio') el.checked = String(m[k]) === el.value;
+    else el.value = m[k] ?? '';
+  }
+  for (const el of $$('[data-show]', dlg)) { const [k, v] = el.dataset.show.split('='); el.hidden = m[k] !== v; }
+}
+function pdPresetsSetup(dlg, type, m, sync) {
+  const sel = $('[data-preset]', dlg); if (!sel) return;
+  const name = $('[data-preset-name]', dlg), drop = $('[data-preset-drop]', dlg);
+  const redraw = (pick = '') => { const list = pdPresetList(type); sel.innerHTML = pdPresetOpts(list); sel.value = pick; drop.hidden = !list.length; };
+  const write = (list) => { const all = store.get('pdPresets', {}) || {}; all[type] = list; store.set('pdPresets', all); };
+  sel.addEventListener('change', (e) => {
+    e.stopPropagation();
+    const x = sel.value === '' ? null : pdPresetList(type)[+sel.value]; if (!x) return;
+    Object.assign(m, x.m); pdFill(dlg, m); name.value = x.name; sync();
+  });
+  $('[data-preset-save]', dlg).onclick = () => {
+    const n = name.value.trim(); if (!n) { toast('Type a name for the preset'); name.focus(); return; }
+    pdRead(dlg, m);
+    const keep = {}; for (const [k, v] of Object.entries(m)) if (!['id', 'rev', 'type', 'data', 'iw', 'ih', 'range'].includes(k)) keep[k] = v;
+    const list = pdPresetList(type).filter((x) => x.name !== n); list.push({ name: n, m: keep }); write(list);
+    redraw(String(list.length - 1)); toast(`Preset “${n}” saved`);
+  };
+  drop.onclick = () => {
+    const list = pdPresetList(type), k = sel.value === '' ? -1 : +sel.value;
+    if (k < 0) { toast('Choose the preset to forget'); return; }
+    const [x] = list.splice(k, 1); write(list); redraw(); toast(`Preset “${x.name}” forgotten`);
+  };
+  for (const el of [sel, name]) el.addEventListener('input', (e) => e.stopPropagation());
 }
 function pdRemove(id) {
   const list = docMarks(), k = list.findIndex((x) => x.id === id); if (k < 0) return;

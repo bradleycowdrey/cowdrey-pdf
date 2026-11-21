@@ -2268,7 +2268,7 @@ function pageFonts(L, out, pageNode) {
     const cm = tu ? parseCMap(text(tu)) : { map: new Map(), bytes: type0 ? 2 : 1 };
     const rev = new Map(); for (const [code, u] of cm.map) if (u && !rev.has(u)) rev.set(u, code);
     // widths, for working out where each piece of text starts
-    const widths = new Map(); let dw = type0 ? 1000 : 0;
+    const widths = new Map(); let dw = type0 ? 1000 : 0, stdRev = null;
     if (type0) {
       const df = d.lookup(PDFName.of('DescendantFonts')); const cid = df instanceof PDFArray ? df.lookup(0) : null;
       if (cid instanceof PDFDict) {
@@ -2279,9 +2279,13 @@ function pageFonts(L, out, pageNode) {
     } else {
       const fc = d.lookup(PDFName.of('FirstChar')), W = d.lookup(PDFName.of('Widths'));
       if (fc instanceof PDFNumber && W instanceof PDFArray) W.asArray().forEach((w, j) => widths.set(fc.asNumber() + j, out.context.lookup(w).asNumber()));
-      else if (!W) { dw = 500; stdWidths(L, baseName(d.lookup(PDFName.of('BaseFont'))), widths); } // one of the 14 standard fonts: their own widths
+      else if (!W) {
+        dw = 500; stdWidths(L, baseName(d.lookup(PDFName.of('BaseFont'))), widths); // one of the 14 standard fonts: their own widths
+        // and, written in WinAnsi (as pdf-lib writes them), every letter of that encoding
+        if (String(d.lookup(PDFName.of('Encoding')) || '') === '/WinAnsiEncoding') stdRev = stdLetters(L, baseName(d.lookup(PDFName.of('BaseFont'))));
+      }
     }
-    fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw, hasToUnicode: !!tu });
+    fonts.set(key.asString().slice(1), { key, ref, base: String(d.lookup(PDFName.of('BaseFont')) || ''), type0, bytes: cm.bytes, map: cm.map, rev, widths, dw, hasToUnicode: !!tu, stdRev });
   }
   const fontWidth = (name, str) => {
     const f = fonts.get(name), out2 = [], b = f ? f.bytes : 1;
@@ -2293,7 +2297,17 @@ function pageFonts(L, out, pageNode) {
 const baseName = (n) => String(n || '').replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
 // The widths of one of the 14 standard fonts (which a PDF may name without giving its widths), by code in its
 // built-in encoding (WinAnsi for the Latin ones, as pdf-lib writes them).
-const stdWidthCache = new Map();
+const stdWidthCache = new Map(), stdLetterCache = new Map();
+// The letters a standard Latin font writes in WinAnsi: letter -> code. Null for the others (Symbol, ZapfDingbats).
+function stdLetters(L, name) {
+  if (!L.StandardFontEmbedder || !(L.StandardFontValues || []).includes(name) || /Symbol|Zapf/.test(name)) return null;
+  if (!stdLetterCache.has(name)) {
+    const r = new Map();
+    try { const e = L.StandardFontEmbedder.for(name); for (const [cp, [code]] of Object.entries(e.encoding.unicodeMappings)) { const u = String.fromCodePoint(+cp); if (!r.has(u)) r.set(u, code); } } catch {}
+    stdLetterCache.set(name, r.size ? r : null);
+  }
+  return stdLetterCache.get(name);
+}
 function stdWidths(L, name, into) {
   if (!L.StandardFontEmbedder || !(L.StandardFontValues || []).includes(name)) return;
   let w = stdWidthCache.get(name);
@@ -2317,18 +2331,32 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   const lines = edits.filter((m) => m.type === 'te'), pics = edits.filter((m) => m.type === 'ie');
   const rgbOf = (hex) => { const n = parseInt(String(hex || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map((x) => PDFNumber.of(+x.toFixed(4))); };
   const O = (name, args = []) => PDFOperator.of(name, args);
-  // 0. Each edited line's new text, made first so it can go in the old text's place.
-  const newOps = new Map();
-  for (const m of lines) {
-    const ops = m.emit || (m.text.trim() ? await teOps(L, out, node, m, fonts, ctx) : null);
-    if (ops && ops.length) newOps.set(m.id, ops);
-  }
   // 1. Take edited lines and changed pictures out of the page's own content.
+  // pdf-lib wraps a page's content in q … Q (so what is drawn after it starts from a clean state) the first time it
+  // adds to the page's resources: done now, so the content read here has the wrapper and keeps it.
+  node.normalize && node.normalize();
   // Contents may be one stream, an array of them, or a reference to such an array.
   const streamsOf = () => { const raw = node.get(PDFName.of('Contents')); const r = raw && out.context.lookup(raw); return r instanceof PDFArray ? r.asArray() : raw ? [raw] : []; };
   const parts = streamsOf();
   let src = parts.map((r) => { const st = out.context.lookup(r); return st ? text(st) : ''; }).join('\n');
   const cut = [], removed = new Set(), hidden = new Set(), anchor = new Map(), moves = new Map(), shifted = new Set();
+  // Lines found in the page's own content (their show operators), and in forms it draws (their font, and the place
+  // after the form is drawn, where the new text goes)
+  const found = new Map(), formFont = new Map(), formAnchor = new Map(), formsCopied = new Set();
+  // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
+  // within the line (not at its end, where a word in another font or a link may follow).
+  const matchLine = (op, fmap) => {
+    const f = fmap.get(op.font);
+    for (const m of lines) {
+      const fr = lineFrame(m), dx = op.origin[0] - fr.o[0], dy = op.origin[1] - fr.o[1];
+      // across the baseline, square to it (a slanted line's own v axis leans)
+      const along = dx * fr.u[0] + dy * fr.u[1], perp = -dx * fr.u[1] + dy * fr.u[0];
+      if (perp < -fr.size * .35 || perp > fr.size * .35 || along < -Math.max(1, fr.size * .3) || along > m.width - Math.min(1, fr.size * .1)) continue;
+      if (m.font && f && f.base && baseName(f.base) !== baseName(m.font)) continue;
+      return m;
+    }
+    return null;
+  };
   const resOf = (R) => { const x = R instanceof PDFDict ? R : null; return { xo: x && x.lookup(PDFName.of('XObject')) instanceof PDFDict ? x.lookup(PDFName.of('XObject')) : null, eg: x && x.lookup(PDFName.of('ExtGState')) instanceof PDFDict ? x.lookup(PDFName.of('ExtGState')) : null }; };
   const pageRes = resOf(node.Resources && node.Resources()), xo = pageRes.xo;
   const subOf = (o) => (o && o.dict ? String(o.dict.lookup(PDFName.of('Subtype'))) : '');
@@ -2357,59 +2385,98 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   };
   // A picture inside a form (a page background often is): the form is copied without it, and the page draws the copy.
   let formN = 0;
-  const formCut = (dict, name, ctm, depth) => {
+  // `res`: the resources the form is drawn with (its parent's), which a form without resources of its own uses.
+  const formCut = (dict, name, ctm, depth, res) => {
     const st = dict && dict.lookup(PDFName.of(name));
     if (!st || !st.dict || depth > 5 || subOf(st) !== '/Form') return null;
     const M = st.dict.lookup(PDFName.of('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = out.context.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
     const R = st.dict.lookup(PDFName.of('Resources')), own = resOf(R), fx = own.xo || dict;
-    const fxo = fx instanceof PDFDict ? fx : null;
-    let fsrc = text(st); const fcut = [], ids = [];
-    walkContent(fsrc, fontWidth, null, (im) => {
+    const fxo = fx instanceof PDFDict ? fx : null, fres = R instanceof PDFDict ? R : res instanceof PDFDict ? res : null;
+    let fsrc = text(st); const fcut = [], ids = [], subs = []; // subs: copies of forms this one draws
+    // The form's own fonts (or the page's, when it has none): its text is matched with edited lines like the page's,
+    // and taken out of the copy, so the old words are not left in the file under the new ones.
+    const ff = R instanceof PDFDict && R.lookup(PDFName.of('Font')) instanceof PDFDict ? pageFonts(L, out, { Resources: () => R }) : { fonts, fontWidth };
+    const onText = lines.length ? (op) => {
+      const m = matchLine(op, ff.fonts); if (!m || teShifted(m)) return;
+      fcut.push([op.start, op.end, op.keep]); ids.push(m.id); removed.add(m.id); if (op.invisible) hidden.add(m.id);
+      if (!formFont.has(m.id)) formFont.set(m.id, ff.fonts.get(op.font));
+    } : null;
+    walkContent(fsrc, ff.fontWidth, onText, (im) => {
       const o = !im.inline && fxo && fxo.lookup(PDFName.of(im.name)), sub = im.inline ? '/Image' : subOf(o);
       if (sub === '/Image') {
         if (im.inline ? im.mask : isMask(o)) return;
         const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
         if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); }
-      } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
+      } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1, fres); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); subs.push(h); } }
     }, mul(fm, ctm), (g) => softMask(own.eg, g, depth + 1));
     if (!ids.length) return null;
     fcut.sort((a, b) => b[0] - a[0]);
     for (const [a, b, keep] of fcut) fsrc = fsrc.slice(0, a) + keep + fsrc.slice(b);
     const entries = {}; for (const [k, val] of st.dict.entries()) { const n = k.asString().slice(1); if (!['Length', 'Filter', 'DecodeParms'].includes(n)) entries[n] = val; }
+    // The copies of inner forms are named in this copy's own resources (the original form and its resources, which
+    // other pages may draw, are left as they were).
+    if (subs.length) {
+      const r2 = out.context.obj({}), x2 = out.context.obj({});
+      if (fres) for (const [k, val] of fres.entries()) r2.set(k, val);
+      if (fxo) for (const [k, val] of fxo.entries()) x2.set(k, val);
+      for (const h of subs) x2.set(PDFName.of(h.key.slice(1)), h.ref);
+      r2.set(PDFName.of('XObject'), x2);
+      entries.Resources = r2;
+    }
     const bytes = new Uint8Array(fsrc.length); for (let i = 0; i < fsrc.length; i++) bytes[i] = fsrc.charCodeAt(i) & 255;
     const ref = out.context.register(out.context.flateStream(bytes, entries));
     let key;
-    if (depth === 0) key = node.newXObject('CPDFFm', ref).toString();
-    else { key = `/CPDFFm${++formN}x${Date.now() % 100000}`; fxo.set(PDFName.of(key.slice(1)), ref); }
-    return { key, ids };
+    if (depth === 0) { key = node.newXObject('CPDFFm', ref).toString(); formsCopied.add(name); }
+    else key = `/CPDFFm${++formN}x${Date.now() % 100000}`;
+    return { key, ids, ref };
   };
   let ops = null;
   try {
     ops = walkContent(src, fontWidth, (op) => {
-      // A piece of text belongs to an edited line when it is in the line's font and starts on the line's baseline,
-      // within the line (not at its end, where a word in another font or a link may follow).
-      const f = fonts.get(op.font);
-      for (const m of lines) {
-        const fr = lineFrame(m), dx = op.origin[0] - fr.o[0], dy = op.origin[1] - fr.o[1];
-        // across the baseline, square to it (a slanted line's own v axis leans)
-        const along = dx * fr.u[0] + dy * fr.u[1], perp = -dx * fr.u[1] + dy * fr.u[0];
-        if (perp < -fr.size * .35 || perp > fr.size * .35 || along < -Math.max(1, fr.size * .3) || along > m.width - Math.min(1, fr.size * .1)) continue;
-        if (m.font && f && f.base && baseName(f.base) !== baseName(m.font)) continue;
-        if (teShifted(m)) { if (!moves.has(m.id)) moves.set(m.id, []); moves.get(m.id).push(op); break; }
-        cut.push([op.start, op.end, op.keep]); removed.add(m.id); if (op.invisible) hidden.add(m.id);
-        if (!anchor.has(m.id)) anchor.set(m.id, op);
-        break;
-      }
+      const m = matchLine(op, fonts); if (!m) return;
+      if (teShifted(m)) { if (!moves.has(m.id)) moves.set(m.id, []); moves.get(m.id).push(op); return; }
+      if (!found.has(m.id)) found.set(m.id, []);
+      found.get(m.id).push(op);
     }, (im) => {
-      if (!pics.length) return;
-      if (im.inline) { if (!im.mask) { const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); } } return; }
+      if (!pics.length && !lines.length) return;
+      if (im.inline) { if (!im.mask && pics.length) { const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y))); if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); } } return; }
       const o = xo && xo.lookup(PDFName.of(im.name)), sub = subOf(o);
-      if (sub === '/Form') { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
+      if (sub === '/Form') {
+        const h = formCut(xo, im.name, im.ctm, 0, node.Resources && node.Resources()); if (!h) return;
+        cut.push([im.start, im.end, ` ${h.key} Do `]);
+        for (const id of h.ids) if (formFont.has(id) && !formAnchor.has(id)) formAnchor.set(id, { at: im.end, ctm: im.ctm });
+        return;
+      }
+      if (!pics.length) return;
       if (sub !== '/Image' || isMask(o)) return;
       const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
       if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
     }, undefined, (g) => pics.length && softMask(pageRes.eg, g, 1));
-  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); anchor.clear(); moves.clear(); ops = null; }
+  } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); hidden.clear(); anchor.clear(); moves.clear(); found.clear(); formFont.clear(); formAnchor.clear(); formsCopied.clear(); ops = null; }
+  // Each line found: a line changed in part of one operator keeps the rest of it as it was (codes and kerning);
+  // otherwise its operators come out, and it is set again after its text object.
+  const inPlace = new Set();
+  for (const [id, list] of found) {
+    const m = lines.find((x) => x.id === id);
+    const rep = list.length === 1 && !formFont.has(id) ? await teInPlace(L, out, node, m, list[0], src, fonts) : null;
+    if (rep != null) { cut.push([list[0].start, list[0].end, rep]); removed.add(id); inPlace.add(id); continue; }
+    for (const op of list) { cut.push([op.start, op.end, op.keep]); removed.add(id); if (op.invisible) hidden.add(id); if (!anchor.has(id)) anchor.set(id, op); }
+  }
+  // 0. Each edited line's new text (a line from a form in the form's own font, which the page is given too).
+  const newOps = new Map();
+  for (const m of lines) {
+    if (inPlace.has(m.id) || !(m.emit || m.text.trim())) continue;
+    let fmap = fonts;
+    const ffo = formFont.get(m.id);
+    if (ffo && !m.emit) fmap = new Map([['', { ...ffo, key: node.newFontDictionary('CPDFF', ffo.ref) }], ...fonts]);
+    const list = m.emit || await teOps(L, out, node, m, fmap, ctx);
+    if (list && list.length) newOps.set(m.id, list);
+  }
+  const placing = new Set(['Td', 'TD', 'Tm', 'T*', "'", '"', 'BT', 'ET', 'Do', 'BI', 'q', 'Q']);
+  const afterInPlace = (op) => {
+    let e = -1; for (const id of inPlace) { const o = found.get(id)[0]; if (o.end <= op.start && o.end > e) e = o.end; }
+    return e >= 0 && !tokenizeContent(src.slice(e, op.start)).some((t) => t.t === 'op' && placing.has(t.v));
+  };
   // Text that only moves along (after an edited run) keeps its own drawing: each of its show operators is moved
   // by a TJ offset before it and moved back after it, inside the text object. ' and " start a new line first (the
   // offset would be lost), so a line drawn with them is typeset again instead.
@@ -2420,7 +2487,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       removed.add(id); continue;
     }
     const k = +(-(m.dx || 0) * 1000 / (Math.hypot(m.tm[0], m.tm[1]) || 1)).toFixed(3);
-    for (const op of list) { cut.push([op.start, op.start, `[${k}] TJ `]); cut.push([op.end, op.end, ` [${-k}] TJ`]); }
+    // Text drawn on from where a line changed in place ends (same text object, nothing that sets the position in
+    // between) already moves with its new width: no offset for it.
+    for (const op of list) if (!afterInPlace(op)) { cut.push([op.start, op.start, `[${k}] TJ `]); cut.push([op.end, op.end, ` [${-k}] TJ`]); }
     removed.add(id); shifted.add(id);
   }
   // The new text of each line found, right after the text object it was in (back in page space there).
@@ -2432,8 +2501,9 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     // Text whose original is clipped and covered instead (OCR text over a scan, text in a form) goes on top.
     if (group.some((x) => !removed.has(x.id) || hidden.has(x.id) || x.ocr)) return;
     const op = group.map((x) => anchor.get(x.id)).filter(Boolean).sort((a, b) => a.start - b.start)[0];
-    if (!op || !ops) return;
-    const at = ops.etEnd[op.bt] ?? op.end, c = op.ctm, det = c[0] * c[3] - c[1] * c[2];
+    const fa = !op && group.length === 1 && formAnchor.get(id);
+    if ((!op && !fa) || !ops) return;
+    const at = fa ? fa.at : ops.etEnd[op.bt] ?? op.end, c = fa ? fa.ctm : op.ctm, det = c[0] * c[3] - c[1] * c[2];
     if (Math.abs(det) < 1e-9) return;
     const id6 = c.every((n, k) => Math.abs(n - [1, 0, 0, 1, 0, 0][k]) < 1e-9);
     const inv = [c[3] / det, -c[1] / det, -c[2] / det, c[0] / det, (c[2] * c[5] - c[3] * c[4]) / det, (c[1] * c[4] - c[0] * c[5]) / det].map(fmt);
@@ -2446,6 +2516,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
     for (const [a, b, keep] of cut) src = src.slice(0, a) + (keep || ' ') + src.slice(b);
     const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
     node.set(PDFName.of('Contents'), out.context.obj([out.context.register(out.context.flateStream(bytes))])); // an array, as pdf-lib expects once the page has new resources
+    teDropForms(L, out, node, formsCopied, src);
   }
   // 2. Anything not found there (text inside a form, an erased area) is clipped out.
   // Invisible OCR text was removed, but what shows is the scan under it: that is clipped and covered too.
@@ -2475,37 +2546,144 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   for (const [id, list] of newOps) if (!placed.has(id) && !shifted.has(id)) p.pushOperators(...list);
   void PDFRef; void PDFRawStream; void PDFHexString; void StandardFonts;
 }
-// An edited line drawn again: in the PDF's own font where it has the letters, else the closest standard font, with
+// Forms the page now draws a copy of (with an edited line or a picture taken out): the page no longer names the
+// original, unless it still draws it somewhere else, so the original (with the old words) is not written. The page
+// gets resources of its own for that (other pages may share the ones it had).
+function teDropForms(L, out, node, names, src) {
+  const { PDFName, PDFDict } = L;
+  if (!names.size) return;
+  const res = node.Resources && node.Resources(), xd = res && res.lookup(PDFName.of('XObject'));
+  if (!(xd instanceof PDFDict)) return;
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const gone = [...names].filter((n) => !new RegExp('/' + reEsc(n) + '\\s*Do\\b').test(src));
+  if (!gone.length) return;
+  const x2 = out.context.obj({}), r2 = out.context.obj({});
+  for (const [k, v] of xd.entries()) if (!gone.includes(k.asString().slice(1))) x2.set(k, v);
+  for (const [k, v] of res.entries()) r2.set(k, v);
+  r2.set(PDFName.of('XObject'), x2);
+  node.set(PDFName.of('Resources'), r2);
+}
+// An edited line drawn again: in the PDF's own font where it has the letters, else an embedded Unicode font, with
 // the original's text state (render mode and outline, character and word spacing; its width scale and rise are in
 // its matrix). Returns the operators, in page space.
 async function teOps(L, out, node, m, fonts, ctx) {
-  const { PDFOperator, PDFNumber, PDFHexString, StandardFonts } = L;
+  const { PDFOperator, PDFNumber, PDFHexString } = L;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (n) => PDFNumber.of(+(+n).toFixed(4));
+  const f = teOwnFont(m, fonts), runs = glyphRuns(m.text, f && f.rev);
+  // Letters the PDF's own font lacks (or all of them, for OCR, Type3 and standard fonts) are set in an embedded
+  // Unicode font of the same style (sans, serif or mono; bold, italic), never as '?'.
+  const style = teSubStyle(L, out, m, fonts), set = [];
+  let lost = false;
+  for (const r of runs) {
+    if (r.own) set.push({ own: true, hex: PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join('')) });
+    else { const rs = await fontsRuns(out, r.chars.join(''), style); if (rs.lost) lost = true; for (const s of rs) set.push({ font: s.font, hex: s.font.encodeText(s.text) }); }
+  }
+  // (with letters no font has left out, the line's text for readers still has them)
+  const mixed = lost || (set.length > 1 && set.some((s) => s.font !== set[0].font));
+  // The original's text state; what else the page set before (invisible text, rise) must not apply to the new line.
+  const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', teAt(m).map(N))];
+  for (const s of set) ops.push(O('Tf', [s.own ? f.key : fontsKey(node, s.font), N(1)]), O('Tj', [s.hex]));
+  ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
+  void ctx;
+  return ops;
+}
+// The PDF's own font for a line (with the letters it really has, as `rev`), unless it draws nothing visible (OCR
+// text), is a Type3 font or is one of the 14 standard fonts (which can't write most letters). Null when none.
+function teOwnFont(m, fonts) {
   const want = baseName(m.font);
-  // The PDF's own font, unless it draws nothing visible (OCR text) or is a Type3 font
   let f = m.ocr || m.type3 || /glyphless/i.test(want) ? null : [...fonts.values()].find((x) => baseName(x.base) === want);
   if (f) {
     // Only letters this font really has: from its ToUnicode, and for a simple font without one, from what pdf.js read.
     const rev = new Map(f.hasToUnicode ? f.rev : []);
     if (!f.type0) for (const [u, code] of Object.entries(m.codes || {})) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
+    if (f.stdRev) for (const [u, code] of f.stdRev) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
     f = rev.size ? { ...f, rev } : null;
   }
-  const stdName = { sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[m.fam] + (m.bold && m.italic ? (m.fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : m.bold ? 'Bold' : m.italic ? (m.fam === 'serif' ? 'Italic' : 'Oblique') : '');
-  const runs = glyphRuns(m.text, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
-  // The original's text state; what else the page set before (invisible text, rise) must not apply to the new line.
-  const ops = [O('q'), ...(mixed ? [actualText(L, out, m.text)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', teAt(m).map(N))];
-  for (const r of runs) {
-    if (r.own) {
-      ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
-    } else {
-      let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); }
-      const key = node.newFontDictionary ? node.newFontDictionary('CPDF', sf.ref) : (() => { throw new Error('no font dictionary'); })();
-      let hex; try { hex = sf.encodeText(r.chars.join('')); } catch { hex = sf.encodeText(r.chars.map((c) => (/[\x20-\x7E]/.test(c) ? c : '?')).join('')); }
-      ops.push(O('Tf', [key, N(1)]), O('Tj', [hex]));
+  return f;
+}
+// The style of the font that stands in for a line's own: its family, bold and italic, from what pdf.js read and from
+// the PDF's FontDescriptor (fixed pitch, serif, italic, weight) and name.
+function teSubStyle(L, out, m, fonts) {
+  const want = baseName(m.font), f0 = want && [...fonts.values()].find((x) => baseName(x.base) === want);
+  const d = f0 ? fontsStyleOf(L, out, out.context.lookup(f0.ref), f0.base) : null;
+  return { family: d && d.family !== 'sans' && m.fam === 'sans' ? d.family : m.fam || 'sans', bold: !!m.bold || !!(d && d.bold), italic: !!m.italic || !!(d && d.italic) };
+}
+// A line changed in only part of one TJ operator (in the line's own font, read back as the line's
+// original text): the operator written again with what did not change kept as it was (its codes, and the kerning
+// numbers between them), and only the changed run set anew, in the same text object, colour and text state. The
+// run is in the PDF's own font when it has every letter, else in an embedded Unicode font (switching back after).
+// Returns the operator's new source, or null when the line must be set again as a whole.
+async function teInPlace(L, out, node, m, op, src, fonts) {
+  if (!op || op.o !== 'TJ' || op.invisible || m.dx || m.grp || m.emit || m.ocr || m.type3 || !String(m.text).trim()) return null;
+  const f = fonts.get(op.font); if (!f || baseName(f.base) !== baseName(m.font)) return null;
+  const own = teOwnFont(m, fonts); if (!own) return null;
+  // the operator's pieces: strings (their codes and the letters each code reads as) and numbers
+  const toks = tokenizeContent(src.slice(op.start, op.end)).filter((t) => t.t === 'str' || t.t === 'num');
+  const els = op.o === 'Tj' ? toks.filter((t) => t.t === 'str').slice(-1) : toks;
+  const back = new Map(); for (const [u, c] of own.rev) if (!back.has(c)) back.set(c, u);
+  const units = [], seq = []; // seq: { num } | { unit: index }
+  for (const t of els) {
+    if (t.t === 'num') { seq.push({ num: t.v }); continue; }
+    for (let i = 0; i + f.bytes <= t.v.length; i += f.bytes) {
+      let code = 0; for (let k = 0; k < f.bytes; k++) code = code * 256 + t.v.charCodeAt(i + k);
+      const u = f.map.get(code) ?? back.get(code); if (u == null || u === '') return null;
+      seq.push({ unit: units.length }); units.push({ code, text: u });
     }
   }
-  ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
-  return ops;
+  const a0 = [...units.map((x) => x.text).join('')], b0 = [...String(m.text)];
+  if (a0.join('') !== m.orig || !units.length) return null;
+  // what is the same at the start and at the end, in whole codes (a ligature is one code for two letters)
+  let p = 0; while (p < a0.length && p < b0.length && a0[p] === b0[p]) p++;
+  let s = 0; while (s < a0.length - p && s < b0.length - p && a0[a0.length - 1 - s] === b0[b0.length - 1 - s]) s++;
+  const cum = [0]; for (const u0 of units) cum.push(cum[cum.length - 1] + [...u0.text].length);
+  let ua = 0; while (ua < units.length && cum[ua + 1] <= p) ua++;
+  let ub = units.length; while (ub > ua && a0.length - cum[ub - 1] <= s) ub--;
+  // a run that needs another font takes in its whole words (so search and copy find them whole)
+  let P = cum[ua], S = a0.length - cum[ub];
+  const mid = () => b0.slice(P, b0.length - S).join('');
+  const ownHas = (t) => [...t].every((ch) => own.rev.has(ch));
+  if (!ownHas(mid())) {
+    while (ua > 0 && !/\s/.test(units[ua - 1].text)) ua--;
+    while (ub < units.length && !/\s/.test(units[ub].text)) ub++;
+    P = cum[ua]; S = a0.length - cum[ub];
+  }
+  if (P + S > b0.length) return null;
+  const middle = mid(), hex = (codes) => '<' + codes.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join('') + '>';
+  // pieces of TJ in the original font: kept codes and numbers; the new run between them
+  const pre = [], post = []; let seen = 0; // seen: the codes before this piece
+  for (const it of seq) {
+    if (it.unit != null) {
+      if (it.unit < ua) pre.push({ code: units[it.unit].code });
+      else if (it.unit >= ub) post.push({ code: units[it.unit].code });
+      seen = it.unit + 1; continue;
+    }
+    // a number between two kept codes (or before the first, after the last) is kept; one at or in the change is not
+    if (seen === 0 || (seen < ua)) pre.push({ num: it.num });
+    else if (seen === units.length || seen > ub) post.push({ num: it.num });
+  }
+  const arr = (list) => { const out2 = []; let codes = []; for (const x of list) { if (x.code != null) codes.push(x.code); else { if (codes.length) out2.push(hex(codes)); codes = []; out2.push(String(+x.num.toFixed(3))); } } if (codes.length) out2.push(hex(codes)); return out2; };
+  const pieces = [];
+  const ownRuns = glyphRuns(middle, own.rev), style = teSubStyle(L, out, m, fonts);
+  const mids = [];
+  for (const r of ownRuns) {
+    if (r.own) mids.push({ own: true, codes: r.chars });
+    else {
+      const rs = await fontsRuns(out, r.chars.join(''), style);
+      if (rs.lost) return null; // letters no font has: the line is set again, with its text for readers
+      for (const x of rs) mids.push({ font: x.font, text: x.text });
+    }
+  }
+  // all in the PDF's own font: one TJ, as it was
+  if (mids.every((x) => x.own)) return ` [${[...arr(pre), ...(middle ? [hex(mids.flatMap((x) => x.codes))] : []), ...arr(post)].join(' ')}] TJ `;
+  const tf = `/${op.font} ${+(+op.fs).toFixed(4)} Tf`;
+  if (pre.length) pieces.push(`[${arr(pre).join(' ')}] TJ`);
+  for (const x of mids) {
+    if (x.own) { pieces.push(`${tf} [${hex(x.codes)}] TJ`); continue; }
+    pieces.push(`${fontsKey(node, x.font).toString()} ${+(+op.fs).toFixed(4)} Tf ${x.font.encodeText(x.text).toString()} Tj`);
+  }
+  pieces.push(tf);
+  if (post.length) pieces.push(`[${arr(post).join(' ')}] TJ`);
+  return ' ' + pieces.join(' ') + ' ';
 }
 // The colours (and, for outlined text, line width) a new line is drawn with.
 function teStateOps(L, m) {
@@ -2884,6 +3062,7 @@ function saveDropUnused(L, out) {
 // Returns null if the person cancels the password question.
 async function buildPdf(only) {
   await commitEditing();
+  if (typeof fontsSaveStarts === 'function') fontsSaveStarts(); // a font download said no to is asked about again
   const L = await loadPdfLib();
   // Only protected files whose pages are still in the document count.
   const used = new Set(doc.pages.map((e) => e.src));
@@ -3084,7 +3263,7 @@ async function savePdf(copy) {
     } else download(bytes, doc.name + (copy ? ' (copy)' : '') + '.pdf');
     if (!copy) setSaved(true);
     window.__lastSaved = bytes; return true;
-  } catch (e) { console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
+  } catch (e) { if (!e || e.name !== 'FontsError') console.error(e); toast(`Could not save: ${e.message || e}`); return false; }
 }
 // The web: a browser that can share files (Safari, Chrome on a phone, Edge) shares the saved PDF; Share… is hidden
 // where it cannot.
