@@ -350,7 +350,7 @@ async function renderView(v) {
     if (annots.length) {
       const al = document.createElement('div'); al.className = 'annotationLayer'; el.appendChild(al);
       linkService.pagesCount = doc.pages.length;
-      const layer = new pdfjs.AnnotationLayer({ div: al, page, viewport: viewport.clone({ dontFlip: true }), accessibilityManager: null, annotationCanvasMap: canvasMap, annotationEditorUIManager: null, structTreeLayer: null, commentManager: null, linkService, annotationStorage: pd.annotationStorage });
+      const layer = new pdfjs.AnnotationLayer({ div: al, page, viewport: viewport.clone({ dontFlip: true }), accessibilityManager: null, annotationCanvasMap: canvasMap, annotationEditorUIManager: null, structTreeLayer: FEATURE.structTreeLayer ? FEATURE.structTreeLayer(v, page) : null, commentManager: null, linkService, annotationStorage: pd.annotationStorage });
       await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: PDFJS_ICONS, downloadManager: null });
       al.addEventListener('input', () => setSaved(false));
       al.addEventListener('change', () => setSaved(false));
@@ -2915,6 +2915,9 @@ async function buildPdf(only) {
   // Every page of one source, in order (the opened file, or a copy of it made by a feature such as OCR): keep that file.
   const s0 = entries.length ? entries[0].src : 0;
   const same = !only && entries.length === loaded[s0].getPageCount() && entries.every((e, n) => e.src === s0 && e.i === n);
+  // Each source's pages as they were opened (before any reordering), for features that copy what belongs to a page
+  // (the tagged structure) from its source.
+  const srcRefs = loaded.map((d) => d.getPages().map((pg) => pg.ref));
   let out, pages;
   if (same) { out = loaded[s0]; pages = out.getPages(); }
   else if (only || !entries.length) {
@@ -2937,7 +2940,10 @@ async function buildPdf(only) {
   const font = await out.embedFont(StandardFonts.Helvetica);
   const col = (hex) => { const n = parseInt(hex.slice(1), 16); return rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); };
   const vec = (r) => { const a = r * Math.PI / 180; return { right: [Math.cos(a), Math.sin(a)], down: [Math.sin(a), -Math.cos(a)] }; };
-  const imgCache = new Map(), editCtx = { images: imgCache, std: new Map() };
+  const imgCache = new Map(), editCtx = { images: imgCache, std: new Map(), sources: { loaded, refs: srcRefs }, markOps: [] };
+  // Where each mark's drawing is among the page's new operators (so tagged PDFs can mark it as content or decoration).
+  const opsAt = (p) => (p.contentStream ? { cs: p.contentStream, n: p.contentStream.operators.length } : null);
+  const tracked = async (p, m, fn) => { const a = opsAt(p); await fn(); editCtx.markOps.push({ p, m, a, b: opsAt(p) }); };
   for (let n = 0; n < entries.length; n++) {
     const e = entries[n], p = pages[n];
     if (e.rot) p.setRotation(degrees((p.getRotation().angle + e.rot) % 360));
@@ -2946,10 +2952,10 @@ async function buildPdf(only) {
     await saveContentEdits(L, out, p, pageMarks, editCtx);
     saveCommentEdits(L, out, p, pageMarks, same);
     const fm = (m) => FEATURE.markTypes[m.type];
-    for (const m of pageMarks.filter((x) => fm(x) && fm(x).under && fm(x).save)) await fm(m).save({ L, out, p, m, entry: e, ctx: editCtx });
-    for (const m of pageMarks) {
-      if (CONTENT_TYPES.has(m.type)) continue;
-      if (fm(m)) { if (!fm(m).under && fm(m).save) await fm(m).save({ L, out, p, m, entry: e, ctx: editCtx }); continue; }
+    for (const m of pageMarks.filter((x) => fm(x) && fm(x).under && fm(x).save)) await tracked(p, m, () => fm(m).save({ L, out, p, m, entry: e, ctx: editCtx }));
+    for (const m of pageMarks) await tracked(p, m, async () => {
+      if (CONTENT_TYPES.has(m.type)) return;
+      if (fm(m)) { if (!fm(m).under && fm(m).save) await fm(m).save({ L, out, p, m, entry: e, ctx: editCtx }); return; }
       if (m.type === 'hl') for (const r of m.rects) p.drawRectangle({ x: Math.min(r[0], r[2]), y: Math.min(r[1], r[3]), width: Math.abs(r[2] - r[0]), height: Math.abs(r[3] - r[1]), color: col(m.color), opacity: .4, blendMode: BlendMode.Multiply });
       if (m.type === 'ink') for (let k = 1; k < m.pts.length; k++) p.drawLine({ start: { x: m.pts[k - 1][0], y: m.pts[k - 1][1] }, end: { x: m.pts[k][0], y: m.pts[k][1] }, thickness: m.w, color: col(m.color), lineCap: LineCapStyle.Round });
       if (m.type === 'rect') p.drawRectangle({ x: Math.min(m.x1, m.x2), y: Math.min(m.y1, m.y2), width: Math.abs(m.x2 - m.x1), height: Math.abs(m.y2 - m.y1), borderColor: col(m.color), borderWidth: m.w });
@@ -2976,7 +2982,7 @@ async function buildPdf(only) {
         if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
         annots.push(ref);
       }
-    }
+    });
     for (const h of FEATURE.savePage) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
     for (const h of FEATURE.savePageLate) await h({ L, out, p, entry: e, n, entries, marks: pageMarks, ctx: editCtx });
   }
