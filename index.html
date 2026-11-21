@@ -21658,6 +21658,1985 @@ addStyle(`
 .pdfa-note { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
 `);
 
+// ---- src/features/86-compare.js
+/* ---------------- Compare: two versions of a PDF ----------------
+   File → "Compare with another PDF…" (and Home → Review) sets the open document (New) against another PDF (Old).
+   The other PDF is read with pdf.js only, on this device: it is not added to the document, and nothing of it is kept.
+
+   1. Pages are lined up first. Each page's words make a set of three-word runs (shingles); an LCS over how alike the
+      pages are (Jaccard) pairs them, so a page put in or taken out is reported as "Page inserted" or "Page removed"
+      and the pages after it are still compared with their own counterparts. Pages without text (scans) are compared
+      by a small picture of them.
+   2. Each pair of pages: the words (pdf.js text content, each word's box worked out in proportion inside its piece of
+      text, as Find does) are diffed with Myers' O(ND) algorithm, and the runs of changes are Added, Removed or
+      Changed. Options: case, punctuation, spacing, the top and bottom 6% (headers and footers), and font or size
+      changes ("formatting", from each piece's font and height).
+   3. Pictures and drawings: both pages are drawn at 100 dpi; the pixels that differ by more than 32 outside the text
+      (which step 2 covers) are grown a little and gathered into boxes larger than 6 x 6 px. Always on for pages
+      without text.
+   4. The compare view: Old and New side by side, scrolled and zoomed together (each row is as tall as the taller page
+      of its pair, so one scroll position shows the same pair on both sides), the changes coloured (added green,
+      removed red, changed amber, pictures blue), a list of them by page with filters, and [ and ] to step through.
+      Overlay shows New with Old faint behind it. Phones show one side at a time.
+   5. "Save compare report": a copy of New (or Old) with each change as a comment (Highlight, StrikeOut, Caret,
+      Square, or a label for a whole page) whose text says what it was and is now, after a cover page with the counts.
+      It is made with pdf-lib from the bytes, never through the open document's marks, so the document stays as it
+      was. "Copy change list" copies the same list as text. */
+
+const CMP_DPI = 100, CMP_DIFF = 32, CMP_EDGE = 0.06, CMP_GROW = 2;
+const CMP_KIND = {
+  insert: { label: 'Added', name: 'Text added', rgb: [0.18, 0.62, 0.27] },
+  delete: { label: 'Removed', name: 'Text removed', rgb: [0.88, 0.19, 0.19] },
+  replace: { label: 'Changed', name: 'Text changed', rgb: [0.96, 0.6, 0.05] },
+  format: { label: 'Formatting', name: 'Formatting changed', rgb: [0.96, 0.6, 0.05] },
+  visual: { label: 'Picture', name: 'Picture or drawing changed', rgb: [0.11, 0.49, 0.84] },
+  pageInsert: { label: 'Page', name: 'Page inserted', rgb: [0.18, 0.62, 0.27] },
+  pageRemove: { label: 'Page', name: 'Page removed', rgb: [0.88, 0.19, 0.19] },
+};
+const CMP_FILTERS = [['insert', 'Added'], ['delete', 'Removed'], ['replace', 'Changed'], ['format', 'Formatting'], ['visual', 'Pictures'], ['page', 'Pages']];
+const cmpFilterOf = (k) => (k === 'pageInsert' || k === 'pageRemove' ? 'page' : k);
+const cmpOpts = Object.assign({ ignoreCase: false, ignorePunct: false, ignoreSpace: true, ignoreHeadFoot: false, format: false, visual: true }, store.get('compare', {}));
+let cmp = null; // the comparison on screen (see cmpOpen)
+let cmpBusy = false;
+
+/* --- the two sides --- */
+// The open document (its pages as they are now: order, rotation; its own mark-up is not compared).
+function cmpDocSide() {
+  const d = doc;
+  return { name: d.name, count: d.pages.length, fromDoc: true, d, data: [], date: d.mtime ? new Date(d.mtime) : null,
+    page: (k) => pageOf(d.pages[k]), rot: (k, pg) => (pg.rotate + d.pages[k].rot) % 360 };
+}
+function cmpFileSide(pd, bytes, name, date) {
+  return { name: String(name || 'Other PDF').replace(/\.pdf$/i, ''), count: pd.numPages, pd, bytes, data: [], date: date || null,
+    page: (k) => pd.getPage(k + 1), rot: (k, pg) => pg.rotate };
+}
+// A word's box: a run of letters [a, b) of a piece of text, in proportion to its width (as Find does). PDF points:
+// bottom-left, bottom-right, top-right, top-left, along the text's own direction.
+// Where each letter of a piece of text starts: the piece's width shared out by how wide its letters are in a font of
+// the same kind (measured once per piece), which places words much better than equal shares.
+const cmpMeasure = document.createElement('canvas').getContext('2d'), cmpOffs = new WeakMap();
+function cmpOffsets(it, styles) {
+  let o = cmpOffs.get(it); if (o) return o;
+  const s = it.str, n = s.length, w = it.width || 0;
+  o = new Float64Array(n + 1);
+  if (n <= 400) {
+    const st = styles && styles[it.fontName];
+    cmpMeasure.font = `100px ${st && st.fontFamily ? st.fontFamily : 'sans-serif'}`;
+    for (let k = 1; k <= n; k++) o[k] = cmpMeasure.measureText(s.slice(0, k)).width;
+  }
+  const total = o[n];
+  for (let k = 0; k <= n; k++) o[k] = total > 0 ? o[k] * w / total : w * k / n;
+  cmpOffs.set(it, o);
+  return o;
+}
+function cmpQuad(it, a, b, styles) {
+  const t = it.transform; if (!t || !it.str) return null;
+  let ux = t[0], uy = t[1]; const len = Math.hypot(ux, uy) || 1; ux /= len; uy /= len;
+  const size = Math.hypot(t[2], t[3]) || it.height || 10, off = cmpOffsets(it, styles), da = off[a], db = off[b];
+  const vx = -uy, vy = ux, dn = size * 0.25, up = size * 0.9;
+  const x0 = t[4] + ux * da, y0 = t[5] + uy * da, x1 = t[4] + ux * db, y1 = t[5] + uy * db;
+  return [[x0 - vx * dn, y0 - vy * dn], [x1 - vx * dn, y1 - vy * dn], [x1 + vx * up, y1 + vy * up], [x0 + vx * up, y0 + vy * up]];
+}
+const cmpBox = (qs) => { const xs = qs.flat().map((p) => p[0]), ys = qs.flat().map((p) => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+// One page of a side, read once: its words (with boxes and font), the boxes of its pieces of text, its size.
+async function cmpRead(side, k) {
+  if (side.data[k]) return side.data[k];
+  const page = await side.page(k), tc = await page.getTextContent();
+  const { s, map } = findIndexOf(tc), words = [];
+  for (const m of s.matchAll(/\S+/g)) {
+    const parts = [];
+    for (let c = m.index; c < m.index + m[0].length; c++) {
+      const x = map[c]; if (!x) continue;
+      const l = parts[parts.length - 1];
+      if (l && l[0] === x[0] && l[2] === x[1]) l[2]++; else parts.push([x[0], x[1], x[1] + 1]);
+    }
+    const quads = parts.map(([i, a, b]) => cmpQuad(tc.items[i], a, b, tc.styles)).filter(Boolean);
+    if (!quads.length) continue;
+    const it = tc.items[parts[0][0]], bb = cmpBox(quads);
+    words.push({ t: m[0], quads, fid: it.fontName, size: Math.round((it.height || 0) * 2) / 2, cy: (bb[1] + bb[3]) / 2 });
+  }
+  const boxes = tc.items.filter((it) => it.str && it.str.trim() && it.transform).map((it) => cmpQuad(it, 0, it.str.length, tc.styles)).filter(Boolean);
+  return (side.data[k] = { page, view: page.view, words, boxes });
+}
+// The fonts' own names (pdf.js names them g_d0_f1… per document): read from the page's fonts once they are loaded.
+async function cmpFontNames(dat) {
+  if (dat.fonts) return dat.fonts;
+  try { await dat.page.getOperatorList(); } catch {}
+  const names = {};
+  for (const w of dat.words) {
+    if (w.fid in names) continue;
+    let n = '';
+    try { if (dat.page.commonObjs.has(w.fid)) { const f = dat.page.commonObjs.get(w.fid); n = baseName(f && (f.name || f.loadedName) || ''); } } catch {}
+    names[w.fid] = n || w.fid;
+  }
+  return (dat.fonts = names);
+}
+
+/* --- what is compared --- */
+function cmpKey(t, o) {
+  let s = t.normalize('NFKC').replace(/[‘’‚‛]/g, "'").replace(/[“”„‟]/g, '"').replace(/[‐‑‒–—]/g, '-');
+  if (o.ignoreCase) s = s.toLocaleLowerCase();
+  if (o.ignorePunct) s = s.replace(/[\p{P}\p{S}]/gu, '');
+  return s;
+}
+function cmpWords(dat, o) {
+  const [, y0, , y1] = dat.view, h = y1 - y0;
+  return dat.words.filter((w) => !o.ignoreHeadFoot || (w.cy > y0 + h * CMP_EDGE && w.cy < y1 - h * CMP_EDGE))
+    .map((w) => ({ ...w, key: cmpKey(w.t, o) })).filter((w) => w.key);
+}
+function cmpShingles(ws) {
+  const keys = ws.map((w) => w.key.toLowerCase()), set = new Set();
+  if (keys.length < 3) keys.forEach((k) => set.add(k));
+  else for (let i = 0; i + 2 < keys.length; i++) set.add(keys[i] + '\u0001' + keys[i + 1] + '\u0001' + keys[i + 2]);
+  return set;
+}
+function cmpJaccard(a, b) {
+  if (!a.size || !b.size) return a.size || b.size ? 0 : null;
+  const [sm, lg] = a.size < b.size ? [a, b] : [b, a]; let n = 0;
+  for (const x of sm) if (lg.has(x)) n++;
+  return n / (a.size + b.size - n);
+}
+// A page without text, as 32 x 32 grey levels (to tell scans apart).
+async function cmpThumb(dat) {
+  if (dat.thumb) return dat.thumb;
+  const vp0 = dat.page.getViewport({ scale: 1, rotation: 0 }), vp = dat.page.getViewport({ scale: 64 / Math.max(vp0.width, vp0.height), rotation: 0 });
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(vp.width)); c.height = Math.max(1, Math.round(vp.height));
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  try { await dat.page.render({ canvas: c, canvasContext: g, viewport: vp }).promise; } catch {}
+  const t = document.createElement('canvas'); t.width = t.height = 32;
+  const tg = t.getContext('2d', { willReadFrequently: true }); tg.drawImage(c, 0, 0, 32, 32);
+  const d = tg.getImageData(0, 0, 32, 32).data, out = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) out[i] = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3;
+  return (dat.thumb = out);
+}
+
+/* --- lining the pages up --- */
+// Pairs [old, new] in order, with null for a page only one side has. sim(i, j) is 0..1.
+function cmpAlign(nO, nN, sim) {
+  const S = new Map(), at = (i, j) => { const k = i * (nN + 1) + j; if (!S.has(k)) S.set(k, sim(i, j)); return S.get(k); };
+  // The best-scoring common subsequence of pages alike by at least thr, over old [o0, o1) and new [n0, n1).
+  const lcs = (o0, o1, n0, n1, thr) => {
+    const R = o1 - o0, Cn = n1 - n0; if (R <= 0 || Cn <= 0) return [];
+    const W = Cn + 1, D = new Float64Array((R + 1) * W);
+    for (let i = R - 1; i >= 0; i--) for (let j = Cn - 1; j >= 0; j--) {
+      const s = at(o0 + i, n0 + j); let best = Math.max(D[(i + 1) * W + j], D[i * W + j + 1]);
+      if (s >= thr) best = Math.max(best, D[(i + 1) * W + j + 1] + s);
+      D[i * W + j] = best;
+    }
+    const out = []; let i = 0, j = 0;
+    while (i < R && j < Cn) {
+      const s = at(o0 + i, n0 + j);
+      if (s >= thr && Math.abs(D[i * W + j] - (D[(i + 1) * W + j + 1] + s)) < 1e-9) { out.push([o0 + i, n0 + j]); i++; j++; }
+      else if (D[(i + 1) * W + j] >= D[i * W + j + 1]) i++; else j++;
+    }
+    return out;
+  };
+  const pairs = [];
+  // Between two matched pages: pages a little alike are paired too; as many on each side are taken as rewritten pages.
+  const gap = (o0, o1, n0, n1) => {
+    let a = o0, b = n0;
+    for (const [x, y] of [...lcs(o0, o1, n0, n1, 0.05), [o1, n1]]) {
+      const ro = x - a, rn = y - b;
+      if (ro === rn) for (let k = 0; k < ro; k++) pairs.push([a + k, b + k]);
+      else { for (let k = 0; k < ro; k++) pairs.push([a + k, null]); for (let k = 0; k < rn; k++) pairs.push([null, b + k]); }
+      if (x < o1) pairs.push([x, y]);
+      a = x + 1; b = y + 1;
+    }
+  };
+  let po = 0, pn = 0;
+  for (const [x, y] of lcs(0, nO, 0, nN, 0.2)) { gap(po, x, pn, y); pairs.push([x, y]); po = x + 1; pn = y + 1; }
+  gap(po, nO, pn, nN);
+  return pairs;
+}
+
+/* --- Myers' diff (An O(ND) Difference Algorithm and Its Variations, 1986) --- */
+// a, b: arrays of numbers. Returns the edit script in order: [0, i, j] same, [-1, i] only in a, [1, j] only in b.
+// null when the two differ in more than `most` places (then the whole page is one change).
+function cmpMyers(a, b, most = 6000) {
+  let s = 0; while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let ea = a.length, eb = b.length; while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+  const N = ea - s, M = eb - s, ops = [];
+  for (let i = 0; i < s; i++) ops.push([0, i, i]);
+  if (!N) for (let j = 0; j < M; j++) ops.push([1, s + j]);
+  else if (!M) for (let i = 0; i < N; i++) ops.push([-1, s + i]);
+  else {
+    const A = (i) => a[s + i], B = (j) => b[s + j], MAX = Math.min(N + M, most), off = MAX + 1;
+    const v = new Int32Array(2 * MAX + 3), trace = [];
+    let D = -1;
+    outer: for (let d = 0; d <= MAX; d++) {
+      trace.push(v.slice(off - d - 1, off + d + 2)); // v[k] for k in [-d-1, d+1], before step d
+      for (let k = -d; k <= d; k += 2) {
+        let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1, y = x - k;
+        while (x < N && y < M && A(x) === B(y)) { x++; y++; }
+        v[off + k] = x;
+        if (x >= N && y >= M) { D = d; break outer; }
+      }
+    }
+    if (D < 0) return null;
+    const mid = []; let x = N, y = M;
+    for (let d = D; d > 0; d--) {
+      const t = trace[d], V = (k) => t[k + d + 1], k = x - y;
+      const pk = k === -d || (k !== d && V(k - 1) < V(k + 1)) ? k + 1 : k - 1, px = V(pk), py = px - pk;
+      while (x > px && y > py) { mid.push([0, s + x - 1, s + y - 1]); x--; y--; }
+      if (x === px) mid.push([1, s + py]); else mid.push([-1, s + px]);
+      x = px; y = py;
+    }
+    while (x > 0 && y > 0) { mid.push([0, s + x - 1, s + y - 1]); x--; y--; }
+    ops.push(...mid.reverse());
+  }
+  for (let i = ea, j = eb; i < a.length; i++, j++) ops.push([0, i, j]);
+  return ops;
+}
+
+/* --- one pair of pages --- */
+// A thin box where text was taken out (or put in on the other side): after word `before` (or before the first word).
+function cmpGapQuad(ws, before) {
+  const prev = ws[before], next = ws[before + 1];
+  const q = prev ? prev.quads[prev.quads.length - 1] : next ? next.quads[0] : null; if (!q) return null;
+  const [p, t] = prev ? [q[1], q[2]] : [q[0], q[3]];
+  let ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1]; const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+  const w = Math.max(2, Math.hypot(t[0] - p[0], t[1] - p[1]) * 0.18), sx = prev ? 0.5 : -w - 0.5;
+  const a = [p[0] + ux * sx, p[1] + uy * sx], b = [t[0] + ux * sx, t[1] + uy * sx];
+  return [a, [a[0] + ux * w, a[1] + uy * w], [b[0] + ux * w, b[1] + uy * w], b];
+}
+const cmpJoin = (ws) => ws.map((w) => w.t).join(' ');
+function cmpTextChanges(A, B, o, fontsA, fontsB) {
+  const ids = new Map(), id = (k) => { if (!ids.has(k)) ids.set(k, ids.size); return ids.get(k); };
+  const a = A.map((w) => id(w.key)), b = B.map((w) => id(w.key));
+  let ops = cmpMyers(a, b);
+  if (!ops) ops = [...A.map((_, i) => [-1, i]), ...B.map((_, j) => [1, j])];
+  const out = []; let run = null, fmt = null, li = -1, lj = -1;
+  const endRun = () => {
+    if (!run) return;
+    const del = run.del.map((i) => A[i]), ins = run.ins.map((j) => B[j]);
+    const kind = del.length && ins.length ? 'replace' : del.length ? 'delete' : 'insert';
+    const flat = (ws) => ws.map((w) => w.key).join('');
+    if (!(o.ignoreSpace && kind === 'replace' && flat(del) === flat(ins))) {
+      out.push({ kind, was: cmpJoin(del), now: cmpJoin(ins),
+        oq: del.length ? del.flatMap((w) => w.quads) : [cmpGapQuad(A, run.ai)].filter(Boolean), og: !del.length,
+        nq: ins.length ? ins.flatMap((w) => w.quads) : [cmpGapQuad(B, run.aj)].filter(Boolean), ng: !ins.length });
+    }
+    run = null;
+  };
+  const endFmt = () => {
+    if (!fmt) return;
+    const wa = fmt.map(([i]) => A[i]), wb = fmt.map(([, j]) => B[j]);
+    const desc = (w, f) => `${f[w.fid] || 'font'} ${w.size} pt`;
+    out.push({ kind: 'format', was: `${cmpJoin(wa)} (${desc(wa[0], fontsA)})`, now: `${cmpJoin(wb)} (${desc(wb[0], fontsB)})`, oq: wa.flatMap((w) => w.quads), nq: wb.flatMap((w) => w.quads) });
+    fmt = null;
+  };
+  for (const op of ops) {
+    if (op[0] === 0) {
+      endRun(); li = op[1]; lj = op[2];
+      if (o.format) {
+        const wa = A[op[1]], wb = B[op[2]];
+        const differs = (fontsA[wa.fid] || wa.fid) !== (fontsB[wb.fid] || wb.fid) || Math.abs(wa.size - wb.size) > 0.4;
+        const sameAsRun = fmt && (() => { const [fi, fj] = fmt[0]; return fontsA[A[fi].fid] === fontsA[wa.fid] && fontsB[B[fj].fid] === fontsB[wb.fid] && A[fi].size === wa.size && B[fj].size === wb.size; })();
+        if (differs) { if (fmt && !sameAsRun) endFmt(); (fmt ||= []).push([op[1], op[2]]); } else endFmt();
+      }
+      continue;
+    }
+    endFmt();
+    if (!run) run = { del: [], ins: [], ai: li, aj: lj };
+    if (op[0] < 0) run.del.push(op[1]); else run.ins.push(op[1]);
+  }
+  endRun(); endFmt();
+  return out;
+}
+// Pictures and drawings: both pages drawn at 100 dpi, unturned; differing pixels outside the text, in boxes.
+async function cmpRaster(page, s) {
+  const vp = page.getViewport({ scale: s, rotation: 0 });
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(vp.width)); c.height = Math.max(1, Math.round(vp.height));
+  const g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvas: c, canvasContext: g, viewport: vp }).promise;
+  const data = g.getImageData(0, 0, c.width, c.height).data, w = c.width, h = c.height;
+  c.width = c.height = 0;
+  return { data, w, h, vp };
+}
+// Grows the marked pixels by r in each direction (a box filter, by rows then by columns).
+function cmpDilate(m, W, H, r) {
+  const t = new Uint8Array(m.length);
+  for (let y = 0; y < H; y++) { let n = 0; const o = y * W; for (let x = 0; x < Math.min(r, W); x++) n += m[o + x]; for (let x = 0; x < W; x++) { if (x + r < W) n += m[o + x + r]; if (x - r - 1 >= 0) n -= m[o + x - r - 1]; t[o + x] = n > 0 ? 1 : 0; } }
+  for (let x = 0; x < W; x++) { let n = 0; for (let y = 0; y < Math.min(r, H); y++) n += t[y * W + x]; for (let y = 0; y < H; y++) { if (y + r < H) n += t[(y + r) * W + x]; if (y - r - 1 >= 0) n -= t[(y - r - 1) * W + x]; m[y * W + x] = n > 0 ? 1 : 0; } }
+}
+// Boxes [x0, y0, x1, y1] (pixels, x1/y1 past the end) of the connected marked areas. Clears the mask.
+function cmpComponents(m, W, H) {
+  const out = [], stack = new Int32Array(m.length);
+  for (let p = 0; p < m.length; p++) {
+    if (!m[p]) continue;
+    let sp = 0, x0 = W, y0 = H, x1 = -1, y1 = -1; stack[sp++] = p; m[p] = 0;
+    while (sp) {
+      const q = stack[--sp], x = q % W, y = (q - x) / W;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (x > 0 && m[q - 1]) { m[q - 1] = 0; stack[sp++] = q - 1; }
+      if (x < W - 1 && m[q + 1]) { m[q + 1] = 0; stack[sp++] = q + 1; }
+      if (y > 0 && m[q - W]) { m[q - W] = 0; stack[sp++] = q - W; }
+      if (y < H - 1 && m[q + W]) { m[q + W] = 0; stack[sp++] = q + W; }
+    }
+    out.push([x0, y0, x1 + 1, y1 + 1]);
+  }
+  return out;
+}
+// Boxes near each other (a moved shape: where it was and where it is) become one.
+function cmpMergeBoxes(bs, near) {
+  const list = bs.map((b) => b.slice());
+  for (let again = true; again;) {
+    again = false;
+    for (let i = 0; i < list.length && !again; i++) for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      if (a[0] - near <= b[2] && b[0] - near <= a[2] && a[1] - near <= b[3] && b[1] - near <= a[3]) {
+        list[i] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]; list.splice(j, 1); again = true; break;
+      }
+    }
+  }
+  return list;
+}
+async function cmpVisual(da, db, textChanges) {
+  const s = CMP_DPI / 72, ra = await cmpRaster(da.page, s), rb = await cmpRaster(db.page, s);
+  const W = Math.max(ra.w, rb.w), H = Math.max(ra.h, rb.h), mask = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const ia = y < ra.h && x < ra.w ? (y * ra.w + x) * 4 : -1, ib = y < rb.h && x < rb.w ? (y * rb.w + x) * 4 : -1;
+    let d = 0;
+    for (let c = 0; c < 3; c++) { const u = ia < 0 ? 255 : ra.data[ia + c], w = ib < 0 ? 255 : rb.data[ib + c]; d = Math.max(d, Math.abs(u - w)); }
+    if (d > CMP_DIFF) mask[y * W + x] = 1;
+  }
+  const px = (vp, q, pad) => {
+    const pts = q.map(([x, y]) => vp.convertToViewportPoint(x, y)), xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    return [Math.floor(Math.min(...xs) - pad), Math.floor(Math.min(...ys) - pad), Math.ceil(Math.max(...xs) + pad), Math.ceil(Math.max(...ys) + pad)];
+  };
+  // The text is compared word by word: text that only moved (a line pushed along by a word put in) is not a picture.
+  for (const [vp, boxes] of [[ra.vp, da.boxes], [rb.vp, db.boxes]]) for (const q of boxes) {
+    const [x0, y0, x1, y1] = px(vp, q, 2);
+    for (let y = Math.max(0, y0); y < Math.min(H, y1); y++) mask.fill(0, y * W + Math.max(0, x0), y * W + Math.max(0, Math.min(W, x1)));
+  }
+  cmpDilate(mask, W, H, CMP_GROW);
+  let boxes = cmpComponents(mask, W, H).map(([x0, y0, x1, y1]) => [x0 + CMP_GROW, y0 + CMP_GROW, x1 - CMP_GROW, y1 - CMP_GROW]).filter(([x0, y0, x1, y1]) => x1 > x0 && y1 > y0);
+  boxes = cmpMergeBoxes(boxes, 12).filter(([x0, y0, x1, y1]) => (x1 - x0 > 6 || y1 - y0 > 6) && (x1 - x0) * (y1 - y0) > 36);
+  const hits = textChanges.flatMap((c) => [...c.oq.map((q) => px(ra.vp, q, 0)), ...c.nq.map((q) => px(rb.vp, q, 0))]);
+  const meets = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  boxes = boxes.filter((b) => !hits.some((h) => meets(b, h)));
+  const toPdf = (vp, [x0, y0, x1, y1]) => { const a = vp.convertToPdfPoint(x0, y0), b = vp.convertToPdfPoint(x1, y1); return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]; };
+  return boxes.map((b) => ({ kind: 'visual', was: '', now: '', ob: toPdf(ra.vp, b), nb: toPdf(rb.vp, b) }));
+}
+const cmpRectQuad = ([x0, y0, x1, y1]) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+
+/* --- the whole comparison --- */
+async function cmpCompute(oldS, newS, o, progress = () => false) {
+  const total = oldS.count + newS.count;
+  const words = { old: [], new: [] }, sig = { old: [], new: [] };
+  for (const [key, side] of [['old', oldS], ['new', newS]]) for (let k = 0; k < side.count; k++) {
+    if (progress(`Reading ${key === 'old' ? 'Old' : 'New'}, page ${k + 1} of ${side.count}…`, ((key === 'new' ? oldS.count : 0) + k) / total * 0.3)) return null;
+    const dat = await cmpRead(side, k);
+    words[key][k] = cmpWords(dat, o); sig[key][k] = cmpShingles(words[key][k]);
+  }
+  // Pages without text are told apart by how they look.
+  for (const [key, side] of [['old', oldS], ['new', newS]]) for (let k = 0; k < side.count; k++) if (!sig[key][k].size) await cmpThumb(side.data[k]);
+  const pairs = cmpAlign(oldS.count, newS.count, (i, j) => {
+    const s = cmpJaccard(sig.old[i], sig.new[j]);
+    if (s !== null) return s;
+    const a = oldS.data[i].thumb, b = newS.data[j].thumb; let d = 0;
+    for (let q = 0; q < 1024; q++) d += Math.abs(a[q] - b[q]);
+    return 0.3 + 0.7 * Math.max(0, 1 - d / 1024 / 40);
+  });
+  const changes = [];
+  for (let r = 0; r < pairs.length; r++) {
+    const [i, j] = pairs[r];
+    if (progress(`Comparing page ${j != null ? j + 1 : i + 1}…`, 0.3 + 0.7 * r / pairs.length)) return null;
+    if (i == null) { changes.push({ kind: 'pageInsert', o: null, n: j, row: r, was: '', now: `Page ${j + 1}`, oq: [], nq: [] }); continue; }
+    if (j == null) { changes.push({ kind: 'pageRemove', o: i, n: null, row: r, was: `Page ${i + 1}`, now: '', oq: [], nq: [] }); continue; }
+    const da = oldS.data[i], db = newS.data[j];
+    const fa = o.format ? await cmpFontNames(da) : {}, fb = o.format ? await cmpFontNames(db) : {};
+    const text = cmpTextChanges(words.old[i], words.new[j], o, fa, fb);
+    const noText = !words.old[i].length && !words.new[j].length;
+    const pics = o.visual || noText ? await cmpVisual(da, db, text) : [];
+    const here = [...text, ...pics].map((c) => ({ ...c, o: i, n: j, row: r }));
+    // top to bottom, then left to right, on New (or on Old where New has nothing to show)
+    const where = (c) => { const b = c.nb || (c.nq.length ? cmpBox(c.nq) : c.ob || cmpBox(c.oq)); return [-b[3], b[0]]; };
+    here.sort((p, q) => { const a = where(p), b = where(q); return Math.abs(a[0] - b[0]) > 3 ? a[0] - b[0] : a[1] - b[1]; });
+    changes.push(...here);
+  }
+  changes.forEach((c, k) => { c.id = k; if (c.kind === 'visual') { c.oq = [cmpRectQuad(c.ob)]; c.nq = [cmpRectQuad(c.nb)]; } });
+  return { pairs, changes };
+}
+const cmpCounts = (changes) => { const n = {}; for (const k of Object.keys(CMP_KIND)) n[k] = 0; for (const c of changes) n[c.kind]++; return n; };
+const cmpQuote = (s, most = 80) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return `“${s.length > most ? s.slice(0, most - 1) + '…' : s}”`; };
+function cmpDescribe(c) {
+  switch (c.kind) {
+    case 'insert': return `Added ${cmpQuote(c.now)}`;
+    case 'delete': return `Removed ${cmpQuote(c.was)}`;
+    case 'replace': return `Changed ${cmpQuote(c.was)} to ${cmpQuote(c.now)}`;
+    case 'format': return `Formatting of ${cmpQuote(c.now)}, was ${cmpQuote(c.was)}`;
+    case 'visual': return 'Picture or drawing changed';
+    case 'pageInsert': return 'Page inserted';
+    case 'pageRemove': return `Page removed (Old page ${c.o + 1})`;
+  }
+  return '';
+}
+const cmpWhere = (c) => (c.n != null ? `Page ${c.n + 1}` : `Old page ${c.o + 1}`);
+function cmpListText(res = cmp) {
+  if (!res) return '';
+  const head = `Compared “${res.old.name}” (Old) with “${res.new.name}” (New): ${res.changes.length === 1 ? '1 change' : `${res.changes.length} changes`}.`;
+  return [head, ...res.changes.map((c) => `${cmpWhere(c)}: ${cmpDescribe(c)}`)].join('\n');
+}
+
+/* --- the report --- */
+async function cmpLibLoad(L, bytes) {
+  if (bytes.password) return L.PDFDocument.load(bytes, { password: bytes.password, updateMetadata: false });
+  const d = await L.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  return d.isEncrypted ? L.PDFDocument.load(bytes, { password: '', updateMetadata: false }) : d;
+}
+// A copy of one side's pages, as pdf-lib pages in order.
+async function cmpBaseCopy(L, side) {
+  if (!side.fromDoc) { const out = await cmpLibLoad(L, side.bytes); return out; }
+  const d = side.d, plain = d.sources.length === 1 && d.pages.length && d.pages.every((e, k) => e.i === k && e.src === 0 && !e.rot && !e.crop);
+  const whole = plain && (await cmpLibLoad(L, d.sources[0]));
+  if (whole && whole.getPageCount() === d.pages.length) return whole;
+  const out = await L.PDFDocument.create(), loaded = new Map();
+  for (const e of d.pages) {
+    if (!loaded.has(e.src)) loaded.set(e.src, await cmpLibLoad(L, d.sources[e.src]));
+    const [pg] = await out.copyPages(loaded.get(e.src), [e.i]);
+    const p = out.addPage(pg);
+    if (e.rot) p.setRotation(L.degrees((p.getRotation().angle + e.rot) % 360));
+  }
+  return out;
+}
+const cmpNum = (x) => +(+x).toFixed(2);
+// One comment on a report page, with its own look (so every reader shows it the same way).
+function cmpAnnot(L, out, p, a, ctx) {
+  const { PDFName, PDFHexString, PDFString } = L;
+  const pts = a.quads ? a.quads.flat() : [[a.rect[0], a.rect[1]], [a.rect[2], a.rect[3]]];
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const rect = [Math.min(...xs) - 2, Math.min(...ys) - 2, Math.max(...xs) + 2, Math.max(...ys) + 2].map(cmpNum);
+  const col = a.rgb.map(cmpNum).join(' '), ops = [], res = {};
+  const path = (q) => `${q.map(([x, y], k) => `${cmpNum(x)} ${cmpNum(y)} ${k ? 'l' : 'm'}`).join(' ')} h`;
+  const extra = {};
+  if (a.sub === 'Highlight') {
+    res.ExtGState = { G0: { Type: 'ExtGState', BM: 'Multiply', ca: 0.45, CA: 0.45 } };
+    ops.push('/G0 gs', `${col} rg`, ...a.quads.map(path), 'f');
+  } else if (a.sub === 'StrikeOut') {
+    ops.push(`${col} RG`);
+    for (const q of a.quads) {
+      const h = Math.hypot(q[3][0] - q[0][0], q[3][1] - q[0][1]), m0 = [q[0][0] + (q[3][0] - q[0][0]) * 0.42, q[0][1] + (q[3][1] - q[0][1]) * 0.42], m1 = [q[1][0] + (q[2][0] - q[1][0]) * 0.42, q[1][1] + (q[2][1] - q[1][1]) * 0.42];
+      ops.push(`${cmpNum(Math.max(0.8, h / 12))} w`, `${cmpNum(m0[0])} ${cmpNum(m0[1])} m ${cmpNum(m1[0])} ${cmpNum(m1[1])} l S`);
+    }
+  } else if (a.sub === 'Caret') {
+    const q = a.quads[0], [x0, y0, x1] = cmpBox([q]), cx = (x0 + x1) / 2, w = Math.max(3, (q[3][1] - q[0][1]) * 0.35);
+    extra.Rect = [cx - w - 1, y0 - 1, cx + w + 1, y0 + w * 1.6 + 1].map(cmpNum);
+    ops.push(`${col} rg`, `${cmpNum(cx - w)} ${cmpNum(y0)} m ${cmpNum(cx)} ${cmpNum(y0 + w * 1.6)} l ${cmpNum(cx + w)} ${cmpNum(y0)} l h f`);
+    extra.Sy = 'None';
+  } else if (a.sub === 'Square') {
+    ops.push(`${col} RG`, '1.5 w', `${cmpNum(a.rect[0] - 1)} ${cmpNum(a.rect[1] - 1)} ${cmpNum(a.rect[2] - a.rect[0] + 2)} ${cmpNum(a.rect[3] - a.rect[1] + 2)} re S`);
+    extra.BS = { W: 1.5, S: 'S' };
+  } else if (a.sub === 'FreeText') {
+    // a label at the top of the page: "Page inserted"
+    const [x0, , x1, y1] = a.rect, size = 11, w = ctx.bold.widthOfTextAtSize(a.label, size) + 16, top = y1 - 10;
+    extra.Rect = [x0 + 10, top - 22, Math.min(x1 - 10, x0 + 10 + w), top].map(cmpNum);
+    const [rx0, ry0, rx1, ry1] = extra.Rect;
+    res.Font = { Helv: ctx.bold.ref };
+    ops.push(`${col} rg`, `${rx0} ${ry0} ${cmpNum(rx1 - rx0)} ${cmpNum(ry1 - ry0)} re f`, 'BT', '1 1 1 rg', `/Helv ${size} Tf`, `${cmpNum(rx0 + 8)} ${cmpNum(ry0 + 7)} Td`, `${ctx.enc(ctx.bold, a.label)} Tj`, 'ET');
+    extra.DA = PDFString.of(`/Helv ${size} Tf 1 1 1 rg`);
+  }
+  const r = extra.Rect || rect;
+  const ap = out.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: r, Resources: res });
+  const dict = out.context.obj({ Type: 'Annot', Subtype: a.sub, F: 4, C: a.rgb, ...extra, Rect: r, AP: { N: out.context.register(ap) } });
+  if (a.quads && a.sub !== 'Caret') dict.set(PDFName.of('QuadPoints'), out.context.obj(a.quads.flatMap((q) => [...q[3], ...q[2], ...q[0], ...q[1]].map(cmpNum))));
+  dict.set(PDFName.of('Contents'), PDFHexString.fromText(a.contents));
+  dict.set(PDFName.of('T'), PDFHexString.fromText('Compare'));
+  dict.set(PDFName.of('Subj'), PDFHexString.fromText(a.subject));
+  dict.set(PDFName.of('NM'), PDFString.of('cpdf-cmp-' + uid()));
+  dict.set(PDFName.of('M'), PDFString.fromDate(new Date()));
+  const ref = out.context.register(dict);
+  let annots = p.node.lookup(PDFName.of('Annots'));
+  if (!(annots instanceof L.PDFArray)) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
+  annots.push(ref);
+}
+function cmpContents(c) {
+  switch (c.kind) {
+    case 'insert': return `Added\nNow: ${c.now}`;
+    case 'delete': return `Removed\nWas: ${c.was}`;
+    case 'replace': return `Changed\nWas: ${c.was}\nNow: ${c.now}`;
+    case 'format': return `Formatting changed\nWas: ${c.was}\nNow: ${c.now}`;
+    case 'visual': return 'Picture or drawing changed';
+  }
+  return '';
+}
+const cmpDate = (d) => (d && !isNaN(d) ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : 'unknown');
+// The date a side was last changed: from the file, or else from the PDF's own information.
+async function cmpSideDate(side) {
+  if (side.date) return side.date;
+  try {
+    const pd = side.pd || pdfDocs.get(0), m = await pd.getMetadata(), s = m && m.info && (m.info.ModDate || m.info.CreationDate);
+    const d = s && pdfjs.PDFDateString && pdfjs.PDFDateString.toDateObject(s);
+    if (d) return d;
+  } catch {}
+  return null;
+}
+// The report: a copy of one side ('new' or 'old') with the changes as comments, after a cover page. Returns bytes.
+async function cmpReport(on = 'new', res = cmp) {
+  const L = await loadPdfLib(), side = res[on];
+  const out = await cmpBaseCopy(L, side);
+  const ctx = { font: await out.embedFont(L.StandardFonts.Helvetica), bold: await out.embedFont(L.StandardFonts.HelveticaBold) };
+  ctx.enc = (f, s) => cmpEncode(f, s).toString();
+  const pages = out.getPages(), key = on === 'new' ? 'n' : 'o';
+  for (const c of res.changes) {
+    const k = c[key];
+    if (c.kind === 'pageInsert' || c.kind === 'pageRemove') {
+      const mine = (c.kind === 'pageInsert') === (on === 'new');
+      let target = k, where = 'before';
+      if (!mine) { // the page is only on the other side: say so on the page that follows it here (or the last one)
+        const next = res.pairs.slice(c.row + 1).find((pr) => pr[on === 'new' ? 1 : 0] != null);
+        target = next ? next[on === 'new' ? 1 : 0] : pages.length - 1;
+        if (!next) where = 'after';
+      }
+      if (target == null || target < 0 || !pages[target]) continue;
+      const p = pages[target], { x, y, width, height } = p.getCropBox();
+      const label = mine ? CMP_KIND[c.kind].name : c.kind === 'pageInsert' ? `New page ${c.n + 1} inserted ${where} this page` : `Old page ${c.o + 1} removed ${where} this page`;
+      cmpAnnot(L, out, p, { sub: 'FreeText', rect: [x, y, x + width, y + height], label, rgb: CMP_KIND[c.kind].rgb, contents: label, subject: CMP_KIND[c.kind].name }, ctx);
+      continue;
+    }
+    if (k == null || !pages[k]) continue;
+    const p = pages[k], rgb = CMP_KIND[c.kind].rgb, contents = cmpContents(c), subject = CMP_KIND[c.kind].name;
+    const quads = c[key + 'q'];
+    if (c.kind === 'visual') { cmpAnnot(L, out, p, { sub: 'Square', rect: c[key + 'b'], rgb, contents, subject }, ctx); continue; }
+    if (!quads.length) continue;
+    let sub;
+    if (c.kind === 'format') sub = 'Highlight';
+    else if (on === 'new') sub = c.kind === 'delete' ? 'StrikeOut' : 'Highlight';
+    else sub = c.kind === 'insert' ? 'Caret' : 'StrikeOut';
+    cmpAnnot(L, out, p, { sub, quads, rgb, contents, subject }, ctx);
+  }
+  await cmpCover(L, out, res, on, ctx);
+  return out.save();
+}
+function cmpEncode(font, s) {
+  try { return font.encodeText(s); } catch {}
+  return font.encodeText([...s].map((c) => { try { font.encodeText(c); return c; } catch { return '?'; } }).join(''));
+}
+// The cover page (more than one when the list of pages is long), put in front of the pages.
+async function cmpCover(L, out, res, on, ctx) {
+  const first = out.getPage(0), { width: W0, height: H0 } = first.getSize();
+  const [W, H] = W0 > H0 ? [792, 612] : [612, 792];
+  const n = cmpCounts(res.changes), lines = [];
+  const safe = (s) => [...String(s)].map((c) => { try { ctx.font.encodeText(c); return c; } catch { return '?'; } }).join('');
+  const add = (text, o = {}) => lines.push({ text: safe(text), size: 11, ...o });
+  const [dOld, dNew] = [await cmpSideDate(res.old), await cmpSideDate(res.new)];
+  add('Compare report', { size: 22, bold: true, gap: 6 });
+  add(`Made on ${cmpDate(new Date())} with Cowdrey.PDF, on this device.`, { size: 10, gray: true, gap: 16 });
+  add(`New: ${res.new.name}`, { bold: true }); add(`${res.new.count === 1 ? '1 page' : `${res.new.count} pages`}, last changed ${cmpDate(dNew)}`, { size: 10, gray: true, gap: 8 });
+  add(`Old: ${res.old.name}`, { bold: true }); add(`${res.old.count === 1 ? '1 page' : `${res.old.count} pages`}, last changed ${cmpDate(dOld)}`, { size: 10, gray: true, gap: 16 });
+  add(`Changes: ${res.changes.length}`, { size: 14, bold: true, gap: 4 });
+  for (const [k, label] of [['insert', 'Text added'], ['delete', 'Text removed'], ['replace', 'Text changed'], ['format', 'Formatting changed'], ['visual', 'Pictures or drawings changed'], ['pageInsert', 'Pages inserted'], ['pageRemove', 'Pages removed']]) {
+    if (k === 'format' && !res.opts.format) continue;
+    add(`${label}: ${n[k]}`, { indent: 12, count: true });
+  }
+  lines[lines.length - 1].gap = 16;
+  const skip = [res.opts.ignoreCase && 'case', res.opts.ignorePunct && 'punctuation', res.opts.ignoreSpace && 'spacing', res.opts.ignoreHeadFoot && 'headers and footers'].filter(Boolean);
+  if (skip.length) { add(`Not counted: ${skip.join(', ')}.`, { size: 10, gray: true, gap: 16 }); }
+  const marked = on === 'new' ? 'New' : 'Old';
+  add(`Pages with changes (marked on ${marked}; page numbers of this report)`, { size: 14, bold: true, gap: 4 });
+  const byPage = new Map(), key = on === 'new' ? 'n' : 'o';
+  for (const c of res.changes) { const k = c[key]; if (k == null) continue; if (!byPage.has(k)) byPage.set(k, []); byPage.get(k).push(c); }
+  const coverCount = () => Math.max(1, Math.ceil(lines.length / 44));
+  const pageList = [...byPage.keys()].sort((a, b) => a - b);
+  if (!pageList.length) add('No changes found.', { indent: 12 });
+  const entries = pageList.map((k) => {
+    const cs = byPage.get(k), cn = cmpCounts(cs);
+    const parts = [['pageInsert', 'page inserted'], ['pageRemove', 'page removed'], ['insert', 'added'], ['delete', 'removed'], ['replace', 'changed'], ['format', 'formatting'], ['visual', 'picture or drawing']].filter(([kk]) => cn[kk]).map(([kk, w]) => (kk.startsWith('page') ? w : `${cn[kk]} ${w}`));
+    return { k, text: parts.join(', ') };
+  });
+  // the page numbers depend on how many cover pages there are: lay out once, then number
+  for (const e of entries) add('', { indent: 12, entry: e });
+  const covers = coverCount();
+  for (const l of lines) if (l.entry) l.text = safe(`Page ${l.entry.k + 1 + covers} (${marked} page ${l.entry.k + 1}): ${l.entry.text}`);
+  add('Each change is a comment on its page, coloured: added green, removed red, changed amber, pictures blue.', { size: 10, gray: true, top: 12 });
+  // write
+  let p = null, y = 0, made = 0;
+  const newPage = () => { p = out.insertPage(made++, [W, H]); y = H - 64; };
+  newPage();
+  for (const l of lines) {
+    const font = l.bold ? ctx.bold : ctx.font, x = 64 + (l.indent || 0), width = W - 64 - x;
+    // long lines wrap
+    const words = l.text.split(' '), rows = []; let row = '';
+    for (const w of words) { const t = row ? row + ' ' + w : w; if (row && font.widthOfTextAtSize(t, l.size) > width) { rows.push(row); row = w; } else row = t; }
+    rows.push(row);
+    if (l.top) y -= l.top;
+    for (const r of rows) {
+      if (y < 64) newPage();
+      p.drawText(r, { x, y, size: l.size, font, color: l.gray ? L.rgb(0.35, 0.33, 0.34) : L.rgb(0.1, 0.08, 0.09) });
+      y -= l.size * 1.45;
+    }
+    y -= l.gap || 0;
+  }
+  return made;
+}
+
+/* --- the view --- */
+function cmpEl() {
+  let el = $('#cmpView'); if (el) return el;
+  el = document.createElement('section'); el.id = 'cmpView'; el.className = 'cmp'; el.hidden = true; el.setAttribute('aria-label', 'Compare');
+  el.innerHTML = `<div class="cmp-bar">
+      <button class="btn" type="button" data-c="exit" title="Close compare (Esc)">${ic('x')}<span>Close compare</span></button>
+      <div class="cmp-names"><span class="cmp-tag old">Old</span><span class="cmp-name" data-name="old"></span><button class="icon-btn" type="button" data-c="swap" title="Swap Old and New" aria-label="Swap Old and New">${ic('arrow-left-right')}</button><span class="cmp-tag new">New</span><span class="cmp-name" data-name="new"></span></div>
+      <div class="seg cmp-mode" role="radiogroup" aria-label="View"><button type="button" role="radio" data-mode="side" aria-checked="true" aria-selected="true">${ic('columns-2')}<span>Side by side</span></button><button type="button" role="radio" data-mode="overlay" aria-checked="false" aria-selected="false">${ic('layers')}<span>Overlay</span></button></div>
+      <div class="seg cmp-show" role="radiogroup" aria-label="Show"><button type="button" role="radio" data-show="old" aria-checked="false" aria-selected="false">Old</button><button type="button" role="radio" data-show="new" aria-checked="true" aria-selected="true">New</button></div>
+      <span class="cmp-spacer"></span>
+      <span class="cmp-step"><button class="icon-btn" type="button" data-c="prev" title="Previous change ([)" aria-label="Previous change">${ic('chevron-up')}</button><span class="cmp-count" aria-live="polite"></span><button class="icon-btn" type="button" data-c="next" title="Next change (])" aria-label="Next change">${ic('chevron-down')}</button></span>
+      <span class="cmp-zoom"><button class="icon-btn" type="button" data-c="zoomOut" title="Zoom out" aria-label="Zoom out">${ic('minus')}</button><button class="icon-btn" type="button" data-c="zoomIn" title="Zoom in" aria-label="Zoom in">${ic('plus')}</button></span>
+      <button class="btn" type="button" data-c="opts" title="What to compare">${ic('sliders-horizontal')}<span>Options</span></button>
+      <button class="btn" type="button" data-c="copy" title="Copy the list of changes as text">${ic('copy')}<span>Copy change list</span></button>
+      <button class="btn primary" type="button" data-c="report" title="Save a PDF with the changes marked">${ic('file-down')}<span>Save compare report</span></button>
+      <button class="btn cmp-list-btn" type="button" data-c="list" aria-expanded="false">${ic('list')}<span>Changes</span></button>
+    </div>
+    <div class="cmp-body">
+      <div class="cmp-panes">
+        <div class="cmp-pane" data-side="old"><div class="cmp-head"><span class="cmp-tag old">Old</span><span data-name="old"></span></div><div class="cmp-scroll" tabindex="0" aria-label="Old version"><div class="cmp-rows"></div></div></div>
+        <div class="cmp-pane" data-side="new"><div class="cmp-head"><span class="cmp-tag new">New</span><span data-name="new"></span></div><div class="cmp-scroll" tabindex="0" aria-label="New version"><div class="cmp-rows"></div></div></div>
+      </div>
+      <aside class="cmp-side" aria-label="Changes"><div class="cmp-sum" aria-live="polite"></div><div class="cmp-filters" role="group" aria-label="Show these changes"></div><div class="cmp-list"></div></aside>
+      <div class="cmp-busy" hidden><div class="cmp-busy-card"><p class="cmp-busy-text" aria-live="polite">Comparing…</p><div class="ocr-bar" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"><i></i></div><p class="ocr-note">Both files stay on this device.</p><button class="btn" type="button" data-c="cancel">Cancel</button></div></div>
+    </div>`;
+  $('.workspace').appendChild(el);
+  icons();
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-c], [data-mode], [data-show], [data-cid], [data-f]'); if (!b || !cmp) { if (b && b.dataset.c === 'cancel' && cmpBusyState) cmpBusyState.cancel = true; return; }
+    if (b.dataset.mode) return cmpSetMode(b.dataset.mode);
+    if (b.dataset.show) return cmpSetShow(b.dataset.show);
+    if (b.dataset.f) { cmp.hide.has(b.dataset.f) ? cmp.hide.delete(b.dataset.f) : cmp.hide.add(b.dataset.f); cmpFilters(); return; }
+    if (b.dataset.cid) { cmpGo(+b.dataset.cid); if (isPhone() && b.closest('.cmp-list')) cmpListToggle(false); return; }
+    const c = b.dataset.c;
+    if (c === 'exit') cmpClose();
+    else if (c === 'swap') cmpRerun({ swap: true });
+    else if (c === 'prev') cmpStep(-1);
+    else if (c === 'next') cmpStep(1);
+    else if (c === 'zoomIn') cmpZoom(1.25);
+    else if (c === 'zoomOut') cmpZoom(0.8);
+    else if (c === 'opts') cmpOptionsAgain();
+    else if (c === 'copy') cmpCopy();
+    else if (c === 'report') cmpReportDialog();
+    else if (c === 'list') cmpListToggle();
+    else if (c === 'cancel' && cmpBusyState) cmpBusyState.cancel = true;
+  });
+  // Scrolled together: each row is as tall in both panes, so the same scroll position is the same pair of pages.
+  const [so, sn] = $$('.cmp-scroll', el);
+  const sync = (from, to) => {
+    if (from._echo != null && Math.abs(from.scrollTop - from._echo) < 2) { from._echo = null; return; }
+    from._echo = null;
+    if (!to.offsetParent) return;
+    to._echo = from.scrollTop; to.scrollTop = from.scrollTop;
+    const fw = from.scrollWidth - from.clientWidth, tw = to.scrollWidth - to.clientWidth;
+    if (fw > 0 && tw > 0) to.scrollLeft = from.scrollLeft / fw * tw;
+  };
+  so.addEventListener('scroll', () => sync(so, sn), { passive: true });
+  sn.addEventListener('scroll', () => sync(sn, so), { passive: true });
+  for (const s of [so, sn]) s.addEventListener('wheel', (e) => { if (!(e.ctrlKey || e.metaKey) || !cmp) return; e.preventDefault(); cmpZoom(e.deltaY < 0 ? 1.1 : 0.9); }, { passive: false });
+  return el;
+}
+let cmpBusyState = null;
+function cmpBusyShow(on) {
+  const el = cmpEl(), b = $('.cmp-busy', el);
+  b.hidden = !on;
+  if (on) { cmpBusyState = { cancel: false }; cmpBusySet('Getting ready…', 0); }
+  return cmpBusyState;
+}
+function cmpBusySet(text, f) {
+  const el = $('#cmpView'); if (!el) return;
+  $('.cmp-busy-text', el).textContent = text;
+  const pct = Math.round(Math.max(0, Math.min(1, f || 0)) * 100), bar = $('.cmp-busy .ocr-bar', el);
+  bar.firstChild.style.width = pct + '%'; bar.setAttribute('aria-valuenow', pct);
+}
+const cmpOn = () => !!cmp && app.classList.contains('cmp-on');
+// Shows the comparison of two sides. Returns the comparison, or null when it was cancelled.
+async function cmpOpen(oldS, newS, o = cmpOpts) {
+  const el = cmpEl();
+  const prev = cmp;
+  app.classList.add('cmp-on'); el.hidden = false;
+  closePopover(); if (app.dataset.tool !== 'select') setTool('select');
+  const busy = cmpBusyShow(true);
+  let res = null;
+  cmpBusy = true;
+  try { res = await cmpCompute(oldS, newS, { ...o }, (t, f) => { cmpBusySet(t, f); return busy.cancel; }); }
+  catch (e) { console.error(e); toast(`Could not compare: ${e.message || e}`); }
+  finally { cmpBusy = false; cmpBusyShow(false); }
+  if (!res) {
+    if (prev && prev !== cmp) return null;
+    if (!prev) { cmpLeave(oldS, newS); }
+    refreshRibbon();
+    return null;
+  }
+  if (prev && prev.old !== oldS && prev.old !== newS && prev.old.pd) try { prev.old.pd.destroy(); } catch {}
+  if (prev && prev.new !== oldS && prev.new !== newS && prev.new.pd) try { prev.new.pd.destroy(); } catch {}
+  cmp = { old: oldS, new: newS, opts: { ...o }, pairs: res.pairs, changes: res.changes, now: -1, hide: new Set(prev ? prev.hide : []), mode: prev ? prev.mode : 'side', show: prev ? prev.show : 'new', zoom: prev ? prev.zoom : 1 };
+  $$('[data-name="old"]', el).forEach((x) => { x.textContent = oldS.name; x.title = oldS.name; });
+  $$('[data-name="new"]', el).forEach((x) => { x.textContent = newS.name; x.title = newS.name; });
+  cmpSetMode(cmp.mode, true); cmpSetShow(cmp.show, true);
+  cmpLayout(); cmpFilters();
+  refreshRibbon();
+  const n = res.changes.length;
+  announce(n ? `${n === 1 ? '1 change' : `${n} changes`} found` : 'No changes found');
+  if (n) cmpGo(0, true); else cmpCount();
+  return cmp;
+}
+function cmpLeave(oldS, newS) {
+  for (const s of [oldS, newS]) if (s && s.pd && !s.fromDoc) try { s.pd.destroy(); } catch {}
+  app.classList.remove('cmp-on'); const el = $('#cmpView'); if (el) el.hidden = true;
+}
+function cmpClose() {
+  if (!cmp) { cmpLeave(); return; }
+  const c = cmp; cmp = null;
+  if (c.io) c.io.disconnect();
+  $$('#cmpView .cmp-rows').forEach((r) => { r.innerHTML = ''; });
+  cmpLeave(c.old, c.new);
+  refreshRibbon();
+  viewer.focus({ preventScroll: true });
+}
+function cmpSetMode(mode, quiet) {
+  cmp.mode = mode;
+  const el = $('#cmpView'); el.dataset.mode = mode;
+  $$('.cmp-mode [data-mode]', el).forEach((b) => { const on = b.dataset.mode === mode; b.setAttribute('aria-checked', on); b.setAttribute('aria-selected', on); });
+  if (!quiet) { cmpLayout(); cmpGo(cmp.now, true); }
+}
+function cmpSetShow(side, quiet) {
+  cmp.show = side;
+  const el = $('#cmpView'); el.dataset.show = side;
+  $$('.cmp-show [data-show]', el).forEach((b) => { const on = b.dataset.show === side; b.setAttribute('aria-checked', on); b.setAttribute('aria-selected', on); });
+  if (!quiet) { const s = $(`.cmp-pane[data-side="${side}"] .cmp-scroll`, el), o = $(`.cmp-pane[data-side="${side === 'old' ? 'new' : 'old'}"] .cmp-scroll`, el); s.scrollTop = o.scrollTop; cmpGo(cmp.now, true); }
+}
+function cmpZoom(f) {
+  if (!cmp) return;
+  const sc = $('.cmp-pane[data-side="new"] .cmp-scroll') , top = sc.scrollTop / Math.max(1, sc.scrollHeight);
+  cmp.zoom = Math.max(0.25, Math.min(4, cmp.zoom * f));
+  cmpLayout();
+  for (const s of $$('#cmpView .cmp-scroll')) { s._echo = null; s.scrollTop = top * s.scrollHeight; }
+}
+const cmpPanes = () => (cmp.mode === 'overlay' || isPhone() ? 1 : 2);
+// The rows: one per pair of pages, as tall as the taller page, in both panes.
+function cmpLayout() {
+  const el = $('#cmpView'), c = cmp;
+  if (c.io) c.io.disconnect();
+  const pane = $('.cmp-pane[data-side="new"] .cmp-scroll', el);
+  const paneW = Math.max(200, (($('.cmp-panes', el).clientWidth || 800) / cmpPanes()) - 40);
+  const size = (side, k) => { if (k == null) return null; const pg = side.data[k].page, vp = pg.getViewport({ scale: 1, rotation: side.rot(k, pg) }); return [vp.width, vp.height]; };
+  const sizes = c.pairs.map(([i, j]) => [size(c.old, i), size(c.new, j)]);
+  const widest = Math.max(...sizes.flat().filter(Boolean).map((s) => s[0]), 1);
+  c.scale = paneW / widest * c.zoom;
+  const s = c.scale;
+  for (const sideKey of ['old', 'new']) {
+    const rows = $(`.cmp-pane[data-side="${sideKey}"] .cmp-rows`, el);
+    rows.innerHTML = c.pairs.map((pr, r) => {
+      const [so, sn] = sizes[r], mine = sideKey === 'old' ? so : sn, theirs = sideKey === 'old' ? sn : so;
+      const hgt = Math.max(so ? so[1] : 0, sn ? sn[1] : 0) * s;
+      const k = pr[sideKey === 'old' ? 0 : 1];
+      const slot = mine
+        ? `<div class="cmp-slot" data-k="${k}" style="width:${(mine[0] * s).toFixed(1)}px;height:${(mine[1] * s).toFixed(1)}px"><span class="cmp-pno" aria-hidden="true">${k + 1}</span></div>`
+        : `<div class="cmp-missing" style="width:${(theirs[0] * s).toFixed(1)}px;height:${(theirs[1] * s).toFixed(1)}px"><span>${sideKey === 'old' ? `Page inserted in New (page ${pr[1] + 1})` : `Page removed from New (Old page ${pr[0] + 1})`}</span></div>`;
+      return `<div class="cmp-row" data-r="${r}" style="height:${(hgt + 16).toFixed(1)}px">${slot}</div>`;
+    }).join('');
+  }
+  c.io = new IntersectionObserver((ents) => ents.forEach((en) => { if (en.isIntersecting) cmpPaintRow(+en.target.dataset.r, en.target.closest('.cmp-pane').dataset.side); }), { rootMargin: '600px 0px' });
+  $$('.cmp-row', el).forEach((r) => c.io.observe(r));
+  void pane;
+}
+async function cmpPaintRow(r, sideKey) {
+  const c = cmp; if (!c) return;
+  const row = $(`#cmpView .cmp-pane[data-side="${sideKey}"] .cmp-row[data-r="${r}"]`), slot = row && $('.cmp-slot', row);
+  const key = `${c.scale}:${c.mode}`;
+  if (!slot || slot.dataset.drawn === key) return;
+  slot.dataset.drawn = key;
+  const side = c[sideKey], k = +slot.dataset.k, pg = side.data[k].page;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const draw = async (s0, pageObj, rot, cls) => {
+    const vp = pageObj.getViewport({ scale: c.scale * dpr, rotation: rot });
+    const cv = document.createElement('canvas'); cv.className = cls; cv.width = Math.max(1, Math.round(vp.width)); cv.height = Math.max(1, Math.round(vp.height));
+    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+    await pageObj.render({ canvas: cv, canvasContext: g, viewport: vp }).promise;
+    return cv;
+  };
+  try {
+    const parts = [await draw(c.scale, pg, side.rot(k, pg), 'cmp-pdf')];
+    const other = c.pairs[r][0];
+    if (sideKey === 'new' && c.mode === 'overlay' && other != null) { const op = c.old.data[other].page; parts.unshift(await draw(c.scale, op, c.old.rot(other, op), 'cmp-under')); }
+    if (!cmp || slot.dataset.drawn !== key) return;
+    $$('canvas', slot).forEach((x) => x.remove());
+    slot.prepend(...parts);
+    cmpOverlay(slot, sideKey, r);
+  } catch (e) { console.warn(e); slot.dataset.drawn = ''; }
+}
+// The coloured boxes over one page.
+function cmpOverlay(slot, sideKey, r) {
+  const c = cmp, side = c[sideKey], k = +slot.dataset.k, pg = side.data[k].page;
+  const vp = pg.getViewport({ scale: c.scale, rotation: side.rot(k, pg) });
+  $$('.cmp-hl', slot).forEach((x) => x.remove());
+  const key = sideKey === 'old' ? 'o' : 'n';
+  const html = [];
+  for (const ch of c.changes) {
+    if (ch.row !== r || ch[key] == null) continue;
+    for (const q of ch[key + 'q']) {
+      const pts = q.map(([x, y]) => vp.convertToViewportPoint(x, y)), xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0, h = Math.max(...ys) - y0;
+      const gap = ch[key + 'g'] ? ' gap' : '';
+      html.push(`<div class="cmp-hl k-${ch.kind} f-${cmpFilterOf(ch.kind)}${gap}${ch.id === c.now ? ' now' : ''}" data-cid="${ch.id}" title="${esc(cmpDescribe(ch))}" style="left:${x0.toFixed(1)}px;top:${y0.toFixed(1)}px;width:${Math.max(3, w).toFixed(1)}px;height:${Math.max(3, h).toFixed(1)}px"></div>`);
+    }
+  }
+  slot.insertAdjacentHTML('beforeend', html.join(''));
+}
+const cmpVisible = () => cmp.changes.filter((c) => !cmp.hide.has(cmpFilterOf(c.kind)));
+function cmpFilters() {
+  const el = $('#cmpView'), c = cmp, n = cmpCounts(c.changes);
+  const count = (f) => (f === 'page' ? n.pageInsert + n.pageRemove : n[f]);
+  const total = c.changes.length;
+  $('.cmp-sum', el).textContent = total ? `${total === 1 ? '1 change' : `${total} changes`}` : 'No changes found';
+  $('.cmp-filters', el).innerHTML = CMP_FILTERS.filter(([f]) => f !== 'format' || c.opts.format).map(([f, label]) => `<button type="button" class="cmp-chip f-${f}" data-f="${f}" aria-pressed="${!c.hide.has(f)}"${count(f) ? '' : ' disabled'}><i class="cmp-dot"></i>${esc(label)} <b>${count(f)}</b></button>`).join('');
+  for (const [f] of CMP_FILTERS) el.classList.toggle('cmp-hide-' + f, c.hide.has(f));
+  // The list, by page
+  const groups = [];
+  for (const ch of c.changes) {
+    const g = groups[groups.length - 1];
+    if (g && g.row === ch.row) g.items.push(ch); else groups.push({ row: ch.row, items: [ch] });
+  }
+  const label = (g) => { const [i, j] = c.pairs[g.row]; return j != null ? `Page ${j + 1}${i != null && i !== j ? ` <span>(Old page ${i + 1})</span>` : ''}` : `Old page ${i + 1}`; };
+  $('.cmp-list', el).innerHTML = total ? `<ol>${groups.map((g) => `<li class="cmp-grp"><h3>${label(g)} <b>${g.items.length}</b></h3><ol>${g.items.map((ch) => `<li><button type="button" class="cmp-item k-${ch.kind} f-${cmpFilterOf(ch.kind)}" data-cid="${ch.id}" aria-current="${ch.id === c.now}"><span class="cmp-badge">${esc(CMP_KIND[ch.kind].label)}</span><span class="cmp-txt">${esc(cmpDescribe(ch).replace(/^(Added|Removed|Changed) /, ''))}</span></button></li>`).join('')}</ol></li>`).join('')}</ol>`
+    : '<p class="cmp-none">The two versions are the same, with these options.</p>';
+  $('.cmp-list-btn span', el).textContent = `Changes (${total})`;
+  cmpCount();
+}
+function cmpCount() {
+  const el = $('#cmpView'), vis = cmpVisible(), k = vis.findIndex((x) => x.id === cmp.now);
+  $('.cmp-count', el).textContent = vis.length ? `${k >= 0 ? k + 1 : '–'} of ${vis.length}` : '0';
+  $$('[data-c="prev"], [data-c="next"]', el).forEach((b) => { b.disabled = !vis.length; });
+}
+function cmpStep(d) {
+  if (!cmp) return;
+  const vis = cmpVisible(); if (!vis.length) return;
+  let k = vis.findIndex((x) => x.id === cmp.now);
+  if (k < 0) { k = d > 0 ? vis.findIndex((x) => x.id > cmp.now) : -1; if (k < 0) k = d > 0 ? 0 : vis.length - 1; } else k = (k + d + vis.length) % vis.length;
+  cmpGo(vis[k].id);
+}
+// Goes to a change: both panes scroll to it (together), it is marked, and the list shows it.
+function cmpGo(id, quiet) {
+  const c = cmp; if (!c) return;
+  const ch = c.changes[id];
+  c.now = ch ? id : -1;
+  const el = $('#cmpView');
+  $$('.cmp-hl.now, .cmp-item[aria-current="true"]', el).forEach((x) => { if (x.classList.contains('cmp-hl')) x.classList.remove('now'); else x.setAttribute('aria-current', 'false'); });
+  cmpCount();
+  if (!ch) return;
+  $$(`.cmp-hl[data-cid="${id}"]`, el).forEach((x) => x.classList.add('now'));
+  const item = $(`.cmp-item[data-cid="${id}"]`, el); if (item) { item.setAttribute('aria-current', 'true'); item.scrollIntoView({ block: 'nearest' }); }
+  // where it is: on the side that has it (New unless only Old does), in its row
+  const sideKey = (c.mode === 'overlay' || isPhone()) ? (c.mode === 'overlay' ? 'new' : c.show) : (ch.n != null ? 'new' : 'old');
+  const pane = $(`.cmp-pane[data-side="${sideKey}"] .cmp-scroll`, el), row = $(`.cmp-row[data-r="${ch.row}"]`, pane);
+  if (!row) return;
+  let y = row.offsetTop, h = row.offsetHeight;
+  const key = sideKey === 'old' ? 'o' : 'n', k = ch[key];
+  if (k != null && ch[key + 'q'].length) {
+    const side = c[sideKey], pg = side.data[k].page, vp = pg.getViewport({ scale: c.scale, rotation: side.rot(k, pg) });
+    const ys = ch[key + 'q'].flat().map(([x0, y0]) => vp.convertToViewportPoint(x0, y0)[1]), slot = $('.cmp-slot', row);
+    y = row.offsetTop + (slot ? slot.offsetTop : 0) + Math.min(...ys); h = Math.max(...ys) - Math.min(...ys);
+  }
+  pane._echo = null;
+  pane.scrollTop = Math.max(0, y + h / 2 - pane.clientHeight / 2);
+  if (!quiet) announce(`${cmpWhere(ch)}: ${cmpDescribe(ch)}`);
+}
+function cmpListToggle(on) {
+  const el = $('#cmpView'), b = $('[data-c="list"]', el);
+  on = on ?? !el.classList.contains('cmp-list-open');
+  el.classList.toggle('cmp-list-open', on); b.setAttribute('aria-expanded', on);
+}
+async function cmpCopy() {
+  const text = cmpListText();
+  try { await navigator.clipboard.writeText(text); toast('Change list copied'); }
+  catch { toast('Could not copy the change list'); }
+  return text;
+}
+async function cmpReportDialog() {
+  if (!cmp) return;
+  const a = await dialog('Save compare report', `<div class="cmp-dlg"><p>A PDF with a cover page that counts the changes, and each change as a comment on its page.</p>
+    <fieldset class="cmp-opts"><legend>Mark the changes on</legend>
+      <label><input type="radio" name="cmpOn" value="new" checked> New: ${esc(cmp.new.name)}</label>
+      <label><input type="radio" name="cmpOn" value="old"> Old: ${esc(cmp.old.name)}</label></fieldset></div>`,
+  [{ label: 'Cancel' }, { label: 'Save report', value: 'ok', primary: true }]);
+  if (a !== 'ok') return;
+  const on = ($('#dialog input[name="cmpOn"]:checked') || {}).value || 'new';
+  return cmpSaveReport(on);
+}
+async function cmpSaveReport(on = 'new') {
+  if (!cmp) return null;
+  try {
+    toast('Making the report…');
+    const bytes = await cmpReport(on);
+    const name = `${cmp[on].name} compared.pdf`;
+    await saveFile(bytes, name, 'application/pdf');
+    return bytes;
+  } catch (e) { console.error(e); toast(`Could not make the report: ${e.message || e}`); return null; }
+}
+
+/* --- starting --- */
+const cmpInput = document.createElement('input');
+cmpInput.type = 'file'; cmpInput.accept = 'application/pdf,.pdf'; cmpInput.hidden = true; cmpInput.id = 'cmpInput';
+document.body.appendChild(cmpInput);
+let cmpPicked = null; // { bytes, name, date } of the other PDF
+cmpInput.addEventListener('change', async () => {
+  const f = cmpInput.files[0]; cmpInput.value = '';
+  if (!f) return;
+  cmpPicked = { bytes: new Uint8Array(await f.arrayBuffer()), name: f.name, date: f.lastModified ? new Date(f.lastModified) : null };
+  if (cmpPickWaiting) { const w = cmpPickWaiting; cmpPickWaiting = null; w(cmpPicked); } else cmpDialog(cmpPicked);
+});
+let cmpPickWaiting = null;
+// The other PDF: from the Mac's open dialog, or the browser's file picker.
+async function cmpPick(thenDialog = true) {
+  if (MAC_APP) {
+    const picked = await MAC_APP.dialog.open({ multiple: false, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    const path = typeof picked === 'string' ? picked : picked && picked.path; if (!path) return null;
+    try {
+      const f = await MAC_APP.core.invoke('read_text_file', { path });
+      cmpPicked = { bytes: b64ToBytes(f.content), name: f.name, date: (await fileTime(path)) ? new Date(await fileTime(path)) : null };
+    } catch (e) { console.error(e); toast(`Could not open ${path.split('/').pop()}.`); return null; }
+    if (thenDialog) cmpDialog(cmpPicked);
+    return cmpPicked;
+  }
+  if (!thenDialog) return new Promise((res) => { cmpPickWaiting = res; cmpInput.click(); });
+  cmpInput.click();
+  return null;
+}
+function cmpOptionsHtml(o) {
+  const box = (k, label) => `<label><input type="checkbox" data-o="${k}"${o[k] ? ' checked' : ''}> ${esc(label)}</label>`;
+  return `<fieldset class="cmp-opts"><legend>Compare</legend>
+    ${box('ignoreCase', 'Ignore case (capitals)')}
+    ${box('ignorePunct', 'Ignore punctuation')}
+    ${box('ignoreSpace', 'Ignore spacing between words')}
+    ${box('ignoreHeadFoot', 'Ignore headers and footers (top and bottom 6% of the page)')}
+    ${box('format', 'Show formatting changes (font and size)')}
+    ${box('visual', 'Compare pictures and drawings')}
+  </fieldset>`;
+}
+// The dialog: which is New and which is Old (swap), and what to compare.
+async function cmpDialog(picked, { again = false } = {}) {
+  if (!has() || cmpBusy) return null;
+  const st = { swap: again ? !cmp.new.fromDoc : false, o: { ...cmpOpts }, picked };
+  const marksNote = Object.values(doc.marks).some((l) => Array.isArray(l) && l.length) ? '<p class="ocr-note">Changes you made here that are not saved yet are not compared: the pages are compared as they are in the file.</p>' : '';
+  const names = () => [doc.name, String(st.picked.name).replace(/\.pdf$/i, '')];
+  const a = await dialog(again ? 'Compare options' : 'Compare PDFs', `<div class="cmp-dlg">
+      <div class="cmp-pick">
+        <div class="cmp-role"><span class="cmp-tag new">New</span><b data-role="new"></b></div>
+        <button type="button" class="btn" data-swap title="Swap Old and New">${ic('arrow-left-right')}<span>Swap</span></button>
+        <div class="cmp-role"><span class="cmp-tag old">Old</span><b data-role="old"></b></div>
+      </div>
+      ${again ? '' : '<button type="button" class="btn link" data-another>Choose another PDF…</button>'}
+      ${cmpOptionsHtml(st.o)}
+      ${marksNote}
+      <p class="ocr-note">Both files stay on this device.</p>
+    </div>`, [{ label: 'Cancel' }, { label: 'Compare', value: 'go', primary: true }], (dlg) => {
+    const show = () => { const [d, p] = names(); $('[data-role="new"]', dlg).textContent = st.swap ? p : d; $('[data-role="old"]', dlg).textContent = st.swap ? d : p; };
+    show();
+    $('[data-swap]', dlg).onclick = () => { st.swap = !st.swap; show(); };
+    const another = $('[data-another]', dlg);
+    if (another) another.onclick = async () => { const p = await cmpPick(false); if (p) { st.picked = p; show(); } };
+    $$('[data-o]', dlg).forEach((x) => x.addEventListener('change', () => { st.o[x.dataset.o] = x.checked; }));
+  });
+  if (a !== 'go') return null;
+  Object.assign(cmpOpts, st.o); store.set('compare', cmpOpts);
+  if (again) return cmpRerun({ swap: st.swap !== !cmp.new.fromDoc, opts: st.o });
+  return cmpStart({ bytes: st.picked.bytes, name: st.picked.name, date: st.picked.date, swap: st.swap, opts: st.o });
+}
+function cmpOptionsAgain() { if (cmp) cmpDialog({ name: (cmp.new.fromDoc ? cmp.old : cmp.new).name }, { again: true }); }
+// Compares the open document with a PDF given as bytes. swap: the given PDF is New and the open document Old.
+async function cmpStart({ bytes, name = 'Other.pdf', date = null, swap = false, opts = cmpOpts } = {}) {
+  if (!has() || cmpBusy) return null;
+  let pd;
+  try { pd = await loadProtected(bytes, name); }
+  catch (e) { console.error(e); toast(`Could not open ${name}: it may not be a PDF.`); return null; }
+  if (!pd) return null;
+  if (cmp) cmpClose();
+  const other = cmpFileSide(pd, bytes, name, date), mine = cmpDocSide();
+  return cmpOpen(swap ? mine : other, swap ? other : mine, opts);
+}
+// The same two files again: swapped, or with other options.
+async function cmpRerun({ swap = false, opts = cmp.opts } = {}) {
+  if (!cmp || cmpBusy) return null;
+  const [o, n] = swap ? [cmp.new, cmp.old] : [cmp.old, cmp.new];
+  return cmpOpen(o, n, opts);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!cmpOn() || $('#dialog').open || e.ctrlKey || e.metaKey || e.altKey) return;
+  const a = document.activeElement;
+  if (a && (/INPUT|TEXTAREA|SELECT/.test(a.tagName) || a.isContentEditable)) return;
+  if (e.key === ']' || e.key === '[') { e.preventDefault(); e.stopPropagation(); cmpStep(e.key === ']' ? 1 : -1); }
+  else if (e.key === 'Escape' && pop.hidden) { e.preventDefault(); e.stopPropagation(); cmpClose(); }
+}, true);
+FEATURE.onDocClosed.push(() => { if (cmp || cmpOn()) cmpClose(); });
+FEATURE.onDocShown.push(() => { if (cmp && cmp.new.d !== doc && cmp.old.d !== doc) cmpClose(); });
+window.addEventListener('resize', () => { if (cmpOn() && cmp) { clearTimeout(cmp.rt); cmp.rt = setTimeout(() => { if (cmp) { cmpLayout(); cmpGo(cmp.now, true); } }, 200); } });
+
+cmd('compare', { label: 'Compare with another PDF…', rlabel: 'Compare', icon: 'git-compare', enabled: () => has() && !cmpBusy, pressed: cmpOn, run: () => (cmpOn() ? cmpClose() : cmpPick()) });
+{ const fm = MENUS.find(([t]) => t === 'File'); if (fm) { const i = fm[1].indexOf('merge'); fm[1].splice(i >= 0 ? i + 1 : fm[1].length, 0, 'compare'); } }
+// (Home is full on a 1440 px screen: its test keeps it so. Compare sits with the other reviewing tools.)
+ribbonAdd('markup', 'Review', ['compare']);
+
+addStyle(`
+.workspace { position: relative; }
+.cmp { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--canvas); color: var(--ink); min-width: 0; }
+.cmp[hidden] { display: none; }
+.cmp-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.cmp-names { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cmp-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
+.cmp-tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 2px 7px; border-radius: 6px; background: var(--hover); color: var(--ink-2); flex: none; }
+.cmp-tag.new { background: color-mix(in srgb, #2F9E44 22%, transparent); color: var(--ink); }
+.cmp-tag.old { background: color-mix(in srgb, #E03131 20%, transparent); color: var(--ink); }
+.cmp-spacer { flex: 1; }
+.cmp-step, .cmp-zoom { display: inline-flex; align-items: center; gap: 2px; }
+.cmp-count { min-width: 56px; text-align: center; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cmp .cmp-show { display: none; }
+.cmp .cmp-list-btn { display: none; }
+.cmp-body { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 300px; }
+.cmp-panes { display: grid; grid-template-columns: 1fr 1fr; min-width: 0; min-height: 0; }
+.cmp[data-mode="overlay"] .cmp-panes { grid-template-columns: 1fr; }
+.cmp[data-mode="overlay"] .cmp-pane[data-side="old"] { display: none; }
+.cmp-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
+.cmp-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; color: var(--ink-2); background: var(--chrome); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-scroll { flex: 1; overflow: auto; min-height: 0; outline: none; }
+.cmp-scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.cmp-rows { padding: 8px 20px 40px; width: max-content; min-width: 100%; box-sizing: border-box; }
+.cmp-row { display: flex; justify-content: center; align-items: flex-start; padding-top: 8px; box-sizing: border-box; }
+.cmp-slot { position: relative; background: #fff; box-shadow: var(--page-shadow); flex: none; color-scheme: light; }
+.cmp-slot canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cmp[data-mode="overlay"] .cmp-slot canvas.cmp-under { opacity: .35; }
+.cmp[data-mode="overlay"] .cmp-slot canvas.cmp-pdf:not(:only-of-type) { mix-blend-mode: multiply; }
+.cmp-pno { position: absolute; left: -18px; top: 0; font-size: 11px; color: var(--ink-3); }
+.cmp-missing { flex: none; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--line); border-radius: 4px; color: var(--ink-2); font-size: 13px; text-align: center; padding: 12px; box-sizing: border-box; }
+.cmp-hl { position: absolute; border-radius: 2px; cursor: pointer; mix-blend-mode: multiply; }
+.cmp-hl.k-insert { background: rgba(47,158,68,.35); }
+.cmp-hl.k-delete { background: rgba(224,49,49,.33); }
+.cmp-hl.k-replace { background: rgba(245,159,0,.42); }
+.cmp-hl.k-format { background: rgba(245,159,0,.18); outline: 1.5px dashed rgba(230,119,0,.9); }
+.cmp-hl.k-visual { background: rgba(28,126,214,.12); outline: 2px solid rgba(28,126,214,.9); mix-blend-mode: normal; }
+.cmp-hl.gap { background: none; border-left: 3px solid; border-radius: 0; }
+.cmp-hl.gap.k-insert { border-color: rgb(47,158,68); } .cmp-hl.gap.k-delete { border-color: rgb(224,49,49); }
+.cmp-hl.now { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent); mix-blend-mode: normal; z-index: 2; }
+.cmp-hide-insert .f-insert.cmp-hl, .cmp-hide-delete .f-delete.cmp-hl, .cmp-hide-replace .f-replace.cmp-hl, .cmp-hide-format .f-format.cmp-hl, .cmp-hide-visual .f-visual.cmp-hl,
+.cmp-hide-insert li:has(> .f-insert), .cmp-hide-delete li:has(> .f-delete), .cmp-hide-replace li:has(> .f-replace), .cmp-hide-format li:has(> .f-format), .cmp-hide-visual li:has(> .f-visual), .cmp-hide-page li:has(> .f-page) { display: none; }
+.cmp-side { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--line); }
+.cmp-sum { padding: 12px 14px 4px; font-weight: 600; }
+.cmp-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px 10px; border-bottom: 1px solid var(--line); }
+.cmp-chip { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.cmp-chip[aria-pressed="true"] { background: var(--hover); color: var(--ink); }
+.cmp-chip[aria-pressed="false"] .cmp-dot { opacity: .25; }
+.cmp-chip:disabled { opacity: .45; cursor: default; }
+.cmp-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.f-insert .cmp-dot, .k-insert .cmp-badge { background: #2F9E44; } .f-delete .cmp-dot, .k-delete .cmp-badge { background: #E03131; }
+.f-replace .cmp-dot, .k-replace .cmp-badge, .f-format .cmp-dot, .k-format .cmp-badge { background: #F59F00; }
+.f-visual .cmp-dot, .k-visual .cmp-badge { background: #1C7ED6; } .f-page .cmp-dot, .k-pageInsert .cmp-badge, .k-pageRemove .cmp-badge { background: #7048E8; }
+.cmp-list { flex: 1; overflow: auto; padding: 4px 0 20px; }
+.cmp-list ol { list-style: none; margin: 0; padding: 0; }
+.cmp-grp h3 { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 10px 14px 4px; display: flex; gap: 6px; align-items: baseline; }
+.cmp-grp h3 span { font-weight: 400; } .cmp-grp h3 b { margin-left: auto; font-weight: 500; color: var(--ink-3); }
+.cmp-item { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--ink); background: none; border: 0; padding: 6px 14px; cursor: pointer; }
+.cmp-item:hover { background: var(--hover); }
+.cmp-item[aria-current="true"] { background: var(--accent-soft); }
+.cmp-badge { flex: none; font-size: 10.5px; font-weight: 700; color: #fff; padding: 1px 6px; border-radius: 5px; }
+.k-replace .cmp-badge, .k-format .cmp-badge { color: #2b1d00; }
+.cmp-txt { min-width: 0; overflow-wrap: anywhere; }
+.cmp-none { padding: 14px; color: var(--ink-2); }
+.cmp-busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--canvas) 80%, transparent); z-index: 5; }
+.cmp-busy[hidden] { display: none; }
+.cmp-busy-card { width: min(380px, calc(100% - 32px)); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.2); display: flex; flex-direction: column; gap: 10px; }
+.cmp-busy-card .btn { align-self: flex-end; }
+.cmp-dlg .cmp-pick { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; margin: 4px 0 8px; }
+.cmp-dlg .cmp-role { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.cmp-dlg .cmp-role b { overflow-wrap: anywhere; font-weight: 600; }
+.cmp-dlg .cmp-role .cmp-tag { align-self: flex-start; }
+.cmp-opts { border: 0; margin: 10px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cmp-opts legend { color: var(--ink); font-weight: 600; padding: 0; margin-bottom: 4px; }
+.cmp-opts label { display: flex; align-items: center; gap: 8px; color: var(--ink); cursor: pointer; min-height: 26px; }
+.cmp-opts input { accent-color: var(--brand); width: 16px; height: 16px; margin: 0; flex: none; }
+@media (max-width: 1200px) { .cmp-bar .btn:not(.primary) > span { display: none; } .cmp-bar .btn:not(.primary) { padding: 0 10px; } .cmp-mode > button > span { display: none; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .cmp-body { grid-template-columns: 1fr; }
+  .cmp-panes { grid-template-columns: 1fr; }
+  .cmp[data-show="new"] .cmp-pane[data-side="old"], .cmp[data-show="old"] .cmp-pane[data-side="new"] { display: none; }
+  .cmp[data-mode="overlay"] .cmp-pane[data-side="new"] { display: flex; }
+  .cmp[data-mode="overlay"] .cmp-show { display: none; }
+  .cmp .cmp-show { display: inline-grid; }
+  .cmp-names, .cmp-zoom, .cmp-spacer { display: none; }
+  .cmp .cmp-list-btn { display: inline-flex; }
+  .cmp-list-btn > span { display: inline !important; }
+  .cmp-bar .btn.primary > span { display: none; }
+  .cmp-side { position: absolute; left: 0; right: 0; bottom: 0; max-height: 60%; z-index: 4; border-top: 1px solid var(--line); border-left: 0; box-shadow: 0 -8px 24px rgba(0,0,0,.2); border-radius: 14px 14px 0 0; display: none; }
+  .cmp.cmp-list-open .cmp-side { display: flex; }
+  .cmp-rows { padding: 8px 12px 40px; }
+}
+`);
+
+Object.assign(TEST_HOOKS, {
+  cmpStart, cmpRerun, cmpClose, cmpGo, cmpStep, cmpListText, cmpReport, cmpSaveReport, cmpMyers, cmpAlign,
+  cmpState: () => cmp && { old: cmp.old.name, new: cmp.new.name, now: cmp.now, mode: cmp.mode, show: cmp.show, pairs: cmp.pairs, changes: cmp.changes.map((c) => ({ id: c.id, kind: c.kind, o: c.o, n: c.n, was: c.was, now: c.now })) },
+});
+
+// ---- src/features/88-insight.js
+/* ---------------- Insight: tables, a summary and questions, worked out on this device ----------------
+   Text tools, not a chatbot: everything here comes from the document's own text, read with pdf.js, and nothing is
+   sent anywhere or downloaded.
+
+   Tables ("Extract table…" drags a box or clicks a table; "Find tables…" looks on a range of pages):
+     - Ruled (lattice): the page's ruling lines from its drawing operators (re, m/l stroked, thin fills, through the
+       CTM) make a grid; a ruling that stops short spans the cells either side of it. Words go in the cell their middle
+       is in.
+     - Unruled (stream): rows from the words' lines; columns where no row has text (the gaps between the starts and
+       ends of the pieces of text, across the rows); a row with nothing in its first column carries on the row above.
+     - Scanned pages use the text Recognize text (OCR) laid over them; without it, the dialog offers to run it.
+     A preview lets you drag, add and remove column dividers and say whether the first row is a header. Out: CSV
+     (UTF-8 with a BOM, RFC 4180 quoting), Excel (.xlsx: a minimal SpreadsheetML package, inline strings, numbers as
+     numbers, made with crdZip), or the clipboard (tab-separated). Every table in a range goes to one .xlsx, a sheet
+     each.
+     Everything is worked out in the page as shown (points, y down, its rotation applied), so a turned page reads
+     the right way up.
+   Summarize: an extractive summary. The sentences (lines joined, words broken by a hyphen put back), TextRank over
+     TF-IDF cosine similarity, the best few in the order they come, each with its page; and the key terms (TF-IDF
+     words and phrases). With the browser's own on-device model (window.Summarizer or window.LanguageModel, only when
+     it is already available), it can also write one; never offered where there is none (the apps).
+   Ask the document: a panel; BM25 over passages (about three sentences each, by page) with light English stemming
+     and stop words (other languages: words as they are). The best five, with the best sentence in each; choosing
+     one goes to it and marks it on the page. */
+
+/* --- words and lines, in the page as shown --- */
+async function insPage(n) {
+  const e = doc.pages[n], page = await pageOf(e), tc = await textOf(e);
+  const vp = page.getViewport({ scale: 1, rotation: (page.rotate + e.rot) % 360 });
+  return { e, page, tc, vp };
+}
+// Words with their boxes: x0, x1, y0 (top), y1 (bottom), cx, cy, size.
+function insWords(P) {
+  const { s, map } = findIndexOf(P.tc), out = [];
+  for (const m of s.matchAll(/\S+/g)) {
+    const parts = [];
+    for (let c = m.index; c < m.index + m[0].length; c++) {
+      const x = map[c]; if (!x) continue;
+      const l = parts[parts.length - 1];
+      if (l && l[0] === x[0] && l[2] === x[1]) l[2]++; else parts.push([x[0], x[1], x[1] + 1]);
+    }
+    const quads = parts.map(([i, a, b]) => cmpQuad(P.tc.items[i], a, b, P.tc.styles)).filter(Boolean);
+    if (!quads.length) continue;
+    const pts = quads.flat().map(([x, y]) => P.vp.convertToViewportPoint(x, y)), xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    out.push({ t: m[0], x0, x1, y0, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, size: Math.max(1, (y1 - y0) / 1.15) });
+  }
+  return out;
+}
+const insMedian = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+/* --- ruling lines --- */
+// Straight lines across or down the page, from its drawing: [{ h, a, b, at }] (h: across; a..b along, at: where).
+async function insRulings(P) {
+  if (P.rulings) return P.rulings;
+  const O = pdfjs.OPS, out = [];
+  let list; try { list = await P.page.getOperatorList(); } catch { return (P.rulings = []); }
+  const STROKE = new Set([O.stroke, O.closeStroke, O.fillStroke, O.eoFillStroke, O.closeFillStroke, O.closeEOFillStroke]);
+  const FILL = new Set([O.fill, O.eoFill, O.fillStroke, O.eoFillStroke, O.closeFillStroke, O.closeEOFillStroke]);
+  let ctm = [1, 0, 0, 1, 0, 0]; const stack = [];
+  const view = (x, y) => { const [px, py] = apply(ctm, x, y); return P.vp.convertToViewportPoint(px, py); };
+  const seg = (p, q, tol = 1) => {
+    const dx = Math.abs(p[0] - q[0]), dy = Math.abs(p[1] - q[1]);
+    if (dy <= tol && dx > 2) out.push({ h: true, a: Math.min(p[0], q[0]), b: Math.max(p[0], q[0]), at: (p[1] + q[1]) / 2 });
+    else if (dx <= tol && dy > 2) out.push({ h: false, a: Math.min(p[1], q[1]), b: Math.max(p[1], q[1]), at: (p[0] + q[0]) / 2 });
+  };
+  for (let i = 0; i < list.fnArray.length; i++) {
+    const fn = list.fnArray[i], a = list.argsArray[i];
+    if (fn === O.save) stack.push(ctm);
+    else if (fn === O.restore) ctm = stack.pop() || ctm;
+    else if (fn === O.transform) ctm = mul(a, ctm);
+    else if (fn === O.paintFormXObjectBegin) { stack.push(ctm); if (Array.isArray(a[0]) || (a[0] && a[0].length === 6)) ctm = mul(Array.from(a[0]), ctm); }
+    else if (fn === O.paintFormXObjectEnd) ctm = stack.pop() || ctm;
+    else if (fn === O.constructPath) {
+      const [op, data] = a, path = data && data[0];
+      const stroke = STROKE.has(op), fill = FILL.has(op);
+      if ((!stroke && !fill) || !path || typeof path.length !== 'number') continue;
+      // the path's pieces: DrawOPS moveTo 0, lineTo 1, curveTo 2 (6 numbers), quadraticCurveTo 3 (4), closePath 4
+      const subs = []; let cur = null;
+      for (let k = 0; k < path.length;) {
+        const c = path[k++];
+        if (c === 0) { cur = [view(path[k], path[k + 1])]; subs.push(cur); k += 2; }
+        else if (c === 1) { if (!cur) { cur = []; subs.push(cur); } cur.push(view(path[k], path[k + 1])); k += 2; }
+        else if (c === 2) { cur = null; k += 6; }
+        else if (c === 3) { cur = null; k += 4; }
+        else if (c === 4) { if (cur && cur.length) cur.push(cur[0]); }
+        else break;
+      }
+      for (const sp of subs) {
+        if (!sp || sp.length < 2) continue;
+        const xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]), w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+        const square = sp.every((p, k) => !k || Math.abs(p[0] - sp[k - 1][0]) < 0.5 || Math.abs(p[1] - sp[k - 1][1]) < 0.5);
+        if (stroke) for (let k = 1; k < sp.length; k++) seg(sp[k - 1], sp[k]);
+        else if (fill && square && sp.length >= 4) {
+          // a thin filled box is a line; a bigger one (a shaded cell) gives its edges
+          if (h <= 4 && w > 2) seg([Math.min(...xs), (Math.min(...ys) + Math.max(...ys)) / 2], [Math.max(...xs), (Math.min(...ys) + Math.max(...ys)) / 2]);
+          else if (w <= 4 && h > 2) seg([(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], [(Math.min(...xs) + Math.max(...xs)) / 2, Math.max(...ys)]);
+          else for (let k = 1; k < sp.length; k++) seg(sp[k - 1], sp[k]);
+        }
+      }
+    }
+  }
+  return (P.rulings = out);
+}
+// Lines on the same row (or column) that touch become one.
+function insJoin(lines, tol = 2) {
+  const out = [];
+  for (const l of [...lines].sort((p, q) => p.at - q.at || p.a - q.a)) {
+    const m = out.find((x) => Math.abs(x.at - l.at) <= tol && l.a <= x.b + tol && x.a <= l.b + tol);
+    if (m) { m.a = Math.min(m.a, l.a); m.b = Math.max(m.b, l.b); m.at = (m.at + l.at) / 2; } else out.push({ ...l });
+  }
+  return out;
+}
+const insCluster = (vals, tol) => { const out = []; for (const v of [...vals].sort((a, b) => a - b)) { const l = out[out.length - 1]; if (l && v - l.v <= tol) { l.n++; l.v += (v - l.v) / l.n; l.max = v; } else out.push({ v, n: 1, max: v }); } return out.map((c) => c.v); };
+// Ruled tables: groups of lines that cross, with at least two across and two down. [{ box, xs, ys, h, v }]
+function insGrids(lines, box) {
+  const tol = 2.5, inBox = (l) => !box || (l.h ? l.at >= box[1] - tol && l.at <= box[3] + tol && l.b >= box[0] - tol && l.a <= box[2] + tol : l.at >= box[0] - tol && l.at <= box[2] + tol && l.b >= box[1] - tol && l.a <= box[3] + tol);
+  const clip = (l) => (!box ? l : l.h ? { ...l, a: Math.max(l.a, box[0]), b: Math.min(l.b, box[2]) } : { ...l, a: Math.max(l.a, box[1]), b: Math.min(l.b, box[3]) });
+  const H = insJoin(lines.filter((l) => l.h && inBox(l)).map(clip)), V = insJoin(lines.filter((l) => !l.h && inBox(l)).map(clip));
+  const all = [...H, ...V], parent = all.map((_, k) => k), find = (k) => (parent[k] === k ? k : (parent[k] = find(parent[k])));
+  H.forEach((h, i) => V.forEach((v, j) => { if (v.at >= h.a - tol && v.at <= h.b + tol && h.at >= v.a - tol && h.at <= v.b + tol) parent[find(i)] = find(H.length + j); }));
+  const groups = new Map(); all.forEach((l, k) => { const r = find(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(l); });
+  const out = [];
+  for (const g of groups.values()) {
+    const gh = g.filter((l) => l.h), gv = g.filter((l) => !l.h);
+    if (gh.length < 2 || gv.length < 2) continue;
+    const xs = insCluster(gv.map((l) => l.at), tol), ys = insCluster(gh.map((l) => l.at), tol);
+    if (xs.length < 2 || ys.length < 2) continue;
+    out.push({ box: [xs[0], ys[0], xs[xs.length - 1], ys[ys.length - 1]], xs, ys, h: gh, v: gv });
+  }
+  return out;
+}
+// A ruled table's merged cells: where a line between two cells is missing, they are one.
+function insSpans(g) {
+  const nr = g.ys.length - 1, nc = g.xs.length - 1, tol = 2.5, root = Array.from({ length: nr * nc }, (_, k) => k);
+  const find = (k) => (root[k] === k ? k : (root[k] = find(root[k])));
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) root[Math.max(ra, rb)] = Math.min(ra, rb); };
+  const covers = (ls, at, mid) => ls.some((l) => Math.abs(l.at - at) <= tol && l.a - tol <= mid && mid <= l.b + tol);
+  for (let r = 0; r < nr; r++) for (let c = 1; c < nc; c++) if (!covers(g.v, g.xs[c], (g.ys[r] + g.ys[r + 1]) / 2)) union(r * nc + c - 1, r * nc + c);
+  for (let r = 1; r < nr; r++) for (let c = 0; c < nc; c++) if (!covers(g.h, g.ys[r], (g.xs[c] + g.xs[c + 1]) / 2)) union((r - 1) * nc + c, r * nc + c);
+  const m = root.map((_, k) => find(k));
+  return m.some((x, k) => x !== k) ? m : null;
+}
+
+/* --- unruled tables --- */
+// Rows: the words' lines (middles within half a line of each other).
+function insRows(words) {
+  const ws = [...words].sort((a, b) => a.cy - b.cy || a.x0 - b.x0), rows = [];
+  for (const w of ws) {
+    const r = rows[rows.length - 1];
+    if (r && Math.abs(w.cy - r.cy) <= Math.max(2, 0.5 * Math.min(w.size, r.size))) { r.words.push(w); r.cy = (r.cy * (r.words.length - 1) + w.cy) / r.words.length; r.y0 = Math.min(r.y0, w.y0); r.y1 = Math.max(r.y1, w.y1); }
+    else rows.push({ cy: w.cy, size: w.size, y0: w.y0, y1: w.y1, words: [w] });
+  }
+  for (const r of rows) {
+    r.words.sort((a, b) => a.x0 - b.x0);
+    // pieces: words closer than about a letter's width are one piece of text
+    r.segs = [];
+    for (const w of r.words) { const s = r.segs[r.segs.length - 1]; if (s && w.x0 - s.x1 < Math.max(4, 0.8 * w.size)) { s.x1 = Math.max(s.x1, w.x1); s.n++; } else r.segs.push({ x0: w.x0, x1: w.x1, n: 1 }); }
+  }
+  return rows;
+}
+// Column dividers for rows of pieces: the middles of the gaps no row (or hardly any) has text in.
+function insColumns(rows, box) {
+  const many = rows.filter((r) => r.segs.length >= 2), use = many.length >= 2 ? many : rows;
+  const lo = box ? box[0] : Math.min(...use.flatMap((r) => r.segs.map((s) => s.x0))), hi = box ? box[2] : Math.max(...use.flatMap((r) => r.segs.map((s) => s.x1)));
+  const n = Math.max(1, Math.ceil(hi - lo)), cover = new Uint16Array(n + 1);
+  for (const r of use) for (const s of r.segs) for (let x = Math.max(0, Math.floor(s.x0 - lo)); x <= Math.min(n, Math.ceil(s.x1 - lo)); x++) cover[x]++;
+  const allow = Math.floor(use.length * 0.1), size = insMedian(use.map((r) => r.size)) || 10, cuts = [];
+  let first = 0; while (first <= n && cover[first] <= allow) first++;
+  let last = n; while (last >= 0 && cover[last] <= allow) last--;
+  for (let x = first; x <= last;) {
+    if (cover[x] > allow) { x++; continue; }
+    let e = x; while (e <= last && cover[e] <= allow) e++;
+    if (e - x >= Math.max(4, 0.6 * size)) cuts.push(lo + (x + e) / 2);
+    x = e;
+  }
+  return { xs: [lo + first - 1, ...cuts, lo + last + 1], size };
+}
+// Row boundaries (top to bottom) between rows of words.
+function insRowLines(rows) {
+  const ys = [rows[0].y0 - 1];
+  for (let k = 1; k < rows.length; k++) ys.push((rows[k - 1].y1 + rows[k].y0) / 2);
+  ys.push(rows[rows.length - 1].y1 + 1);
+  return ys;
+}
+// Unruled tables among words: runs of rows that have two or more pieces of text, lined up in columns.
+function insStreamTables(words, box) {
+  const rows = insRows(words); if (!rows.length) return [];
+  const make = (rs) => {
+    const { xs } = insColumns(rs, box); if (xs.length < 3) return null;
+    const ys = insRowLines(rs);
+    return { box: box ? [...box] : [xs[0], ys[0], xs[xs.length - 1], ys[ys.length - 1]], xs, ys, method: 'stream' };
+  };
+  if (box) { const t = make(rows); return t ? [t] : []; }
+  // On a whole page: blocks of at least three rows, most with two pieces or more, close together.
+  const out = []; let run = [];
+  const flush = () => {
+    while (run.length && run[run.length - 1].segs.length < 2) run.pop();
+    const many = run.filter((r) => r.segs.length >= 2).length;
+    if (many >= 3 && many * 2 >= run.length) { const t = make(run); if (t) out.push(t); }
+    run = [];
+  };
+  for (const r of rows) {
+    const last = run[run.length - 1];
+    if (last && r.y0 - last.y1 > 2.2 * Math.max(r.size, last.size)) flush();
+    if (!run.length && r.segs.length < 2) continue;
+    run.push(r);
+    if (run.length >= 3 && run.slice(-3).every((x) => x.segs.length < 2)) { run.splice(-3); flush(); }
+  }
+  flush();
+  return out;
+}
+
+/* --- cells --- */
+// The text of each cell, row by row (merged cells: their text in the first, the rest empty).
+function insCells(t, words) {
+  const nr = t.ys.length - 1, nc = t.xs.length - 1, cells = Array.from({ length: nr * nc }, () => []);
+  for (const w of words) {
+    if (w.cx < t.xs[0] || w.cx > t.xs[nc] || w.cy < t.ys[0] || w.cy > t.ys[nr]) continue;
+    let c = 0; while (c < nc - 1 && w.cx >= t.xs[c + 1]) c++;
+    let r = 0; while (r < nr - 1 && w.cy >= t.ys[r + 1]) r++;
+    const k = t.spans ? t.spans[r * nc + c] : r * nc + c;
+    cells[k].push(w);
+  }
+  const text = (ws) => insRows(ws).map((r) => r.words.map((w) => w.t).join(' ')).join(' ').trim();
+  let rows = Array.from({ length: nr }, (_, r) => Array.from({ length: nc }, (_, c) => text(cells[r * nc + c])));
+  if (t.method === 'stream') {
+    // a row with nothing in its first column carries on the one above (a cell of several lines)
+    const out = [];
+    for (const row of rows) {
+      const prev = out[out.length - 1];
+      if (prev && !row[0] && row.some(Boolean)) row.forEach((v, c) => { if (v) prev[c] = prev[c] ? prev[c] + ' ' + v : v; });
+      else out.push(row);
+    }
+    rows = out;
+  }
+  // rows and columns with nothing in them are left out
+  rows = rows.filter((r) => r.some(Boolean));
+  const keep = Array.from({ length: nc }, (_, c) => rows.some((r) => r[c]));
+  return rows.map((r) => r.filter((_, c) => keep[c]));
+}
+// Tables on page n: in a box (view points), or anywhere on it. [{ n, box, xs, ys, spans?, method }]
+async function insFindOn(n, box = null) {
+  const P = await insPage(n), words = insWords(P);
+  const grids = insGrids(await insRulings(P), box).filter((g) => words.some((w) => w.cx > g.box[0] && w.cx < g.box[2] && w.cy > g.box[1] && w.cy < g.box[3]));
+  const tables = grids.map((g) => ({ n, box: g.box, xs: g.xs, ys: g.ys, spans: insSpans(g), method: 'lattice' }));
+  const outside = words.filter((w) => !tables.some((t) => w.cx >= t.box[0] && w.cx <= t.box[2] && w.cy >= t.box[1] && w.cy <= t.box[3]));
+  if (box && !tables.length) { const inner = outside.filter((w) => w.cx >= box[0] && w.cx <= box[2] && w.cy >= box[1] && w.cy <= box[3]); tables.push(...insStreamTables(inner, box).map((t) => ({ ...t, n }))); }
+  else if (!box) tables.push(...insStreamTables(outside, null).map((t) => ({ ...t, n })));
+  tables.sort((a, b) => a.box[1] - b.box[1]);
+  return { tables, words, P, noText: !words.length };
+}
+
+/* --- out --- */
+function insCsv(rows) {
+  const q = (v) => (/[",\r\n]|^\s|\s$/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  return '﻿' + rows.map((r) => r.map((v) => q(String(v))).join(',')).join('\r\n') + '\r\n';
+}
+const insTsv = (rows) => rows.map((r) => r.map((v) => String(v).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
+const INS_NUM = /^[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+// A number Excel can hold exactly: no leading zero (a code), and at most 15 significant digits, so a long account
+// number or ID stays text and keeps every digit.
+const insIsNum = (v) => INS_NUM.test(v) && !/^[-+]?0\d/.test(v) && v.replace(/\D/g, '').replace(/^0+|0+$/g, '').length <= 15;
+const insXml = (s) => String(s).replace(/[^\t\n\r -퟿-�\u{10000}-\u{10FFFF}]/gu, '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const insCol = (c) => { let s = ''; for (c++; c > 0; c = Math.floor((c - 1) / 26)) s = String.fromCharCode(65 + ((c - 1) % 26)) + s; return s; };
+// A minimal .xlsx: one sheet per table. sheets: [{ name, rows, header }]
+function insXlsx(sheets) {
+  const enc = new TextEncoder(), X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  const used = new Set(), names = sheets.map((s, k) => {
+    let n = String(s.name || `Table ${k + 1}`).replace(/[\[\]:*?/\\]/g, ' ').replace(/^'|'$/g, '').trim().slice(0, 31) || `Table ${k + 1}`;
+    for (let i = 2; used.has(n.toLowerCase()); i++) n = `${n.slice(0, 27)} (${i})`;
+    used.add(n.toLowerCase()); return n;
+  });
+  const files = [
+    ['[Content_Types].xml', `${X}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, k) => `<Override PartName="/xl/worksheets/sheet${k + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
+    ['_rels/.rels', `${X}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ['xl/workbook.xml', `${X}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n, k) => `<sheet name="${insXml(n)}" sheetId="${k + 1}" r:id="rId${k + 1}"/>`).join('')}</sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', `${X}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, k) => `<Relationship Id="rId${k + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${k + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ['xl/styles.xml', `${X}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`],
+    ...sheets.map((s, k) => [`xl/worksheets/sheet${k + 1}.xml`, `${X}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${s.rows.map((row, r) => `<row r="${r + 1}">${row.map((v, c) => {
+      v = String(v ?? ''); if (!v) return '';
+      const ref = insCol(c) + (r + 1), st = s.header && r === 0 ? ' s="1"' : '';
+      if (insIsNum(v) && !(s.header && r === 0)) return `<c r="${ref}"${st}><v>${Number(v.replace(/[,+]/g, ''))}</v></c>`;
+      return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${insXml(v)}</t></is></c>`;
+    }).join('')}</row>`).join('')}</sheetData></worksheet>`]),
+  ];
+  return crdZip(files.map(([name, text]) => ({ name, data: enc.encode(text) })));
+}
+const insTableName = (t, k, of) => `${doc.name} p${t.n + 1}${of > 1 ? ` table ${k + 1}` : ''}`;
+async function insSave(kind, rows, t, header) {
+  const base = `${doc.name} table p${t.n + 1}`;
+  if (kind === 'csv') return saveFile(insCsv(rows), base + '.csv', 'text/csv');
+  if (kind === 'xlsx') return saveFile(insXlsx([{ name: `Page ${t.n + 1}`, rows, header }]), base + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  if (kind === 'copy') {
+    try { await navigator.clipboard.writeText(insTsv(rows)); toast('Table copied. Paste it into a spreadsheet.'); } catch { toast('Could not copy the table'); }
+  }
+  return null;
+}
+
+/* --- the table preview --- */
+let insLast = null; // what the last preview was left with (for the tests)
+async function insPreview(t, words, P) {
+  const tb = { ...t, xs: [...t.xs], ys: [...t.ys], header: true };
+  const W = tb.box[2] - tb.box[0], H = tb.box[3] - tb.box[1], s = Math.min(2.5, 560 / Math.max(40, W), 360 / Math.max(20, H));
+  const rowsNow = () => insCells(tb, words);
+  const gridHtml = () => {
+    const rows = rowsNow(); insLast = { rows, header: tb.header, xs: [...tb.xs] };
+    if (!rows.length) return '<p class="ins-none">No text in this table.</p>';
+    return `<table>${rows.map((r, k) => `<tr>${r.map((v) => (k === 0 && tb.header ? `<th>${esc(v)}</th>` : `<td>${esc(v)}</td>`)).join('')}</tr>`).join('')}</table>`;
+  };
+  const divHtml = () => tb.xs.slice(1, -1).map((x, k) => `<div class="ins-div" data-k="${k + 1}" style="left:${((x - tb.box[0]) * s).toFixed(1)}px" role="slider" tabindex="0" aria-label="Column divider ${k + 1}" aria-valuenow="${Math.round(x)}"><button type="button" class="ins-div-x" data-del="${k + 1}" title="Remove this divider" aria-label="Remove divider ${k + 1}">${ic('x')}</button></div>`).join('');
+  const rowLines = () => tb.ys.slice(1, -1).map((y) => `<i class="ins-rowline" style="top:${((y - tb.box[1]) * s).toFixed(1)}px"></i>`).join('');
+  const body = `<div class="ins-tbl">
+    <p class="ins-note">${tb.method === 'lattice' ? 'Found by the table’s lines.' : 'Found by how the text lines up.'} Drag a divider to move it, double-click the picture to add one, or × to remove one.</p>
+    <div class="ins-prev"><div class="ins-img" style="width:${(W * s).toFixed(0)}px;height:${(H * s).toFixed(0)}px"><canvas></canvas><div class="ins-lines">${rowLines()}</div><div class="ins-divs">${divHtml()}</div></div></div>
+    <div class="ins-row"><label class="ins-check"><input type="checkbox" id="insHeader" checked> First row is header</label><button type="button" class="btn" data-add>${ic('plus')}<span>Add divider</span></button></div>
+    <div class="ins-grid" aria-label="Table preview">${gridHtml()}</div>
+  </div>`;
+  const a = await dialog(`Table on page ${t.n + 1}`, body, [{ label: 'Cancel' }, { label: 'Copy as table', value: 'copy' }, { label: 'Save CSV', value: 'csv' }, { label: 'Save Excel', value: 'xlsx', primary: true }], (dlg) => {
+    $('.dlg-body', dlg).classList.add('ins-wide'); dlg.classList.add('ins-dlg');
+    const img = $('.ins-img', dlg), cv = $('canvas', img);
+    (async () => {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const vp = P.page.getViewport({ scale: s * dpr, rotation: P.vp.rotation, offsetX: -tb.box[0] * s * dpr, offsetY: -tb.box[1] * s * dpr });
+      cv.width = Math.max(1, Math.round(W * s * dpr)); cv.height = Math.max(1, Math.round(H * s * dpr));
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      try { await P.page.render({ canvas: cv, canvasContext: g, viewport: vp }).promise; } catch {}
+    })();
+    const redraw = () => { $('.ins-divs', dlg).innerHTML = divHtml(); $('.ins-grid', dlg).innerHTML = gridHtml(); icons(); };
+    const edited = () => { tb.spans = null; };
+    const toX = (clientX) => tb.box[0] + (clientX - img.getBoundingClientRect().left) / s;
+    const addAt = (x) => { if (x <= tb.xs[0] + 2 || x >= tb.xs[tb.xs.length - 1] - 2) return; tb.xs.push(x); tb.xs.sort((p, q) => p - q); edited(); redraw(); };
+    img.addEventListener('dblclick', (e) => { if (!e.target.closest('.ins-div')) addAt(toX(e.clientX)); });
+    $('[data-add]', dlg).onclick = () => {
+      // in the middle of the widest column
+      let best = 0; for (let k = 1; k < tb.xs.length; k++) if (tb.xs[k] - tb.xs[k - 1] > tb.xs[best + 1] - tb.xs[best]) best = k - 1;
+      addAt((tb.xs[best] + tb.xs[best + 1]) / 2);
+    };
+    $('#insHeader', dlg).onchange = (e) => { tb.header = e.target.checked; $('.ins-grid', dlg).innerHTML = gridHtml(); };
+    $('.ins-divs', dlg).addEventListener('click', (e) => { const b = e.target.closest('[data-del]'); if (b) { tb.xs.splice(+b.dataset.del, 1); edited(); redraw(); } });
+    $('.ins-divs', dlg).addEventListener('pointerdown', (e) => {
+      const d = e.target.closest('.ins-div'); if (!d || e.target.closest('[data-del]')) return;
+      e.preventDefault(); const k = +d.dataset.k; d.setPointerCapture(e.pointerId);
+      const move = (ev) => { const x = Math.max(tb.xs[k - 1] + 2, Math.min(tb.xs[k + 1] - 2, toX(ev.clientX))); tb.xs[k] = x; d.style.left = ((x - tb.box[0]) * s) + 'px'; };
+      const up = () => { d.removeEventListener('pointermove', move); d.removeEventListener('pointerup', up); edited(); redraw(); };
+      d.addEventListener('pointermove', move); d.addEventListener('pointerup', up);
+    });
+    $('.ins-divs', dlg).addEventListener('keydown', (e) => {
+      const d = e.target.closest('.ins-div'); if (!d) return;
+      const k = +d.dataset.k, step = e.shiftKey ? 10 : 1, dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); tb.xs.splice(k, 1); edited(); redraw(); return; }
+      if (!dx) return;
+      e.preventDefault(); tb.xs[k] = Math.max(tb.xs[k - 1] + 2, Math.min(tb.xs[k + 1] - 2, tb.xs[k] + dx)); edited(); redraw();
+      const again = $(`.ins-div[data-k="${k}"]`, dlg); if (again) again.focus();
+    });
+  });
+  if (!a) return null;
+  const rows = rowsNow();
+  await insSave(a, rows, t, tb.header);
+  return { action: a, rows };
+}
+// No text on the page: offer Recognize text.
+async function insNoText(n) {
+  const a = await dialog('This page has no text yet', `<p>Page ${n + 1} looks like a scan: its words are a picture. Recognize the text first, then extract the table.</p>`, [{ label: 'Cancel' }, ...(C.ocr ? [{ label: 'Recognize text', value: 'ocr', primary: true }] : [])]);
+  if (a === 'ocr') run('ocr');
+}
+// A table at a point or in a box on page n (view points). Returns what the preview did.
+async function insTableAt(n, box, point) {
+  const found = await insFindOn(n, box);
+  if (found.noText) { await insNoText(n); return null; }
+  let t = found.tables[0];
+  if (point) t = found.tables.find((x) => point[0] >= x.box[0] && point[0] <= x.box[2] && point[1] >= x.box[1] && point[1] <= x.box[3]);
+  if (!t) { toast(point ? 'No table there. Drag a box around the table.' : 'No table found in that box'); return null; }
+  return insPreview(t, found.words, found.P);
+}
+// The tool: drag a box around a table, or click one.
+TOOL_HINTS.instable = 'Drag a box around the table, or click a table';
+FEATURE.tools.instable = {
+  down(e, v) {
+    e.preventDefault();
+    const [sx, sy] = localPoint(e, v), svg = v.el.querySelector('svg.marks');
+    let draft = null, cx = sx, cy = sy;
+    const move = (ev) => {
+      [cx, cy] = pagePoint(ev, v);
+      if (!draft && Math.hypot(cx - sx, cy - sy) < 5) return;
+      if (!draft) { draft = svgEl('rect', { class: 'ins-draft', rx: 2 }); svg.appendChild(draft); }
+      draft.setAttribute('x', Math.min(sx, cx)); draft.setAttribute('y', Math.min(sy, cy)); draft.setAttribute('width', Math.abs(cx - sx)); draft.setAttribute('height', Math.abs(cy - sy));
+    };
+    const up = async () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      const k = v.viewport.scale, n = views.indexOf(v);
+      if (draft) draft.remove();
+      setTool('select');
+      if (draft) return insTableAt(n, [Math.min(sx, cx) / k, Math.min(sy, cy) / k, Math.max(sx, cx) / k, Math.max(sy, cy) / k]);
+      return insTableAt(n, null, [sx / k, sy / k]);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  },
+};
+// Every table on a range of pages, in a list; one .xlsx with a sheet each.
+async function insFindDialog() {
+  if (!has()) return;
+  const st = { which: 'current', range: `1-${doc.pages.length}` };
+  const a = await dialog('Find tables', `<div class="ocr-dlg"><p>Looks for tables in the text of the pages, on this device.</p>
+    <fieldset class="ocr-pages"><legend>Pages</legend>
+      <label><input type="radio" name="insWhich" value="current" checked> This page (${current + 1})</label>
+      <label><input type="radio" name="insWhich" value="all"> All pages (${doc.pages.length})</label>
+      <label class="ocr-range"><input type="radio" name="insWhich" value="range"> Pages <input type="text" id="insRange" value="${esc(st.range)}" aria-label="Page range, for example 1-3, 5" autocomplete="off"></label>
+    </fieldset></div>`, [{ label: 'Cancel' }, { label: 'Find tables', value: 'go', primary: true }], (dlg) => {
+    $$('[name="insWhich"]', dlg).forEach((r) => r.addEventListener('change', () => { st.which = r.value; }));
+    const rg = $('#insRange', dlg);
+    rg.addEventListener('input', () => { st.range = rg.value; st.which = 'range'; $('[name="insWhich"][value="range"]', dlg).checked = true; });
+  });
+  if (a !== 'go') return;
+  const pages = st.which === 'all' ? doc.pages.map((_, n) => n) : st.which === 'range' ? parseRange(st.range, doc.pages.length) : [current];
+  if (!pages.length) { toast('No pages in that range'); return; }
+  return insFindRun(pages);
+}
+async function insFindRun(pages, { list = true } = {}) {
+  const found = [], bare = [];
+  for (let k = 0; k < pages.length; k++) {
+    if (pages.length > 3) toast(`Looking at page ${pages[k] + 1} (${k + 1} of ${pages.length})…`);
+    const r = await insFindOn(pages[k]);
+    if (r.noText) bare.push(pages[k]);
+    for (const t of r.tables) { const rows = insCells(t, r.words); if (rows.length >= 2 && rows[0].length >= 2) found.push({ t, rows, words: r.words, P: r.P }); }
+  }
+  if (!list) return { found, bare };
+  if (!found.length) {
+    if (bare.length === pages.length) { await insNoText(bare[0]); return { found, bare }; }
+    toast(bare.length ? `No tables found. ${bare.length === 1 ? '1 page has' : `${bare.length} pages have`} no text: recognize the text first.` : 'No tables found');
+    return { found, bare };
+  }
+  const st = { pick: null };
+  const a = await dialog(found.length === 1 ? '1 table found' : `${found.length} tables found`, `<div class="ins-found">
+    <ol>${found.map((f, k) => `<li><button type="button" class="ins-found-item" data-k="${k}">${ic('table')}<span><b>Page ${f.t.n + 1}</b> · ${f.rows.length} rows, ${f.rows[0].length} columns · ${f.t.method === 'lattice' ? 'ruled' : 'by spacing'}<small>${esc(f.rows[0].join(' · ').slice(0, 90))}</small></span></button></li>`).join('')}</ol>
+    ${bare.length ? `<p class="ins-note">${bare.length === 1 ? `Page ${bare[0] + 1} has` : `${bare.length} pages have`} no text: recognize the text to look there too.</p>` : ''}
+    <p class="ins-note">Choose a table to check it and change its columns, or save them all to one Excel file, a sheet each.</p></div>`,
+  [{ label: 'Close' }, { label: 'Save all as Excel', value: 'xlsx', primary: true }], (dlg) => {
+    $$('.ins-found-item', dlg).forEach((b) => { b.onclick = () => { st.pick = +b.dataset.k; $('[data-x]', dlg).click(); }; });
+  });
+  if (st.pick != null) { const f = found[st.pick]; return insPreview(f.t, f.words, f.P); }
+  if (a === 'xlsx') {
+    const sheets = found.map((f, k) => ({ name: `Page ${f.t.n + 1}${found.filter((g) => g.t.n === f.t.n).length > 1 ? ` (${found.filter((g, j) => g.t.n === f.t.n && j <= k).length})` : ''}`, rows: f.rows, header: true }));
+    await saveFile(insXlsx(sheets), `${doc.name} tables.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+  return { found, bare };
+}
+
+/* --- sentences --- */
+const INS_BULLET = /^(?:[•▪▫◦‣⁃●○■□◆◇►▸▶➢➤✓✔∙·*–—-](?:\s|$)|[•▪▫◦‣⁃●○■□◆◇►▸▶➢➤✓✔∙]|\(?(?:\d{1,3}|[a-zA-Z]|[ivxIVX]{1,5})[.)](?:\s|$))/u;
+const INS_GLYPH = /[•▪▫◦‣⁃●○■□◆◇►▸▶➢➤✓✔∙·*–—-]/u;
+const INS_ABBR = /^(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|inc|ltd|co|corp|no|nos|fig|figs|p|pp|vol|e\.g|i\.e|cf|al|approx|dept|est|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|[a-z])\.$/i;
+// A page's sentences: { text, a, b } with a..b the letters they cover in findIndexOf(tc).s. Lines are joined, a word
+// broken by a hyphen at the end of a line is put back together, and a heading or a block further down starts anew.
+function insSentencesOf(tc) {
+  const { s, map } = findIndexOf(tc), starts = new Set();
+  let prev = null;
+  tc.items.forEach((it, i) => {
+    if (!it.str || !it.str.trim() || !it.transform) return;
+    const y = it.transform[5], h = it.height || Math.hypot(it.transform[2], it.transform[3]) || 10;
+    if (prev && (Math.abs(prev.y - y) > 1.9 * Math.max(h, prev.h) || Math.max(h, prev.h) > 1.3 * Math.min(h, prev.h))) starts.add(i);
+    // a bullet or a numbered item at the start of a line begins a new sentence (lists, slides, agendas)
+    else if (prev && Math.abs(prev.y - y) > 0.5 * Math.min(h, prev.h) && INS_BULLET.test(it.str.trimStart())) starts.add(i);
+    prev = { y, h };
+  });
+  const t = [], o = [];
+  for (let k = 0; k < s.length; k++) {
+    const c = s[k], m = map[k];
+    if (m && m[1] === 0 && starts.has(m[0]) && t.length) { t.push('\u2029'); o.push(k); }
+    if (c === '-' && m && k > 0 && /\p{L}/u.test(s[k - 1]) && /[\n ]/.test(s[k + 1] || '') && /\p{Ll}/u.test(s[k + 2] || '') && tc.items[m[0]].str.trimEnd().length - 1 === m[1]) { k++; continue; }
+    if (/\s/.test(c)) { if (t.length && t[t.length - 1] !== ' ' && t[t.length - 1] !== '\u2029') { t.push(' '); o.push(k); } continue; }
+    t.push(c); o.push(k);
+  }
+  const T = t.join(''), out = []; let start = 0;
+  const push = (end) => {
+    let a = start, b = end;
+    while (a < b && /[\s\u2029]/.test(T[a])) a++;
+    while (a < b && INS_GLYPH.test(T[a]) && /\s/.test(T[a + 1] || ' ')) { a++; while (a < b && /\s/.test(T[a])) a++; }
+    while (b > a && /[\s\u2029]/.test(T[b - 1])) b--;
+    if (b > a && /[\p{L}\p{N}]/u.test(T.slice(a, b))) out.push({ text: T.slice(a, b), a: o[a], b: o[b - 1] + 1 });
+    start = end;
+  };
+  for (let k = 0; k < T.length; k++) {
+    if (T[k] === '\u2029') { push(k); continue; }
+    if (!/[.!?…]/.test(T[k])) continue;
+    let e = k + 1; while (e < T.length && /[.!?…"'”’)\]]/.test(T[e])) e++;
+    if (e < T.length && !(T[e] === ' ' && /[\p{Lu}\p{N}"“‘(\[]/u.test(T[e + 1] || '')) && T[e] !== '\u2029') continue;
+    if (T[k] === '.' && e === k + 1 && INS_ABBR.test((T.slice(0, k + 1).match(/(\S+)$/) || ['', ''])[1])) continue;
+    if (/^[\s\u2029]*\(?(?:\d{1,3}|[ivxIVX]{1,5})[.)]$/.test(T.slice(start, e))) continue; // "1." of a numbered item
+    push(e); k = e - 1;
+  }
+  push(T.length);
+  return out;
+}
+const INS_STOP = new Set(('a about above after again against all also am an and any are aren\'t as at be because been before being below between both but by can can\'t cannot could did do does doing don\'t down during each either few for from further had has have having he her here hers herself him himself his how i if in into is isn\'t it it\'s its itself just let me more most much must my myself no nor not now of off on once only or other ought our ours ourselves out over own per same she should so some such than that the their theirs them themselves then there these they this those through thus to too under until up upon us very via was we were what when where whether which while who whom whose why will with within without would yet you your yours yourself yourselves').split(' '));
+// A light English stemmer: plurals, -ed and -ing, and a few long endings (enough to match "invoices" with "invoice").
+function insStem(w) {
+  if (w.length <= 3) return w;
+  w = w.replace(/['’]s$/, '');
+  if (/sses$/.test(w)) w = w.slice(0, -2);
+  else if (/ies$/.test(w) && w.length > 4) w = w.slice(0, -3) + 'y';
+  else if (/[^su]s$/.test(w)) w = w.slice(0, -1);
+  const m = w.match(/^(.*?)(ing|ed)$/);
+  if (m && m[1].length >= 3 && /[aeiouy]/.test(m[1])) {
+    w = m[1];
+    if (/(at|bl|iz)$/.test(w)) w += 'e';
+    else if (/([^aeiouylsz])\1$/.test(w)) w = w.slice(0, -1);
+  }
+  return w.replace(/ational$/, 'ate').replace(/ization$/, 'ize').replace(/(ful|ous|ive)ness$/, '$1').replace(/(.{4,})ly$/, '$1');
+}
+const insWordsOf = (s) => (String(s).toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu) || []);
+function insTokens(s, english) {
+  const ws = insWordsOf(s);
+  return english ? ws.filter((w) => !INS_STOP.has(w) && (w.length > 1 || /\d/.test(w))).map(insStem) : ws;
+}
+// The document's text: sentences of every page (or of `pages`), once per state of the pages.
+const insCache = new WeakMap();
+async function insText(pages = doc.pages.map((_, n) => n)) {
+  const sig = pages.map((n) => pageKey(doc.pages[n])).join(',');
+  const c = insCache.get(doc); if (c && c.sig === sig) return c;
+  const sents = [];
+  for (const n of pages) {
+    const tc = await textOf(doc.pages[n]);
+    for (const x of insSentencesOf(tc)) sents.push({ ...x, n, k: sents.length });
+  }
+  const all = sents.flatMap((x) => insWordsOf(x.text)), stops = all.filter((w) => INS_STOP.has(w)).length;
+  const english = all.length > 0 && stops / all.length > 0.12;
+  for (const x of sents) x.tok = insTokens(x.text, english);
+  const out = { sig, sents, english };
+  insCache.set(doc, out);
+  return out;
+}
+
+/* --- summary --- */
+// TF-IDF vectors of the sentences, and TextRank over their cosine similarity.
+function insRank(sents) {
+  const N = sents.length, df = new Map();
+  for (const x of sents) for (const t of new Set(x.tok)) df.set(t, (df.get(t) || 0) + 1);
+  const idf = (t) => Math.log((N + 1) / ((df.get(t) || 0) + 1)) + 1;
+  const vecs = sents.map((x) => { const v = new Map(); for (const t of x.tok) v.set(t, (v.get(t) || 0) + 1); let nn = 0; for (const [t, f] of v) { const w = (1 + Math.log(f)) * idf(t); v.set(t, w); nn += w * w; } return { v, norm: Math.sqrt(nn) || 1 }; });
+  const post = new Map(); vecs.forEach(({ v }, i) => { for (const [t, w] of v) { if (!post.has(t)) post.set(t, []); post.get(t).push([i, w]); } });
+  const W = sents.map(() => new Map());
+  for (const [t, list] of post) {
+    if (list.length < 2 || list.length > Math.max(40, N * 0.5)) continue; // a word in most sentences tells them apart from nothing
+    for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+      const [i, wi] = list[a], [j, wj] = list[b], d = wi * wj / (vecs[i].norm * vecs[j].norm);
+      W[i].set(j, (W[i].get(j) || 0) + d); W[j].set(i, (W[j].get(i) || 0) + d);
+    }
+    void t;
+  }
+  const out = W.map((m) => [...m.values()].reduce((s, x) => s + x, 0));
+  let score = new Float64Array(N).fill(1 / Math.max(1, N));
+  for (let it = 0; it < 60; it++) {
+    const next = new Float64Array(N).fill(0.15 / Math.max(1, N));
+    for (let j = 0; j < N; j++) { if (!out[j]) continue; for (const [i, w] of W[j]) next[i] += 0.85 * w / out[j] * score[j]; }
+    let d = 0; for (let i = 0; i < N; i++) d += Math.abs(next[i] - score[i]);
+    score = next; if (d < 1e-7) break;
+  }
+  const cos = (i, j) => { const a = vecs[i], b = vecs[j]; let d = 0; for (const [t, w] of a.v) { const u = b.v.get(t); if (u) d += w * u; } return d / (a.norm * b.norm); };
+  return { score, cos, idf };
+}
+const INS_LENGTHS = { short: [3, 0.08], medium: [6, 0.15], long: [10, 0.3] };
+function insSummaryOf(text, length = 'medium') {
+  const cand = text.sents.filter((x) => x.tok.length >= 3 && x.text.length <= 600 && /\p{L}/u.test(x.text));
+  if (!cand.length) return { picked: [], ranked: [], terms: [] };
+  const { score, cos, idf } = insRank(cand);
+  const order = cand.map((_, i) => i).sort((a, b) => score[b] - score[a] || a - b);
+  const [base, frac] = INS_LENGTHS[length] || INS_LENGTHS.medium;
+  const want = Math.min(cand.length, Math.max(base, Math.round(cand.length * frac)), base * 2);
+  const chosen = [];
+  for (const i of order) { if (chosen.length >= want) break; if (chosen.some((j) => cos(i, j) > 0.6)) continue; chosen.push(i); }
+  const ranked = chosen.map((i) => ({ text: cand[i].text, n: cand[i].n, a: cand[i].a, b: cand[i].b, k: cand[i].k, score: score[i] }));
+  const picked = [...ranked].sort((a, b) => a.k - b.k);
+  return { picked, ranked, terms: insTerms(text, idf) };
+}
+// Key terms: words and two- or three-word phrases that come up often here and not in every sentence.
+function insTerms(text, idf) {
+  const tf = new Map(), forms = new Map(), phrases = new Map();
+  const note = (key, surface) => { const f = forms.get(key) || new Map(); f.set(surface, (f.get(surface) || 0) + 1); forms.set(key, f); };
+  for (const x of text.sents) {
+    const ws = x.text.match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu) || [];
+    let run = [];
+    const flush = () => {
+      for (let L = 2; L <= 3; L++) for (let i = 0; i + L <= run.length; i++) {
+        const part = run.slice(i, i + L), key = part.map((p) => p.key).join(' ');
+        phrases.set(key, (phrases.get(key) || 0) + 1); note(key, part.map((p) => p.w).join(' '));
+      }
+      run = [];
+    };
+    for (const w of ws) {
+      const lw = w.toLowerCase();
+      if ((text.english && INS_STOP.has(lw)) || /^\d+$/.test(lw) || lw.length < 3) { flush(); continue; }
+      const key = text.english ? insStem(lw) : lw;
+      tf.set(key, (tf.get(key) || 0) + 1); note(key, w);
+      run.push({ key, w });
+    }
+    flush();
+  }
+  const surface = (key) => { const f = forms.get(key); let best = key, n = -1; for (const [s, c] of f) { const lo = s === s.toLowerCase() ? c + 0.5 : c; if (lo > n) { n = lo; best = s; } } return /^\p{Lu}[\p{Ll}]/u.test(best) && [...f.keys()].some((s) => s === s.toLowerCase()) ? best.toLowerCase() : best; };
+  const scored = [...tf].filter(([, c]) => c >= 2).map(([k, c]) => ({ key: k, score: c * idf(k), n: c }));
+  for (const [k, c] of phrases) if (c >= 2) scored.push({ key: k, score: 1.5 * c * k.split(' ').reduce((s, t) => s + idf(t), 0) / k.split(' ').length, n: c, phrase: true });
+  scored.sort((a, b) => b.score - a.score);
+  const out = [];
+  for (const s of scored) {
+    if (out.length >= 8) break;
+    if (out.some((o) => (o.phrase && o.key.split(' ').includes(s.key) && o.n + 1 >= s.n) || (s.phrase && o.phrase && (o.key.includes(s.key) || s.key.includes(o.key))))) continue;
+    if (s.phrase) for (let i = out.length - 1; i >= 0; i--) if (!out[i].phrase && s.key.split(' ').includes(out[i].key) && s.n + 1 >= out[i].n) out.splice(i, 1);
+    out.push(s);
+  }
+  return out.map((s) => ({ term: surface(s.key), count: s.n }));
+}
+// The browser's own on-device model, only when it is ready to use now (no download is ever started from here).
+// Asked once; a browser that takes long to answer is taken as having none ready.
+let insModelKind;
+async function insModel() {
+  if (insModelKind !== undefined) return insModelKind;
+  const ready = async (api) => {
+    try { return !!api && typeof api.availability === 'function' && (await Promise.race([api.availability(), new Promise((r) => setTimeout(() => r('slow'), 1200))])) === 'available'; }
+    catch { return false; }
+  };
+  insModelKind = (await ready(window.Summarizer)) ? 'summarizer' : (await ready(window.LanguageModel)) ? 'prompt' : null;
+  return insModelKind;
+}
+async function insModelSummary(kind, text) {
+  let t = text.sents.map((x) => x.text).join(' ').slice(0, 24000);
+  if (kind === 'summarizer') {
+    const s = await window.Summarizer.create({ type: 'tldr', format: 'plain-text', length: 'medium', sharedContext: 'A document the reader has open.' });
+    try {
+      if (s.inputQuota && s.measureInputUsage) for (let i = 0; i < 8 && (await s.measureInputUsage(t)) > s.inputQuota; i++) t = t.slice(0, Math.floor(t.length * 0.7));
+      return await s.summarize(t);
+    } finally { try { s.destroy && s.destroy(); } catch {} }
+  }
+  const lm = await window.LanguageModel.create();
+  try { return await lm.prompt(`Summarize this document in a short paragraph. Use only what it says.\n\n${t.slice(0, 12000)}`); }
+  finally { try { lm.destroy && lm.destroy(); } catch {} }
+}
+async function insSummaryDialog() {
+  if (!has()) return;
+  toast('Reading the document…');
+  const text = await insText();
+  if (!text.sents.length) { await insNoText(current); return; }
+  const st = { length: S.insLength || 'medium', go: null };
+  let sum = insSummaryOf(text, st.length);
+  const model = await insModel();
+  const list = () => (sum.picked.length ? `<ol class="ins-sum">${sum.picked.map((x, k) => `<li><p>${esc(x.text)}</p><button type="button" class="btn link ins-page" data-k="${k}" aria-label="Go to page ${x.n + 1}">Page ${x.n + 1}</button></li>`).join('')}</ol>` : '<p class="ins-none">No sentences long enough to pick from.</p>');
+  const terms = () => (sum.terms.length ? `<h3>Key terms</h3><div class="ins-terms">${sum.terms.map((t) => `<button type="button" class="ins-term" data-term="${esc(t.term)}" title="Find “${esc(t.term)}”">${esc(t.term)}<b>${t.count}</b></button>`).join('')}</div>` : '');
+  const a = await dialog('Summary', `<div class="ins-summary">
+      <div class="seg ins-len" role="radiogroup" aria-label="Length">${['short', 'medium', 'long'].map((l) => `<button type="button" role="radio" data-len="${l}" aria-checked="${l === st.length}" aria-selected="${l === st.length}">${l[0].toUpperCase() + l.slice(1)}</button>`).join('')}</div>
+      <div class="ins-sum-list">${list()}</div>
+      <div class="ins-sum-terms">${terms()}</div>
+      <p class="ins-note">${ic('info')}<span>Picked from the document's own sentences, on this device.</span></p>
+      ${model ? `<div class="ins-model"><button type="button" class="btn" data-model>${ic('sparkles')}<span>Write a summary with your browser's on-device model</span></button><div class="ins-model-out" hidden></div><p class="ins-note">Written by the model built into your browser, on this device. It can get things wrong: check it against the pages.</p></div>` : ''}
+    </div>`, [{ label: 'Copy', value: 'copy' }, { label: 'Close', primary: true }], (dlg) => {
+    dlg.classList.add('ins-dlg');
+    const draw = () => { $('.ins-sum-list', dlg).innerHTML = list(); $('.ins-sum-terms', dlg).innerHTML = terms(); bind(); };
+    const bind = () => {
+      $$('.ins-page', dlg).forEach((b) => { b.onclick = () => { st.go = sum.picked[+b.dataset.k]; $('[data-x]', dlg).click(); }; });
+      $$('.ins-term', dlg).forEach((b) => { b.onclick = () => { st.find = b.dataset.term; $('[data-x]', dlg).click(); }; });
+    };
+    bind();
+    $$('[data-len]', dlg).forEach((b) => { b.onclick = () => { st.length = b.dataset.len; S.insLength = st.length; saveSettings(); $$('[data-len]', dlg).forEach((x) => { const on = x === b; x.setAttribute('aria-checked', on); x.setAttribute('aria-selected', on); }); sum = insSummaryOf(text, st.length); draw(); }; });
+    const mb = $('[data-model]', dlg);
+    if (mb) mb.onclick = async () => {
+      const out = $('.ins-model-out', dlg); mb.disabled = true; out.hidden = false; out.textContent = 'Writing…';
+      try { out.textContent = await insModelSummary(model, text); st.model = out.textContent; }
+      catch (e) { console.warn(e); out.textContent = 'The browser’s model could not write a summary.'; }
+      finally { mb.disabled = false; }
+    };
+  });
+  if (a === 'copy') {
+    const txt = [...sum.picked.map((x) => `${x.text} (page ${x.n + 1})`), ...(sum.terms.length ? ['', 'Key terms: ' + sum.terms.map((t) => t.term).join(', ')] : []), ...(st.model ? ['', st.model] : [])].join('\n');
+    try { await navigator.clipboard.writeText(txt); toast('Summary copied'); } catch { toast('Could not copy the summary'); }
+  }
+  if (st.go) insShow(st.go.n, st.go.a, st.go.b);
+  if (st.find) { openFind(); $('#findInput').value = st.find; runFind(st.find); }
+  return sum;
+}
+
+/* --- ask the document --- */
+const INS_MONTHS = /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b|\b(?:19|20)\d{2}\b/i;
+const INS_AMOUNT = /[$€£¥]\s?\d|\d\s?(?:%|percent|usd|eur|gbp|dollars?|euros?|pounds?)\b|\b\d[\d,]*\.\d{2}\b/i;
+// Passages of about three sentences on a page (each sentence starts one), scored with BM25.
+function insPassages(text) {
+  if (text.passages) return text.passages;
+  const byPage = new Map(); for (const x of text.sents) { if (!byPage.has(x.n)) byPage.set(x.n, []); byPage.get(x.n).push(x); }
+  const out = [];
+  for (const [n, ss] of byPage) {
+    if (ss.length <= 3) { out.push({ n, ss }); continue; }
+    for (let i = 0; i + 3 <= ss.length; i++) out.push({ n, ss: ss.slice(i, i + 3) });
+  }
+  for (const p of out) { p.tok = p.ss.flatMap((x) => x.tok); p.text = p.ss.map((x) => x.text).join(' '); }
+  return (text.passages = out);
+}
+function insAskOf(text, question, most = 5) {
+  const ps = insPassages(text); if (!ps.length) return [];
+  let q = insTokens(question, text.english); if (!q.length) q = insWordsOf(question);
+  q = [...new Set(q)]; if (!q.length) return [];
+  const N = ps.length, avg = ps.reduce((s, p) => s + p.tok.length, 0) / N || 1, df = new Map();
+  for (const p of ps) for (const t of new Set(p.tok)) if (q.includes(t)) df.set(t, (df.get(t) || 0) + 1);
+  const idf = (t) => Math.log(1 + (N - (df.get(t) || 0) + 0.5) / ((df.get(t) || 0) + 0.5));
+  const k1 = 1.2, b = 0.75, qw = question.toLowerCase();
+  const kind = /^\s*when\b|\bwhat (?:date|day|time)\b|\bdeadline\b/.test(qw) ? INS_MONTHS : /\bhow (?:much|many)\b|\bcost\b|\bprice\b|\bamount\b|\btotal\b/.test(qw) ? INS_AMOUNT : null;
+  const scoreOf = (tok) => { const tf = new Map(); for (const t of tok) if (q.includes(t)) tf.set(t, (tf.get(t) || 0) + 1); let s = 0; for (const [t, f] of tf) s += idf(t) * f * (k1 + 1) / (f + k1 * (1 - b + b * tok.length / avg)); return s; };
+  const scored = ps.map((p) => { let s = scoreOf(p.tok); if (s > 0 && kind && kind.test(p.text)) s *= 1.25; return { p, s }; }).filter((x) => x.s > 0).sort((x, y) => y.s - x.s || x.p.ss[0].k - y.p.ss[0].k);
+  const out = [];
+  for (const { p, s } of scored) {
+    if (out.length >= most) break;
+    if (out.some((o) => o.n === p.n && o.p.ss[0].k <= p.ss[p.ss.length - 1].k && p.ss[0].k <= o.p.ss[o.p.ss.length - 1].k)) continue;
+    // the sentence that matches best
+    let best = p.ss[0], bs = -1;
+    for (const x of p.ss) { let v = q.reduce((sum, t) => sum + (x.tok.includes(t) ? idf(t) : 0), 0); if (kind && kind.test(x.text)) v += 0.5; if (v > bs) { bs = v; best = x; } }
+    out.push({ n: p.n, p, score: s, text: p.text, best: { text: best.text, a: best.a, b: best.b } });
+  }
+  return out.map(({ n, score, text: t, best }) => ({ n, score, text: t, best }));
+}
+function insAskEl() {
+  let el = $('#insAsk'); if (el) return el;
+  el = document.createElement('aside'); el.id = 'insAsk'; el.className = 'ins-ask'; el.hidden = true; el.setAttribute('aria-label', 'Ask the document');
+  el.innerHTML = `<div class="ins-ask-head"><h2>${ic('message-circle-question')}<span>Ask the document</span></h2><button class="icon-btn" type="button" data-x title="Close" aria-label="Close">${ic('x')}</button></div>
+    <form class="ins-ask-form" role="search"><input type="search" id="insQ" placeholder="For example: when is it due?" aria-label="Your question" autocomplete="off"><button class="btn primary" type="submit">Ask</button></form>
+    <p class="ins-note">Shows the passages that best match your question. It looks through the text on this device; it does not write answers.</p>
+    <div class="ins-results" aria-live="polite"></div>`;
+  $('.workspace').appendChild(el);
+  icons();
+  $('[data-x]', el).onclick = () => insAskToggle(false);
+  $('.ins-ask-form', el).addEventListener('submit', (e) => { e.preventDefault(); insAsk($('#insQ').value); });
+  el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); insAskToggle(false); } });
+  $('.ins-results', el).addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (!b) return; const r = insAskLast[+b.dataset.r]; if (r) { $$('.ins-hitem', el).forEach((x) => x.setAttribute('aria-current', x === b)); insShow(r.n, r.best.a, r.best.b); if (isPhone()) insAskToggle(false); } });
+  return el;
+}
+let insAskLast = [];
+const insAskOpen = () => !!$('#insAsk') && !$('#insAsk').hidden;
+function insAskToggle(on = !insAskOpen()) {
+  const el = insAskEl(); el.hidden = !on; app.classList.toggle('ins-asking', on);
+  if (on) setTimeout(() => $('#insQ').focus(), 0); else { insClearHit(); viewer.focus({ preventScroll: true }); }
+  if (doc && zoomFits() && !isPhone()) layoutPages(true);
+  refreshRibbon();
+}
+async function insAsk(question) {
+  const el = insAskEl(), box = $('.ins-results', el);
+  question = String(question || '').trim();
+  if (!question) { box.innerHTML = ''; insAskLast = []; return []; }
+  box.innerHTML = '<p class="ins-none">Looking…</p>';
+  const text = await insText();
+  if (!text.sents.length) { box.innerHTML = `<p class="ins-none">This document has no text to look through. Recognize the text first.</p>`; return []; }
+  const res = insAskOf(text, question);
+  insAskLast = res;
+  const mark = (r) => { const at = r.text.indexOf(r.best.text); return at < 0 ? esc(r.text) : `${esc(r.text.slice(0, at))}<mark>${esc(r.best.text)}</mark>${esc(r.text.slice(at + r.best.text.length))}`; };
+  box.innerHTML = res.length ? `<ol>${res.map((r, k) => `<li><button type="button" class="ins-hitem" data-r="${k}" aria-current="false"><b>Page ${r.n + 1}</b><span>${mark(r)}</span></button></li>`).join('')}</ol>` : '<p class="ins-none">No passage matches those words. Try other words, or fewer.</p>';
+  return res;
+}
+// Goes to a sentence on page n (letters a..b of its text) and marks it.
+let insHit = null;
+function insClearHit() { insHit = null; $$('.ins-hit').forEach((x) => x.remove()); }
+function insHitParts(tc, a, b) {
+  const { map } = findIndexOf(tc), parts = [];
+  for (let k = a; k < b; k++) { const c = map[k]; if (!c) continue; const l = parts[parts.length - 1]; if (l && l[0] === c[0] && l[1] + l[2] === c[1]) l[2]++; else parts.push([c[0], c[1], 1]); }
+  return parts;
+}
+function insPaintHit(v) {
+  $$('.ins-hit', v.el).forEach((x) => x.remove());
+  if (!insHit || views.indexOf(v) !== insHit.n) return [];
+  const boxes = findBoxes(v, { parts: insHit.parts });
+  for (const bx of boxes) { const d = document.createElement('div'); d.className = 'ins-hit'; Object.assign(d.style, { left: bx.x + 'px', top: bx.y + 'px', width: bx.w + 'px', height: bx.h + 'px' }); v.el.appendChild(d); }
+  return boxes;
+}
+async function insShow(n, a, b) {
+  const v = views[n]; if (!v) return;
+  const tc = await textOf(doc.pages[n]);
+  insHit = { n, parts: insHitParts(tc, a, b) };
+  goPage(n, true);
+  await renderView(v);
+  const boxes = insPaintHit(v);
+  if (boxes.length) {
+    const y0 = Math.min(...boxes.map((x) => x.y)), y1 = Math.max(...boxes.map((x) => x.y + x.h));
+    viewer.scrollTo({ top: Math.max(0, v.el.offsetTop + (y0 + y1) / 2 - viewer.clientHeight / 2), behavior: 'instant' });
+  }
+  announce(`Page ${n + 1}`);
+}
+FEATURE.afterRender.push((v) => { if (insHit && views.indexOf(v) === insHit.n) insPaintHit(v); });
+FEATURE.onDocShown.push(() => { insClearHit(); insAskLast = []; const el = $('#insAsk'); if (el) { $('.ins-results', el).innerHTML = ''; $('#insQ').value = ''; } });
+FEATURE.onDocClosed.push(() => { insClearHit(); if (insAskOpen()) insAskToggle(false); });
+
+/* --- commands --- */
+cmd('insTable', { label: 'Extract table…', rlabel: 'Extract table', icon: 'table', enabled: has, pressed: () => app.dataset.tool === 'instable', run: () => { if (app.dataset.tool === 'instable') setTool('select'); else { setTool('instable'); if (!isPhone()) toast('Drag a box around the table, or click a table'); } } });
+cmd('insFind', { label: 'Find tables…', rlabel: 'Find tables', icon: 'table-properties', enabled: has, run: insFindDialog });
+cmd('insSummary', { label: 'Summarize…', rlabel: 'Summarize', icon: 'text-quote', enabled: has, run: insSummaryDialog });
+cmd('insAsk', { label: 'Ask the document', rlabel: 'Ask', icon: 'message-circle-question', enabled: has, pressed: insAskOpen, run: () => insAskToggle() });
+ribbonAdd('export', 'Insight', ['insTable', 'insFind', 'insSummary', 'insAsk']);
+menuAdd('Edit', ['insTable', 'insFind', 'insSummary', 'insAsk']);
+
+addStyle(`
+.workspace { position: relative; }
+.app[data-tool="instable"] svg.marks { cursor: crosshair; }
+svg.marks .ins-draft { fill: rgba(28,126,214,.1); stroke: #1C7ED6; stroke-width: 1.5; stroke-dasharray: 5 3; }
+.ins-dlg { width: min(720px, calc(100vw - 24px)); max-width: none; }
+.ins-tbl .ins-prev { overflow: auto; max-height: 400px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); padding: 12px; margin: 8px 0; }
+.ins-img { position: relative; margin: 0 auto; background: #fff; color-scheme: light; }
+.ins-img canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ins-rowline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(28,126,214,.55); pointer-events: none; }
+.ins-div { position: absolute; top: -8px; bottom: -8px; width: 12px; margin-left: -6px; cursor: ew-resize; touch-action: none; z-index: 2; outline: none; }
+.ins-div::before { content: ''; position: absolute; left: 5px; top: 8px; bottom: 8px; border-left: 2px solid #1C7ED6; }
+.ins-div:focus-visible::before, .ins-div:hover::before { border-left-color: var(--accent); border-left-width: 3px; }
+.ins-div-x { position: absolute; top: -12px; left: -4px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+.ins-div-x svg { width: 12px; height: 12px; }
+.ins-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.ins-check { display: flex; align-items: center; gap: 8px; color: var(--ink); cursor: pointer; }
+.ins-check input { accent-color: var(--brand); width: 16px; height: 16px; margin: 0; }
+.ins-grid { overflow: auto; max-height: 220px; border: 1px solid var(--line); border-radius: 8px; }
+.ins-grid table { border-collapse: collapse; font-size: 12.5px; width: max-content; min-width: 100%; }
+.ins-grid th, .ins-grid td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; color: var(--ink); }
+.ins-grid th { background: var(--hover); font-weight: 600; }
+.ins-note { font-size: 12px; color: var(--ink-3); display: flex; gap: 6px; align-items: flex-start; }
+.ins-note svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.ins-none { color: var(--ink-2); padding: 8px 0; }
+.ins-found ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ins-found-item { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer; }
+.ins-found-item:hover { background: var(--hover); }
+.ins-found-item span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ins-found-item small { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ins-summary .ins-len { margin-bottom: 8px; }
+.ins-sum { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow: auto; }
+.ins-sum li p { margin: 0; color: var(--ink); line-height: 1.45; }
+.ins-sum .ins-page { height: auto; padding: 2px 0; font-size: 12px; }
+.ins-summary h3 { font-size: 13px; margin: 14px 0 6px; color: var(--ink); }
+.ins-terms { display: flex; flex-wrap: wrap; gap: 6px; }
+.ins-term { font: inherit; font-size: 12.5px; color: var(--ink); background: var(--hover); border: 1px solid var(--line); border-radius: 12px; padding: 3px 10px; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
+.ins-term b { font-weight: 500; color: var(--ink-3); font-size: 11px; }
+.ins-model { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.ins-model-out { margin: 8px 0; padding: 10px; border-radius: 8px; background: var(--hover); color: var(--ink); white-space: pre-wrap; line-height: 1.45; }
+.ins-ask { position: relative; min-height: 0; z-index: 30; display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); }
+.ins-ask[hidden] { display: none; }
+.app.ins-asking .workspace { grid-template-columns: 240px minmax(0, 1fr) 340px; }
+.app.ins-asking[data-sidebar="off"] .workspace { grid-template-columns: 0 minmax(0, 1fr) 340px; }
+.app.ins-asking .workspace > .sidebar { grid-column: 1; grid-row: 1; }
+.app.ins-asking .workspace > .viewer { grid-column: 2; grid-row: 1; }
+.app.ins-asking .workspace > .ins-ask { grid-column: 3; grid-row: 1; }
+.ins-ask-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 4px 14px; }
+.ins-ask-head h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0; color: var(--ink); }
+.ins-ask-form { display: flex; gap: 6px; padding: 6px 12px; }
+.ins-ask-form input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 17px; padding: 6px 12px; }
+.ins-ask > .ins-note { padding: 0 14px; margin: 4px 0 6px; }
+.ins-results { flex: 1; overflow: auto; padding: 0 8px 16px; }
+.ins-results ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ins-results .ins-none { padding: 8px 6px; }
+.ins-hitem { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; font-size: 13px; line-height: 1.45; color: var(--ink-2); background: none; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; cursor: pointer; }
+.ins-hitem:hover { background: var(--hover); }
+.ins-hitem[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.ins-hitem b { color: var(--ink); font-size: 12px; }
+.ins-hitem mark { background: rgba(255,212,59,.45); color: var(--ink); border-radius: 2px; }
+.page .ins-hit { position: absolute; background: rgba(255,212,59,.45); mix-blend-mode: multiply; border-radius: 2px; pointer-events: none; z-index: 6; box-shadow: 0 0 0 1px rgba(230,119,0,.7); }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .app.ins-asking .workspace, .app.ins-asking[data-sidebar="off"] .workspace { grid-template-columns: 1fr; }
+  .app.ins-asking .workspace > .sidebar, .app.ins-asking .workspace > .viewer, .app.ins-asking .workspace > .ins-ask { grid-column: auto; grid-row: auto; }
+  .ins-ask { position: absolute; bottom: 0; right: 0; left: 0; top: auto; width: auto; height: 62%; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,.2); }
+}
+`);
+
+Object.assign(TEST_HOOKS, {
+  insFindOn, insFindRun, insCells, insCsv, insXlsx, insTableAt, insText, insSummaryOf, insAskOf, insAsk, insSentencesOf, insStem,
+  insSummaryDialog, insShow, insLast: () => insLast, insHit: () => insHit,
+  insTables: async (n, box) => { const r = await insFindOn(n, box); return r.tables.map((t) => ({ method: t.method, box: t.box, rows: insCells(t, r.words) })); },
+});
+
 // ---- src/features/90-ocr.js
 /* ---------------- OCR: recognize text on scanned pages ----------------
    Tools → "Recognize text (OCR)…" reads the words on scanned pages, on this device, with tesseract.js (Apache-2.0)
