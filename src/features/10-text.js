@@ -12,12 +12,11 @@
    The module wraps a few core functions (onEditDown, onEditHover, openLineEditor, closeLineEditor, addText,
    editText): each wrapper calls the core one for everything it doesn't handle. */
 const TXT_SWATCHES = INK_COLORS;
-const TXT_FAMS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ['page', 'Same as the page']];
+const TXT_FAMS = [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono'], ['page', 'Same as the PDF']];
 const txtStdName = (fam, bold, italic) => ({ sans: 'Helvetica', serif: 'TimesRoman', mono: 'Courier' }[fam] || 'Helvetica') + (bold && italic ? (fam === 'serif' ? 'BoldItalic' : 'BoldOblique') : bold ? 'Bold' : italic ? (fam === 'serif' ? 'Italic' : 'Oblique') : '');
 const txtRound = (n) => Math.round(n * 10) / 10;
 const txtHexRgb = (hex) => { const n = parseInt(String(hex || '#111111').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 const txtVec = (r) => { const a = r * Math.PI / 180; return { right: [Math.cos(a), Math.sin(a)], down: [Math.sin(a), -Math.cos(a)] }; };
-const txtSafe = (s) => s.replace(/[^\x20-\x7E\xA0-\xFF–—‘’“”•…€]/g, '?');
 const txtEditing = new Set(); // ids of marks whose editor is open (their text isn't drawn underneath)
 
 /* ---- wrapping and measuring ---- */
@@ -73,7 +72,24 @@ function txtStdFont(name) {
   if (!txtStdFonts.has(name)) txtStdFonts.set(name, (async () => { const L = await loadPdfLib(); const d = await L.PDFDocument.create(); return d.embedFont(L.StandardFonts[name] || L.StandardFonts.Helvetica); })());
   return txtStdFonts.get(name);
 }
-const txtStdWidth = (font, size) => (s) => { try { return font.widthOfTextAtSize(s, size); } catch { return font.widthOfTextAtSize(txtSafe(s), size); } };
+// A standard font's width of a string; letters it can't write are measured in the embedded fonts that stand in for
+// them (extra: pdf-lib fonts, the first that has a letter is used, as fontsRuns picks them when saving).
+const txtStdWidth = (font, size, extra = []) => (s) => {
+  if (fontsCovers(font, s)) return font.widthOfTextAtSize(s, size);
+  let w = 0;
+  for (const ch of s) {
+    const f = fontsCovers(font, ch) ? font : extra.find((x) => fontsCovers(x, ch)) || extra[0];
+    try { w += f ? f.widthOfTextAtSize(ch, size) : size * .55; } catch { w += size * .55; }
+  }
+  return w;
+};
+// The embedded fonts a text box's letters need beyond its standard font, in a scratch document (to measure them).
+let txtScratch = null;
+async function txtExtraFonts(text, style) {
+  if (!/[^\x00-\xFF]/.test(text)) return [];
+  const L = await loadPdfLib(); txtScratch ||= await L.PDFDocument.create();
+  try { return [...new Set((await fontsRuns(txtScratch, text, style)).map((r) => r.font))]; } catch { return []; }
+}
 // Lines joined into a paragraph: a line ending in a hyphen runs straight on.
 const txtJoin = (strs) => strs.reduce((a, s, k) => (k === 0 ? s : /-$/.test(a) ? a + s : a + ' ' + s), '');
 
@@ -233,32 +249,31 @@ FEATURE.markTypes.tpara = {
 async function txtDrawPara(L, out, p, m, ctx) {
   const { PDFNumber, PDFHexString, PDFOperator, StandardFonts, rgb } = L;
   const node = p.node, { fonts } = pageFonts(L, out, node), want = baseName(m.font);
-  let f = m.std || m.ocr || m.type3 || /glyphless/i.test(want) ? null : [...fonts.values()].find((x) => baseName(x.base) === want);
-  if (f) {
-    const rev = new Map(f.hasToUnicode ? f.rev : []);
-    if (!f.type0) for (const [u, code] of Object.entries(m.codes || {})) if (!rev.has(u) && (f.widths.get(code) || 0) > 0) rev.set(u, code);
-    f = rev.size ? { ...f, rev } : null;
-  }
+  // the PDF's own font, with the letters it has (as for an edited line)
+  const f = m.std || !want ? null : teOwnFont(m, fonts);
+  // Letters the own font lacks: a standard font when one was asked for (a standard face, or bold or italic the font
+  // isn't) and it can write them, else an embedded Unicode font of the same style, never '?'.
   const stdName = txtStdName(m.fam, m.bold, m.italic);
   const std = async () => { let sf = ctx.std.get(stdName); if (!sf) { sf = await out.embedFont(StandardFonts[stdName] || StandardFonts.Helvetica); ctx.std.set(stdName, sf); } return sf; };
+  const style = { family: m.fam || 'sans', bold: !!m.bold, italic: !!m.italic };
   const F = txtFrame(m), t0 = m.src[0].tm, hs = Math.hypot(t0[0], t0[1]) * F.k;
   const O = (name, args = []) => PDFOperator.of(name, args), N = (n) => PDFNumber.of(+(+n).toFixed(4));
   const col = txtHexRgb(m.color), all = [];
   for (let i = 0; i < m.lines.length; i++) {
     const line = m.lines[i]; if (!line.trim()) continue;
-    const runs = glyphRuns(line, f && f.rev), mixed = runs.some((r) => !r.own) && runs.some((r) => r.own);
-    let w = 0;
-    for (const r of runs) {
-      if (r.own) { r.w = r.chars.reduce((s, c) => s + (f.widths.get(c) ?? f.dw), 0) / 1000; continue; }
-      const sf = await std(); r.sf = sf;
-      try { r.hex = sf.encodeText(r.chars.join('')); r.w = sf.widthOfTextAtSize(r.chars.join(''), 1); } catch { const s = txtSafe(r.chars.join('')); r.hex = sf.encodeText(s); r.w = sf.widthOfTextAtSize(s, 1); }
+    const runs = [];
+    for (const r of glyphRuns(line, f && f.rev)) {
+      if (r.own) { runs.push({ ...r, w: r.chars.reduce((s, c) => s + (f.widths.get(c) ?? f.dw), 0) / 1000 }); continue; }
+      for (const x of await fontsRuns(out, r.chars.join(''), { ...style, std: m.std ? await std() : null })) runs.push({ own: false, chars: [...x.text], sf: x.font, hex: x.font.encodeText(x.text), w: x.font.widthOfTextAtSize(x.text, 1) });
     }
+    const mixed = runs.length > 1 && runs.some((r) => (r.own ? 'own' : r.sf) !== (runs[0].own ? 'own' : runs[0].sf));
+    let w = 0;
     for (const r of runs) w += (r.w + r.chars.length * (m.tc || 0)) * hs;
     const x = txtLineX(m, w), org = txtOrigin(F, i, x);
     const ops = [O('q'), ...(mixed ? [actualText(L, out, line)] : []), ...teStateOps(L, m), O('BT'), O('Tr', [N(m.tr || 0)]), O('Tc', [N(m.tc || 0)]), O('Tw', [N(m.tw || 0)]), O('Tz', [N(100)]), O('Ts', [N(0)]), O('Tm', [t0[0] * F.k, t0[1] * F.k, t0[2] * F.k, t0[3] * F.k, org[0], org[1]].map(N))];
     for (const r of runs) {
       if (r.own) ops.push(O('Tf', [f.key, N(1)]), O('Tj', [PDFHexString.of(r.chars.map((c) => c.toString(16).padStart(f.bytes * 2, '0')).join(''))]));
-      else ops.push(O('Tf', [node.newFontDictionary('CPDF', r.sf.ref), N(1)]), O('Tj', [r.hex]));
+      else ops.push(O('Tf', [fontsKey(node, r.sf), N(1)]), O('Tj', [r.hex]));
     }
     ops.push(O('ET'), ...(mixed ? [O('EMC')] : []), O('Q'));
     all.push(...ops);
@@ -282,24 +297,26 @@ FEATURE.markTypes.text = {
     return g;
   },
   async save({ L, out, p, m, ctx }) {
-    const { StandardFonts, degrees, rgb } = L;
+    const { StandardFonts, rgb } = L;
     const name = txtStdName(m.fam || 'sans', m.bold, m.italic);
     let font = ctx.std.get(name); if (!font) { font = await out.embedFont(StandardFonts[name] || StandardFonts.Helvetica); ctx.std.set(name, font); }
-    const { right, down } = txtVec(m.rot), color = rgb(...txtHexRgb(m.color)), width = txtStdWidth(font, m.size);
+    const { right, down } = txtVec(m.rot), color = rgb(...txtHexRgb(m.color));
     const lines = txtBoxLines(m), bw = m.bw || 0;
-    lines.forEach((line, k) => {
-      if (!line) return;
-      const w = width(line), off = m.size * (.85 + k * 1.2), dx = bw ? Math.max(0, bw - w) * txtAlignK(m.align) : 0;
+    // In the standard font where it can write the letters, the rest in embedded Unicode fonts of the same style.
+    const style = { family: m.fam || 'sans', bold: !!m.bold, italic: !!m.italic, std: font };
+    for (let k = 0; k < lines.length; k++) {
+      const line = lines[k]; if (!line) continue;
+      const runs = await fontsRuns(out, line, style), w = fontsWidth(runs, m.size);
+      const off = m.size * (.85 + k * 1.2), dx = bw ? Math.max(0, bw - w) * txtAlignK(m.align) : 0;
       const x = m.x + down[0] * off + right[0] * dx, y = m.y + down[1] * off + right[1] * dx;
-      try { p.drawText(line, { x, y, size: m.size, font, color, rotate: degrees(m.rot) }); }
-      catch { p.drawText(txtSafe(line), { x, y, size: m.size, font, color, rotate: degrees(m.rot) }); }
+      fontsDraw(L, p, runs, { x, y, size: m.size, color, rotate: m.rot });
       if (m.underline) { const u = m.size * .12; p.drawLine({ start: { x: x + down[0] * u, y: y + down[1] * u }, end: { x: x + down[0] * u + right[0] * w, y: y + down[1] * u + right[1] * w }, thickness: Math.max(.5, m.size * .06), color }); }
-    });
+    }
   },
 };
 // Lines, their widths and the box width, with the standard font's own widths (so alignment in the PDF is exact).
 async function txtLayoutBox(m) {
-  const font = await txtStdFont(txtStdName(m.fam || 'sans', m.bold, m.italic)), width = txtStdWidth(font, m.size);
+  const font = await txtStdFont(txtStdName(m.fam || 'sans', m.bold, m.italic)), width = txtStdWidth(font, m.size, await txtExtraFonts(m.text, { family: m.fam || 'sans', bold: !!m.bold, italic: !!m.italic }));
   m.lines = txtWrap(m.text, m.w || 0, width);
   m.lw = m.lines.map((s) => txtRound(width(s)));
   m.bw = m.w || Math.max(0, ...m.lw);

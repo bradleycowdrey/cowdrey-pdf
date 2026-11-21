@@ -36,6 +36,18 @@ if (html.includes(OCR[0][0])) {
   const LANG = '`https://cdn.jsdelivr.net/npm/@tesseract.js-data/${lang}@1.0.0/4.0.0_best_int`';
   if (html.includes(LANG)) html = html.split(LANG).join("(lang === 'eng' ? new URL('./vendor/@tesseract.js-data/eng/4.0.0_best_int', location.href).href : " + LANG + ')');
 }
+// ---- fonts: fontkit and the Noto fonts typed text is written in (Latin, Greek, Cyrillic, symbols) work offline.
+// The rewrite below copies each pinned file like any library; the fonts' licence (SIL OFL 1.1) goes with them.
+// Fonts fetched on demand (Chinese, Japanese, Korean, Hindi, Thai) stay online: their address is put together at
+// run time, so it is not rewritten here.
+if (html.includes('https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@')) {
+  for (const pkg of ['@expo-google-fonts/noto-sans', '@expo-google-fonts/noto-serif', '@expo-google-fonts/noto-sans-mono', '@expo-google-fonts/noto-sans-symbols', '@expo-google-fonts/noto-sans-symbols-2']) {
+    const from = path.join(nm, pkg, 'LICENSE_FONT');
+    if (!fs.existsSync(from)) throw new Error(`Missing ${from}. Run npm ci in desktop/ first.`);
+    const to = path.join(dist, 'vendor', pkg, 'LICENSE_FONT.txt'); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to);
+  }
+}
+// ---- end fonts
 const copied = new Set();
 html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/]+\/)?[^@/]+)@[^/'"\s]+\/([^'"\s)]+)/g, (whole, pkg, file) => {
   if (pkg.includes('${') || file.includes('`')) return whole; // an address built at run time (online-only OCR languages)
