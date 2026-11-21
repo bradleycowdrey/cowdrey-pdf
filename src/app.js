@@ -1689,7 +1689,8 @@ async function imageMark(v, s) {
   if (s.mark) return s.mark;
   const data = await imagePng(v, s.im);
   if (!data) { toast('This picture can’t be moved, but it can be deleted or erased.'); return null; }
-  const m = { id: uid(), type: 'ie', n: s.im.n, raw: s.im.raw, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, mat: (s.im.mat || quadMat(s.im.quad)).slice() };
+  // `orig`: the pixels are still the PDF's own, so saving draws the original picture object again (no new copy).
+  const m = { id: uid(), type: 'ie', n: s.im.n, raw: s.im.raw, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, mat: (s.im.mat || quadMat(s.im.quad)).slice(), orig: true };
   marksOf(v.entry).push(m); s.mark = m;
   return m;
 }
@@ -2365,6 +2366,13 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   // soft masks included, image masks not), counted the way pdf.js counts them. Marks from before that identity (no
   // raw) are found by where they are drawn.
   let rawK = -1;
+  // The picture object a found picture was drawn from, so a picture that only moves, turns or is cropped by hiding
+  // is drawn from that same object again (its bytes untouched: a JPEG stays the same JPEG).
+  const picRefs = ctx.picRefs || (ctx.picRefs = new Map());
+  const keepRef = (m, dict, name) => {
+    const raw = dict && dict.get(PDFName.of(name));
+    if (raw instanceof PDFRef) picRefs.set(m.id, raw); else if (raw && raw.dict) picRefs.set(m.id, out.context.register(raw));
+  };
   const picAt = (q) => {
     const k = ++rawK, b = quadBox(q), near = (m) => quadBox(m.quad).every((n, j) => Math.abs(n - b[j]) < .75);
     return pics.find((m) => !removed.has(m.id) && (m.raw != null ? m.raw === k && near(m) : near(m)));
@@ -2406,7 +2414,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       if (sub === '/Image') {
         if (im.inline ? im.mask : isMask(o)) return;
         const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
-        if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); }
+        if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); if (!im.inline) keepRef(m, fxo, im.name); }
       } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1, fres); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); subs.push(h); } }
     }, mul(fm, ctm), (g) => softMask(own.eg, g, depth + 1));
     if (!ids.length) return null;
@@ -2450,7 +2458,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       if (!pics.length) return;
       if (sub !== '/Image' || isMask(o)) return;
       const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
-      if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
+      if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); keepRef(m, xo, im.name); }
     }, undefined, (g) => pics.length && softMask(pageRes.eg, g, 1));
   } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); hidden.clear(); anchor.clear(); moves.clear(); found.clear(); formFont.clear(); formAnchor.clear(); formsCopied.clear(); ops = null; }
   // Each line found: a line changed in part of one operator keeps the rest of it as it was (codes and kerning);
@@ -2539,8 +2547,10 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   }
   for (const m of pics) {
     if (m.deleted || !m.data || !m.mat) continue;
-    let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); }
-    const key = node.newXObject('CPDFIm', im.ref);
+    // The original picture object when only its place changed; else a new one in the picture's own kind (FEATURE.picXObject).
+    let ref = FEATURE.picXObject ? await FEATURE.picXObject(L, out, m, ctx) : null;
+    if (!ref) { let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); } ref = im.ref; }
+    const key = node.newXObject('CPDFIm', ref);
     p.pushOperators(O('q'), O('cm', m.mat.map((n) => PDFNumber.of(+(+n).toFixed(4)))), O('Do', [key]), O('Q'));
   }
   for (const [id, list] of newOps) if (!placed.has(id) && !shifted.has(id)) p.pushOperators(...list);

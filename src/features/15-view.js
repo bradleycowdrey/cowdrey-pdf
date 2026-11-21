@@ -2,9 +2,10 @@
    Attachments panel in the sidebar, and page labels (iii, A-1…) in the page box and the thumbnails.
    Fit page, Actual size and the layouts themselves are in the core (fitScale, layoutPages, goPage).
 
-   docMarks(): { id, type: 'file', fid, name, mime, size, desc, at } — a file attached here, written into the PDF's
-   attached files when it is saved. Its bytes are kept on this device (IndexedDB 'cowdrey.pdf.files', by fid), not in
-   the marks, so undo and Recent stay small. */
+   docMarks(): { id, type: 'file', fid, name, mime, size, desc, rel, at } — a file attached here, written into the PDF's
+   attached files when it is saved; { type: 'attedit', key, name, desc, rel, removed } — a change to a file the PDF
+   came with (renamed, described, given an AFRelationship, removed). The bytes of files attached here are kept on this
+   device (IndexedDB 'cowdrey.pdf.files', by fid), not in the marks, so undo and Recent stay small. */
 
 /* ---- Hand tool: drag to move around the document; Space held down does the same in any tool ---- */
 TOOL_HINTS.hand = 'Drag to move around the page';
@@ -181,15 +182,16 @@ async function vwFileBytes(fid) {
 }
 const vwAdded = () => (doc ? docMarks().filter((m) => m.type === 'file') : []);
 const vwSize = (n) => (n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-// The files in the opened PDF: its attached files (the EmbeddedFiles name tree) and file attachment comments.
-let vwAttCache = null; // { doc, list: [{ name, desc, bytes, entry? }] }
+// The files in the opened PDF: its attached files (the EmbeddedFiles name tree; `key` is the tree's name for each)
+// and file attachment comments.
+let vwAttCache = null; // { doc, list: [{ key?, name, desc, bytes, entry? }] }
 async function vwFilesIn(d) {
   if (vwAttCache && vwAttCache.doc === d) return vwAttCache.list;
   const list = [], pd = pdfDocs.get(0);
   try {
     const att = await pd.getAttachments(); // a Map (pdf.js 6) or an object; the bytes are asked for one by one
     for (const [key, f] of att instanceof Map ? att : Object.entries(att || {})) {
-      list.push({ name: f.filename || key, desc: f.description || '', bytes: f.content || await pd.getAttachmentContent(key).catch(() => null) });
+      list.push({ key, name: f.filename || key, desc: f.description || '', bytes: f.content || await pd.getAttachmentContent(key).catch(() => null) });
     }
   } catch (e) { console.warn('attachments', e); }
   for (let i = 0; i < pd.numPages; i++) {
@@ -206,34 +208,86 @@ async function vwFilesIn(d) {
   vwAttCache = { doc: d, list };
   return list;
 }
+// Changes to the files the PDF came with: docMarks() { type: 'attedit', key, name?, desc?, rel?, removed? } (one per file).
+const VW_RELS = [['', 'Not set'], ['Source', 'Source'], ['Data', 'Data'], ['Alternative', 'Alternative'], ['Supplement', 'Supplement'], ['Unspecified', 'Unspecified']];
+const vwEdits = () => (doc ? docMarks().filter((m) => m.type === 'attedit') : []);
+const vwEditOf = (key) => vwEdits().find((m) => m.key === key);
+const vwRelLabel = (rel) => (rel ? `Relationship: ${rel}` : '');
+// What a file the PDF came with is called and says now (its edits applied), its relationship as stored in the PDF.
+let vwRelCache = null; // { doc, map: key -> AFRelationship }
+async function vwRelsIn(d) {
+  if (vwRelCache && vwRelCache.doc === d) return vwRelCache.map;
+  const map = new Map();
+  try {
+    const L = await loadPdfLib(), pdf = await picSrcDoc(0);
+    for (const it of vwTreeList(L, pdf.context, pdf.catalog)) { const s = pdf.context.lookup(it.raw), r = s instanceof L.PDFDict ? s.lookup(L.PDFName.of('AFRelationship')) : null; if (r) map.set(it.key, String(r).slice(1)); }
+  } catch (e) { console.warn(e); }
+  vwRelCache = { doc: d, map };
+  return map;
+}
+async function vwEditDlg(title, cur) {
+  const body = `<label class="field"><span>Name</span><input id="vwAttName" type="text" value="${esc(cur.name)}" autocomplete="off"></label>
+    <label class="field"><span>Description</span><input id="vwAttDesc" type="text" value="${esc(cur.desc || '')}" autocomplete="off"></label>
+    <label class="field"><span>Relationship to this PDF</span><select id="vwAttRel">${VW_RELS.map(([k, l]) => `<option value="${k}"${(cur.rel || '') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <p class="vw-note">The relationship says what the file is to the PDF (for e-invoices and PDF/A-3: Source for the file it was made from, Data for the invoice data). It is listed with the PDF's associated files.</p>`;
+  let got = null;
+  const a = await dialog(title, body, [{ label: 'Cancel' }, { label: 'Save', primary: true, value: 'ok' }], (dlg) => {
+    const read = () => { got = { name: $('#vwAttName', dlg).value.trim(), desc: $('#vwAttDesc', dlg).value.trim(), rel: $('#vwAttRel', dlg).value }; };
+    dlg.addEventListener('input', read); dlg.addEventListener('change', read); read();
+  });
+  if (a !== 'ok' || !got) return null;
+  if (!got.name) got.name = cur.name;
+  return got;
+}
 async function vwFilesPanel() {
   const panel = $('#sidePanel');
   if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its attached files.</p>'; return; }
   const d = doc;
   if (!vwAttCache || vwAttCache.doc !== d) panel.innerHTML = '<p class="empty-note">Looking for attached files…</p>';
-  const inPdf = await vwFilesIn(d);
+  const inPdf = await vwFilesIn(d), rels = await vwRelsIn(d);
   if (doc !== d || S.side !== 'files') return;
   const rows = [];
   inPdf.forEach((f, k) => {
     let where = '';
     if (f.entry) { const n = doc.pages.findIndex((e) => e.src === 0 && e.i === f.entry.i); if (n < 0) return; where = `On page ${vwLabel(n) || n + 1}`; }
-    rows.push({ key: 'p' + k, name: f.name, meta: [vwSize(f.bytes ? f.bytes.length : 0), where, f.desc].filter(Boolean).join(' · '), get: async () => f.bytes });
+    const ed = f.key != null ? vwEditOf(f.key) : null;
+    if (ed && ed.removed) return;
+    const name = (ed && ed.name) || f.name, desc = ed && ed.desc != null ? ed.desc : f.desc, rel = ed && ed.rel != null ? ed.rel : rels.get(f.key) || '';
+    rows.push({ key: 'p' + k, name, meta: [vwSize(f.bytes ? f.bytes.length : 0), where, desc, vwRelLabel(rel)].filter(Boolean).join(' · '), get: async () => f.bytes, orig: f.key != null ? { key: f.key, name, desc, rel } : null });
   });
-  for (const m of vwAdded()) rows.push({ key: 'a' + m.id, name: m.name, meta: `${vwSize(m.size)} · Added, kept when you save`, get: () => vwFileBytes(m.fid), mark: m });
+  for (const m of vwAdded()) rows.push({ key: 'a' + m.id, name: m.name, meta: [`${vwSize(m.size)} · Added, kept when you save`, m.desc, vwRelLabel(m.rel)].filter(Boolean).join(' · '), get: () => vwFileBytes(m.fid), mark: m });
+  // files attached to pages here (Attach file on the Comment tab)
+  doc.pages.forEach((e, n) => { for (const m of marksOf(e)) if (m.type === 'mdFile') rows.push({ key: 'c' + m.id, name: m.name, meta: [vwSize(m.size), `On page ${vwLabel(n) || n + 1}, added`, m.desc].filter(Boolean).join(' · '), get: () => vwFileBytes(m.fid), page: m }); });
   panel.innerHTML = `${rows.length ? `<ul class="vw-files" aria-label="Attachments">${rows.map((r) => `<li class="vw-file">${ic('paperclip')}<span class="vw-fname" title="${esc(r.name)}">${esc(r.name)}<span class="m">${esc(r.meta)}</span></span>`
     + `<button type="button" class="btn vw-fsave" data-save="${esc(r.key)}" aria-label="Save ${esc(r.name)}">Save</button>`
-    + (r.mark ? `<button type="button" class="icon-btn" data-remove="${esc(r.mark.id)}" title="Remove" aria-label="Remove ${esc(r.name)}">${ic('x')}</button>` : '') + '</li>').join('')}</ul>`
+    + (r.mark || r.orig ? `<button type="button" class="icon-btn" data-edit="${esc(r.key)}" title="Rename or describe" aria-label="Edit ${esc(r.name)}">${ic('pencil')}</button>` : '')
+    + (r.mark || r.orig ? `<button type="button" class="icon-btn" data-remove="${esc(r.key)}" title="Remove" aria-label="Remove ${esc(r.name)}">${ic('x')}</button>` : '') + '</li>').join('')}</ul>`
     : '<p class="empty-note">This PDF has no attached files.</p>'}
     <button type="button" class="btn vw-fadd" data-cmd="vw_attach">${ic('paperclip')}<span>Attach file…</span></button>`;
   icons();
+  const rowOf = (b, k) => rows.find((x) => x.key === b.dataset[k]);
   $$('[data-save]', panel).forEach((b) => { b.onclick = async () => {
-    const r = rows.find((x) => x.key === b.dataset.save), bytes = r && await r.get();
+    const r = rowOf(b, 'save'), bytes = r && await r.get();
     if (!bytes) { toast('That file is no longer on this device. Attach it again.'); return; }
-    await saveFile(bytes, r.name, (r.mark && r.mark.mime) || 'application/octet-stream');
+    await saveFile(bytes, r.name, ((r.mark || r.page) && (r.mark || r.page).mime) || 'application/octet-stream');
+  }; });
+  $$('[data-edit]', panel).forEach((b) => { b.onclick = async () => {
+    const r = rowOf(b, 'edit'); if (!r) return;
+    const cur = r.mark ? { name: r.mark.name, desc: r.mark.desc || '', rel: r.mark.rel || '' } : r.orig;
+    const got = await vwEditDlg(`Edit ${r.name}`, cur); if (!got) return;
+    const taken = new Set(rows.filter((x) => x !== r && !x.page && !(x.meta || '').startsWith('On page')).map((x) => x.name));
+    if (got.name !== cur.name && taken.has(got.name)) { toast(`There is already a file called ${got.name}.`); return; }
+    const before = snapshot();
+    if (r.mark) Object.assign(r.mark, got);
+    else { let ed = vwEditOf(r.orig.key); if (!ed) docMarks().push(ed = { id: uid(), type: 'attedit', key: r.orig.key }); Object.assign(ed, got); }
+    changed(before, 'Attachment'); renderSide();
   }; });
   $$('[data-remove]', panel).forEach((b) => { b.onclick = () => {
-    const list = docMarks(), k = list.findIndex((m) => m.id === b.dataset.remove); if (k < 0) return;
-    const before = snapshot(); list.splice(k, 1); changed(before, 'Remove attachment');
+    const r = rowOf(b, 'remove'); if (!r) return;
+    const before = snapshot(), list = docMarks();
+    if (r.mark) { const k = list.indexOf(r.mark); if (k < 0) return; list.splice(k, 1); }
+    else { let ed = vwEditOf(r.orig.key); if (!ed) list.push(ed = { id: uid(), type: 'attedit', key: r.orig.key }); ed.removed = true; }
+    changed(before, 'Remove attachment');
     renderSide();
   }; });
 }
@@ -245,14 +299,13 @@ vwFileInput.addEventListener('change', async () => {
 });
 async function vwAttach(files) {
   if (!has()) return;
-  const taken = new Set([...(await vwFilesIn(doc)).filter((f) => !f.entry).map((f) => f.name), ...vwAdded().map((m) => m.name)]);
+  const taken = new Set([...(await vwFilesIn(doc)).filter((f) => !f.entry && !(vwEditOf(f.key) || {}).removed).map((f) => (vwEditOf(f.key) || {}).name || f.name), ...vwAdded().map((m) => m.name)]);
   const before = snapshot(); let n = 0;
   for (const f of files) {
     if (f.size > 100 * 1024 * 1024) { toast(`${f.name} is too big to attach (over 100 MB).`); continue; }
     const bytes = new Uint8Array(await f.arrayBuffer()), fid = uid();
     // A name already used gets a number, so each file keeps its own entry in the PDF.
-    let name = f.name || 'Attachment', k = 2; const dot = name.lastIndexOf('.'), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
-    while (taken.has(name)) name = `${stem} (${k++})${ext}`;
+    const name = vwFreeName(f.name || 'Attachment', taken);
     taken.add(name);
     try { await vwDbDo('readwrite', (s) => s.put({ id: fid, doc: doc.id, bytes })); } catch (e) { console.warn('could not keep the file on this device', e); }
     vwBytes.set(fid, bytes);
@@ -265,21 +318,103 @@ async function vwAttach(files) {
   if (S.side !== 'files') setSide('files'); else renderSide();
   if (!isPhone() && !S.sidebar) toggleSidebar(true);
 }
+// "Name.txt", or "Name (2).txt" … when that is taken.
+function vwFreeName(name, taken) {
+  const dot = name.lastIndexOf('.'), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+  let out = name, k = 2; while (taken.has(out)) out = `${stem} (${k++})${ext}`;
+  return out;
+}
 TEST_HOOKS.attachFiles = (files) => vwAttach(files);
 cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click(), menu: ['vw_attach', 'vw_files'] }); // its arrow: the Attachments panel
 cmd('vw_files', { label: 'Attachments', icon: 'paperclip', enabled: has, pressed: () => S.side === 'files' && (isPhone() ? app.dataset.sidebar === 'open' : S.sidebar), run: () => { setSide('files'); if (isPhone() || !S.sidebar) toggleSidebar(true); } });
+const VW_AFR = new Set(['Source', 'Data', 'Alternative', 'Supplement', 'Unspecified']);
 FEATURE.saveDoc.push(async ({ out }) => {
   for (const m of vwAdded()) {
     const bytes = await vwFileBytes(m.fid);
     if (!bytes) { console.warn('attachment missing on this device', m.name); continue; }
-    await out.attach(bytes, m.name, { mimeType: m.mime, description: m.desc || undefined, creationDate: new Date(m.at), modificationDate: new Date(m.at) });
+    await out.attach(bytes, m.name, { mimeType: m.mime, description: m.desc || undefined, creationDate: new Date(m.at), modificationDate: new Date(m.at), ...(VW_AFR.has(m.rel) ? { afRelationship: m.rel } : {}) });
   }
 });
+// The attached files' name tree, flattened: [{ key, raw }] (raw: the file specification, usually a reference).
+function vwTreeList(L, c, catalog) {
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFString, PDFHexString } = L, N = (k) => PDFName.of(k), look = (o) => (o instanceof PDFRef ? c.lookup(o) : o), out = [];
+  const names = look(catalog.get(N('Names'))), tree = names instanceof PDFDict ? look(names.get(N('EmbeddedFiles'))) : null;
+  const walk = (node, seen) => {
+    if (!(node instanceof PDFDict) || seen.has(node)) return; seen.add(node);
+    const arr = look(node.get(N('Names')));
+    if (arr instanceof PDFArray) for (let k = 0; k + 1 < arr.size(); k += 2) { const key = look(arr.get(k)); if (key instanceof PDFString || key instanceof PDFHexString) out.push({ key: key.decodeText(), raw: arr.get(k + 1) }); }
+    const kids = look(node.get(N('Kids'))); if (kids instanceof PDFArray) for (const r of kids.asArray()) walk(look(r), seen);
+  };
+  walk(tree, new Set());
+  return out;
+}
+// The source the saved PDF is built on (as buildPdf chooses it), or -1 for a new PDF (pages extracted).
+function vwBaseOf(entries) {
+  if (entries !== doc.pages || !entries.length) return -1;
+  const s0 = entries[0].src, pd = pdfDocs.get(s0);
+  if (pd && entries.length === pd.numPages && entries.every((e, n) => e.src === s0 && e.i === n)) return s0;
+  const count = new Map(); for (const e of entries) count.set(e.src, (count.get(e.src) || 0) + 1);
+  return count.has(0) ? 0 : [...count].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+}
+// Files the PDF came with, as changed here (renamed, described, given a relationship, removed), and the files of every
+// other PDF combined into it (copied in, a name already used getting " (2)"). The relationship goes in the catalog's
+// associated files (/AF) too, as PDF/A-3 and e-invoices want.
+async function vwSaveTree({ L, out, entries }) {
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFString, PDFHexString, PDFObjectCopier } = L, N = (k) => PDFName.of(k), c = out.context;
+  const base = vwBaseOf(entries), edits = vwEdits();
+  const others = base < 0 ? [] : [...new Set(entries.map((e) => e.src))].filter((k) => k !== base);
+  if (!(edits.length && base === 0) && !others.length) return;
+  const look = (o) => (o instanceof PDFRef ? c.lookup(o) : o), cat = out.catalog;
+  const list = vwTreeList(L, c, cat), dropped = new Set();
+  const setName = (spec, name) => { spec.set(N('UF'), PDFHexString.fromText(name)); spec.set(N('F'), PDFString.of(name.replace(/[^\x20-\x7E]/g, '_'))); };
+  const applyEdit = (it, key) => {
+    const ed = edits.find((m) => m.key === key); if (!ed) return;
+    if (ed.removed) { it.gone = true; return; }
+    const spec = look(it.raw); if (!(spec instanceof PDFDict)) return;
+    if (ed.name && ed.name !== key) { setName(spec, ed.name); it.key = ed.name; }
+    if (ed.desc != null) { if (ed.desc) spec.set(N('Desc'), PDFHexString.fromText(ed.desc)); else spec.delete(N('Desc')); }
+    if (ed.rel != null) { if (ed.rel) spec.set(N('AFRelationship'), N(ed.rel)); else spec.delete(N('AFRelationship')); }
+  };
+  if (base === 0) for (const it of list) applyEdit(it, it.key);
+  const taken = new Set(list.filter((it) => !it.gone).map((it) => it.key));
+  for (const k of others) {
+    let d; try { d = await picSrcDoc(k); } catch { d = null; } if (!d) continue;
+    const src = vwTreeList(L, d.context, d.catalog); if (!src.length) continue;
+    const copier = PDFObjectCopier.for(d.context, c);
+    for (const s of src) {
+      const o = d.context.lookup(s.raw); if (!(o instanceof PDFDict)) continue;
+      const it = { key: s.key, raw: c.register(copier.copy(o)) };
+      if (k === 0) applyEdit(it, s.key);
+      if (it.gone) continue;
+      const free = vwFreeName(it.key, taken);
+      if (free !== it.key) { setName(look(it.raw), free); it.key = free; }
+      taken.add(it.key); list.push(it);
+    }
+  }
+  for (const it of list) if (it.gone && it.raw instanceof PDFRef) dropped.add(it.raw.tag);
+  const keep = list.filter((it) => !it.gone).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  let names = look(cat.get(N('Names')));
+  if (!(names instanceof PDFDict)) { names = c.obj({}); cat.set(N('Names'), names); }
+  const arr = c.obj([]); for (const it of keep) { arr.push(PDFHexString.fromText(it.key)); arr.push(it.raw); }
+  if (keep.length) names.set(N('EmbeddedFiles'), c.obj({ Names: arr })); else names.delete(N('EmbeddedFiles'));
+  // Associated files: those removed leave it; those with a relationship are in it.
+  let af = look(cat.get(N('AF')));
+  if (af instanceof PDFArray) for (let k = af.size() - 1; k >= 0; k--) { const r = af.get(k); if (r instanceof PDFRef && dropped.has(r.tag)) af.remove(k); }
+  for (const it of keep) {
+    const spec = look(it.raw); if (!(spec instanceof PDFDict) || !spec.get(N('AFRelationship'))) continue;
+    if (!(it.raw instanceof PDFRef)) { const r = c.register(spec); arr.set(keep.indexOf(it) * 2 + 1, r); it.raw = r; }
+    if (!(af instanceof PDFArray)) { af = c.obj([]); cat.set(N('AF'), af); }
+    if (!af.asArray().some((r) => r instanceof PDFRef && r.tag === it.raw.tag)) af.push(it.raw);
+  }
+  if (af instanceof PDFArray && !af.size()) cat.delete(N('AF'));
+}
+FEATURE.saveDoc.push(async (a) => { try { await vwSaveTree(a); } catch (e) { console.warn('attachments: the files of the PDF', e); } });
 // Files kept for documents no longer in Recent are let go, once, a little after start.
 setTimeout(async () => {
   try {
-    const docs = await listDocs(), keep = new Set(docs.flatMap((d) => ((d.marks && d.marks.__doc) || []).filter((m) => m.type === 'file').map((m) => m.fid)));
-    if (doc) for (const m of vwAdded()) keep.add(m.fid);
+    const fidsOf = (marks) => Object.values(marks || {}).flat().filter((m) => m && m.fid).map((m) => m.fid);
+    const docs = await listDocs(), keep = new Set(docs.flatMap((d) => fidsOf(d.marks)));
+    if (doc) for (const f of fidsOf(doc.marks)) keep.add(f);
     const ids = await vwDbDo('readonly', (s) => s.getAllKeys());
     const gone = (ids || []).filter((id) => !keep.has(id));
     if (gone.length) await vwDbDo('readwrite', (s) => { for (const id of gone) s.delete(id); });
@@ -309,4 +444,5 @@ addStyle(`
 .vw-file .btn.vw-fsave { flex: none; padding: 3px 10px; font-size: 12px; }
 .vw-file .icon-btn { flex: none; width: 26px; height: 26px; }
 .btn.vw-fadd { margin: 4px 8px; }
+.vw-note { font-size: 12px; color: var(--ink-2); }
 `);

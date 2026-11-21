@@ -5,7 +5,9 @@
      cmShape   oval, cloud (Circle / Square with a cloudy border), line, arrow (Line), polygon, polyline
      cmCallout a box of text with a leader line to a point (FreeText, callout)
      cmType    typewriter text, no box (FreeText, typewriter)
-     cmStamp   a stamp (Stamp)
+     cmStamp   a stamp (Stamp): one of the standard ones, your own text, or "Approved by <name> on <date and time>"
+     cmPicStamp a picture stamp (Stamp, its appearance the picture): a picture file, a saved signature, or one of
+               Your stamps (store key 'stamps': pictures and text stamps, named, added and deleted in the Stamp dialog)
    The core highlight (hl, also the area highlight), box (rect) and pen (ink) marks are saved the same way, as
    Highlight, Square and Ink annotations, so every comment made here is a comment in other apps too. */
 const CM_FILL_OPACITY = 0.25;
@@ -477,36 +479,132 @@ function cmStampSize(label, sub) {
 function cmStampHtml(label, color, sub) {
   return `<span class="cm-stamp-face" style="--cm-c:${color}">${esc(label.toUpperCase())}${sub ? `<small>${esc(sub)}</small>` : ''}</span>`;
 }
+// Your stamps (kept on this device, store key 'stamps'): pictures and text stamps, each with a name.
+//   { id, name, kind: 'picture', data, w, h } | { id, name, kind: 'text', label }
+const cmLib = () => { const l = store.get('stamps', []); return Array.isArray(l) ? l.filter((s) => s && s.id) : []; };
+const cmLibSet = (l) => store.set('stamps', l);
+const cmLibAdd = (s) => { const l = cmLib(); if (s.kind === 'picture' ? l.some((x) => x.data === s.data) : l.some((x) => x.kind === 'text' && x.label === s.label)) return; cmLibSet([...l, { id: uid(), ...s }]); };
+// The name on a dynamic stamp: yours (as set for comments), else the PDF's author.
+async function cmStampName() {
+  if (S.author) return S.author;
+  try { const md = await pdfDocs.get(0).getMetadata(); const a = md && md.info && md.info.Author; if (a && String(a).trim()) return String(a).trim(); } catch {}
+  return '';
+}
+const cmNowText = () => new Date().toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const cmDynSub = (name) => `by ${name || 'No name'} on ${cmNowText()}`;
+// A picture file as a stamp picture: a JPEG as it is, other kinds (SVG drawn at its size, or 600 pixels wide) as PNG.
+async function cmStampPicture(file) {
+  const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  const img = new Image(); img.src = data; await img.decode();
+  const svg = /svg/i.test(file.type) || /\.svg$/i.test(file.name || '');
+  let w = img.naturalWidth || 600, h = img.naturalHeight || 600;
+  if (svg) { const k = Math.max(1, 600 / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k); }
+  if (/^data:image\/jpeg/.test(data) && !svg) return { data, w, h };
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return { data: c.toDataURL('image/png'), w, h };
+}
 async function cmPickStamp() {
-  let pick = null, custom = '';
-  const body = `<p>Pick a stamp, then click the page to place it.</p><div class="cm-stamps">${CM_STAMPS.map(([k, label, color]) => `<button type="button" class="cm-stamp" data-stamp="${k}" aria-label="${esc(label)}">${cmStampHtml(label, color, k === 'received' ? cmToday() : '')}</button>`).join('')}</div>
-    <label class="field"><span>Custom stamp</span><input id="cmStampText" type="text" placeholder="Your text, like Paid" autocomplete="off" maxlength="40"></label>`;
+  let pick = null, custom = '', pic = null, keep = true;
+  const who = await cmStampName(), sigs = sigSaved(), lib = cmLib();
+  const thumb = (data) => `<img src="${esc(data)}" alt="" class="cm-stamp-img">`;
+  const body = `<p>Pick a stamp, then click the page to place it.</p><div class="cm-stamps">${CM_STAMPS.map(([k, label, color]) => `<button type="button" class="cm-stamp" data-stamp="${k}" aria-label="${esc(label)}">${cmStampHtml(label, color, k === 'received' ? cmToday() : '')}</button>`).join('')}
+    <button type="button" class="cm-stamp" data-dyn="approved" id="cmStampDyn" aria-label="Approved, with your name and the time">${cmStampHtml('Approved', '#2B8A3E', cmDynSub(who))}</button></div>
+    <h3 class="cm-stamp-h">Pictures</h3>
+    <div class="cm-stamps">${sigs.map((s, k) => `<button type="button" class="cm-stamp" data-sig="${k}" aria-label="Signature ${k + 1}">${thumb(s.data)}</button>`).join('')}
+    <button type="button" class="cm-stamp cm-stamp-add" id="cmStampPicBtn">${ic('image-plus')}<span>Choose a picture…</span></button></div>
+    <input type="file" id="cmStampPic" accept="image/png,image/jpeg,image/svg+xml,.svg" hidden>
+    ${lib.length ? `<h3 class="cm-stamp-h">Your stamps</h3><div class="cm-lib">${lib.map((s) => `<div class="cm-lib-item" data-lib-row="${esc(s.id)}"><button type="button" class="cm-stamp" data-lib="${esc(s.id)}" aria-label="${esc(s.name)}">${s.kind === 'picture' ? thumb(s.data) : cmStampHtml(s.label, '#2448C9', '')}</button><input type="text" class="cm-lib-name" data-lib-name="${esc(s.id)}" value="${esc(s.name)}" aria-label="Name of this stamp" maxlength="40"><button type="button" class="icon-btn" data-lib-del="${esc(s.id)}" title="Delete" aria-label="Delete ${esc(s.name)}">${ic('trash-2')}</button></div>`).join('')}</div>` : ''}
+    <label class="field"><span>Custom stamp</span><input id="cmStampText" type="text" placeholder="Your text, like Paid" autocomplete="off" maxlength="40"></label>
+    <label class="cm-stamp-keep"><input type="checkbox" id="cmStampKeep" checked><span>Keep a custom stamp or picture in Your stamps</span></label>`;
   const a = await dialog('Stamp', body, [{ label: 'Cancel' }, { label: 'Use custom stamp', primary: true, value: 'custom' }], (dlg) => {
-    $$('[data-stamp]', dlg).forEach((b) => b.onclick = () => { pick = b.dataset.stamp; $('[data-a="1"]', dlg).click(); });
+    const done = () => $('[data-a="1"]', dlg).click();
+    $$('[data-stamp]', dlg).forEach((b) => b.onclick = () => { pick = b.dataset.stamp; done(); });
+    $$('[data-dyn]', dlg).forEach((b) => b.onclick = () => { pick = 'dynamic'; done(); });
+    $$('[data-sig]', dlg).forEach((b) => b.onclick = () => { const s = sigs[+b.dataset.sig]; pic = { data: s.data, w: s.w, h: s.h, name: 'Signature', fromLib: true }; done(); });
+    $$('[data-lib]', dlg).forEach((b) => b.onclick = () => { const s = cmLib().find((x) => x.id === b.dataset.lib); if (!s) return; if (s.kind === 'picture') pic = { data: s.data, w: s.w, h: s.h, name: s.name, fromLib: true }; else { pick = 'lib'; custom = s.label; } done(); });
+    $$('[data-lib-name]', dlg).forEach((inp) => { inp.onchange = () => { const name = inp.value.trim(); if (!name) return; cmLibSet(cmLib().map((x) => x.id === inp.dataset.libName ? { ...x, name } : x)); }; inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); inp.blur(); } }; });
+    $$('[data-lib-del]', dlg).forEach((b) => b.onclick = () => { cmLibSet(cmLib().filter((x) => x.id !== b.dataset.libDel)); const row = b.closest('.cm-lib-item'); if (row) row.remove(); });
+    const file = $('#cmStampPic', dlg);
+    $('#cmStampPicBtn', dlg).onclick = () => file.click();
+    file.onchange = async () => {
+      const f = file.files[0]; if (!f) return;
+      try { pic = { ...(await cmStampPicture(f)), name: (f.name || 'Picture').replace(/\.[a-z0-9]+$/i, '') }; } catch { toast('That file isn’t a picture Cowdrey.PDF can read.'); return; }
+      keep = $('#cmStampKeep', dlg).checked; done();
+    };
     const inp = $('#cmStampText', dlg);
     inp.oninput = () => { custom = inp.value; };
-    inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('[data-a="1"]', dlg).click(); } };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } };
+    $('#cmStampKeep', dlg).onchange = (e) => { keep = e.target.checked; };
   });
   if (!a) return;
-  if (pick) {
+  if (pic) {
+    if (keep && !pic.fromLib) cmLibAdd({ kind: 'picture', name: pic.name, data: pic.data, w: pic.w, h: pic.h });
+    CM.stamp = { picture: pic };
+  } else if (pick === 'dynamic') {
+    const name = who || (await askText('Your name', 'Shown on the stamp, and as the author of your comments.', '', 'Use')) || '';
+    if (!who && name.trim()) { S.author = name.trim(); saveSettings(); }
+    CM.stamp = { stamp: 'dynamic', label: 'Approved', color: '#2B8A3E', name: 'Approved', sub: '', dynamic: true };
+  } else if (pick && pick !== 'lib') {
     const [k, label, color, name] = CM_STAMPS.find((s) => s[0] === pick);
     CM.stamp = { stamp: k, label, color, name, sub: k === 'received' ? cmToday() : '' };
   } else {
     if (!custom.trim()) { toast('Type the stamp text first'); return; }
+    if (keep && pick !== 'lib') cmLibAdd({ kind: 'text', name: custom.trim(), label: custom.trim() });
     CM.stamp = { stamp: 'custom', label: custom.trim(), name: 'Custom', sub: '' };
   }
   setTool('cmstamp'); toast('Click the page to place the stamp');
 }
 FEATURE.tools.cmstamp = {
-  down(e, v) {
+  async down(e, v) {
     e.preventDefault();
     if (!CM.stamp) { cmPickStamp(); return; }
-    const [x, y] = toPdf(v, ...localPoint(e, v)), s = CM.stamp, before = snapshot();
-    const m = { id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub: s.sub, name: s.name, color: s.color || cmStroke('cmstamp'), text: s.label, ...cmStampSize(s.label, s.sub) };
+    const [x, y] = toPdf(v, ...localPoint(e, v)), s = CM.stamp;
+    let m;
+    if (s.picture) {
+      // a picture stamp: 150 points across its longer side, upright on screen
+      const k = 150 / Math.max(s.picture.w, s.picture.h);
+      m = { id: uid(), type: 'cmPicStamp', x, y, w: +(s.picture.w * k).toFixed(2), h: +(s.picture.h * k).toFixed(2), rot: totalRot(v), data: s.picture.data, name: s.picture.name || 'Picture' };
+    } else {
+      // a dynamic stamp says who and when, at the moment it is placed
+      const sub = s.dynamic ? cmDynSub(await cmStampName()) : s.sub;
+      m = { id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub, name: s.name, color: s.color || cmStroke('cmstamp'), text: s.label, ...cmStampSize(s.label, sub) };
+    }
+    const before = snapshot();
     marksOf(v.entry).push(m);
     drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
   },
 };
+// A picture stamp: centred on x, y, w × h points, turned by rot (counter-clockwise in PDF space, as the page turns).
+function cmPicCorners(m) {
+  const a = (m.rot || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), w2 = m.w / 2, h2 = m.h / 2;
+  const P = (u, w) => [m.x + c * u - s * w, m.y + s * u + c * w];
+  return { bl: P(-w2, -h2), br: P(w2, -h2), tr: P(w2, h2), tl: P(-w2, h2) };
+}
+FEATURE.markTypes.cmPicStamp = {
+  draw(v, m) {
+    const g = svgEl('g', { class: 'mk' }), { bl, br, tl } = cmPicCorners(m), o = toView(v, ...tl), X = toView(v, ...[br[0] + tl[0] - bl[0], br[1] + tl[1] - bl[1]]), Y = toView(v, ...bl);
+    g.appendChild(svgEl('image', { x: 0, y: 0, width: 1, height: 1, href: m.data, preserveAspectRatio: 'none', transform: `matrix(${X[0] - o[0]} ${X[1] - o[1]} ${Y[0] - o[0]} ${Y[1] - o[1]} ${o[0]} ${o[1]})` }));
+    return g;
+  },
+  async save({ L, out, p, m }) {
+    const { PDFName, PDFHexString, PDFString } = L, c = out.context, q = cmPicCorners(m), pts = [q.bl, q.br, q.tr, q.tl];
+    const rect = [Math.min(...pts.map((t) => t[0])), Math.min(...pts.map((t) => t[1])), Math.max(...pts.map((t) => t[0])), Math.max(...pts.map((t) => t[1]))];
+    const img = FEATURE.picXObject ? await FEATURE.picXObject(L, out, { data: m.data }, {}) : (await out.embedPng(m.data)).ref;
+    // the unit square onto the picture's place (in page space: the form's BBox is the Rect, its Matrix none)
+    const mat = [q.br[0] - q.bl[0], q.br[1] - q.bl[1], q.tl[0] - q.bl[0], q.tl[1] - q.bl[1], q.bl[0], q.bl[1]];
+    const ap = c.register(c.stream(`q ${mat.map(cmNum).join(' ')} cm /Im Do Q`, { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: rect, Resources: { XObject: { Im: img } } }));
+    const annot = c.obj({ Type: 'Annot', Subtype: 'Stamp', Rect: rect, F: 4, Name: 'Image', AP: { N: ap } });
+    annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(m.name || 'Picture'));
+    const who = cmAuthorOf(m); if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
+    annot.set(PDFName.of('M'), PDFString.fromDate(m.at ? new Date(m.at) : new Date()));
+    const ref = c.register(annot);
+    let annots = p.node.lookup(PDFName.of('Annots'));
+    if (!annots) { annots = c.obj([]); p.node.set(PDFName.of('Annots'), annots); }
+    annots.push(ref);
+  },
+};
+FEATURE.markLabels.push((m) => (m.type === 'cmPicStamp' ? { label: 'Stamp', text: m.name || 'Picture' } : null));
 
 /* ---- commands and the Comment tab ---- */
 const cmTool = (id, label, icon, tool, hint) => cmd(id, { label, icon, enabled: has, pressed: () => app.dataset.tool === tool, run: () => { setTool(tool); if (hint) toast(hint); } });
@@ -1071,6 +1169,15 @@ addStyle(`
 .cm-stamp:hover, .cm-stamp:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cm-stamp-face { display: inline-flex; flex-direction: column; align-items: center; color: var(--cm-c); border: 2px solid var(--cm-c); box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px var(--cm-c); border-radius: 7px; padding: 3px 9px; font: 700 13px/1.15 Helvetica, Arial, sans-serif; letter-spacing: .02em; white-space: nowrap; transform: rotate(-${CM_TILT}deg); background: color-mix(in srgb, var(--cm-c) 7%, #fff); }
 .cm-stamp-face small { font-weight: 400; font-size: 9px; }
+.cm-stamp-h { font-size: 13px; margin: 14px 0 2px; color: var(--ink-2); }
+.cm-stamp-img { max-width: 112px; max-height: 44px; object-fit: contain; }
+.cm-stamp-add { color: #333; display: flex; gap: 6px; font-size: 12px; }
+.cm-stamp-add svg { width: 16px; height: 16px; }
+.cm-lib { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.cm-lib-item { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; }
+.cm-lib-item .cm-stamp { min-height: 48px; padding: 4px; }
+.cm-lib-name { font: inherit; font-size: 13px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; min-width: 0; }
+.cm-stamp-keep { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
 `);
 TEST_HOOKS.cmItems = async () => (await cmItems()).map((it) => [it.label, it.n + 1, it.text, !!it.m]);
 TEST_HOOKS.setAuthor = (name) => { S.author = name; saveSettings(); };

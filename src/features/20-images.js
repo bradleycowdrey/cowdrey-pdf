@@ -3,7 +3,13 @@
    an `ie` mark) or one added with Picture… or a signature (`img` marks, selected with Select or Edit PDF).
    A picture is placed by a matrix (`mat`) that maps its unit square onto the page; turning and flipping change it.
    A crop is a rectangle [u0, v0, u1, v1] in that unit square (v up), drawn with an SVG clip path and saved as a clip
-   before the picture is painted. An added picture becomes a `pic` mark (matrix, crop) the first time it is changed. */
+   before the picture is painted (or, with "Keep the full picture" off, the cut-off pixels are removed and the picture
+   is made again from what is left). An added picture becomes a `pic` mark (matrix, crop) the first time it is changed.
+   Saving: a picture from the PDF whose pixels are its own (`orig`) is drawn from its original picture object, with a new
+   matrix only, so moving, turning or flipping it never makes a copy (a JPEG keeps its bytes, CMYK and ICC colours stay).
+   A picture whose pixels changed (cut, enhanced, replaced) is written once as a new object: JPEG when it was one
+   (`codec: 'jpeg'`, or a JPEG data URL), else Flate, grey when every pixel is. Then picture objects nothing on a page
+   draws any more are taken out of its resources, so deleted and replaced pictures leave the file. */
 const PIC_TYPES = new Set(['img', 'pic']);
 let picCrop = null; // { v, id, mat, rect, drag? } while a crop is being chosen
 
@@ -40,8 +46,8 @@ function picToPic(m) {
   return m;
 }
 // Makes a change to the selected picture, with undo.
-async function picEdit(fn) {
-  const sel = picSel(); if (!sel) return false;
+async function picEdit(fn, chosen) {
+  const sel = chosen || picSel(); if (!sel) return false;
   const before = snapshot();
   let m;
   if (sel.kind === 'ie') { m = await imageMark(sel.v, sel.s); if (!m) { drawMarks(sel.v); return false; } m.deleted = false; }
@@ -170,15 +176,17 @@ addStyle(`
 .pic-bar .pic-sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
 .pic-bar .btn { height: 30px; padding: 0 12px; }
 .pic-bar .pic-hint { font-size: 12px; color: var(--ink-2); padding: 0 6px; }
+.pic-bar .pic-keep { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); padding: 0 8px 0 2px; cursor: pointer; }
+.pic-bar .pic-keep input { margin: 0; accent-color: var(--accent); }
 .marks .pic-resize { pointer-events: auto; cursor: nwse-resize; }
 .pic-crop { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .pic-crop .pic-shade { fill: rgba(0,0,0,.5); fill-rule: evenodd; pointer-events: none; }
 .pic-crop .pic-frame { fill: transparent; stroke: #fff; stroke-width: 1.5; cursor: move; }
 .pic-crop .pic-frame-2 { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
 .pic-crop .pic-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
-@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint { display: none; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint, .pic-bar .pic-wide { display: none; } .pic-bar .pic-keep span { font-size: 11px; white-space: normal; max-width: 110px; } }
 `);
-const PIC_TOOLS = [['picRotL', 'rotate-ccw'], ['picRotR', 'rotate-cw'], ['picFlipH', 'flip-horizontal-2'], ['picFlipV', 'flip-vertical-2'], ['picCrop', 'crop'], '-', ['picReplace', 'replace'], ['picExtract', 'image-down'], '-', ['picDelete', 'trash-2']];
+const PIC_TOOLS = [['picRotL', 'rotate-ccw'], ['picRotR', 'rotate-cw'], ['picFlipH', 'flip-horizontal-2'], ['picFlipV', 'flip-vertical-2'], ['picCrop', 'crop'], ['imgEnhance', 'sliders-horizontal', 'pic-wide'], '-', ['picReplace', 'replace'], ['picExtract', 'image-down'], '-', ['picDelete', 'trash-2']];
 function picBar(v, sel) {
   let bar = v.el.querySelector(':scope > .pic-bar');
   if (!sel || (typeof lineEditor !== 'undefined' && lineEditor)) { if (bar) bar.remove(); return; }
@@ -188,8 +196,9 @@ function picBar(v, sel) {
     bar = document.createElement('div'); bar.className = 'pic-bar'; bar.dataset.mode = mode;
     bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Picture');
     bar.innerHTML = mode === 'crop'
-      ? `<span class="pic-hint">Drag the corners to crop</span><button type="button" class="btn" data-cmd="picCropCancel">Cancel</button><button type="button" class="btn primary" data-cmd="picCropApply">${ic('check')}<span>Apply</span></button>`
-      : PIC_TOOLS.map((t) => t === '-' ? '<span class="pic-sep"></span>' : `<button type="button" class="icon-btn" data-cmd="${t[0]}" title="${esc(C[t[0]].label)}" aria-label="${esc(C[t[0]].label)}">${ic(t[1])}</button>`).join('');
+      ? `<span class="pic-hint">Drag the corners to crop</span><label class="pic-keep" title="Off: the cut-off part is removed from the file"><input type="checkbox" id="picCropKeep"${picKeepFull() ? ' checked' : ''}><span>Keep the full picture (crop by hiding)</span></label><button type="button" class="btn" data-cmd="picCropCancel">Cancel</button><button type="button" class="btn primary" data-cmd="picCropApply">${ic('check')}<span>Apply</span></button>`
+      : PIC_TOOLS.filter((t) => t === '-' || C[t[0]]).map((t) => t === '-' ? '<span class="pic-sep"></span>' : `<button type="button" class="icon-btn${t[2] ? ' ' + t[2] : ''}" data-cmd="${t[0]}" title="${esc(C[t[0]].label)}" aria-label="${esc(C[t[0]].label)}">${ic(t[1])}</button>`).join('');
+    const keep = bar.querySelector('#picCropKeep'); if (keep) keep.onchange = () => { S.picCropKeep = keep.checked; saveSettings(); };
     // Keep the page from seeing the press (it would start a drag or clear the selection).
     bar.addEventListener('pointerdown', (e) => e.stopPropagation());
     v.el.appendChild(bar); icons();
@@ -216,7 +225,49 @@ function picCropEnd(apply) {
   const ov = c.v.el.querySelector(':scope > .pic-crop'); if (ov) ov.remove();
   if (!apply) { drawMarks(c.v); return; }
   const [u0, v0, u1, v1] = c.rect, full = u0 < .002 && v0 < .002 && u1 > .998 && v1 > .998;
+  if (!full && !picKeepFull()) { picCutApply(c.rect); return; }
   picEdit((m) => { if (full) delete m.crop; else m.crop = c.rect.map((n) => +n.toFixed(5)); }).then((done) => { if (done) toast(full ? 'Crop removed' : 'Picture cropped'); });
+}
+// "Keep the full picture (crop by hiding)": on unless turned off (then the cut-off pixels leave the file).
+const picKeepFull = () => S.picCropKeep !== false;
+// A real crop: the picture is made again from the part kept, in its own kind (JPEG stays JPEG), and placed where that
+// part was. Its transparency (soft mask) is cut the same way.
+async function picCutApply(rect) {
+  const sel = picSel(); if (!sel) return;
+  const src = await picDataOf(sel); if (!src) { toast('This picture can’t be cropped, but it can be deleted or erased.'); return; }
+  const codec = await picCodecOf(sel);
+  let cut; try { cut = await picCutPixels(src, rect, codec); } catch (e) { console.warn(e); toast('This picture can’t be cropped.'); return; }
+  const done = await picEdit((m) => {
+    const [r0, r1, r2, r3] = cut.r;
+    m.mat = mul([r2 - r0, 0, 0, r3 - r1, r0, r1], m.mat).map((n) => Math.abs(n) < 1e-9 ? 0 : +n.toFixed(6));
+    m.data = cut.data; m.orig = false; delete m.crop;
+    if (cut.codec) m.codec = cut.codec; else delete m.codec;
+  });
+  if (done) toast('Picture cropped. The cut-off part is removed.');
+}
+async function picCutPixels(data, rect, codec) {
+  const img = new Image(); img.src = data; await img.decode();
+  const W = img.naturalWidth, H = img.naturalHeight, [u0, v0, u1, v1] = rect;
+  const sx = Math.max(0, Math.min(W - 1, Math.round(u0 * W))), sy = Math.max(0, Math.min(H - 1, Math.round((1 - v1) * H)));
+  const sw = Math.max(1, Math.min(W - sx, Math.round((u1 - u0) * W))), sh = Math.max(1, Math.min(H - sy, Math.round((v1 - v0) * H)));
+  const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  const opaque = picOpaque(g.getImageData(0, 0, sw, sh).data);
+  // the part of the unit square kept, to whole pixels
+  const r = [sx / W, 1 - (sy + sh) / H, (sx + sw) / W, 1 - sy / H];
+  if (codec === 'jpeg' && opaque) return { data: c.toDataURL('image/jpeg', 0.92), r };
+  return { data: c.toDataURL('image/png'), r, codec: codec === 'jpeg' ? 'jpeg' : undefined };
+}
+function picOpaque(px) { for (let i = 3; i < px.length; i += 4) if (px[i] !== 255) return false; return true; }
+// The selected picture's pixels (a data URL).
+async function picDataOf(sel) { return sel.kind === 'ie' ? (sel.s.mark && sel.s.mark.data) || await imagePng(sel.v, sel.s.im) : sel.m.data; }
+// How a picture is kept: 'jpeg' or 'png'.
+async function picCodecOf(sel) {
+  const m = sel.kind === 'ie' ? sel.s.mark : sel.m;
+  if (m && /^data:image\/jpeg/.test(m.data || '')) return 'jpeg';
+  if (m && m.codec) return m.codec;
+  if (sel.kind === 'ie' && (!m || m.orig)) { const info = await picInfo(sel.v.entry, sel.s.im).catch(() => null); return info && info.jpeg ? 'jpeg' : 'png'; }
+  return 'png';
 }
 function picCropDraw() {
   const c = picCrop, v = c.v;
@@ -280,6 +331,8 @@ document.body.appendChild(picInput);
 async function picLoad(file) {
   const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
   const img = new Image(); img.src = data; await img.decode();
+  // A JPEG is kept as it is (saved with its own bytes); other kinds become PNG.
+  if (/^data:image\/jpeg/.test(data) && [1, 3].includes(picJpegComps(picB64Bytes(data)))) return { data, w: img.naturalWidth, h: img.naturalHeight };
   const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0);
   return { data: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight };
 }
@@ -298,7 +351,7 @@ picInput.addEventListener('change', async () => {
   const f = picInput.files[0]; picInput.value = '';
   if (!f) return;
   let pic; try { pic = await picLoad(f); } catch { toast('That file isn’t a picture Cowdrey.PDF can read.'); return; }
-  const done = await picEdit((m) => { m.mat = picFit(m.mat, m.crop, pic.w, pic.h); m.data = pic.data; delete m.crop; });
+  const done = await picEdit((m) => { m.mat = picFit(m.mat, m.crop, pic.w, pic.h); m.data = pic.data; m.orig = false; delete m.codec; delete m.crop; });
   if (done) toast('Picture replaced');
 });
 
@@ -330,8 +383,7 @@ function picDelete() {
 async function picPaint(L, out, p, m, ctx) {
   if (!m.data || !m.mat) return;
   const { PDFOperator, PDFNumber } = L, O = (n, a = []) => PDFOperator.of(n, a), N = (x) => PDFNumber.of(+(+x).toFixed(4));
-  let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); }
-  const key = p.node.newXObject('CPDFIm', im.ref), ops = [O('q')];
+  const key = p.node.newXObject('CPDFIm', await picXObject(L, out, m, ctx)), ops = [O('q')];
   if (m.crop) { const q = picQuad(m.mat, m.crop); ops.push(O('m', q[0].map(N)), O('l', q[1].map(N)), O('l', q[2].map(N)), O('l', q[3].map(N)), O('h'), O('W'), O('n')); }
   ops.push(O('cm', m.mat.map(N)), O('Do', [key]), O('Q'));
   p.pushOperators(...ops);
@@ -353,6 +405,206 @@ for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () =>
 const picStartImageDragCore = startImageDrag;
 startImageDrag = function (e, v, s, mode) { if (!picPressed) { drawMarks(v); return; } return picStartImageDragCore(e, v, s, mode); };
 
+/* What a picture in the PDF is made of: read with pdf-lib from the file it came from (its kind, colours, bytes). */
+const picSrcDocs = new WeakMap(); // source bytes -> its pdf-lib document
+async function picSrcDoc(src) {
+  const b = doc && doc.sources[src]; if (!b) return null;
+  let d = picSrcDocs.get(b);
+  if (!d) { const L = await loadPdfLib(); d = L.PDFDocument.load(b, b.password ? { password: b.password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false }); picSrcDocs.set(b, d); }
+  return d;
+}
+function picStreamBytes(L, st) {
+  if (st instanceof L.PDFRawStream) return L.decodePDFRawStream(st).decode();
+  return st.getUnencodedContents ? st.getUnencodedContents() : st.getContents();
+}
+const picLatin = (b) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; };
+function picPageText(L, ctx, node) {
+  const raw = node.get(L.PDFName.of('Contents')), r = raw && ctx.lookup(raw);
+  const list = r instanceof L.PDFArray ? r.asArray() : raw ? [raw] : [];
+  return list.map((x) => { const st = ctx.lookup(x); return st && st.dict ? picLatin(picStreamBytes(L, st)) : ''; }).join('\n');
+}
+// Every picture a page draws (forms followed), with where it goes: [{ quad, st, ref, name }].
+function picDraws(L, d, node) {
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFNumber } = L, N = (k) => PDFName.of(k), c = d.context, out = [];
+  const walk = (src, res, ctm, depth) => {
+    const R = res instanceof PDFRef ? c.lookup(res) : res, xo = R instanceof PDFDict ? R.lookup(N('XObject')) : null;
+    walkContent(src, () => [], null, (im) => {
+      if (im.inline || !(xo instanceof PDFDict)) return;
+      const raw = xo.get(N(im.name)), st = raw && c.lookup(raw);
+      if (!st || !st.dict) return;
+      const sub = String(st.dict.lookup(N('Subtype')));
+      if (sub === '/Image') { if (String(st.dict.lookup(N('ImageMask'))) !== 'true') out.push({ quad: [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)), st, ref: raw instanceof PDFRef ? raw : null, name: im.name }); }
+      else if (sub === '/Form' && depth < 6) {
+        const M = st.dict.lookup(N('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = c.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
+        let t = ''; try { t = picLatin(picStreamBytes(L, st)); } catch { return; }
+        walk(t, st.dict.lookup(N('Resources')) || R, mul(fm, im.ctm), depth + 1);
+      }
+    }, ctm);
+  };
+  let src = ''; try { src = picPageText(L, c, node); } catch { return out; }
+  walk(src, node.Resources(), [1, 0, 0, 1, 0, 0], 0);
+  return out;
+}
+// The kind of a picture object: { jpeg, cmyk, cs, bpc, w, h, smask, bytes (a JPEG's own), ref }.
+function picKind(L, st, ref) {
+  const { PDFName, PDFArray, PDFNumber } = L, N = (k) => PDFName.of(k), D = st.dict;
+  const f = D.lookup(N('Filter')), filters = f instanceof PDFArray ? f.asArray().map(String) : f ? [String(f)] : [];
+  const csv = D.lookup(N('ColorSpace'));
+  const cs = csv instanceof PDFName ? String(csv).slice(1) : csv instanceof PDFArray ? String(csv.lookup(0)).slice(1) : '';
+  let comps = 0;
+  if (cs === 'ICCBased') { const icc = csv.lookup(1), n = icc && icc.dict && icc.dict.lookup(N('N')); comps = n instanceof PDFNumber ? n.asNumber() : 0; }
+  const jpeg = filters.length === 1 && filters[0] === '/DCTDecode', bytes = jpeg ? st.getContents() : null;
+  if (jpeg && !cs) comps = picJpegComps(bytes);
+  const num = (k) => { const n = D.lookup(N(k)); return n instanceof PDFNumber ? n.asNumber() : 0; };
+  return { jpeg, cs, cmyk: cs === 'DeviceCMYK' || comps === 4, bpc: num('BitsPerComponent'), w: num('Width'), h: num('Height'), smask: !!D.get(N('SMask')), bytes, ref };
+}
+// The picture object behind a picture pdf.js drew on the page (`im` from contentMap): found by where it is drawn.
+async function picInfo(entry, im) {
+  const L = await loadPdfLib(), d = await picSrcDoc(entry.src); if (!d) return null;
+  const b = quadBox(im.quad), draws = picDraws(L, d, d.getPage(entry.i).node);
+  const dr = draws.find((x) => quadBox(x.quad).every((n, k) => Math.abs(n - b[k]) < 1));
+  return dr ? picKind(L, dr.st, dr.ref) : null;
+}
+// The number of colour components in a JPEG (from its frame header), or 0.
+function picJpegComps(b) {
+  for (let i = 2; i + 9 < b.length;) {
+    if (b[i] !== 0xFF) { i++; continue; }
+    const mk = b[i + 1];
+    if (mk === 0xFF) { i++; continue; }
+    if (mk === 0xD8 || mk === 0x01 || (mk >= 0xD0 && mk <= 0xD7)) { i += 2; continue; }
+    if (mk >= 0xC0 && mk <= 0xCF && mk !== 0xC4 && mk !== 0xC8 && mk !== 0xCC) return b[i + 9];
+    i += 2 + ((b[i + 2] << 8) | b[i + 3]);
+  }
+  return 0;
+}
+
+/* Saving: the picture object a picture is drawn from. */
+async function picXObject(L, out, m, ctx) {
+  if (m.orig && ctx.picRefs && ctx.picRefs.get(m.id)) return ctx.picRefs.get(m.id);
+  if (!m.data) return null;
+  const cache = ctx.picX || (ctx.picX = new Map()), key = (m.codec || '') + '|' + m.data;
+  if (!cache.has(key)) cache.set(key, picWrite(L, out, m.data, m.codec));
+  return cache.get(key);
+}
+FEATURE.picXObject = picXObject;
+// A new picture object from a data URL: a JPEG with its own bytes; else Flate (grey when every pixel is), or JPEG at
+// 92% when `codec` is 'jpeg'; transparency as a soft mask.
+async function picWrite(L, out, data, codec) {
+  const c = out.context, img = new Image(); img.src = data; await img.decode();
+  const W = img.naturalWidth, H = img.naturalHeight, head = { Type: 'XObject', Subtype: 'Image', Width: W, Height: H, BitsPerComponent: 8 };
+  if (/^data:image\/jpeg/.test(data)) {
+    const bytes = picB64Bytes(data), comps = picJpegComps(bytes);
+    if (comps === 1 || comps === 3) return c.register(c.stream(bytes, { ...head, ColorSpace: comps === 1 ? 'DeviceGray' : 'DeviceRGB', Filter: 'DCTDecode' }));
+  }
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+  const px = g.getImageData(0, 0, W, H).data, n = W * H;
+  let opaque = true, gray = true;
+  for (let i = 0; i < px.length; i += 4) { if (px[i + 3] !== 255) opaque = false; if (px[i] !== px[i + 1] || px[i] !== px[i + 2]) gray = false; }
+  let smask = null;
+  if (!opaque) { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = px[i * 4 + 3]; smask = c.register(c.flateStream(a, { ...head, ColorSpace: 'DeviceGray' })); }
+  const dict = { ...head, ...(smask ? { SMask: smask } : {}) };
+  if (codec === 'jpeg') {
+    const w = document.createElement('canvas'); w.width = W; w.height = H;
+    const wg = w.getContext('2d'); wg.fillStyle = '#FFFFFF'; wg.fillRect(0, 0, W, H); wg.drawImage(cv, 0, 0);
+    const blob = await new Promise((res) => w.toBlob(res, 'image/jpeg', 0.92));
+    return c.register(c.stream(new Uint8Array(await blob.arrayBuffer()), { ...dict, ColorSpace: 'DeviceRGB', Filter: 'DCTDecode' }));
+  }
+  const k = gray ? 1 : 3, b = new Uint8Array(n * k);
+  if (gray) for (let i = 0; i < n; i++) b[i] = px[i * 4];
+  else for (let i = 0; i < n; i++) { b[i * 3] = px[i * 4]; b[i * 3 + 1] = px[i * 4 + 1]; b[i * 3 + 2] = px[i * 4 + 2]; }
+  return c.register(c.flateStream(b, { ...dict, ColorSpace: gray ? 'DeviceGray' : 'DeviceRGB' }));
+}
+
+/* Saving: picture and form objects nothing on a page draws any more are taken out of its resources (and so out of the
+   file, which keeps only what something refers to). A page's resources may be shared with other pages, so the page
+   gets its own copy of them first. A form's resources are used by that form's content alone, so the form gets a
+   trimmed copy of its own (whoever draws the form sees the same content). */
+function picDropUnused(L, out, pages) {
+  const { PDFName, PDFDict, PDFRef } = L, N = (k) => PDFName.of(k), c = out.context;
+  const look = (o) => (o instanceof PDFRef ? c.lookup(o) : o);
+  // Every name a content stream spells out (whatever operator it is for: a name anywhere keeps its entry).
+  const namesCache = new Map();
+  const namesIn = (src) => { let s = namesCache.get(src); if (!s) { s = new Set(); for (const m of src.matchAll(/\/([^\s/[\]<>(){}%]+)/g)) s.add(m[1]); namesCache.set(src, s); } return s; };
+  const uses = (src, key) => {
+    const a = key.asString().slice(1); let b = a; try { b = key.decodeText(); } catch {}
+    const s = namesIn(src); return s.has(a) || s.has(b);
+  };
+  const text = (st) => picLatin(picStreamBytes(L, st));
+  const isForm = (st) => st && st.dict && String(st.dict.lookup(N('Subtype'))) === '/Form';
+  // A Type 3 font without resources of its own draws with the page's: such resources are left alone.
+  const type3 = (R) => { const F = look(R.get(N('Font'))); return F instanceof PDFDict && F.entries().some(([, f]) => { const d = look(f); return d instanceof PDFDict && String(d.lookup(N('Subtype'))) === '/Type3' && !d.get(N('Resources')); }); };
+  const seenForms = new Set();
+  let dropped = 0;
+  // Trims the XObjects of `R` (the resources `src` is drawn with); `own` puts the trimmed copy in place.
+  const trim = (R, src, own, depth) => {
+    if (!(R instanceof PDFDict) || depth > 6) return;
+    const xo = look(R.get(N('XObject')));
+    if (!(xo instanceof PDFDict) || type3(R)) return;
+    // Forms without resources of their own draw with these: what they draw counts too (until nothing new is added).
+    let all = src; const added = new Set();
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const [k, v] of xo.entries()) {
+        const st = look(v), id = k.asString();
+        if (added.has(id) || !isForm(st) || st.dict.get(N('Resources')) || !uses(all, k)) continue;
+        try { all += '\n' + text(st); } catch { return; }
+        added.add(id); grew = true;
+      }
+    }
+    const gone = xo.entries().filter(([k]) => !uses(all, k)).map(([k]) => k);
+    // The forms still drawn have their own resources trimmed in turn.
+    for (const [k, v] of xo.entries()) {
+      if (gone.includes(k)) continue;
+      const st = look(v); if (!isForm(st)) continue;
+      const tag = v instanceof PDFRef ? v.tag : null; if (tag && seenForms.has(tag)) continue; if (tag) seenForms.add(tag);
+      const FR = look(st.dict.get(N('Resources'))); if (!(FR instanceof PDFDict)) continue;
+      let fs; try { fs = text(st); } catch { continue; }
+      trim(FR, fs, (copy) => st.dict.set(N('Resources'), copy), depth + 1);
+    }
+    if (!gone.length) return;
+    const R2 = R.clone(c), xo2 = xo.clone(c);
+    for (const k of gone) xo2.delete(k);
+    R2.set(N('XObject'), xo2); own(R2); dropped += gone.length;
+  };
+  for (const p of pages) {
+    let src; try { src = picPageText(L, c, p.node); } catch { continue; }
+    trim(p.node.Resources(), src, (copy) => p.node.set(N('Resources'), copy), 0);
+  }
+  return dropped;
+}
+FEATURE.saveDoc.push(async ({ L, out, pages }) => { try { picDropUnused(L, out, pages); } catch (e) { console.warn('pictures: unused objects', e); } });
+
+/* Export all pictures: a .zip with each picture once (a JPEG with its own bytes, others as PNG). */
+async function picExportAll() {
+  if (!has()) return;
+  if (typeof crdZip !== 'function') { toast('Exporting pictures isn’t available here.'); return; }
+  const L = await loadPdfLib(), files = [], seen = new Set(), extOf = (u) => /^data:image\/jpeg/.test(u) ? 'jpg' : 'png';
+  for (let n = 0; n < doc.pages.length; n++) {
+    const e = doc.pages[n], pd = pdfDocs.get(e.src); if (!pd) continue;
+    let page, cm, draws = [];
+    try { page = await pd.getPage(e.i + 1); cm = await contentMap(page); } catch { continue; }
+    try { const d = await picSrcDoc(e.src); draws = picDraws(L, d, d.getPage(e.i).node); } catch (er) { console.warn(er); }
+    const marks = marksOf(e);
+    for (const im of cm.images) {
+      const mk = marks.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+      if (mk && mk.deleted) continue;
+      if (mk && !mk.orig && mk.data) { files.push({ data: picB64Bytes(mk.data), ext: extOf(mk.data), n }); continue; }
+      const b = quadBox(im.quad), dr = draws.find((x) => quadBox(x.quad).every((q, k) => Math.abs(q - b[k]) < 1));
+      const id = dr && dr.ref ? `${e.src}:${dr.ref.tag}` : null;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      const kind = dr && picKind(L, dr.st, dr.ref);
+      if (kind && kind.jpeg && !kind.cmyk) { files.push({ data: kind.bytes, ext: 'jpg', n }); continue; }
+      const png = await imagePng({ page }, im); if (png) files.push({ data: picB64Bytes(png), ext: 'png', n });
+    }
+    for (const m of marks) if (PIC_TYPES.has(m.type) && m.data) files.push({ data: picB64Bytes(m.data), ext: extOf(m.data), n });
+  }
+  if (!files.length) { toast('This PDF has no pictures.'); return; }
+  const zip = crdZip(files.map((f, k) => ({ name: `Picture ${k + 1} (page ${f.n + 1}).${f.ext}`, data: f.data })));
+  if (await saveFile(zip, `${String(doc.name || 'Document').replace(/\.pdf$/i, '')} pictures.zip`, 'application/zip') === true) toast(`${files.length} picture${files.length === 1 ? '' : 's'} saved`);
+}
+
 /* Commands */
 const picOn = () => !!picSel() && !picCrop;
 cmd('picRotL', { contextual: true, label: 'Rotate left', icon: 'rotate-ccw', enabled: picOn, run: () => picEdit(picRotate(-1)) });
@@ -365,7 +617,11 @@ cmd('picCropCancel', { label: 'Cancel crop', icon: 'x', enabled: () => !!picCrop
 cmd('picReplace', { contextual: true, label: 'Replace…', icon: 'replace', enabled: picOn, run: () => picInput.click() });
 cmd('picExtract', { contextual: true, rlabel: 'Save as PNG', label: 'Save picture as PNG…', icon: 'image-down', enabled: picOn, run: picExtract });
 cmd('picDelete', { label: 'Delete picture', icon: 'trash-2', enabled: picOn, run: picDelete });
+cmd('picExportAll', { rlabel: 'All pictures', label: 'Export all pictures…', icon: 'images', enabled: has, run: picExportAll });
 ribbonAdd('edit', 'Picture', ['picRotL', 'picRotR', 'picFlipH', 'picFlipV', 'picCrop', 'picReplace', 'picExtract']);
+ribbonAdd('export', 'Export', ['picExportAll']);
+// Next to the other exports, so Close (Cmd+W) stays last in File.
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('exportText') : -1; if (i >= 0) { if (!fm[1].includes('picExportAll')) fm[1].splice(i + 1, 0, 'picExportAll'); } else menuAdd('File', ['picExportAll']); }
 
 // For tests: each picture painted on a page, with its matrix and the box of the clip in force when it is painted.
 TEST_HOOKS.picOps = async (n) => {
@@ -389,4 +645,6 @@ TEST_HOOKS.picOps = async (n) => {
   }
   return out;
 };
+TEST_HOOKS.picInfo = async (n) => { const v = views[n], cm = await contentMap(v.page); return Promise.all(cm.images.map(async (im) => { const k = await picInfo(v.entry, im); return k && { jpeg: k.jpeg, cs: k.cs, cmyk: k.cmyk, w: k.w, h: k.h, smask: k.smask }; })); };
+TEST_HOOKS.picExportAll = picExportAll;
 TEST_HOOKS.picSel = () => { const s = picSel(); return s && { kind: s.kind, mat: picMatOf(s), crop: picCropOf(s), cropping: !!picCrop }; };

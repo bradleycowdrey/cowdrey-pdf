@@ -24,7 +24,7 @@ export default async (h) => {
     ok((await at('edit', 'Edit the PDF')).includes('deleteMark'), 'Delete on Edit');
     ok((await at('home', 'Edit')).includes('bmAdd'), 'Add bookmark on Home');
     const view = await at('home', 'View'); ok(view.indexOf('zoom100') === view.indexOf('zoomPage') + 1, 'Actual size after Fit page: ' + view);
-    eq(await at('edit', 'Add'), ['tool_text', 'image', 'vw_attach'], 'Attach file on Edit (its arrow: Attachments)');
+    eq(await at('edit', 'Add'), ['tool_text', 'image', 'vw_attach', 'md_insertMedia'], 'Attach file on Edit (its arrow: Attachments), then Insert video or audio');
     ok((await at('pages', 'View')).includes('pg60_selAll'), 'Select all on Pages');
     // the Mac menus keep them
     const menus = await p.evaluate(() => Object.fromEntries(window.__cowdreyPdf.menus()));
