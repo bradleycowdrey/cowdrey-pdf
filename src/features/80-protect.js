@@ -71,6 +71,9 @@ addStyle(`
 .prot-check small { display: block; color: var(--ink-3); font-size: 12px; }
 .prot-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .prot-row .field { flex: 1 1 170px; min-width: 0; }
+.prot-row .field select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0; box-sizing: border-box; }
+.prot-preset-slot { margin: 6px 0 0; }
+.prot-preset-slot .btn { height: 30px; padding: 0 12px; font-size: 13px; }
 .field > span { font-size: 12px; color: var(--ink-2); }
 .prot-sub { margin: 4px 0 4px 24px; }
 .prot-sub[hidden] { display: none; }
@@ -94,6 +97,9 @@ addStyle(`
 .prot-hit-ctx mark { background: color-mix(in srgb, #E03131 22%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; font-weight: 600; }
 .prot-hit-view { margin: 8px 0 0; }
 .prot-hit-view canvas { display: block; width: 100%; height: auto; max-height: 180px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.prot-leaks { margin: 6px 0; padding-left: 18px; font-size: 13px; color: var(--ink); }
+.prot-leaks li { margin: 2px 0; overflow-wrap: anywhere; }
+.prot-leaks mark { background: color-mix(in srgb, #E03131 22%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; font-weight: 600; }
 .prot-hit-view figcaption { font-size: 12px; color: var(--ink-3); margin-top: 4px; overflow-wrap: anywhere; }
 @media (pointer: coarse) { .prot-hit { padding: 6px; } .prot-hit input { width: 22px; height: 22px; margin-top: 1px; } }
 `);
@@ -275,33 +281,42 @@ async function protSearch() {
       <label class="prot-check"><input type="checkbox" name="matchCase"${last.matchCase ? ' checked' : ''}> Match case</label>
       <label class="prot-check"><input type="checkbox" name="email"${last.email ? ' checked' : ''}> Email addresses</label>
       <label class="prot-check"><input type="checkbox" name="phone"${last.phone ? ' checked' : ''}> Phone numbers</label>
+      <label class="prot-check"><input type="checkbox" name="hidden"${last.hidden ? ' checked' : ''}> Also search comments, bookmarks, form fields and document properties</label>
     </div>`, [{ label: 'Cancel' }, { label: 'Find', value: 'find', primary: true }]);
   if (!r || r.action !== 'find') return;
-  S.protSearch = { text: r.text, wholeWords: r.wholeWords, matchCase: r.matchCase, email: r.email, phone: r.phone }; saveSettings();
+  S.protSearch = { text: r.text, wholeWords: r.wholeWords, matchCase: r.matchCase, email: r.email, phone: r.phone, hidden: r.hidden }; saveSettings();
   const rx = protRegex(r);
   if (!rx) { toast('Type something to find, or choose a pattern'); return; }
-  const found = await protFind(rx);
+  let found = await protFind(rx);
+  if (r.hidden) { try { found = found.concat(await rsFindHidden(rx)); } catch (e) { console.warn(e); } }
   if (!found.length) { toast('No matches found'); return; }
   const pick = await protReview(found);
   if (pick === 'back') return protSearch();
   if (!pick || !pick.length) return;
-  const before = snapshot();
-  for (const f of pick) marksOf(f.entry).push({ id: uid(), type: 'redact', quads: f.quads, fill: '#000000', label: '', applied: false, found: f.text });
+  const before = snapshot(), onPage = pick.filter((f) => !f.hidden), hid = pick.filter((f) => f.hidden);
+  for (const f of onPage) marksOf(f.entry).push({ id: uid(), type: 'redact', quads: f.quads, fill: '#000000', label: '', applied: false, found: f.text });
+  // Comments, bookmarks, form values and properties: edited or removed (comments now, the rest when saved)
+  if (hid.length) rsMarkHidden(hid, rx);
   views.forEach((v) => v.rendered && drawMarks(v)); changed(before);
+  const also = hid.length ? ` ${hid.length === 1 ? 'One match outside the pages is' : hid.length + ' matches outside the pages are'} removed when you save.` : '';
+  if (!onPage.length) { toast(also.trim()); return; }
   // The view goes to the first one, so what was marked can be seen.
-  const pages = [...new Set(pick.map(protPageNo))].sort((a, b) => a - b);
+  const pages = [...new Set(onPage.map(protPageNo))].sort((a, b) => a - b);
   goPage(pages[0] - 1);
-  toast(`${pick.length} marked for redaction on page${pages.length > 1 ? 's' : ''} ${pages.length > 6 ? pages.slice(0, 6).join(', ') + '…' : pages.join(', ')}`);
+  toast(`${onPage.length} marked for redaction on page${pages.length > 1 ? 's' : ''} ${pages.length > 6 ? pages.slice(0, 6).join(', ') + '…' : pages.join(', ')}.${also}`);
 }
 const protPageNo = (f) => doc.pages.indexOf(f.entry) + 1;
 /* The matches, to check before marking: each with its page and the words around it, ticked. Choosing one shows it
    on its page, in the dialog. Untick any that should stay. */
 async function protReview(found) {
   let picked = found.map(() => true);
-  const pages = [...new Set(found.map(protPageNo))];
-  const list = found.map((f, k) => `<li class="prot-hit" data-k="${k}"><input type="checkbox" checked aria-label="Mark match ${k + 1} on page ${protPageNo(f)}">
-    <button type="button" class="prot-hit-go" data-go="${k}"><span class="prot-hit-pg">Page ${protPageNo(f)}</span><span class="prot-hit-ctx">${f.before.trim() ? '…' : ''}${esc(f.before.trimStart())}<mark>${esc(f.text)}</mark>${esc(f.after.trimEnd())}${f.after.trim() ? '…' : ''}</span></button></li>`).join('');
-  const res = await dialog('Search and redact', `<p class="prot-hit-sum">${found.length} match${found.length === 1 ? '' : 'es'} on ${pages.length === 1 ? 'page ' + pages[0] : pages.length + ' pages'}. Untick any you want to keep.</p>
+  const pages = [...new Set(found.filter((f) => !f.hidden).map(protPageNo))], nHid = found.filter((f) => f.hidden).length;
+  const where = (f) => (f.hidden ? f.hidden.where : `Page ${protPageNo(f)}`);
+  const list = found.map((f, k) => `<li class="prot-hit" data-k="${k}"><input type="checkbox" checked aria-label="Mark match ${k + 1}: ${esc(where(f))}">
+    <button type="button" class="prot-hit-go" data-go="${k}"><span class="prot-hit-pg">${esc(where(f))}</span><span class="prot-hit-ctx">${f.before.trim() ? '…' : ''}${esc(f.before.trimStart())}<mark>${esc(f.text)}</mark>${esc(f.after.trimEnd())}${f.after.trim() ? '…' : ''}</span></button></li>`).join('');
+  const onPages = pages.length ? ` on ${pages.length === 1 ? 'page ' + pages[0] : pages.length + ' pages'}` : '';
+  const outside = nHid ? `${pages.length ? ', and ' : ' '}${nHid} outside the pages` : '';
+  const res = await dialog('Search and redact', `<p class="prot-hit-sum">${found.length} match${found.length === 1 ? '' : 'es'}${onPages}${outside}. Untick any you want to keep.</p>
     <div class="prot-hit-bar"><button type="button" class="btn" data-all="1">Tick all</button><button type="button" class="btn" data-all="0">Untick all</button></div>
     <ul class="prot-hits" aria-label="Matches">${list}</ul>
     <figure class="prot-hit-view"><canvas width="1" height="1" aria-hidden="true"></canvas><figcaption aria-live="polite"></figcaption></figure>`,
@@ -311,7 +326,8 @@ async function protReview(found) {
     let shownK = -1;
     const show = async (k) => {
       shownK = k; $$('.prot-hit', dlg).forEach((li) => li.classList.toggle('on', +li.dataset.k === k));
-      const f = found[k], cap = $('figcaption', dlg); cap.textContent = `Page ${protPageNo(f)}: ${f.text}`;
+      const f = found[k], cap = $('figcaption', dlg); cap.textContent = `${where(f)}: ${f.text}`;
+      if (f.hidden) { const cv = $('.prot-hit-view canvas', dlg); cv.width = 1; cv.height = 1; return; }
       try { const c = await protHitShot(f); if (shownK !== k || !dlg.open) return; const cv = $('.prot-hit-view canvas', dlg); cv.width = c.width; cv.height = c.height; cv.getContext('2d').drawImage(c, 0, 0); } catch {}
     };
     $('.prot-hits', dlg).addEventListener('change', count);
@@ -406,7 +422,24 @@ async function protApply() {
   }
   changed(before); syncHiddenComments();
   views.forEach((v) => { if (v.rendered) { drawMarks(v); protHideSpans(v); } });
-  toast(`${pend.length === 1 ? 'Redaction' : pend.length + ' redactions'} applied. Save the PDF to remove the content for good.`);
+  await protAfterApply(pend.length);
+}
+// The words just redacted may still be in bookmarks, comments, form values or the document properties: when they
+// are, ask whether to remove hidden information too (with those, when saving).
+async function protAfterApply(n) {
+  const said = `${n === 1 ? 'Redaction' : n + ' redactions'} applied. Save the PDF to remove the content for good.`;
+  const rx = rsTermsRx(rsRedactedTerms());
+  let leaks = []; if (rx) { try { leaks = await rsFindHidden(rx); } catch (e) { console.warn(e); } }
+  if (!leaks.length) { toast(said); return; }
+  const shown = leaks.slice(0, 6).map((f) => `<li><span>${esc(f.hidden.where)}</span> <span class="prot-hit-ctx">${f.before.trim() ? '…' : ''}${esc(f.before.trimStart())}<mark>${esc(f.text)}</mark>${esc(f.after.trimEnd())}${f.after.trim() ? '…' : ''}</span></li>`).join('');
+  const r = await protAsk('Also remove hidden information?', `<p>${n === 1 ? 'The redaction is' : 'The redactions are'} applied. The words you redacted are also in places that aren’t on the page:</p>
+    <ul class="prot-leaks">${shown}${leaks.length > 6 ? `<li>and ${leaks.length - 6} more</li>` : ''}</ul>
+    <p>Remove hidden information takes those out when you save, with the document properties, attached files and scripts.</p>`,
+  [{ label: 'Not now' }, { label: 'Remove', value: 'on', primary: true }]);
+  if (!r || r.action !== 'on') { toast(said); return; }
+  const cur = protDM('protclean') || {};
+  protSetDM('protclean', { metadata: true, attachments: true, javascript: true, comments: !!cur.comments, words: true });
+  toast('Hidden information will be removed when you save, with the redacted content.');
 }
 // On screen, text under an applied redaction can't be selected, copied or found.
 function protHideSpans(v) {
@@ -514,14 +547,16 @@ function protJpegXObject(out, c, smask) {
 }
 // Rewrites a content stream so nothing under the redaction areas is left in it: letters are taken out (the rest of
 // their line stays where it was), pictures are cut or painted over, and forms are rewritten the same way.
-async function protRewrite(st, src, res, ctm0, depth) {
-  const { L, out } = st, { PDFName, PDFDict, PDFRef, PDFStream } = L;
+async function protRewrite(st, src, res, ctm0, depth, mcKey = null) {
+  const { L, out } = st, { PDFName, PDFDict, PDFRef, PDFStream, PDFNumber } = L;
   const { fonts, fontWidth } = pageFonts(L, out, { Resources: () => res });
   const xo = res && res.lookup(PDFName.of('XObject')), xod = xo instanceof PDFDict ? xo : null;
   const toks = tokenizeContent(src);
-  let ctm = ctm0.slice(), tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, rise = 0;
-  const gstack = [], edits = [], touched = new Set();
-  let operands = [], opStart = null, arrStack = [], bi = null;
+  // lw: line width; clip: the clip path's extent on the page (null: the whole page)
+  let ctm = ctm0.slice(), tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, rise = 0, lw = 1, clip = null;
+  const gstack = [], edits = [], touched = new Set(), shTouched = new Set();
+  const mc = rsMarked(st, src, res, mcKey, edits);
+  let operands = [], opStart = null, arrStack = [], bi = null, path = null, clipNext = false;
   for (const t of toks) {
     if (t.t !== 'op') {
       if (opStart == null) opStart = t.start;
@@ -534,11 +569,34 @@ async function protRewrite(st, src, res, ctm0, depth) {
     const num = (k) => (a[k] && a[k].t === 'num' ? a[k].v : 0);
     if (o === 'BI') { bi = { start }; continue; }
     if (o === 'ID') continue;
-    if (o === 'EI') { if (bi) { const r = await protImageOp(st, ctm, { inline: true, res }); if (r != null) edits.push([bi.start, end, r]); bi = null; } continue; }
+    if (o === 'EI') { if (bi) { const r = await protImageOp(st, ctm, { inline: true, res }); if (r != null) { edits.push([bi.start, end, r]); mc.hit(); if (r.trim()) mc.kept(); } else mc.kept(); bi = null; } continue; }
     if (bi) continue;
-    if (o === 'q') gstack.push([ctm, font, fs, tc, tw, th, tl, rise]);
-    else if (o === 'Q') { const g = gstack.pop(); if (g) [ctm, font, fs, tc, tw, th, tl, rise] = g; }
+    // Paths: drawn in full outside the boxes, cut along them, or taken out when all under one.
+    if (RS_PATH_OPS.has(o)) { path = rsPathOp(path, o, num, start, ctm); continue; }
+    if (o === 'W' || o === 'W*') { clipNext = true; continue; }
+    if (RS_PAINT_OPS.has(o)) {
+      if (path) {
+        const dev = rsBox(path.subs.flatMap((s) => s.pts.map(([x, y]) => apply(ctm, x, y))));
+        if (clipNext) clip = rsBoxAnd(clip, dev || [0, 0, 0, 0]);
+        else if (o !== 'n') {
+          const r = rsPaint(path, o, ctm, lw, st.areas);
+          if (r == null) mc.kept(); else { edits.push([path.start, end, r]); mc.hit(); if (r.trim()) mc.kept(); }
+        }
+      }
+      path = null; clipNext = false; continue;
+    }
+    if (o === 'BMC' || o === 'BDC') { mc.open(o, a, start, end); continue; }
+    if (o === 'EMC') { mc.close(); continue; }
+    if (o === 'q') gstack.push([ctm, font, fs, tc, tw, th, tl, rise, lw, clip]);
+    else if (o === 'Q') { const g = gstack.pop(); if (g) [ctm, font, fs, tc, tw, th, tl, rise, lw, clip] = g; }
     else if (o === 'cm') ctm = mul([0, 1, 2, 3, 4, 5].map(num), ctm);
+    else if (o === 'w') lw = num(0);
+    else if (o === 'sh' && a[0] && a[0].t === 'name') {
+      // A shading fills the clip: it goes when what it fills is all under one box (otherwise the box is cut out of it)
+      const bb = rsShadingBox(L, out, res, a[0].v, ctm, clip);
+      if (bb && st.areas.some((ar) => rsInside(ar, bb))) { edits.push([start, end, ' ']); shTouched.add(a[0].v); mc.hit(); }
+      else if (bb && st.areas.some((ar) => protOverlap(ar.box, bb))) { mc.hit(); mc.kept(); } else mc.kept();
+    }
     else if (o === 'BT') { tm = tlm = [1, 0, 0, 1, 0, 0]; }
     else if (o === 'Tf') { font = a[0] && a[0].v; fs = num(1); }
     else if (o === 'Tc') tc = num(0);
@@ -553,17 +611,17 @@ async function protRewrite(st, src, res, ctm0, depth) {
       let prefix = '';
       if (o === "'" || o === '"') { if (o === '"') { tw = num(0); tc = num(1); prefix = `${protNum(tw)} Tw ${protNum(tc)} Tc `; } prefix += 'T* '; tlm = mul([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; }
       const parts = o === 'TJ' ? a.filter((x) => x.t === 'str' || x.t === 'num') : a.filter((x) => x.t === 'str').slice(-1);
-      const M = mul(tm, ctm), f = fonts.get(font), nb = f ? f.bytes : 1;
+      const M = mul(tm, ctm), f = fonts.get(font), nb = f ? f.bytes : 1, fm = rsFontMetrics(L, out, f);
       let adv = 0, any = false, run = null, pend = 0; const outParts = [];
       const flushRun = () => { if (run != null) { outParts.push('<' + run + '>'); run = null; } };
       const flushPend = () => { if (pend) { outParts.push(protNum(pend)); pend = 0; } };
       for (const p of parts) {
         if (p.t === 'num') { flushRun(); pend += p.v; adv -= p.v / 1000 * fs * th; continue; }
         for (const { code, w, space } of fontWidth(font, p.v)) {
-          const gw = (w / 1000 * fs + tc + (space ? tw : 0)) * th;
-          const [cx, cy] = apply(M, adv + w / 2000 * fs * th, rise + fs * .3);
-          if (fs && th && st.areas.some((ar) => inQuad(ar.q, cx, cy))) { any = true; flushRun(); pend -= (w / 1000 * fs + tc + (space ? tw : 0)) * 1000 / fs; }
-          else { flushPend(); run = (run || '') + code.toString(16).padStart(nb * 2, '0'); }
+          const gw = (w * fm.k * fs + tc + (space ? tw : 0)) * th, ink = w * fm.k * fs * th;
+          // the letter's box: its advance, from its font's descent to its ascent
+          if (fs && th && rsGlyphHit(st.areas, M, adv, adv + ink, rise + fm.desc * fs, rise + fm.asc * fs)) { any = true; flushRun(); pend -= (w * fm.k * fs + tc + (space ? tw : 0)) * 1000 / fs; mc.hit(); }
+          else { flushPend(); run = (run || '') + code.toString(16).padStart(nb * 2, '0'); if (!space) mc.kept(); }
           adv += gw;
         }
       }
@@ -577,29 +635,38 @@ async function protRewrite(st, src, res, ctm0, depth) {
       if (sub === '/Image') {
         const filt = String(obj.dict.lookup(PDFName.of('Filter')) || '');
         const r = await protImageOp(st, ctm, { res, jpeg: /DCTDecode/.test(filt), smask: obj.dict.has(PDFName.of('SMask')), key: ref instanceof PDFRef ? ref.toString() : null });
-        if (r != null) { edits.push([start, end, r]); touched.add(name); }
+        if (r != null) { edits.push([start, end, r]); touched.add(name); mc.hit(); if (r.trim()) mc.kept(); } else mc.kept();
       } else if (sub === '/Form' && depth < 8) {
         const mt = obj.dict.lookup(PDFName.of('Matrix')), M = (mt && protNums(out, mt)) || [1, 0, 0, 1, 0, 0];
         const bb = protNums(out, obj.dict.lookup(PDFName.of('BBox'))), fctm = mul(M, ctm);
-        if (bb) { const q = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[2], bb[3]], [bb[0], bb[3]]].map(([x, y]) => apply(fctm, x, y)); if (!st.areas.some((ar) => protOverlap(ar.box, quadBox(q)))) continue; }
+        if (bb) { const q = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[2], bb[3]], [bb[0], bb[3]]].map(([x, y]) => apply(fctm, x, y)); if (!st.areas.some((ar) => protOverlap(ar.box, quadBox(q)))) { mc.kept(); continue; } }
         const fr0 = obj.dict.lookup(PDFName.of('Resources')), fres = protCloneRes(L, out, fr0 instanceof PDFDict ? fr0 : res);
-        const fsrc = protStreamText(L, obj), nsrc = await protRewrite(st, fsrc, fres, fctm, depth + 1);
+        const sp = obj.dict.lookup(PDFName.of('StructParents')), fkey = sp instanceof PDFNumber ? sp.asNumber() : null;
+        const fsrc = protStreamText(L, obj), nsrc = await protRewrite(st, fsrc, fres, fctm, depth + 1, fkey);
+        mc.kept();
         if (nsrc === fsrc) continue;
+        mc.hit();
         const ns = out.context.flateStream(protBytes(nsrc), {});
         for (const [k, v] of obj.dict.entries()) if (!['/Length', '/Filter', '/DecodeParms'].includes(k.asString())) ns.dict.set(k, v);
         ns.dict.set(PDFName.of('Resources'), fres);
         edits.push([start, end, ` /${protAddXObject(L, out, res, out.context.register(ns), 'CPDFRedF')} Do `]); touched.add(name);
-        void ref; void PDFRef;
       }
-    }
+    } else if (o === 'Do') mc.kept();
   }
   if (!edits.length) return src;
   edits.sort((x, y) => y[0] - x[0]);
   for (const [s0, e0, r] of edits) src = src.slice(0, s0) + r + src.slice(e0);
-  // Pictures and forms no longer drawn here leave this resource dictionary, so they aren't kept in the file.
+  // Pictures, forms and shadings no longer drawn here leave this resource dictionary, so they aren't kept in the file.
   if (xod) {
     const own = res.lookup(PDFName.of('XObject'));
     for (const name of touched) if (!new RegExp('/' + protEscRe(name) + '\\s+Do\\b').test(src)) own.delete(PDFName.of(name));
+  }
+  if (shTouched.size) {
+    let sd = res.lookup(PDFName.of('Shading'));
+    if (sd instanceof PDFDict) {
+      sd = sd.clone(out.context); res.set(PDFName.of('Shading'), sd);
+      for (const name of shTouched) if (!new RegExp('/' + protEscRe(name) + '\\s+sh\\b').test(src)) sd.delete(PDFName.of(name));
+    }
   }
   return src;
 }
@@ -650,13 +717,15 @@ FEATURE.savePage.push(async ({ L, out, p, entry, marks, ctx }) => {
   // 2. The page's content, rewritten without what's under the redactions
   node.normalize && node.normalize();
   const page = await pageOf(entry); let cm = null; try { cm = await contentMap(page); } catch {}
-  const st = { L, out, cm, page, areas };
+  const st = { L, out, cm, page, areas, ctx };
+  const sp = node.lookup(PDFName.of('StructParents')), mcKey = sp instanceof PDFNumber ? sp.asNumber() : null;
+  const lab = areas.find((a) => a.label); if (lab && !ctx.protLabel) ctx.protLabel = lab.label;
   const raw = node.get(PDFName.of('Contents')), rc = raw && out.context.lookup(raw);
   const parts = rc instanceof PDFArray ? rc.asArray() : raw ? [raw] : [];
   const src = parts.map((r) => { const s0 = out.context.lookup(r); return s0 ? protStreamText(L, s0) : ''; }).join('\n');
   const res = protCloneRes(L, out, node.Resources());
   node.set(PDFName.of('Resources'), res);
-  const nsrc = await protRewrite(st, src, res, [1, 0, 0, 1, 0, 0], 0);
+  const nsrc = await protRewrite(st, src, res, [1, 0, 0, 1, 0, 0], 0, mcKey);
   // 3. Drawings under the redactions are clipped out (each area cut out of the page in turn).
   const f = protNum;
   let pre = 'q\n';
@@ -697,7 +766,7 @@ function protCollectGarbage(L, out) {
 
 /* ----- flatten ----- */
 function protFormsLocked(v) {
-  const s = protDM('protflatten'), lock = !!(s && s.forms);
+  const s = protDM('protflatten'), lock = !!(s && s.forms) || protBlocked('forms');
   for (const el of v.el.querySelectorAll('.annotationLayer input, .annotationLayer textarea, .annotationLayer select')) {
     if (lock && !el.disabled) { el.disabled = true; el.dataset.protLocked = '1'; }
     else if (!lock && el.dataset.protLocked) { el.disabled = false; delete el.dataset.protLocked; }
@@ -751,6 +820,8 @@ function protFlattenPage(L, out, p, opt) {
 function protClean(L, out, pages, opt) {
   const { PDFName, PDFDict, PDFArray, PDFRef } = L, N = PDFName.of, cat = out.catalog;
   const names = cat.lookup(N('Names'));
+  // Bookmarks, destinations, comments, form values, properties and file names with a redacted word in them
+  const trx = opt.words && rsTermsRx(rsRedactedTerms()); if (trx) rsCleanHidden(L, out, pages, trx, null);
   if (opt.metadata) {
     const info = out.context.lookup(out.context.trailerInfo.Info);
     if (info instanceof PDFDict) for (const k of info.keys()) info.delete(k);
@@ -912,14 +983,35 @@ function protSec() {
   if (m.mode === 'remove') return m;
   return protSecrets.has(m.id) ? m : null;
 }
-// Restrictions on a PDF that opened without a password are kept: only its author can lift them.
+/* A PDF's own limits. Sources opened with their permissions password are unlocked (in memory only, for this
+   session): their limits can be changed or removed. protLimits: source bytes -> pdf.js permission flags or null. */
+const protUnlocked = new WeakSet(), protLimits = new WeakMap();
+async function protFlagsOf(k) {
+  const b = doc.sources[k]; if (protLimits.has(b)) return protLimits.get(b);
+  let f = null; try { const x = pdfDocs.get(k) && await pdfDocs.get(k).getPermissions(); f = x ? [...x] : null; } catch {}
+  protLimits.set(b, f); return f;
+}
+// Restrictions on a PDF that opened without a password are kept: only its author (or the permissions password) can
+// lift them.
 async function protLockedFlags() {
   let flags = null;
   for (const k of protUsedSources()) {
-    if (doc.sources[k].password) continue;
-    try { const f = await pdfDocs.get(k).getPermissions(); if (f) flags = flags ? flags.filter((x) => f.includes(x)) : [...f]; } catch {}
+    if (doc.sources[k].password || protUnlocked.has(doc.sources[k])) continue;
+    const f = await protFlagsOf(k); if (f) flags = flags ? flags.filter((x) => f.includes(x)) : [...f];
   }
   return flags;
+}
+// Sources with limits by their author, not unlocked yet (known once the document has been looked at).
+const protLockedSources = () => (doc ? protUsedSources().filter((k) => { const b = doc.sources[k]; return !b.password && !protUnlocked.has(b) && protLimits.get(b); }) : []);
+// Shown only for a PDF whose author set limits (unlocked or not).
+const protHasAuthorLimits = () => !!doc && protUsedSources().some((k) => !doc.sources[k].password && protLimits.get(doc.sources[k]));
+function protNeedsUnlock() { return !!doc && protLockedSources().length > 0; }
+// What the author's limits forbid now (when the setting to follow them is on): 'modify', 'annotate', 'assemble', 'forms'.
+const PROT_NEED = { modify: ['MODIFY_CONTENTS'], annotate: ['MODIFY_ANNOTATIONS'], assemble: ['ASSEMBLE', 'MODIFY_CONTENTS'], forms: ['FILL_INTERACTIVE_FORMS', 'MODIFY_ANNOTATIONS'] };
+function protBlocked(kind) {
+  if (!doc || S.protRespect === false || !pdfjs) return false;
+  const F = pdfjs.PermissionFlag || {};
+  return protLockedSources().some((k) => { const f = protLimits.get(doc.sources[k]); return !PROT_NEED[kind].some((n) => f.includes(F[n])); });
 }
 // Saving asks whether to keep a PDF's own password; a password set or removed here answers that question.
 FEATURE.onDocShown.push((d) => {
@@ -930,14 +1022,102 @@ FEATURE.onDocShown.push((d) => {
       set(v) { stored = v; } });
   } catch {}
 });
+const PROT_BLOCKED_SAY = {
+  modify: 'The author of this PDF doesn’t allow changes. Enter the permissions password to edit.',
+  annotate: 'The author of this PDF doesn’t allow comments. Enter the permissions password to add them.',
+  assemble: 'The author of this PDF doesn’t allow changes to its pages. Enter the permissions password to change them.',
+  forms: 'The author of this PDF doesn’t allow filling in its forms. Enter the permissions password to fill them in.',
+};
+FEATURE.onDocShown.push(async (d) => {
+  await Promise.all(d.sources.map((b, k) => protFlagsOf(k).catch(() => null)));
+  if (doc !== d) return;
+  protGuard();
+  if (!protHasAuthorLimits()) return; // nothing to show or turn off: the ribbon stays as it is
+  renderRibbon(); views.forEach((v) => v.rendered && protFormsLocked(v));
+  if (protBlocked('modify')) toast(PROT_BLOCKED_SAY.modify, { label: 'Enter password', run: () => run('protOwnerPw') });
+});
+/* Following the limits: the commands that change the PDF are turned off (their tooltip says why). Changes to the
+   content (Edit tab, forms design, redaction, page design), comments (Comment tab) and pages (Pages tab) each follow
+   their own flag. Commands are wrapped once, when every feature has added its own. */
+const protGuarded = new Set();
+function protGuard() {
+  const kindOf = new Map(), free = new Set(['tool_select', 'tool_hand', 'undo', 'redo', 'find', 'extract', 'deleteMark', 'copyMark', 'pasteMark', 'dupMark', 'zoomIn', 'zoomOut', 'zoomFit', 'zoomPage', 'zoom100', 'sidebar', 'darkPage', 'open', 'print', 'saveCopy', 'share', 'exportImage', 'exportText']);
+  const ids = (list) => (Array.isArray(list) ? list.filter((id) => typeof id === 'string' && id !== '-') : []);
+  for (const [tab, [, groups]] of Object.entries(RIBBON)) for (const [label, list] of groups) for (const id of ids(list)) {
+    if (free.has(id) || kindOf.has(id) || !C[id] || !C[id].run) continue;
+    const k = tab === 'edit' || tab === 'forms' ? 'modify' : tab === 'markup' ? 'annotate' : tab === 'pages' ? (/^(Rotate|Order|Remove|Insert|Add|Combine)/.test(label) ? 'assemble' : 'modify') : tab === 'protect' ? (/^prot(Red|Flatten)/.test(id) ? 'modify' : null) : null;
+    if (k) kindOf.set(id, k);
+  }
+  for (const id of ['tool_edit', 'tool_erase', 'tool_text', 'image', 'sign', 'ocr']) if (C[id] && !kindOf.has(id)) kindOf.set(id, 'modify');
+  for (const id of ['tool_highlight', 'tool_pen', 'tool_rect', 'tool_note']) if (C[id] && !kindOf.has(id)) kindOf.set(id, 'annotate');
+  for (const id of ['rotL', 'rotR', 'rotAll', 'up', 'down', 'dup', 'blank', 'delPage', 'merge']) if (C[id] && !kindOf.has(id)) kindOf.set(id, 'assemble');
+  for (const [id, kind] of kindOf) {
+    if (protGuarded.has(id)) continue;
+    protGuarded.add(id);
+    const c = C[id], en = c.enabled, tipD = Object.getOwnPropertyDescriptor(c, 'tip'), tip0 = tipD && !tipD.get ? tipD.value : undefined, tipGet = tipD && tipD.get;
+    c.enabled = () => !protBlocked(kind) && (!en || en());
+    Object.defineProperty(c, 'tip', { configurable: true, enumerable: true, get: () => (protBlocked(kind) ? PROT_BLOCKED_SAY[kind] : tipGet ? tipGet.call(c) : tip0) });
+  }
+}
+setTimeout(() => { try { protGuard(); } catch (e) { console.warn(e); } }, 0);
+TEST_HOOKS.protBlocked = (kind) => protBlocked(kind);
+// Enter the permissions password: the source is opened again with it, which only works with the right one.
+async function protUnlock() {
+  const L = await loadPdfLib();
+  const ks = protLockedSources();
+  if (!ks.length) { toast('This PDF has no limits to lift'); return false; }
+  for (let tries = 0; ; tries++) {
+    const pw = await askText(tries ? 'That is not the permissions password' : 'Enter permissions password', 'The author of this PDF limited printing, copying or changes. Enter its permissions password to change or remove the limits. It is not stored.', '', 'Unlock', true);
+    if (pw == null) return false;
+    let n = 0;
+    if (pw) for (const k of ks) { try { await L.PDFDocument.load(doc.sources[k], { password: pw, updateMetadata: false, ignoreEncryption: false }); protUnlocked.add(doc.sources[k]); n++; } catch {} }
+    if (n) break;
+  }
+  renderRibbon(); views.forEach((v) => v.rendered && protFormsLocked(v));
+  toast('Unlocked. You can now change or remove this PDF’s security.');
+  return true;
+}
+TEST_HOOKS.protUnlocked = () => protUsedSources().some((k) => protUnlocked.has(doc.sources[k]));
+
+/* The limits: what a person who opens the PDF may do without the permissions password.
+   printing  none | low | high       changes  none | pages | forms | comment | any       copy  true | false
+   Text access for screen readers is always allowed. */
+const PROT_CHANGES = [
+  ['none', 'None'], ['pages', 'Inserting, deleting and rotating pages'], ['forms', 'Filling in forms and signing'],
+  ['comment', 'Commenting, filling in forms and signing'], ['any', 'Any except extracting pages'],
+];
+const PROT_PRINTING = [['none', 'Not allowed'], ['low', 'Low resolution'], ['high', 'High resolution']];
+const PROT_ALGOS = [['AES-256', 'AES-256'], ['AES-128', 'AES-128 (for older apps)']];
+// The pdf-lib permissions for these limits.
+function protPermissions(pm) {
+  const ch = pm.changes;
+  return {
+    printing: pm.printing === 'high' ? 'highResolution' : pm.printing === 'low' ? 'lowResolution' : false,
+    modifying: ch === 'any', documentAssembly: ch === 'pages' || ch === 'any',
+    annotating: ch === 'comment' || ch === 'any', fillingForms: ch === 'forms' || ch === 'comment' || ch === 'any',
+    copying: !!pm.copy, contentAccessibility: true,
+  };
+}
+// Limits saved by an earlier version (allow print, copy, edit, comment, forms) as they are now.
+function protPermsOf(m) {
+  const p = (m && m.perms) || null;
+  if (!p) return { printing: 'high', changes: 'comment', copy: false };
+  if ('changes' in p) return { printing: p.printing || 'high', changes: p.changes, copy: !!p.copy };
+  return { printing: p.print ? 'high' : 'none', changes: p.edit ? 'any' : p.comment ? 'comment' : p.forms ? 'forms' : 'none', copy: !!p.copy };
+}
+TEST_HOOKS.protPermissions = (pm) => protPermissions(pm);
+// Saved security settings (never their passwords).
+const protPresets = () => (Array.isArray(S.protPresets) ? S.protPresets : []);
 async function protPassword() {
   const cur = protSec(), old = cur && cur.mode === 'set' ? cur : null, sec = old ? protSecrets.get(old.id) : null;
-  const pm = (old && old.perms) || { print: true, copy: false, edit: false, comment: true, forms: true };
   const locked = await protLockedFlags();
-  let err = '', vals = { useOpen: old ? !!old.open : true, limit: old ? !!old.limit : false, open: sec ? sec.open : '', open2: sec ? sec.open : '', owner: sec ? sec.owner : '', ...pm };
+  let err = '', vals = { useOpen: old ? !!old.open : true, limit: old ? !!old.limit : false, open: sec ? sec.open : '', open2: sec ? sec.open : '', owner: sec ? sec.owner : '', ...protPermsOf(old), algo: (old && old.algo) || 'AES-256', preset: '' };
   for (;;) {
     const ck = (n, label, note) => `<label class="prot-check"><input type="checkbox" name="${n}"${vals[n] ? ' checked' : ''}><span>${label}${note ? `<small>${note}</small>` : ''}</span></label>`;
+    const sel = (n, label, opts) => `<label class="field"><span>${label}</span><select name="${n}">${opts.map(([v, t]) => `<option value="${v}"${vals[n] === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+    const presets = protPresets();
     const r = await protAsk('Set password', `${err ? `<p class="prot-err" role="alert">${esc(err)}</p>` : ''}
+      ${presets.length ? `<div class="prot-row">${sel('preset', 'Saved settings', [['', 'Choose…'], ...presets.map((p, k) => [String(k), p.name])])}</div>` : ''}
       <div class="prot-checks">${ck('useOpen', 'Require a password to open the PDF')}</div>
       <div class="prot-sub prot-row" data-show="useOpen"${vals.useOpen ? '' : ' hidden'}>
         <label class="field"><span>Open password</span><input name="open" type="password" autocomplete="new-password" value="${esc(vals.open)}"></label>
@@ -945,15 +1125,39 @@ async function protPassword() {
       <div class="prot-checks">${ck('limit', 'Limit printing, copying and changes', 'A permissions password is needed to lift the limits.')}</div>
       <div class="prot-sub" data-show="limit"${vals.limit ? '' : ' hidden'}>
         <label class="field"><span>Permissions password</span><input name="owner" type="password" autocomplete="new-password" value="${esc(vals.owner)}"></label>
-        <div class="prot-checks">${ck('print', 'Allow printing')}${ck('copy', 'Allow copying text and pictures')}${ck('edit', 'Allow changes to pages and content')}${ck('comment', 'Allow comments')}${ck('forms', 'Allow filling in forms')}</div></div>
-      ${locked ? '<p style="font-size:12px">This PDF’s author limited what it allows. Those limits stay.</p>' : ''}
-      <p style="font-size:12px">Passwords are used when you save. They are not kept on this device.</p>`,
-    [{ label: 'Cancel' }, { label: 'Set password', value: 'set', primary: true }], (dlg) => {
+        <div class="prot-row">${sel('printing', 'Printing', PROT_PRINTING)}</div><div class="prot-row">${sel('changes', 'Changes allowed', PROT_CHANGES)}</div>
+        <div class="prot-checks">${ck('copy', 'Allow copying text and pictures')}</div>
+        <p style="font-size:12px">Text access for screen readers is always allowed.</p></div>
+      <div class="prot-row">${sel('algo', 'Encryption', PROT_ALGOS)}</div>
+      ${locked ? '<p style="font-size:12px">This PDF’s author limited what it allows. Those limits stay unless you enter its permissions password.</p>' : ''}
+      <p style="font-size:12px">Passwords are used when you save. They are not kept on this device.</p>
+      <p class="prot-preset-slot"></p>`,
+    [{ label: 'Cancel' }, { label: 'Save these settings as…', value: 'preset' }, { label: 'Set password', value: 'set', primary: true }], (dlg, upd) => {
       const b = $('.dlg-body', dlg);
-      b.addEventListener('change', (e) => { const sub = e.target.name && $(`[data-show="${e.target.name}"]`, b); if (sub) sub.hidden = !e.target.checked; });
+      const pb = $$('.dlg-foot [data-a]', dlg).find((x) => x.textContent.startsWith('Save these')); if (pb) $('.prot-preset-slot', b).appendChild(pb); // a small button with the settings, not in the row of answers
+      const shows = () => $$('[data-show]', b).forEach((sub) => { const c = $(`[name="${sub.dataset.show}"]`, b); sub.hidden = !(c && c.checked); });
+      b.addEventListener('change', (e) => {
+        if (e.target.name === 'preset' && e.target.value !== '') {
+          const p = protPresets()[+e.target.value]; if (!p) return;
+          for (const [k, v] of Object.entries(p)) { const f = $(`[name="${k}"]`, b); if (!f || k === 'name') continue; if (f.type === 'checkbox') f.checked = !!v; else f.value = v; }
+          upd();
+        }
+        shows();
+      });
     });
-    if (!r || r.action !== 'set') return;
+    if (!r || !r.action) return;
     vals = r;
+    if (r.action === 'preset') {
+      const name = await askText('Save these settings as', 'A name for these settings. Passwords are not saved with them.', '', 'Save');
+      if (name && name.trim()) {
+        const p = { name: name.trim().slice(0, 40), useOpen: !!r.useOpen, limit: !!r.limit, printing: r.printing, changes: r.changes, copy: !!r.copy, algo: r.algo };
+        S.protPresets = [...protPresets().filter((x) => x.name !== p.name), p]; saveSettings();
+        toast(`Settings saved as “${p.name}”`);
+        vals.preset = String(S.protPresets.length - 1);
+      }
+      err = ''; continue;
+    }
+    if (r.action !== 'set') return;
     if (!r.useOpen && !r.limit) err = 'Choose an open password, limits, or both.';
     else if (r.useOpen && !r.open) err = 'Type an open password.';
     else if (r.useOpen && r.open !== r.open2) err = 'The two open passwords are different.';
@@ -961,18 +1165,20 @@ async function protPassword() {
     else if (r.limit && r.useOpen && r.owner === r.open) err = 'Use a permissions password that is different from the open password.';
     else break;
   }
-  const perms = { print: !!vals.print, copy: !!vals.copy, edit: !!vals.edit, comment: !!vals.comment, forms: !!vals.forms };
+  const perms = { printing: vals.printing || 'high', changes: vals.changes || 'comment', copy: !!vals.copy };
   const before = snapshot(), list = docMarks();
   for (let k = list.length - 1; k >= 0; k--) if (list[k].type === 'protsec') list.splice(k, 1);
-  const m = { id: uid(), type: 'protsec', mode: 'set', open: !!vals.useOpen, limit: !!vals.limit, perms: vals.limit ? perms : null };
+  const m = { id: uid(), type: 'protsec', mode: 'set', open: !!vals.useOpen, limit: !!vals.limit, perms: vals.limit ? perms : null, algo: vals.algo === 'AES-128' ? 'AES-128' : 'AES-256' };
   protSecrets.set(m.id, { open: vals.useOpen ? vals.open : '', owner: vals.limit ? vals.owner : '' });
   list.push(m); changed(before);
   toast(vals.useOpen ? 'Password set. Save the PDF to protect it.' : 'Limits set. Save the PDF to apply them.');
 }
+const protCanRemove = () => protUsedSources().some((k) => doc.sources[k].password || (protUnlocked.has(doc.sources[k]) && protLimits.get(doc.sources[k])));
 async function protRemoveSecurity() {
-  const pwd = protUsedSources().some((k) => doc.sources[k].password), mine = docMarks().some((m) => m.type === 'protsec' && m.mode === 'set');
+  const pwd = protCanRemove(), mine = docMarks().some((m) => m.type === 'protsec' && m.mode === 'set');
   if (!pwd && !mine) {
-    toast((await protLockedFlags()) ? 'This PDF’s limits were set by its author and stay' : 'This PDF has no password');
+    if (await protLockedFlags()) { toast('This PDF’s limits were set by its author. Enter its permissions password to remove them.', { label: 'Enter password', run: () => run('protOwnerPw') }); return; }
+    toast('This PDF has no password');
     return;
   }
   const before = snapshot(), list = docMarks();
@@ -987,15 +1193,15 @@ async function protEncrypt(L, out) {
   if (stale) toast('The password set earlier was not kept on this device. Set it again to protect the PDF.');
   if (!m || !out.encrypt) return;
   if (m.mode === 'set') {
-    const s = protSecrets.get(m.id), pm = m.perms || { print: true, copy: true, edit: true, comment: true, forms: true };
+    const s = protSecrets.get(m.id), want = m.limit ? protPermissions(protPermsOf(m)) : { printing: 'highResolution', modifying: true, copying: true, annotating: true, fillingForms: true, contentAccessibility: true, documentAssembly: true };
     const flags = await protLockedFlags(), F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
     const permissions = {
-      printing: pm.print && can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false,
-      modifying: pm.edit && can(F.MODIFY_CONTENTS), copying: pm.copy && can(F.COPY), annotating: pm.comment && can(F.MODIFY_ANNOTATIONS),
-      fillingForms: (pm.forms || pm.comment) && can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: pm.edit && can(F.ASSEMBLE),
+      printing: want.printing && can(F.PRINT) ? (want.printing === 'highResolution' && can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false,
+      modifying: want.modifying && can(F.MODIFY_CONTENTS), copying: want.copying && can(F.COPY), annotating: want.annotating && can(F.MODIFY_ANNOTATIONS),
+      fillingForms: want.fillingForms && can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: want.documentAssembly && can(F.ASSEMBLE),
     };
     const owner = s.owner || (flags ? uid() + uid() : s.open || uid() + uid());
-    out.encrypt({ userPassword: s.open || '', ownerPassword: owner, permissions });
+    out.encrypt({ userPassword: s.open || '', ownerPassword: owner, permissions, algorithm: m.algo === 'AES-128' ? 'AES-128' : 'AES-256' });
   }
   // This choice wins: the app doesn't encrypt again with the original's settings.
   out.encrypt = () => {};
@@ -1011,6 +1217,8 @@ FEATURE.saveDoc.push(async ({ L, out, pages, ctx }) => {
   }
   const cl = protDM('protclean');
   if (cl) protClean(L, out, pages, cl);
+  rsApplyScrubMark(L, out, pages); // hidden items chosen in Search and redact
+  if (ctx.protRedacted) rsScrubStruct(L, out, ctx, rsTermsRx(rsRedactedTerms()));
   const cp = protCompressOverride || protDM('protcompress');
   if (ctx.protRedacted || cl || fl || (cp && !cp.off)) protCollectGarbage(L, out);
   if (cp && !cp.off) { await protCompress(L, out, pages, cp); protCollectGarbage(L, out); }
@@ -1037,10 +1245,11 @@ async function protClean_() {
       ${ck('metadata', 'Document properties and metadata', 'Title, author, the app that made it, dates and keywords.', true)}
       ${ck('attachments', 'Attached files', 'Files embedded in the PDF.', true)}
       ${ck('javascript', 'Scripts and actions', 'JavaScript, and actions that run on opening or on clicks.', true)}
-      ${ck('comments', 'Comments', 'Notes and mark-up from other apps.', false)}</div>`,
+      ${ck('comments', 'Comments', 'Notes and mark-up from other apps.', false)}
+      ${rsRedactedTerms().length || (cur && cur.words) ? ck('words', 'Redacted words elsewhere', 'Bookmarks, comments, form values and file names with a redacted word in them.', true) : ''}</div>`,
   [...(cur ? [{ label: 'Keep everything', value: 'off' }] : []), { label: 'Cancel' }, { label: 'Remove', value: 'on', primary: true }]);
   if (!r || !r.action) return;
-  const pick = { metadata: !!r.metadata, attachments: !!r.attachments, javascript: !!r.javascript, comments: !!r.comments };
+  const pick = { metadata: !!r.metadata, attachments: !!r.attachments, javascript: !!r.javascript, comments: !!r.comments, words: !!r.words };
   if (r.action === 'off' || !Object.values(pick).some(Boolean)) { protSetDM('protclean', null); toast('Nothing will be removed'); return; }
   protSetDM('protclean', pick); toast('Hidden information will be removed when you save');
 }
@@ -1110,16 +1319,19 @@ cmd('protRedSearch', { label: 'Search and redact…', icon: 'search-check', enab
 cmd('protRedApply', { label: 'Apply redactions…', icon: 'file-check-2', enabled: () => has() && protHasPending(), run: protApply });
 cmd('protPassword', { label: 'Set password…', icon: 'lock', enabled: has, pressed: () => !!(protSec() && protSec().mode === 'set'), run: protPassword });
 // Only when there is a password to remove: one the PDF came with, or one set here.
-cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: () => has() && (protUsedSources().some((k) => doc.sources[k].password) || docMarks().some((m) => m.type === 'protsec' && m.mode === 'set')), run: protRemoveSecurity });
+cmd('protUnsecure', { label: 'Remove security', icon: 'lock-open', enabled: () => has() && (protCanRemove() || docMarks().some((m) => m.type === 'protsec' && m.mode === 'set')), run: protRemoveSecurity });
+// Only for a PDF with limits set by its author, until its permissions password is entered.
+cmd('protOwnerPw', { label: 'Enter permissions password…', rlabel: 'Permissions password', icon: 'key-round', enabled: has, get hidden() { return !protNeedsUnlock(); }, run: protUnlock });
+cmd('protRespect', { label: 'Follow the PDF’s own limits', rlabel: 'Follow limits', icon: 'shield-check', get hidden() { return !protHasAuthorLimits(); }, pressed: () => S.protRespect !== false, run: () => { S.protRespect = S.protRespect === false; saveSettings(); renderRibbon(); views.forEach((v) => v.rendered && protFormsLocked(v)); toast(S.protRespect ? 'The limits set by a PDF’s author are followed' : 'The limits set by a PDF’s author are no longer followed here'); } });
 cmd('protFlatten', { label: 'Flatten pages…', tip: 'Flatten pages: make comments and form fields part of the page content when you save, so they can no longer be changed', icon: 'layers', enabled: has, pressed: () => !!protDM('protflatten'), run: protFlatten });
 cmd('protCompress', { label: 'Compress…', icon: 'shrink', enabled: has, pressed: () => !!protDM('protcompress'), run: protCompressDlg });
 cmd('protClean', { label: 'Remove hidden info…', icon: 'eye-off', enabled: has, pressed: () => !!protDM('protclean'), run: protClean_ });
 ribbonAdd('protect', 'Redact', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
-ribbonAdd('protect', 'Security', ['protPassword', 'protUnsecure']);
+ribbonAdd('protect', 'Security', ['protPassword', 'protUnsecure', 'protOwnerPw', 'protRespect']);
 ribbonAdd('protect', 'Document', ['protFlatten', 'protCompress', 'protClean']);
 menuAdd('Protect', ['sign']); // Signature has one place: Protect (on the ribbon too)
 menuAdd('Protect', ['protRedText', 'protRedArea', 'protRedSearch', 'protRedApply']);
-menuAdd('Protect', ['protPassword', 'protUnsecure']);
+menuAdd('Protect', ['protPassword', 'protUnsecure', 'protOwnerPw', 'protRespect']);
 menuAdd('Protect', ['protFlatten', 'protCompress', 'protClean']);
 TEST_HOOKS.protFind = async (opts) => (await protFind(protRegex(opts))).map((f) => f.text);
 TEST_HOOKS.protFindQuads = async (opts) => (await protFind(protRegex(opts))).map((f) => f.quads);
