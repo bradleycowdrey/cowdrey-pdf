@@ -289,7 +289,7 @@ export default async (h) => {
   await test('Protect: the tab and its dialogs fit a phone screen', async () => {
     const p = await open({ width: 390, height: 844, touch: true }); await openPdf(p);
     await p.click('[data-rt="protect"]'); await p.waitForTimeout(100);
-    eq(await p.$$eval('#ribbonBody [data-cmd^="prot"]', (e) => e.length), 9);
+    eq(await p.$$eval('#ribbonBody :is([data-cmd^="prot"], [data-cmd="optimize"])', (e) => e.length), 9);
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/protect/phone-ribbon.png' });
     await run(p, 'protPassword'); await p.waitForSelector('#dialog[open] input[name=open]'); await p.check('#dialog input[name=limit]');
     eq(await p.evaluate(() => { const r = document.querySelector('#dialog').getBoundingClientRect(); return [r.left >= 0, r.right <= innerWidth, document.documentElement.scrollWidth <= innerWidth]; }), [true, true, true]);
