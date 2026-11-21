@@ -342,6 +342,7 @@ async function pdReadBack(d) {
   if (pw) {
     let flags = null; try { const f = await pd.getPermissions(); flags = f ? [...f] : null; } catch {}
     const F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
+    pdDropPdfaClaim(L, out);
     out.encrypt({ userPassword: pw, ownerPassword: flags ? uid() + uid() : pw, permissions: { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) } });
   }
   const bytes = await out.save();
@@ -355,6 +356,15 @@ async function pdReadBack(d) {
   for (const m of list) if (m && PD_TYPES[m.type] && m.id && !have.some((x) => x.id === m.id)) have.push({ ...m, rev: uid() });
   syncHiddenComments(); persist();
   await layoutPages(true); renderSide();
+}
+// PDF/A forbids a password (pdf-lib refuses to encrypt a file that claims it): the claim is dropped first, a PDF/UA
+// claim kept, as saving does (12-docinfo.js).
+function pdDropPdfaClaim(L, out) {
+  if (typeof pdfaXmpOf !== 'function' || typeof pdfaWriteXmp !== 'function') return;
+  let xml = '', x = {}; try { xml = pdfaXmpOf(L, out) || ''; x = pdfaReadXmp(xml).props || {}; } catch {}
+  if (x['pdfaid:part'] || /pdfaid|www\.aiim\.org\/pdfa\/ns\/id/.test(xml)) {
+    try { pdfaWriteXmp(L, out, { keepClaims: false, pdfua: x['pdfuaid:part'] ? { part: x['pdfuaid:part'] } : null }); } catch (e) { console.warn('Could not write the XMP metadata', e); }
+  }
 }
 FEATURE.onDocShown.push((d) => { pdOpening = pdReadBack(d).catch((e) => console.warn('page design: could not read it back', e)); });
 TEST_HOOKS.pdOpening = () => pdOpening;

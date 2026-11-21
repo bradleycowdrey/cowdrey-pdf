@@ -5976,7 +5976,8 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
 /* ---------------- fonts: Unicode fonts for text written into the PDF ----------------
    Text typed into a PDF (Edit PDF, Add text, Replace text, watermarks, headers and footers, Bates numbers) is written
    in an embedded font that has its letters, as a subset (only the letters used), so it reads back exactly in every
-   PDF reader. pdf-lib writes such a font as Type0 / Identity-H with a ToUnicode map.
+   PDF reader. pdf-lib writes such a font as Type0 / Identity-H with a ToUnicode map; the subset's font file is
+   written here (fontsTtfSubset: fontkit's own drops letters), and a font that is not TrueType is embedded whole.
      fontsKit()                     fontkit (@pdf-lib/fontkit, pinned), loaded once
      fontsBytes(family, style)      a font file: 'sans' | 'serif' | 'mono' (Noto Sans, Noto Serif, Noto Sans Mono,
                                     bundled with the apps), 'symbols' | 'symbols2', or a script font fetched on demand
@@ -5989,6 +5990,8 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
    after asking, and kept in this browser (IndexedDB); nothing else leaves the device for it. Right-to-left scripts
    need shaping and ordering that is not done yet: saving them is refused with a plain message (no broken text). */
 const FONTS_KIT_URL = 'https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
+// fontkit's shaper for Indic scripts (Hindi) runs on regenerator-runtime, which its build uses but does not include.
+const FONTS_REGEN_URL = 'https://cdn.jsdelivr.net/npm/regenerator-runtime@0.13.11/runtime.js';
 // Bundled (desktop/build.mjs copies them into the apps): whole TrueType files, Latin, Greek and Cyrillic.
 const FONTS_FACES = {
   sans: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/noto-sans@0.4.2/400Regular/NotoSans_400Regular.ttf',
@@ -6046,27 +6049,104 @@ function fontsLoadScript(src) {
     document.head.appendChild(s);
   });
 }
+/* TrueType subsets. fontkit 1.1.1 writes a subset of a TrueType font with a short 'loca' (offsets halved) but copies
+   each glyph at its own length: after the first glyph of odd length every offset is off by one, and pdf.js, poppler
+   and others draw most letters missing (the text still copies fine). So the subset is written here instead: the
+   glyphs fontkit chose, in its order (a glyph's new id is its place there, as pdf-lib writes the text), each padded
+   to 4 bytes, with a long 'loca', their metrics and the font's hinting tables. */
+// The tables of a TrueType font (glyf outlines): { tag: { off, len } }, or null for any other font.
+function fontsSfnt(bytes) {
+  try {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 12) return null;
+    const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), ver = v.getUint32(0);
+    if (ver !== 0x00010000 && ver !== 0x74727565) return null; // not 'OTTO' (CFF) or a collection
+    const n = v.getUint16(4), t = {};
+    for (let i = 0; i < n; i++) {
+      const o = 12 + i * 16, tag = String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]), off = v.getUint32(o + 8), len = v.getUint32(o + 12);
+      if (off + len > bytes.length) return null;
+      t[tag] = { off, len };
+    }
+    for (const k of ['head', 'hhea', 'maxp', 'hmtx', 'loca', 'glyf']) if (!t[k]) return null;
+    return { v, t, long: v.getInt16(t.head.off + 50) === 1, numGlyphs: v.getUint16(t.maxp.off + 4), nhm: v.getUint16(t.hhea.off + 34) };
+  } catch { return null; }
+}
+// The subset's font file. sub: a fontkit subset (sub.glyphs: the old glyph ids in their new order; sub.includeGlyph
+// adds one, for the parts of composite glyphs).
+function fontsTtfSubset(bytes, sub) {
+  const S = fontsSfnt(bytes); if (!S) throw new Error('Not a TrueType font');
+  const { v, t } = S, gl = t.glyf.off;
+  const loc = (g) => (S.long ? v.getUint32(t.loca.off + 4 * g) : v.getUint16(t.loca.off + 2 * g) * 2);
+  const glyphs = [], metrics = [];
+  for (let i = 0; i < sub.glyphs.length; i++) {
+    const g = sub.glyphs[i];
+    let part = new Uint8Array(0);
+    if (g < S.numGlyphs) {
+      const a = loc(g), b = Math.min(loc(g + 1), t.glyf.len);
+      if (b > a) {
+        part = new Uint8Array(Math.ceil((b - a) / 4) * 4); part.set(bytes.subarray(gl + a, gl + b));
+        const pv = new DataView(part.buffer);
+        if (b - a >= 10 && pv.getInt16(0) < 0) { // composite: its parts get their new ids
+          let p = 10, flags;
+          do {
+            flags = pv.getUint16(p); pv.setUint16(p + 2, sub.includeGlyph(pv.getUint16(p + 2)));
+            p += 4 + (flags & 1 ? 4 : 2) + (flags & 8 ? 2 : flags & 0x40 ? 4 : flags & 0x80 ? 8 : 0);
+          } while (flags & 0x20 && p + 4 <= part.length);
+        }
+      }
+    }
+    const h = t.hmtx.off, m = Math.min(g, S.nhm - 1);
+    metrics.push([v.getUint16(h + 4 * m), g < S.nhm ? v.getInt16(h + 4 * g + 2) : v.getInt16(h + 4 * S.nhm + 2 * (g - S.nhm))]);
+    glyphs.push(part);
+  }
+  const n = glyphs.length, glyf = new Uint8Array(glyphs.reduce((s, p) => s + p.length, 0)), loca = new Uint8Array(4 * (n + 1)), hmtx = new Uint8Array(4 * n);
+  const lv = new DataView(loca.buffer), hv = new DataView(hmtx.buffer);
+  let o = 0;
+  glyphs.forEach((p, i) => { lv.setUint32(4 * i, o); glyf.set(p, o); o += p.length; hv.setUint16(4 * i, metrics[i][0]); hv.setInt16(4 * i + 2, metrics[i][1]); });
+  lv.setUint32(4 * n, o);
+  const copy = (k) => bytes.slice(t[k].off, t[k].off + t[k].len);
+  const head = copy('head'), hhea = copy('hhea'), maxp = copy('maxp');
+  new DataView(head.buffer).setInt16(50, 1); new DataView(head.buffer).setUint32(8, 0);
+  new DataView(hhea.buffer).setUint16(34, n); new DataView(maxp.buffer).setUint16(4, n);
+  const post = new Uint8Array(32); if (t.post && t.post.len >= 32) post.set(bytes.subarray(t.post.off, t.post.off + 32)); new DataView(post.buffer).setUint32(0, 0x00030000);
+  const out = { head, hhea, maxp, hmtx, loca, glyf, post };
+  for (const k of ['cvt ', 'fpgm', 'prep', 'OS/2']) if (t[k]) out[k] = copy(k);
+  return fontsSfntWrite(out);
+}
+// A font file from its tables, with their checksums.
+function fontsSfntWrite(tables) {
+  const names = Object.keys(tables).sort(), nt = names.length, pad = (l) => Math.ceil(l / 4) * 4;
+  const font = new Uint8Array(12 + nt * 16 + names.reduce((s, k) => s + pad(tables[k].length), 0)), fv = new DataView(font.buffer);
+  const es = Math.floor(Math.log2(nt)), sr = 16 * 2 ** es;
+  fv.setUint32(0, 0x00010000); fv.setUint16(4, nt); fv.setUint16(6, sr); fv.setUint16(8, es); fv.setUint16(10, nt * 16 - sr);
+  const sum = (o, l) => { let s = 0; for (let i = 0; i < l; i += 4) s = (s + fv.getUint32(o + i)) >>> 0; return s; };
+  let off = 12 + nt * 16, headAt = -1;
+  names.forEach((k, i) => {
+    const d = tables[k]; font.set(d, off);
+    for (let c = 0; c < 4; c++) font[12 + i * 16 + c] = k.charCodeAt(c);
+    fv.setUint32(12 + i * 16 + 4, sum(off, pad(d.length))); fv.setUint32(12 + i * 16 + 8, off); fv.setUint32(12 + i * 16 + 12, d.length);
+    if (k === 'head') headAt = off;
+    off += pad(d.length);
+  });
+  if (headAt >= 0) fv.setUint32(headAt + 8, (0xB1B0AFBA - sum(0, font.length)) >>> 0);
+  return font;
+}
 let fontsKitP = null;
-// fontkit, adapted for @cantoo/pdf-lib: that version asks a subset for its bytes with encode() and no stream, which
-// @pdf-lib/fontkit 1.1.1 does through a stream instead; the subset is written into a stream here and read back at once.
+// fontkit, with TrueType subsets written by fontsTtfSubset (see above). @cantoo/pdf-lib asks a subset for its bytes
+// with encode() and no stream.
 function fontsKit() {
   return fontsKitP || (fontsKitP = (async () => {
-    if (!window.fontkit) await fontsLoadScript(FONTS_KIT_URL);
+    await Promise.all([window.fontkit || fontsLoadScript(FONTS_KIT_URL), window.regeneratorRuntime || fontsLoadScript(FONTS_REGEN_URL).catch((e) => console.warn('fonts: Hindi shaping is not available', e))]);
     const raw = window.fontkit;
     if (!raw || !raw.create) throw new Error('The font engine did not load');
-    const subsetBytes = (P, sub) => {
-      const ES = P.encodeStream.call({ encode() {} }).constructor, s = new ES(), parts = [];
-      s.push = (b) => { if (b) parts.push(new Uint8Array(b.buffer, b.byteOffset, b.length).slice()); return true; };
-      P.encode.call(sub, s); s.flush();
-      const out = new Uint8Array(parts.reduce((a, b) => a + b.length, 0)); let o = 0;
-      for (const p of parts) { out.set(p, o); o += p.length; }
-      return out;
-    };
     const create = (...a) => {
-      const f = raw.create(...a), cs = f.createSubset;
-      if (typeof cs === 'function') f.createSubset = function () {
-        const sub = cs.call(this), P = Object.getPrototypeOf(sub);
-        if (P.encodeStream && P.encode && P.encode.length >= 1) sub.encode = function (st) { return st ? P.encode.call(this, st) : subsetBytes(P, this); };
+      const f = raw.create(...a), cs = f.createSubset, bytes = a[0] instanceof Uint8Array ? a[0] : null;
+      if (typeof cs === 'function' && bytes && fontsSfnt(bytes)) f.createSubset = function () {
+        const sub = cs.call(this);
+        sub.encode = function (st) {
+          const b = fontsTtfSubset(bytes, this);
+          if (st && st.writeBuffer) { st.writeBuffer(typeof Buffer === 'function' ? Buffer.from(b) : b); return; }
+          return b;
+        };
         return sub;
       };
       return f;
@@ -6171,13 +6251,20 @@ function fontsChain(text, style = {}) {
   for (const ch of String(text || '')) { const ks = fontsMoreFor(ch, text); keys.push(...ks.filter((k) => fontsHave.has(k)), ...ks.slice(0, 1)); }
   return [...new Set(keys)];
 }
-// The face that has every letter of a text: its key and the fontkit font (the family's own when none has them all).
+// The face that has every letter of a text: its key and the fontkit font. When none has them all (Chinese and Greek
+// in one form field), the one that has the most (the family's own on a tie), so Chinese is not drawn as empty boxes.
 async function fontsFor(text, style = {}) {
   if (fontsRtl(text)) throw new FontsError(FONTS_RTL_MSG);
   await fontsKnown;
-  const chain = fontsChain(text, style);
-  for (const k of chain) { const f = await fontsFace(k); if (f && fontsCovers(f, text)) return { key: k, font: f }; }
-  return { key: chain[0], font: await fontsFace(chain[0]) };
+  const chain = fontsChain(text, style), letters = [...String(text || '')].filter((c) => !/[\s\u200B-\u200D\uFEFF]/.test(c));
+  let best = null;
+  for (const k of chain) {
+    const f = await fontsFace(k); if (!f) continue;
+    if (fontsCovers(f, text)) return { key: k, font: f };
+    const n = letters.filter((c) => f.hasGlyphForCodePoint(c.codePointAt(0))).length;
+    if (!best || n > best.n) best = { key: k, font: f, n };
+  }
+  return best && best.n ? { key: best.key, font: best.font } : { key: chain[0], font: await fontsFace(chain[0]) };
 }
 // Fonts embedded in a pdf-lib document, per document and face (pdf-lib writes the letters used once, at the end).
 const fontsEmbedded = new WeakMap(); // out -> Map(face key -> Promise<PDFFont>)
@@ -6189,15 +6276,22 @@ async function fontsEmbedKey(out, key) {
       if (!out.fontkit) out.registerFontkit(kit);
       const [fam, st] = key.split('-'), b = await fontsBytes(fam, { bold: /b/.test(st || ''), italic: /i/.test(st || '') });
       if (!b) throw new FontsError(`${(FONTS_MORE[key] || {}).name || 'These'} letters need the font download to be saved.`);
-      return out.embedFont(b, { subset: true });
+      // (a font that is not TrueType, which fontsTtfSubset can't cut down, is embedded whole)
+      return out.embedFont(b, { subset: !!fontsSfnt(b) });
     })();
     m.set(key, p); p.catch(() => m.delete(key));
   }
   return m.get(key);
 }
 // An embedded font for a family and style; with `text`, a face that has its letters (see fontsFor).
+// Letters only a font that was not downloaded has stop it (they would be empty boxes), as in fontsRuns.
 async function fontsEmbed(out, { family = 'sans', bold = false, italic = false, text = '' } = {}) {
-  const key = text ? (await fontsFor(text, { family, bold, italic })).key : fontsFaceKey(family, { bold, italic });
+  if (!text) return fontsEmbedKey(out, fontsFaceKey(family, { bold, italic }));
+  const { key, font } = await fontsFor(text, { family, bold, italic });
+  if (!fontsCovers(font, text)) for (const ch of String(text)) {
+    if (font && font.hasGlyphForCodePoint(ch.codePointAt(0))) continue;
+    const want = fontsMoreFor(ch, text)[0]; if (want && !fontsHave.has(want)) throw new FontsError(`${FONTS_MORE[want].name} letters need the font download to be saved.`);
+  }
   return fontsEmbedKey(out, key);
 }
 // A text in runs of one font each: [{ text, font, std }]. Words stay in one font where one has all their letters
@@ -10838,6 +10932,7 @@ async function pdReadBack(d) {
   if (pw) {
     let flags = null; try { const f = await pd.getPermissions(); flags = f ? [...f] : null; } catch {}
     const F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
+    pdDropPdfaClaim(L, out);
     out.encrypt({ userPassword: pw, ownerPassword: flags ? uid() + uid() : pw, permissions: { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) } });
   }
   const bytes = await out.save();
@@ -10851,6 +10946,15 @@ async function pdReadBack(d) {
   for (const m of list) if (m && PD_TYPES[m.type] && m.id && !have.some((x) => x.id === m.id)) have.push({ ...m, rev: uid() });
   syncHiddenComments(); persist();
   await layoutPages(true); renderSide();
+}
+// PDF/A forbids a password (pdf-lib refuses to encrypt a file that claims it): the claim is dropped first, a PDF/UA
+// claim kept, as saving does (12-docinfo.js).
+function pdDropPdfaClaim(L, out) {
+  if (typeof pdfaXmpOf !== 'function' || typeof pdfaWriteXmp !== 'function') return;
+  let xml = '', x = {}; try { xml = pdfaXmpOf(L, out) || ''; x = pdfaReadXmp(xml).props || {}; } catch {}
+  if (x['pdfaid:part'] || /pdfaid|www\.aiim\.org\/pdfa\/ns\/id/.test(xml)) {
+    try { pdfaWriteXmp(L, out, { keepClaims: false, pdfua: x['pdfuaid:part'] ? { part: x['pdfuaid:part'] } : null }); } catch (e) { console.warn('Could not write the XMP metadata', e); }
+  }
 }
 FEATURE.onDocShown.push((d) => { pdOpening = pdReadBack(d).catch((e) => console.warn('page design: could not read it back', e)); });
 TEST_HOOKS.pdOpening = () => pdOpening;
@@ -16045,7 +16149,14 @@ async function ffdBeforeLooks(L, out, form, ctx) {
       else { try { form.markFieldAsClean(f.ref); } catch {} ffdNeedLooks(L, out); continue; }
     } else {
       if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, { text, family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
-      if (!font && wide && !isNew) { try { form.markFieldAsClean(f.ref); } catch {} ffdLookFailed(L, out, f); continue; } // its old look, not question marks
+      // no font has its letters (a font download declined): its old look, or a new field's empty one, not question
+      // marks; other apps draw it (/NeedAppearances)
+      if (!font && wide) {
+        try { form.markFieldAsClean(f.ref); } catch {}
+        // (a new field was drawn in Helvetica when made: an empty look instead, with no question marks)
+        if (isNew) for (const w of f.acroField.getWidgets()) { const [W, H] = ffdWH(L, w.dict); w.dict.set(L.PDFName.of('AP'), out.context.obj({ N: ffdStream(L, out, ' ', W, H, null) })); }
+        ffdLookFailed(L, out, f); continue;
+      }
       if (!font && m.font && m.font !== 'Helv') font = await std(FFD_BASE[m.font]);
     }
     if (!font) continue;
@@ -25700,12 +25811,22 @@ function ocrStripInvisible(L, out, p) {
   const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
   node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
 }
+// PDF/A forbids a password (pdf-lib refuses to encrypt a file that claims it): the claim is dropped first, a PDF/UA
+// claim kept, as saving does (12-docinfo.js).
+function ocrDropPdfaClaim(L, out) {
+  if (typeof pdfaXmpOf !== 'function' || typeof pdfaWriteXmp !== 'function') return;
+  let xml = '', x = {}; try { xml = pdfaXmpOf(L, out) || ''; x = pdfaReadXmp(xml).props || {}; } catch {}
+  if (x['pdfaid:part'] || /pdfaid|www\.aiim\.org\/pdfa\/ns\/id/.test(xml)) {
+    try { pdfaWriteXmp(L, out, { keepClaims: false, pdfua: x['pdfuaid:part'] ? { part: x['pdfuaid:part'] } : null }); } catch (e) { console.warn('Could not write the XMP metadata', e); }
+  }
+}
 // The copy of a protected source keeps its password and restrictions.
-async function ocrProtectLike(out, k, ownerOnly) {
+async function ocrProtectLike(L, out, k, ownerOnly) {
   const s = doc.sources[k]; if ((!s.password && !ownerOnly) || !out.encrypt) return;
   let flags = null; try { const f = await pdfDocs.get(k).getPermissions(); flags = f ? [...f] : null; } catch {}
   const F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
   const permissions = { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) };
+  ocrDropPdfaClaim(L, out);
   if (s.password) out.encrypt({ userPassword: s.password, ownerPassword: flags ? uid() + uid() : s.password, permissions });
   else if (flags) out.encrypt({ userPassword: '', ownerPassword: uid() + uid(), permissions });
 }
@@ -25739,7 +25860,7 @@ async function ocrCopySource(L, k, results, redo) {
     words += await ocrWritePage(L, out, p, r.lines, r.vp, ctx);
   }
   if (ctx.t3) ctx.t3.finish();
-  await ocrProtectLike(out, k, ownerOnly);
+  await ocrProtectLike(L, out, k, ownerOnly);
   const bytes = await out.save();
   if (s.password) bytes.password = s.password;
   return { bytes, words };

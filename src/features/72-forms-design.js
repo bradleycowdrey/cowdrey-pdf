@@ -1359,7 +1359,14 @@ async function ffdBeforeLooks(L, out, form, ctx) {
       else { try { form.markFieldAsClean(f.ref); } catch {} ffdNeedLooks(L, out); continue; }
     } else {
       if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, { text, family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
-      if (!font && wide && !isNew) { try { form.markFieldAsClean(f.ref); } catch {} ffdLookFailed(L, out, f); continue; } // its old look, not question marks
+      // no font has its letters (a font download declined): its old look, or a new field's empty one, not question
+      // marks; other apps draw it (/NeedAppearances)
+      if (!font && wide) {
+        try { form.markFieldAsClean(f.ref); } catch {}
+        // (a new field was drawn in Helvetica when made: an empty look instead, with no question marks)
+        if (isNew) for (const w of f.acroField.getWidgets()) { const [W, H] = ffdWH(L, w.dict); w.dict.set(L.PDFName.of('AP'), out.context.obj({ N: ffdStream(L, out, ' ', W, H, null) })); }
+        ffdLookFailed(L, out, f); continue;
+      }
       if (!font && m.font && m.font !== 'Helv') font = await std(FFD_BASE[m.font]);
     }
     if (!font) continue;
