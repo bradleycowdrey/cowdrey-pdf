@@ -34,6 +34,15 @@ jobs:
             echo "== open a PDF in the copy the apps ship"; (cd desktop && node build.mjs) && node tests/bundle.mjs
           } 2>&1 | tee "$L"
 
+      # Package 4 acceptance: certificate signing, timestamps, revocation, checked by the app and by pdfsig, pyHanko and
+      # openssl, against a local timestamp server, OCSP responder and CRLs (tests/conformance/pkg4.mjs).
+      - name: Signing acceptance (package 4)
+        run: |
+          set -o pipefail
+          sudo apt-get install -y poppler-utils
+          python3 -m venv "$RUNNER_TEMP/py" && "$RUNNER_TEMP/py/bin/pip" install -q pyhanko
+          PATH="$RUNNER_TEMP/py/bin:$PATH" node tests/conformance/pkg4.mjs 2>&1 | tee -a "$RUNNER_TEMP/tests.log"
+
       # The result goes on the tests-log branch, so it can be read without signing in to GitHub.
       - name: Publish the result
         if: always() && github.event_name != 'pull_request'

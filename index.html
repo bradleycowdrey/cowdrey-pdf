@@ -16398,8 +16398,8 @@ addStyle(`
 /* ---------------- certificate signatures: sign with a certificate, timestamps, checking signatures ----------------
    Protect → Certificate: "Sign with certificate…", "Signatures" and "Signing IDs…".
 
-   Signing IDs are PKCS#12 files (.p12 or .pfx): imported, or made here (a self-signed certificate, RSA-2048 or
-   ECDSA P-256, valid 5 years). They are kept in IndexedDB still encrypted with their password, which is never stored:
+   Signing IDs are PKCS#12 files (.p12 or .pfx): imported (RSA, ECDSA P-256/P-384/P-521 or Ed25519 keys), or made
+   here (a self-signed certificate, RSA-2048 or ECDSA P-256, valid 5 years). They are kept in IndexedDB still encrypted with their password, which is never stored:
    it is asked for at each signing ("Remember until I close the app" keeps it in memory only).
 
    Signing writes a PAdES signature (ETSI.CAdES.detached, or adbe.pkcs7.detached) as an incremental update appended to
@@ -16416,8 +16416,12 @@ addStyle(`
 
    Opening a signed PDF checks every signature: what /ByteRange covers, the digest, the signer's signature, the
    certificate, the timestamp, and whether the file was changed after signing (and if those changes look allowed:
-   comments, form filling, more signatures). Nothing is trusted unless you trust a certificate on this device (kept
-   by its SHA-256 fingerprint). Revocation (CRL, OCSP) is not checked.
+   comments, form filling, more signatures: the signature still counts, unless its author certified the PDF against
+   them). Nothing is trusted unless you trust a certificate on this device (kept by its SHA-256 fingerprint, with the
+   certificate, so a trusted root need not be in the signature). Certificate chains, revocation (CRL, OCSP: only when
+   asked, it uses the network) and Ed25519 are in 76-sign2-trust.js.
+   Changes that are only comments are added to a signed file as an incremental update too (sgMarksUpdate), so its
+   signatures stay valid when it is saved or signed again.
 
    Libraries are loaded on first use from pinned files (the apps carry copies, see desktop/build.mjs). pkijs and asn1js
    are ES modules with bare imports: they are fetched and linked here through blob URLs. pkijs's @noble/hashes and
@@ -16440,13 +16444,19 @@ const SG_HASH = { [SG_OID.sha1]: 'SHA-1', [SG_OID.sha256]: 'SHA-256', [SG_OID.sh
 const SG_CADES = 'ETSI.CAdES.detached', SG_PKCS7 = 'adbe.pkcs7.detached';
 const SG_STATUS = {
   trusted: ['Valid, signer trusted', 'shield-check', 'ok'], valid: ['Valid, signer not verified', 'shield-question', 'warn'],
-  changed: ['Changed after signing', 'shield-alert', 'warn'], invalid: ['Invalid', 'shield-x', 'bad'],
+  changed: ['Changed after signing', 'shield-alert', 'warn'], invalid: ['Invalid', 'shield-x', 'bad'], revoked: ['Revoked', 'shield-x', 'bad'],
+};
+// Why an invalid signature is invalid, said first
+const SG_PROBLEM = {
+  tampered: 'Invalid: the document was changed after signing', sigobject: 'Invalid: the signature itself is damaged',
+  incomplete: 'Invalid: the file is incomplete', cert: 'Invalid: certificate not valid when signed', range: 'Invalid: what it signs is not set out properly',
+  unsupported: 'Can’t check this signature on this device',
 };
 class SgError extends Error {}
 let sgLibs = null, sgForgeP = null;
 const sgPasswords = new Map(); // signing ID -> password, for this session only ("Remember until I close the app")
 let sgState = { sigs: [], bytes: null, checking: null }; // the signatures of the document shown
-const sgPrefs = () => Object.assign({ tsa: '', subFilter: SG_CADES }, store.get('signing', {}));
+const sgPrefs = () => Object.assign({ tsa: '', subFilter: SG_CADES, revocation: false }, store.get('signing', {}));
 const sgSetPrefs = (o) => store.set('signing', { ...sgPrefs(), ...o });
 
 /* ---- libraries ---- */
@@ -16733,8 +16743,6 @@ async function sgTx(name, mode, fn) {
 const sgIdsAll = async () => ((await sgTx('ids', 'readonly', (s) => s.getAll())) || []).sort((a, b) => b.added - a.added);
 const sgIdPut = (rec) => sgTx('ids', 'readwrite', (s) => s.put(rec));
 const sgIdDel = (id) => sgTx('ids', 'readwrite', (s) => s.delete(id));
-const sgTrustAll = async () => new Set(((await sgTx('trust', 'readonly', (s) => s.getAll())) || []).map((r) => r.fp));
-const sgTrustPut = (fp, name) => sgTx('trust', 'readwrite', (s) => s.put({ fp, name, added: Date.now() }));
 const sgTrustDel = (fp) => sgTx('trust', 'readwrite', (s) => s.delete(fp));
 
 /* ---- certificates ---- */
@@ -16752,12 +16760,11 @@ async function sgCertInfo(der) {
   for (const e of c.extensions || []) {
     if (e.extnID === '2.5.29.17' && e.parsedValue && !subject.email) { const n = (e.parsedValue.altNames || []).find((a) => a.type === 1); if (n) subject.email = String(n.value); }
   }
-  const alg = c.subjectPublicKeyInfo.algorithm.algorithmId;
   return {
     subject, issuer, name: subject.cn || subject.o || subject.email || 'Unknown', serial: sgHex(c.serialNumber.valueBlock.valueHexView).toUpperCase(),
     notBefore: c.notBefore.value, notAfter: c.notAfter.value, fp: await sgFp(der),
     selfSigned: sgEq(c.subject.toSchema().toBER(), c.issuer.toSchema().toBER()),
-    key: alg === '1.2.840.10045.2.1' ? 'ECDSA' : alg === '1.2.840.113549.1.1.10' ? 'RSA-PSS' : 'RSA', cert: c, der,
+    key: sgKeyText(c), cert: c, der,
   };
 }
 
@@ -16801,10 +16808,11 @@ async function sgOpenP12(bytes, password) {
     const curve = SG_CURVES[A.derToOid(key.asn1.value[1].value[1].value)];
     if (!curve) throw new SgError('This signing ID uses an elliptic curve Cowdrey.PDF can’t sign with.');
     hash = curve[1]; alg = { name: 'ECDSA', namedCurve: curve[0] };
-  } else throw new SgError('This signing ID uses a kind of key Cowdrey.PDF can’t sign with.');
+  } else if (algOid === SG_ED) { hash = 'SHA-512'; alg = { name: 'Ed25519' }; }
+  else throw new SgError('This signing ID uses a kind of key Cowdrey.PDF can’t sign with.');
   let cryptoKey;
   try { cryptoKey = await crypto.subtle.importKey('pkcs8', keyDer, alg, false, ['sign']); }
-  catch (e) { console.warn(e); throw new SgError('This device can’t use the key in this signing ID.'); }
+  catch (e) { console.warn(e); throw new SgError(alg.name === 'Ed25519' ? 'This device can’t sign with Ed25519 keys. Use an RSA or ECDSA signing ID, or a newer browser.' : 'This device can’t use the key in this signing ID.'); }
   return { key: cryptoKey, hash, alg, chain: order.map((n) => certs[n].der), info: li, infos: order.map((n) => infos[n]) };
 }
 // A PKCS#12 file for a key and its certificate: the key encrypted with AES-256 (PBKDF2 with SHA-256), an HMAC-SHA-256
@@ -16896,7 +16904,8 @@ async function sgMakeCms({ id, content, subFilter, when, tsa }) {
     signerInfos: [new pkijs.SignerInfo({ version: 1, sid: new pkijs.IssuerAndSerialNumber({ issuer: leaf.issuer, serialNumber: leaf.serialNumber }), signedAttrs: new pkijs.SignedAndUnsignedAttributes({ type: 0, attributes: attrs }) })],
     certificates: certs,
   });
-  await sd.sign(id.key, 0, id.hash);
+  if (id.alg && id.alg.name === 'Ed25519') await sgEdSignCms(pkijs, asn1js, sd, id.key);
+  else await sd.sign(id.key, 0, id.hash);
   let token = null;
   if (tsa) {
     const sigValue = sd.signerInfos[0].signature.valueBlock.valueHexView;
@@ -16959,9 +16968,9 @@ const sgStrip0 = (u) => { u = new Uint8Array(u); let k = 0; while (k < u.length 
 // Checks a timestamp token (a ContentInfo schema) over `data` (the signature value it stamps)
 async function sgCheckToken(schema, data) {
   const { pkijs } = await sgLoadLibs();
-  const out = { ok: false, imprintOk: false, tst: null, genTime: null, tsa: '' };
+  const out = { ok: false, imprintOk: false, tst: null, genTime: null, tsa: '', sd: null };
   try {
-    const ci = new pkijs.ContentInfo({ schema }), sd = new pkijs.SignedData({ schema: ci.content });
+    const ci = new pkijs.ContentInfo({ schema }), sd = new pkijs.SignedData({ schema: ci.content }); out.sd = sd;
     const e = sd.encapContentInfo.eContent;
     const raw = e.idBlock.isConstructed ? sgCat(e.valueBlock.value.map((p) => new Uint8Array(p.valueBlock.valueHexView))) : e.valueBlock.valueHexView;
     const tst = pkijs.TSTInfo.fromBER(raw); out.tst = tst; out.genTime = tst.genTime;
@@ -17217,38 +17226,65 @@ function sgAppend(base, tr, objs, root, size) {
 /* ---- checking signatures ---- */
 const SG_ANNOTS = new Set(['/Text', '/Link', '/FreeText', '/Line', '/Square', '/Circle', '/Polygon', '/PolyLine', '/Highlight', '/Underline', '/Squiggly', '/StrikeOut', '/Stamp', '/Caret', '/Ink', '/Popup', '/FileAttachment', '/Sound', '/Redact']);
 // Every signature in `bytes`: [{ status, name, when, … }]
-async function sgVerifyAll(bytes, password) {
+async function sgVerifyAll(bytes, password, opts = {}) {
   const L = await loadPdfLib();
   bytes = new Uint8Array(bytes);
   const s = sgLatin1(bytes);
   if (!s.includes('/ByteRange')) return [];
-  const pdf = await L.PDFDocument.load(bytes, { ...(password ? { password } : { ignoreEncryption: true }), updateMetadata: false, throwOnInvalidObject: false });
-  const fields = sgFieldsOf(L, pdf).filter((f) => f.ft === '/Sig' && f.sig && f.sig.get);
-  if (!fields.length) return [];
   await sgLoadLibs();
-  const trust = await sgTrustAll().catch(() => new Set());
+  const trust = await sgTrustRecs();
+  const revocation = opts.revocation ?? !!sgPrefs().revocation;
+  let pdf = null, fields = [];
+  try {
+    pdf = await L.PDFDocument.load(bytes, { ...(password ? { password } : { ignoreEncryption: true }), updateMetadata: false, throwOnInvalidObject: false });
+    fields = sgFieldsOf(L, pdf).filter((f) => f.ft === '/Sig' && f.sig && f.sig.get);
+  } catch (e) { console.warn(e); }
+  if (!fields.length) return sgDamaged(s, bytes);
   // the file as a reader shows it now
   let now = null; try { now = await sgRevision(bytes, s, sgStartXref(s)); } catch (e) { console.warn(e); }
   const out = [];
   for (const f of fields) {
-    try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, now, trust)); }
-    catch (e) { console.warn(e); out.push({ field: f.name, page: f.widgets[0] ? f.widgets[0].page : -1, rect: f.widgets[0] && f.widgets[0].rect, status: 'invalid', name: 'Unknown', notes: ['This signature could not be read: ' + (e.message || e)] }); }
+    try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation)); }
+    catch (e) { console.warn(e); out.push(sgBroken({ field: f.name, page: f.widgets[0] ? f.widgets[0].page : -1, rect: f.widgets[0] && f.widgets[0].rect }, 'This signature could not be read: ' + (e.message || e))); }
   }
   // in the order they were made
   out.sort((a, b) => (a.end || 0) - (b.end || 0));
   out.forEach((x, k) => { x.n = k + 1; });
   return out;
 }
-async function sgVerifyOne(L, pdf, bytes, s, f, now, trust) {
-  const { PDFName, PDFArray, PDFRef } = L, N = (n) => PDFName.of(n), ctx = pdf.context, V = f.sig;
+// A signature whose CMS could not be read at all: the signature object is damaged
+function sgBroken(r, note) {
+  return Object.assign({ name: 'Unknown', notes: [] }, r, { status: 'invalid', problem: 'sigobject', statusText: SG_PROBLEM.sigobject, notes: [...((r && r.notes) || []), note], checks: [['Signature', 'bad', 'Damaged: it could not be read']] });
+}
+// A file whose signature fields can't be found (cut short, or damaged): each signature dictionary in it is reported
+function sgDamaged(s, bytes) {
+  const out = [];
+  for (const m of s.matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g)) {
+    const c = +m[3], d = +m[4], short = c + d > bytes.length;
+    out.push({ n: out.length + 1, field: '', page: -1, name: 'Unknown', status: 'invalid', problem: short ? 'incomplete' : 'range', statusText: SG_PROBLEM[short ? 'incomplete' : 'range'], end: c + d,
+      notes: [short ? `The file is incomplete: it ends ${c + d - bytes.length} bytes before the end of what this signature covers. It may have been cut short while copying or downloading.` : 'This file is damaged, so its signatures can’t be checked.'],
+      checks: [['Document', 'bad', short ? 'Incomplete: part of the file is missing' : 'Damaged']] });
+  }
+  return out;
+}
+async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
+  const { PDFName, PDFArray } = L, N = (n) => PDFName.of(n), ctx = pdf.context, V = f.sig;
   const w = f.widgets.find((x) => x.page >= 0) || f.widgets[0] || {};
-  const r = { field: f.name, page: w.page ?? -1, rect: w.rect, notes: [], name: 'Unknown', status: 'invalid' };
+  const r = { field: f.name, page: w.page ?? -1, rect: w.rect, notes: [], name: 'Unknown', status: 'invalid', checks: [] };
+  const fail = (problem, note) => { r.status = 'invalid'; r.problem = problem; r.statusText = SG_PROBLEM[problem]; if (note) r.notes.unshift(note); };
   const br = ctx.lookup(V.get(N('ByteRange')));
   const range = br instanceof PDFArray ? br.asArray().map((x) => { const v = ctx.lookup(x); return v && v.asNumber ? v.asNumber() : NaN; }) : [];
   const [a, b, c, d] = range;
-  if (range.length !== 4 || a !== 0 || !(b > 0) || !(c > b) || !(d >= 0) || c + d > bytes.length || s[b] !== '<' || s[c - 1] !== '>' || /[^0-9a-fA-F\s]/.test(s.slice(b + 1, c - 1))) {
-    r.notes.push('What the signature covers is not set out properly, so it proves nothing about this file.'); return r;
+  if (range.length === 4 && a === 0 && b > 0 && c > b && d >= 0 && c + d > bytes.length) {
+    r.end = c + d;
+    fail('incomplete', `The file is incomplete: it ends ${c + d - bytes.length} bytes before the end of what this signature covers. It may have been cut short while copying or downloading.`);
+    r.checks = [['Document', 'bad', 'Incomplete: part of the file is missing']]; return r;
   }
+  if (range.length !== 4 || a !== 0 || !(b > 0) || !(c > b) || !(d >= 0) || s[b] !== '<' || s[c - 1] !== '>') {
+    fail('range', 'What the signature covers is not set out properly, so it proves nothing about this file.');
+    r.checks = [['Document', 'bad', 'Not covered properly']]; return r;
+  }
+  if (/[^0-9a-fA-F\s]/.test(s.slice(b + 1, c - 1))) return sgBroken(r, 'The signature value in the file is not readable (it is not hexadecimal).');
   const end = c + d; r.end = end;
   if (!/%%EOF\s*$/.test(s.slice(Math.max(0, end - 40), end))) { r.notes.push('The signature does not cover a whole version of the file.'); }
   // The signature's details (reason, date, certify) as signed: the dictionary in the signed revision that holds
@@ -17259,7 +17295,8 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust) {
     let best = -1; for (const e of rev.map.values()) if (e[2] && e[3] === 1 && e[4] < b && e[4] > best) best = e[4];
     try { const o = best >= 0 ? await sgObjAt(bytes, s, best) : null; if (o && sgIsDict(o.v) && o.endAt > c && rev.map.get(o.num)?.[4] === best) sv = o.v; } catch {}
     if (!sv || !Array.isArray(sv.ByteRange) || sv.ByteRange.join(' ') !== range.join(' ') || !sv.Contents || typeof sv.Contents.hex !== 'string' || sv.Contents.hex !== s.slice(b + 1, c - 1).replace(/\s+/g, '')) {
-      r.notes.push('The signature’s details are not part of what it signed.'); return r;
+      fail('range', 'The signature’s details are not part of what it signed.');
+      r.checks = [['Document', 'bad', 'The signature’s details are not signed']]; return r;
     }
   } else {
     // this version of the file could not be read: the details from the signature dictionary as it is now
@@ -17278,74 +17315,93 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust) {
       if (sgIsDict(dd) && dd.TransformMethod === '/DocMDP') { const p = await deref(dd.TransformParams); r.certify = sgIsDict(p) && Number.isInteger(p.P) ? p.P : 2; }
     }
   }
-  const cmsBytes = sgUnhex(s.slice(b + 1, c - 1));
-  const { sd, si } = await sgReadCms(cmsBytes);
+  let sd, si;
+  try { ({ sd, si } = await sgReadCms(sgUnhex(s.slice(b + 1, c - 1)))); if (!si) throw new Error('no signer'); }
+  catch (e) { return sgBroken(r, 'The signature (PKCS #7) could not be read: ' + (e.message || e) + '.'); }
+  const { pkijs } = await sgLoadLibs();
   const content = sgCat([bytes.subarray(0, b), bytes.subarray(c, end)]);
   const hash = SG_HASH[si.digestAlgorithm.algorithmId];
-  if (!hash) { r.notes.push('The signature uses a digest Cowdrey.PDF can’t check.'); return r; }
-  // the signer
-  let signer = null;
-  try {
-    const v = await sd.verify({ signer: 0, data: r.subFilter === 'adbe.pkcs7.sha1' ? undefined : content.slice().buffer, extendedMode: true, checkChain: false });
-    r.sigOk = !!v.signatureVerified; signer = v.signerCertificate;
-  } catch (e) { r.sigOk = false; signer = e && e.signerCertificate; if (e && e.message && !/digest/i.test(e.message)) r.verifyError = e.message; }
-  if (!signer && sd.certificates) signer = sd.certificates[0];
-  // the digest
-  let md = null;
+  if (!hash) { fail('unsupported', 'The signature uses a digest Cowdrey.PDF can’t check.'); return r; }
+  const algName = SG_SIGALG[si.signatureAlgorithm.algorithmId] || si.signatureAlgorithm.algorithmId;
+  r.alg = algName + (/^(RSA|ECDSA)$/.test(algName) ? ' with ' + hash : '');
+  // the signer: the certificate the signer info names
+  const certs = (sd.certificates || []).filter((x) => x && x.subject);
+  const sid = si.sid;
+  let signer = certs.find((x) => sid instanceof pkijs.IssuerAndSerialNumber ? sgNameEq(x.issuer, sid.issuer) && x.serialNumber.isEqual(sid.serialNumber) : !!(sid && sid.valueBlock && sid.valueBlock.valueHexView) && sgExt(x).ski === sgHex(sid.valueBlock.valueHexView));
+  // the digest, and the signer's signature
   const mda = si.signedAttrs && si.signedAttrs.attributes.find((x) => x.type === SG_OID.messageDigest);
-  if (r.subFilter === 'adbe.pkcs7.sha1') {
-    const e = sd.encapContentInfo.eContent; const inner = e ? e.valueBlock.valueHexView : null;
-    r.digestOk = !!inner && sgEq(await sgDigest('SHA-1', content), inner);
+  if (r.subFilter === 'adbe.pkcs7.sha1' || !mda) {
+    try {
+      const v = await sd.verify({ signer: 0, data: r.subFilter === 'adbe.pkcs7.sha1' ? undefined : content.slice().buffer, extendedMode: true, checkChain: false });
+      r.sigOk = !!v.signatureVerified; signer ||= v.signerCertificate;
+    } catch (e) { r.sigOk = false; signer ||= e && e.signerCertificate; if (e && e.message && !/digest/i.test(e.message)) r.verifyError = e.message; }
+    if (r.subFilter === 'adbe.pkcs7.sha1') { const e = sd.encapContentInfo.eContent; const inner = e ? e.valueBlock.valueHexView : null; r.digestOk = !!inner && sgEq(await sgDigest('SHA-1', content), inner); }
+    else r.digestOk = r.sigOk;
+    r.attrSigOk = r.sigOk ? true : r.digestOk === false ? (r.verifyError ? false : true) : false;
   } else {
-    md = await sgDigest(hash, content);
-    r.digestOk = mda ? sgEq(md, mda.values[0].valueBlock.valueHexView) : r.sigOk;
+    r.digestOk = sgEq(await sgDigest(hash, content), mda.values[0].valueBlock.valueHexView);
+    r.attrSigOk = await sgAttrsSigOk(si, signer);
+    r.sigOk = r.attrSigOk === true && r.digestOk;
   }
-  if (signer) {
-    const der = new Uint8Array(signer.toSchema(true).toBER(false));
-    const info = await sgCertInfo(der);
-    Object.assign(r, { name: info.name, cert: { subject: sgNameText(info.subject), issuer: sgNameText(info.issuer), email: info.subject.email || '', o: info.subject.o || '', serial: info.serial, notBefore: info.notBefore, notAfter: info.notAfter, fp: info.fp, selfSigned: info.selfSigned, key: info.key } });
-    // trust: this certificate, or one that issued it (and whose signature on it checks out)
-    r.trusted = trust.has(info.fp);
-    if (!r.trusted && sd.certificates) {
-      let cur = signer;
-      for (let hop = 0; hop < 8 && !r.trusted; hop++) {
-        const up = sd.certificates.find((x) => x.subject && sgEq(x.subject.toSchema().toBER(), cur.issuer.toSchema().toBER()) && x !== cur);
-        if (!up) break;
-        let ok = false; try { ok = await cur.verify(up); } catch {}
-        if (!ok) break;
-        if (trust.has(await sgFp(new Uint8Array(up.toSchema(true).toBER(false))))) r.trusted = true;
-        if (sgEq(up.subject.toSchema().toBER(), up.issuer.toSchema().toBER())) break;
-        cur = up;
-      }
-    }
-  } else r.notes.push('The signer’s certificate is not in the signature.');
+  if (!signer) signer = certs[0];
   // when: the timestamp, else the signing time in the signature, else the time the PDF gives
   const st = si.signedAttrs && si.signedAttrs.attributes.find((x) => x.type === SG_OID.signingTime);
   if (st) try { r.claimed = st.values[0].toDate(); } catch {}
   const tk = si.unsignedAttrs && si.unsignedAttrs.attributes.find((x) => x.type === SG_OID.tsToken);
   if (tk) {
     const chk = await sgCheckToken(tk.values[0], si.signature.valueBlock.valueHexView);
-    r.ts = { ok: chk.ok, time: chk.genTime, tsa: chk.tsa };
+    r.ts = { ok: chk.ok, time: chk.genTime, tsa: chk.tsa, der: new Uint8Array(tk.values[0].toBER(false)) };
+    if (chk.tst && chk.sd) Object.assign(r.ts, await sgTokenDetails(chk.tst, chk.sd, trust));
     if (!chk.ok) r.notes.push('The timestamp does not check out.');
   }
   r.when = r.ts && r.ts.ok ? r.ts.time : r.claimed;
-  if (r.cert && r.when && (r.when < r.cert.notBefore || r.when > r.cert.notAfter)) { r.certExpired = true; r.notes.push('The certificate was not valid at the time of signing.'); }
+  if (signer) {
+    const chain = await sgBuildChain(signer, certs, trust, r.when);
+    r.chain = chain; r.trusted = chain.trusted;
+    const x0 = chain.certs[0], info = x0.info;
+    Object.assign(r, { name: info.name, cert: { subject: sgNameText(info.subject), issuer: sgNameText(info.issuer), email: info.subject.email || '', o: info.subject.o || '', serial: info.serial, notBefore: info.notBefore, notAfter: info.notAfter, fp: info.fp, selfSigned: info.selfSigned, key: x0.key } });
+    if (chain.problems.length) r.certExpired = true;
+    r.revHosts = sgRevHosts(chain.certs);
+    if (revocation && r.sigOk) r.rev = await sgRevocation(chain.certs, r.when, !!(r.ts && r.ts.ok));
+  } else r.notes.push('The signer’s certificate is not in the signature.');
   // changes after this signature
   if (!/^\s*$/.test(s.slice(end))) r.changes = await sgLaterChanges(bytes, s, end, rev, now);
+  const what = r.changes ? [r.changes.form && 'form filled', r.changes.comments && 'comments added'].filter(Boolean) : [];
+  const banned = !!r.changes && (r.changes.other || (r.certify === 1 && (r.changes.form || r.changes.comments || r.changes.sign)) || (r.certify === 2 && r.changes.comments));
+  if (r.changes) r.changeText = r.changes.other ? 'The file was changed after it was signed, in ways a signature does not allow.' : what.length ? `Changed after signing: ${what.join(', ')}${banned ? '' : ' (allowed)'}.` : r.changes.sign ? 'Signed again after this signature.' : '';
   // the verdict
-  if (!r.digestOk) { r.status = 'invalid'; r.notes.unshift('The file was changed in the part this signature covers.'); }
-  else if (!r.sigOk) { r.status = 'invalid'; r.notes.unshift('The signature does not match the signer’s certificate' + (r.verifyError ? ` (${r.verifyError})` : '') + '.'); }
-  else if (r.changes && (r.changes.other || (r.certify === 1 && (r.changes.form || r.changes.comments || r.changes.sign)) || (r.certify === 2 && r.changes.comments))) r.status = 'changed';
-  else if (r.changes && (r.changes.comments || r.changes.form)) r.status = 'changed';
-  else r.status = r.trusted && !r.certExpired ? 'trusted' : 'valid';
-  if (r.changes) {
-    const what = [r.changes.form && 'form filled', r.changes.comments && 'comments added'].filter(Boolean);
-    r.changeText = r.changes.other ? 'The file was changed after it was signed, in ways a signature does not allow.' : what.length ? `The file was changed after it was signed: ${what.join(', ')}.` : r.changes.sign ? 'Signed again after this signature.' : '';
-    if (r.status === 'changed' && !r.changes.other && what.length) r.statusText = `${SG_STATUS.changed[0]} (${what.join(', ')})`;
-    if (r.certify && r.status === 'changed') r.notes.push('The author certified this PDF and does not allow these changes.');
-  }
+  if (r.attrSigOk === false) fail('sigobject', 'The signature does not match the signer’s certificate' + (r.verifyError ? ` (${r.verifyError})` : '') + ': the signature object is damaged or was changed.');
+  else if (r.attrSigOk === null) fail('unsupported', 'This device can’t check this kind of signature (Ed25519 needs a newer browser).');
+  else if (!r.digestOk) fail('tampered', 'The file was changed in the part this signature covers.');
+  else if (!signer) fail('cert');
+  else if (r.chain.problems.length) { fail('cert'); r.notes.push(...r.chain.problems); }
+  else if (r.rev && r.rev.verdict === 'revoked') { r.status = 'revoked'; r.statusText = SG_STATUS.revoked[0]; r.notes.unshift(sgRevText(r.rev, r.when)); }
+  else if (banned) r.status = 'changed';
+  else r.status = r.trusted ? 'trusted' : 'valid';
+  if (r.status === 'changed' && !r.changes.other && what.length) r.statusText = `${SG_STATUS.changed[0]} (${what.join(', ')})`;
+  if (r.certify && r.status === 'changed') r.notes.push('The author certified this PDF and does not allow these changes.');
+  if (r.rev && r.rev.verdict === 'revokedAfter') r.notes.push(sgRevText(r.rev, r.when));
+  if (r.chain && !r.problem) r.notes.push(...r.chain.notes);
   r.statusText ||= SG_STATUS[r.status][0];
+  sgChecks(r);
   return r;
+}
+// The checks behind the verdict, one line each: [what, 'ok'|'warn'|'bad', text]
+function sgChecks(r) {
+  const broken = r.problem === 'tampered' || r.problem === 'sigobject', k = [];
+  k.push(['Document', !r.digestOk ? 'bad' : r.status === 'changed' ? 'warn' : 'ok', !r.digestOk ? 'Changed in the part this signature covers' : r.changeText || 'Not changed since it was signed']);
+  k.push(['Signature', r.attrSigOk === true ? 'ok' : r.attrSigOk === null ? 'warn' : 'bad', r.attrSigOk === true ? `Made with the signer’s key${r.alg ? ' (' + r.alg + ')' : ''}` : r.attrSigOk === null ? 'Can’t be checked on this device' : 'Damaged: it does not match the signer’s certificate']);
+  if (r.chain) {
+    const top = r.chain.certs[r.chain.certs.length - 1].info.name, n = r.chain.certs.length, who = `${r.name}, issued by ${r.cert.selfSigned ? 'itself' : r.cert.issuer}`;
+    k.push(['Certificate', broken || r.chain.problems.length ? 'bad' : r.trusted ? 'ok' : 'warn', broken ? `Not relied on: the signature does not match this file (${who})`
+      : r.chain.problems.length ? r.chain.problems[0] : r.trusted ? (n === 1 ? `Trusted: ${r.name}, self-signed` : `Trusted: ${who} (a chain of ${n} to “${top}”)`) : n === 1 && r.cert.selfSigned ? `Not trusted on this device: ${r.name}, self-signed` : `Not trusted on this device: ${who} (a chain of ${n}${r.chain.complete ? ` to “${top}”` : ', incomplete'})`]);
+  }
+  const tsText = r.ts ? `${sgWhen(r.ts.time)}${r.ts.tsa ? ' by ' + r.ts.tsa : ''}` : '';
+  if (r.ts) k.push(['Timestamp', !r.ts.ok || broken ? 'bad' : 'ok', !r.ts.ok ? 'Does not check out' : broken ? `Not relied on: it stamps a signature that no longer matches the file (${tsText})` : tsText]);
+  else k.push(['Timestamp', 'warn', 'None: the time comes from the signer’s clock']);
+  if (r.chain && !r.rev && !(r.revHosts || []).length) k.push(['Revocation', 'warn', 'Can’t be checked: the certificates name no revocation service']);
+  else if (r.chain) k.push(['Revocation', !r.rev ? 'warn' : r.rev.verdict === 'good' ? 'ok' : r.rev.verdict === 'revoked' ? 'bad' : 'warn', sgRevText(r.rev, r.when)]);
+  r.checks = k;
 }
 // What the updates after a signature changed: { comments, form, sign, other }, as far as can be told. `old` is the
 // signed revision and `now` the whole file, both read the way a PDF reader reads them (sgRevision), so every object a
@@ -17504,12 +17560,72 @@ function sgEdits() {
 async function sgKeepBytes() {
   const k = sgEdits(), src = doc.sources[0];
   if (k === 'none') return new Uint8Array(src);
-  if (k !== 'form') return null;
+  let base = new Uint8Array(src);
+  const form = (() => { try { const st = pdfDocs.get(0).annotationStorage; return !!(st.size && ((st.modifiedIds && st.modifiedIds.ids && st.modifiedIds.ids.size) || (st.serializable && st.serializable.map && st.serializable.map.size))); } catch { return false; } })();
+  if (form) {
+    try {
+      const out = new Uint8Array(await pdfDocs.get(0).saveDocument());
+      if (!(out.length > src.length && sgEq(out.subarray(0, src.length), src))) return null;
+      base = out;
+    } catch (e) { console.warn(e); return null; }
+  }
+  if (k === 'form') return base;
+  return sgMarksUpdate(base);
+}
+// Comments only (notes, highlights, shapes, ink, typewriter, stamps): added to `base` as an incremental update, so the
+// bytes before it, and every signature over them, stay as they were. null when anything else changed (pages moved,
+// turned or cropped, text or pictures edited, a watermark…) or when the comments would change more than the pages'
+// annotation lists: then the file is saved again as a whole.
+const SG_COMMENT_MARKS = new Set(['note', 'hl', 'rect', 'ink', 'cmMarkup', 'cmShape', 'cmCallout', 'cmType', 'cmStamp']);
+async function sgMarksUpdate(base) {
+  if (!doc || docMarks().length) return null;
+  const pd0 = pdfDocs.get(0);
+  if (!pd0 || doc.pages.length !== pd0.numPages || !doc.pages.every((e, n) => e.src === 0 && e.i === n && !e.rot && !e.crop)) return null;
+  const all = doc.pages.map((e) => doc.marks[pageKey(e)] || []);
+  if (!all.flat().length || all.flat().some((m) => !SG_COMMENT_MARKS.has(m.type) || (m.type !== 'note' && !(FEATURE.markTypes[m.type] && FEATURE.markTypes[m.type].save)))) return null;
   try {
-    const out = new Uint8Array(await pdfDocs.get(0).saveDocument());
-    if (out.length > src.length && sgEq(out.subarray(0, src.length), src)) return out;
-  } catch (e) { console.warn(e); }
-  return null;
+    await commitEditing();
+    const L = await loadPdfLib(), { PDFName, PDFHexString, PDFString, PDFDict, PDFArray } = L;
+    const out = await L.PDFDocument.load(base, { ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false });
+    if (out.isEncrypted) return null;
+    const ctx = out.context, before = new Map();
+    for (const [ref, obj] of ctx.enumerateIndirectObjects()) before.set(ref.tag, sgObjBytes(obj));
+    const pages = out.getPages(), editCtx = { images: new Map(), std: new Map(), sources: { loaded: [out], refs: [pages.map((pg) => pg.ref)] }, markOps: [] };
+    for (let n = 0; n < pages.length; n++) {
+      const p = pages[n];
+      for (const m of all[n]) {
+        if (m.type !== 'note') { await FEATURE.markTypes[m.type].save({ L, out, p, m, entry: doc.pages[n], ctx: editCtx }); continue; }
+        // as buildPdf writes a note
+        const annot = ctx.obj({ Type: 'Annot', Subtype: 'Text', Rect: [m.x, m.y - 22, m.x + 22, m.y], Contents: PDFHexString.fromText(m.text), Name: 'Comment', C: [1, .83, .23], ...((m.author || S.author) ? { T: PDFHexString.fromText(m.author || S.author) } : {}), F: 4, Open: false });
+        annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
+        const ref = ctx.register(annot);
+        let annots = p.node.lookup(PDFName.of('Annots'));
+        if (!annots) { annots = ctx.obj([]); p.node.set(PDFName.of('Annots'), annots); }
+        annots.push(ref);
+      }
+    }
+    if (out.flush) await out.flush();
+    const pageTags = new Set(pages.map((pg) => pg.ref.tag)), objs = [];
+    const annotLists = new Set(pages.map((pg) => pg.node.get(PDFName.of('Annots'))).filter((x) => x && x.tag).map((x) => x.tag));
+    for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
+      const now = sgObjBytes(obj), was = before.get(ref.tag);
+      if (was && sgEq(was, now)) continue;
+      if (was) {
+        // an object that was there may only be a page that gained annotations, or its own list of annotations
+        if (pageTags.has(ref.tag) && obj instanceof PDFDict) {
+          const a = sgParse(sgLatin1(was), 0)[0], b = sgParse(sgLatin1(now), 0)[0];
+          for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) if (key !== 'Annots' && JSON.stringify(a[key]) !== JSON.stringify(b[key])) return null;
+        } else if (!(annotLists.has(ref.tag) && obj instanceof PDFArray)) return null;
+      }
+      objs.push([ref, now]);
+    }
+    if (!objs.length) return base;
+    objs.sort((x, y) => x[0].objectNumber - y[0].objectNumber);
+    const bs = sgLatin1(base), tr = await sgTrailerInfo(base, bs);
+    if (tr.encrypt) return null;
+    const size = Math.max(tr.size, ctx.largestObjectNumber + 1, objs[objs.length - 1][0].objectNumber + 1);
+    return sgAppend(base, tr, objs, ctx.trailerInfo.Root, size).bytes;
+  } catch (e) { console.warn('Comments could not be added as an update', e); return null; }
 }
 addStyle(`
 .sg-dock[hidden] { display: none; }
@@ -17532,10 +17648,16 @@ addStyle(`
 .sg-item dt { color: var(--ink-3); } .sg-item dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .sg-acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 26px; }
 .sg-acts .btn { height: 28px; padding: 0 12px; font-size: 13px; }
+.sg-checks { list-style: none; margin: 6px 0 0 26px; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.sg-ck { display: flex; gap: 6px; align-items: flex-start; color: var(--ink-2); } .sg-ck strong { color: var(--ink); font-weight: 600; }
+.sg-ck .sg-ic svg { width: 15px; height: 15px; margin-top: 1px; }
+.sg-cert { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 6px; } .sg-cert p { margin: 0; }
+.sg-cert .sg-acts { margin-left: 0; }
+.sg-acts-note { margin: 4px 0 0 26px; }
 .sg-note { font-size: 12.5px; color: var(--ink-3); }
 .sg-ids { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
-.sg-id { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--chrome); }
-.sg-id > div { flex: 1; min-width: 0; font-size: 13px; } .sg-id strong { color: var(--ink); }
+.sg-id, .sg-trc { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--chrome); }
+.sg-id > div, .sg-trc > div { flex: 1; min-width: 0; font-size: 13px; } .sg-id strong, .sg-trc strong { color: var(--ink); }
 .sg-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .sg-row .field { flex: 1 1 200px; }
 .sg-check { display: flex; gap: 8px; align-items: center; margin: 6px 0; color: var(--ink); font-size: 13.5px; }
@@ -17553,11 +17675,11 @@ function sgDock() {
 function sgShowBar() {
   const dock = sgDock(), sigs = sgState.sigs;
   if (!doc || !sigs.length || sgState.barClosed) { dock.hidden = true; dock.innerHTML = ''; return; }
-  const worst = sigs.some((x) => x.status === 'invalid') ? 'invalid' : sigs.some((x) => x.status === 'changed') ? 'changed' : sigs.every((x) => x.status === 'trusted') ? 'trusted' : 'valid';
-  const names = [...new Set(sigs.map((x) => x.name))];
+  const worst = sigs.some((x) => x.status === 'invalid') ? 'invalid' : sigs.some((x) => x.status === 'revoked') ? 'revoked' : sigs.some((x) => x.status === 'changed') ? 'changed' : sigs.every((x) => x.status === 'trusted') ? 'trusted' : 'valid';
+  const names = [...new Set(sigs.map((x) => x.name).filter((n) => n !== 'Unknown'))];
   const who = names.length > 2 ? `${names.slice(0, 2).map(esc).join(', ')} and ${names.length - 2} more` : names.map((n) => `<strong>${esc(n)}</strong>`).join(' and ');
-  const problem = worst === 'invalid' ? ' A signature is not valid.' : worst === 'changed' ? ' It was changed after signing.' : '';
-  dock.innerHTML = `<div class="sg-bar" role="status"><span class="sg-ic sg-${SG_STATUS[worst][2]}">${ic(SG_STATUS[worst][1])}</span><span class="sg-msg">This PDF is digitally signed by ${who}.${problem}</span><button type="button" class="btn" data-sg="view">View signatures</button><button type="button" class="icon-btn" data-sg="x" title="Close" aria-label="Close">${ic('x')}</button></div>`;
+  const problem = worst === 'invalid' ? ' A signature is not valid.' : worst === 'revoked' ? ' A signer’s certificate was revoked.' : worst === 'changed' ? ' It was changed after signing.' : sigs.some((x) => x.changes && (x.changes.comments || x.changes.form)) ? ' Comments or form entries were added after signing.' : '';
+  dock.innerHTML = `<div class="sg-bar" role="status"><span class="sg-ic sg-${SG_STATUS[worst][2]}">${ic(SG_STATUS[worst][1])}</span><span class="sg-msg">${names.length ? `This PDF is digitally signed by ${who}.` : 'This PDF has a digital signature that can’t be read.'}${problem}</span><button type="button" class="btn" data-sg="view">View signatures</button><button type="button" class="icon-btn" data-sg="x" title="Close" aria-label="Close">${ic('x')}</button></div>`;
   dock.hidden = false; icons();
   $('[data-sg="view"]', dock).onclick = () => sgPanel();
   $('[data-sg="x"]', dock).onclick = () => { sgState.barClosed = true; sgShowBar(); };
@@ -17587,33 +17709,74 @@ function sgItemHtml(x) {
   const [label, icon, tone] = SG_STATUS[x.status];
   const c = x.cert, dt = (k, v) => v ? `<dt>${k}</dt><dd>${esc(v)}</dd>` : '';
   const when = x.ts && x.ts.ok ? `Signed ${esc(sgWhen(x.ts.time))}` : x.when ? `Signed ${esc(sgWhen(x.when))} (the signer’s clock)` : '';
+  const toneIc = { ok: 'circle-check', warn: 'circle-alert', bad: 'circle-x' };
+  const checks = (x.checks || []).length ? `<ul class="sg-checks">${x.checks.map(([k, t, v]) => `<li class="sg-ck" data-sg-check="${esc(k)}" data-tone="${t}"><span class="sg-ic sg-${t}">${ic(toneIc[t])}</span><span><strong>${esc(k)}:</strong> ${esc(v)}</span></li>`).join('')}</ul>` : '';
+  const role = (k, n) => k === 0 ? 'Signer' : k === n - 1 && x.chain.complete ? 'Root' : 'Issuer';
+  const state = { ok: '', expired: ' (expired)', early: ' (not valid yet)' };
+  const chain = x.chain ? `<details class="sg-chain"><summary>Certificates (${x.chain.certs.length})</summary>${x.chain.certs.map((y, k, all) => `<div class="sg-cert" data-sg-cert="${k}"><p><strong>${esc(role(k, all.length))}: ${esc(y.info.name)}</strong>${y.trusted ? ' · trusted' : ''}</p><dl>
+      ${dt('Issued to', sgNameText(y.info.subject))}${dt('Email', y.info.subject.email)}${dt('Issued by', y.info.selfSigned ? 'Itself (self-signed)' : sgNameText(y.info.issuer))}
+      ${dt('Valid', `${sgDay(y.info.notBefore)} to ${sgDay(y.info.notAfter)}${state[y.at] ? state[y.at] + ' when signed' : state[y.now] || ''}`)}${dt('Expires', sgWhen(y.info.notAfter))}
+      ${dt('Key', y.key)}${dt('Signed with', y.alg)}${dt('Serial number', y.info.serial)}${dt('SHA-256', y.info.fp.match(/.{2}/g).join(':'))}
+      ${dt('Revocation', y.ext.ocsp.length || y.ext.crl.length ? [...y.ext.ocsp.map((u) => 'OCSP ' + u), ...y.ext.crl.map((u) => 'CRL ' + u)].join(', ') : '')}</dl>
+      <div class="sg-acts"><button type="button" class="btn" data-sg-trustc="${x.n}:${k}">${y.trusted ? 'Stop trusting' : 'Trust on this device'}</button><button type="button" class="btn" data-sg-savec="${x.n}:${k}">Save certificate</button></div></div>`).join('')}</details>` : '';
+  const t = x.ts, tc = t && t.tsaChain && t.tsaChain.certs[0];
+  const tsBox = t ? `<details class="sg-tsd"><summary>Timestamp</summary><dl>${dt('Time', t.time ? sgWhen(t.time) + ' (' + t.time.toISOString() + ')' : '')}${dt('Authority', t.tsa)}
+      ${tc ? dt('Issued by', tc.info.selfSigned ? 'Itself (self-signed)' : sgNameText(tc.info.issuer)) + dt('Valid', `${sgDay(tc.info.notBefore)} to ${sgDay(tc.info.notAfter)}`) + dt('Trusted', t.tsaChain.trusted ? 'Yes' : 'No, not on this device') : ''}
+      ${dt('Serial number', t.serial)}${dt('Policy', t.policy)}${dt('Accuracy', t.accuracy)}${dt('Stamped fingerprint', t.imprint ? `${t.hash} ${t.imprint}` : '')}${dt('Checks out', t.ok ? 'Yes' : 'No')}</dl>
+      <div class="sg-acts"><button type="button" class="btn" data-sg-savets="${x.n}">Save timestamp token</button></div></details>` : '';
+  const sigBox = `<details class="sg-sigd"><summary>Signature</summary><dl>${dt('Format', x.subFilter)}${dt('Algorithm', x.alg)}${dt('Field', x.field)}${dt('Name in the PDF', x.pdfName)}${dt('Contact', x.contact)}${dt('Signer’s clock', x.claimed ? sgWhen(x.claimed) : '')}</dl></details>`;
+  const top = x.chain && x.chain.certs[x.chain.certs.length - 1];
+  const trustLabel = !top ? '' : top.trusted || x.trusted ? 'Stop trusting this certificate' : top.info.name === x.name ? 'Trust this certificate on this device' : `Trust “${top.info.name}” on this device`;
+  const revBtn = x.chain && !x.rev && x.sigOk && (x.revHosts || []).length ? `<button type="button" class="btn" data-sg-rev="${x.n}">Check revocation online</button>` : '';
   return `<div class="sg-item" data-sg-n="${x.n}">
     <div class="sg-head"><span class="sg-ic sg-${tone}" title="${esc(label)}">${ic(icon)}</span><span>${esc(x.name)}</span></div>
     <div class="sg-sub"><p class="sg-status"><strong class="sg-${tone}">${esc(x.statusText || label)}</strong>${x.certify ? ' · Certified' : ''}</p>
       ${when ? `<p>${when}</p>` : ''}
       ${x.ts ? `<p>${x.ts.ok ? `Timestamp: ${esc(sgWhen(x.ts.time))}${x.ts.tsa ? ' by ' + esc(x.ts.tsa) : ''}` : 'The timestamp does not check out.'}</p>` : '<p>No timestamp</p>'}
       ${x.reason ? `<p>Reason: ${esc(x.reason)}</p>` : ''}${x.location ? `<p>Location: ${esc(x.location)}</p>` : ''}
-      ${x.changeText ? `<p>${esc(x.changeText)}</p>` : ''}
       ${x.notes.map((n) => `<p>${esc(n)}</p>`).join('')}
-      ${x.status === 'valid' && !x.certExpired ? '<p>The file has not changed since it was signed. Who signed it is not confirmed: trust this certificate only if you know it is theirs.</p>' : ''}</div>
-    ${c ? `<details><summary>Certificate</summary><dl>${dt('Issued to', c.subject)}${dt('Email', c.email)}${dt('Issued by', c.selfSigned ? 'Self-signed (by the signer)' : c.issuer)}${dt('Valid', `${c.notBefore.toLocaleDateString()} to ${c.notAfter.toLocaleDateString()}`)}${dt('Serial number', c.serial)}${dt('Key', c.key)}${dt('SHA-256', c.fp.match(/.{2}/g).join(':'))}${dt('Format', x.subFilter)}${dt('Field', x.field)}</dl></details>` : ''}
-    <div class="sg-acts">${c ? `<button type="button" class="btn" data-sg-trust="${x.n}">${x.trusted ? 'Stop trusting this certificate' : 'Trust this certificate on this device'}</button>` : ''}${x.page >= 0 ? `<button type="button" class="btn" data-sg-go="${x.n}">Go to field</button>` : ''}</div>
+      ${x.status === 'valid' ? '<p>Who signed it is not confirmed: trust this certificate only if you know it is theirs.</p>' : ''}</div>
+    ${checks}${chain}${tsBox}${c ? sigBox : ''}
+    <div class="sg-acts">${top ? `<button type="button" class="btn" data-sg-trust="${x.n}">${esc(trustLabel)}</button>` : ''}${revBtn}${x.page >= 0 ? `<button type="button" class="btn" data-sg-go="${x.n}">Go to field</button>` : ''}</div>
+    ${revBtn ? `<p class="sg-note sg-acts-note">Asks ${x.revHosts.map(esc).join(', ')} whether a certificate was revoked. Sends serial numbers, not the document.</p>` : ''}
   </div>`;
 }
 async function sgPanel() {
   if (!doc) return;
   if (sgState.checking) await sgState.checking;
   const list = () => sgState.sigs.length ? `<div class="sg-list">${sgState.sigs.map(sgItemHtml).join('')}</div>` : '<p>This PDF has no digital signatures.</p>';
-  const body = `<div id="sgPanelList">${list()}</div><p class="sg-note">Revocation is not checked: Cowdrey.PDF does not ask certificate authorities whether a certificate was withdrawn. No certificate is trusted until you trust it here.</p>`;
+  const p = sgPrefs();
+  const body = `<div id="sgPanelList">${list()}</div><p class="sg-note">${p.revocation ? 'Revocation is checked online when a signed PDF opens (set in Signing IDs).' : 'Revocation is checked only when you ask: Cowdrey.PDF then asks the servers named in the certificates.'} No certificate is trusted until you trust it here.</p>`;
+  const again = async (o) => { sgState.sigs = await sgVerifyAll(sgState.bytes || doc.sources[0], doc.sources[0].password, o); };
   await dialog('Signatures', body, [{ label: 'Close', primary: true }], (dlg) => {
+    const redraw = () => { $('#sgPanelList', dlg).innerHTML = list(); wire(); sgShowBar(); };
+    const find = (v) => { const [n, k] = String(v).split(':').map(Number); const x = sgState.sigs.find((y) => y.n === n); return [x, x && x.chain && x.chain.certs[k]]; };
     const wire = () => {
       icons();
       $$('[data-sg-trust]', dlg).forEach((b) => b.onclick = async () => {
-        const x = sgState.sigs.find((y) => y.n === +b.dataset.sgTrust); if (!x || !x.cert) return;
-        try { if (x.trusted) await sgTrustDel(x.cert.fp); else await sgTrustPut(x.cert.fp, x.name); } catch (e) { toast('Could not keep that on this device'); return; }
-        sgState.sigs = await sgVerifyAll(sgState.bytes || doc.sources[0], doc.sources[0].password);
-        $('#sgPanelList', dlg).innerHTML = list(); wire(); sgShowBar();
-        toast(x.trusted ? 'This certificate is no longer trusted' : `${x.name}’s certificate is trusted on this device`);
+        const x = sgState.sigs.find((y) => y.n === +b.dataset.sgTrust); if (!x || !x.chain) return;
+        const top = x.chain.certs[x.chain.certs.length - 1], on = x.trusted;
+        try { if (on) { for (const y of x.chain.certs) if (y.trusted) await sgTrustDel(y.info.fp); } else await sgTrustAdd(top.der, top.info.name); } catch (e) { toast('Could not keep that on this device'); return; }
+        await again(); redraw();
+        toast(on ? 'This certificate is no longer trusted' : `${top.info.name}’s certificate is trusted on this device`);
+      });
+      $$('[data-sg-trustc]', dlg).forEach((b) => b.onclick = async () => {
+        const [, y] = find(b.dataset.sgTrustc); if (!y) return;
+        try { if (y.trusted) await sgTrustDel(y.info.fp); else await sgTrustAdd(y.der, y.info.name); } catch { toast('Could not keep that on this device'); return; }
+        await again(); redraw(); toast(y.trusted ? `${y.info.name} is no longer trusted` : `${y.info.name} is trusted on this device`);
+      });
+      $$('[data-sg-savec]', dlg).forEach((b) => b.onclick = async () => {
+        const [, y] = find(b.dataset.sgSavec); if (!y) return;
+        try { await saveFile(y.der, safeName(y.info.name) + '.cer', 'application/pkix-cert'); } catch (e) { toast('Could not save it: ' + (e.message || e)); }
+      });
+      $$('[data-sg-savets]', dlg).forEach((b) => b.onclick = async () => {
+        const x = sgState.sigs.find((y) => y.n === +b.dataset.sgSavets); if (!x || !x.ts) return;
+        try { await saveFile(x.ts.der, safeName(x.name) + ' timestamp.tst', 'application/timestamp-reply'); } catch (e) { toast('Could not save it: ' + (e.message || e)); }
+      });
+      $$('[data-sg-rev]', dlg).forEach((b) => b.onclick = async () => {
+        b.disabled = true; b.textContent = 'Checking…';
+        try { await again({ revocation: true }); } catch (e) { toast('Could not check: ' + (e.message || e)); }
+        redraw();
       });
       $$('[data-sg-go]', dlg).forEach((b) => b.onclick = () => {
         const x = sgState.sigs.find((y) => y.n === +b.dataset.sgGo); $('[data-x]', dlg).click(); if (x) sgGoTo(x);
@@ -17654,12 +17817,21 @@ async function sgIdsDialog() {
       <button type="button" class="icon-btn" data-sg-export="${esc(r.id)}" title="Save a copy (.p12)" aria-label="Save a copy of ${esc(r.name)}">${ic('download')}</button><button type="button" class="icon-btn" data-sg-del="${esc(r.id)}" title="Delete" aria-label="Delete ${esc(r.name)}">${ic('trash-2')}</button></div>`).join('')}</div>`
       : '<p>No signing IDs on this device yet. Import the .p12 or .pfx file your certificate came in, or create one here.</p>';
   };
+  const drawTrust = async () => {
+    const list = await sgTrustRecs();
+    return list.length ? `<div class="sg-ids sg-trs">${list.map((r) => `<div class="sg-trc" data-sg-tr="${esc(r.fp)}"><span class="sg-ic">${ic('shield-check')}</span><div><strong>${esc(r.name || 'Certificate')}</strong><br><span class="sg-note">SHA-256 ${esc(r.fp.slice(0, 24).match(/.{1,2}/g).join(':'))}…</span></div><button type="button" class="icon-btn" data-sg-trdel="${esc(r.fp)}" title="Stop trusting" aria-label="Stop trusting ${esc(r.name || 'this certificate')}">${ic('trash-2')}</button></div>`).join('')}</div>`
+      : '<p class="sg-note">None yet. Add your organisation’s root certificate, or trust one from the Signatures panel.</p>';
+  };
   const p = sgPrefs();
   const body = `<div id="sgIdList">${await draw()}</div>
     <div class="sg-row"><button type="button" class="btn" id="sgImport">${ic('upload')}<span>Import .p12 or .pfx…</span></button><button type="button" class="btn" id="sgCreate">${ic('plus')}<span>Create a signing ID…</span></button><input type="file" id="sgFile" accept=".p12,.pfx,application/x-pkcs12" hidden></div>
     <p class="sg-note">The files stay on this device, still locked with their password. The password is never stored.</p>
     <label class="field"><span>Timestamp server (optional)</span><input id="sgTsa" type="url" placeholder="https://" value="${esc(p.tsa)}" autocomplete="off" spellcheck="false"></label>
-    <p class="sg-note" id="sgTsaNote">Sends a fingerprint of the signature, not the document, to the timestamp server.</p>`;
+    <p class="sg-note" id="sgTsaNote">Sends a fingerprint of the signature, not the document, to the timestamp server.</p>
+    <label class="sg-check"><input type="checkbox" id="sgRev"${p.revocation ? ' checked' : ''}> Check revocation online when a signed PDF opens</label>
+    <p class="sg-note">Asks the servers named in each certificate (OCSP or CRL) whether it was revoked. Sends serial numbers, not the document. When off, you can still check a signature from the Signatures panel.</p>
+    <p><strong>Trusted certificates</strong></p><div id="sgTrustList">${await drawTrust()}</div>
+    <div class="sg-row"><button type="button" class="btn" id="sgTrustImport">${ic('shield-plus')}<span>Add a trusted certificate…</span></button><input type="file" id="sgTrustFile" accept=".cer,.crt,.pem,.der,application/pkix-cert,application/x-x509-ca-cert" hidden></div>`;
   let todo = null;
   await dialog('Signing IDs', body, [{ label: 'Close', primary: true }], (dlg) => {
     const wire = () => {
@@ -17675,6 +17847,16 @@ async function sgIdsDialog() {
     };
     wire();
     $('#sgTsa', dlg).onchange = (e) => { sgSetPrefs({ tsa: e.target.value.trim() }); };
+    $('#sgRev', dlg).onchange = (e) => { sgSetPrefs({ revocation: e.target.checked }); };
+    const wireTrust = () => { icons(); $$('[data-sg-trdel]', dlg).forEach((b) => b.onclick = async () => { await sgTrustDel(b.dataset.sgTrdel); $('#sgTrustList', dlg).innerHTML = await drawTrust(); wireTrust(); toast('That certificate is no longer trusted'); }); };
+    wireTrust();
+    $('#sgTrustImport', dlg).onclick = () => $('#sgTrustFile', dlg).click();
+    $('#sgTrustFile', dlg).onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      try { const n = await sgTrustImport(new Uint8Array(await f.arrayBuffer())); toast(n === 1 ? 'Certificate trusted on this device' : `${n} certificates trusted on this device`); }
+      catch (err) { toast(err.message || String(err)); }
+      $('#sgTrustList', dlg).innerHTML = await drawTrust(); wireTrust();
+    };
     $('#sgImport', dlg).onclick = () => $('#sgFile', dlg).click();
     $('#sgFile', dlg).onchange = async (e) => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; todo = { import: new Uint8Array(await f.arrayBuffer()), name: f.name }; $('[data-x]', dlg).click(); };
     $('#sgCreate', dlg).onclick = () => { todo = { create: true }; $('[data-x]', dlg).click(); };
@@ -17683,6 +17865,19 @@ async function sgIdsDialog() {
   if (tsaIn && !/^https?:\/\//i.test(tsaIn)) { sgSetPrefs({ tsa: '' }); toast('The timestamp server must be a web address (https://…)'); }
   if (todo && todo.import) { await sgImportId(todo.import, todo.name); return sgIdsDialog(); }
   if (todo && todo.create) { await sgCreateDialog(); return sgIdsDialog(); }
+}
+// A certificate file (DER, or PEM with one or more certificates) trusted on this device: returns how many
+async function sgTrustImport(u8) {
+  const { pkijs } = await sgLoadLibs();
+  const t = sgLatin1(u8.subarray(0, Math.min(u8.length, 1 << 20)));
+  const ders = /-----BEGIN CERTIFICATE-----/.test(t) ? [...t.matchAll(/-----BEGIN CERTIFICATE-----([^-]*)-----END CERTIFICATE-----/g)].map((m) => b64ToBytes(m[1].replace(/[^A-Za-z0-9+/=]/g, ''))) : [u8];
+  let n = 0;
+  for (const der of ders) {
+    let c; try { c = pkijs.Certificate.fromBER(der); } catch { throw new SgError('That file is not a certificate (.cer, .crt or .pem).'); }
+    const nm = sgNameOf(c.subject); await sgTrustAdd(sgDer(c), nm.cn || nm.o || 'Certificate'); n++;
+  }
+  if (!n) throw new SgError('That file has no certificate in it.');
+  return n;
 }
 async function sgImportId(bytes, fileName) {
   for (let tries = 0; ; tries++) {
@@ -17795,6 +17990,7 @@ async function sgSign(pre = {}) {
     catch (e) { toast(e.message || String(e)); if (e instanceof SgError && /password/.test(e.message)) { sgPasswords.delete(rec.id); v.password = ''; continue; } return; }
     if (v.remember) sgPasswords.set(rec.id, v.password); else sgPasswords.delete(rec.id);
     store.set('signingLast', rec.id); sgSetPrefs({ subFilter: v.fmt });
+    if (Date.now() < rec.notBefore) { const a = await dialog('This certificate is not valid yet', `<p>The certificate in ${esc(rec.name)}’s signing ID is valid from ${new Date(rec.notBefore).toLocaleString()}. A signature made with it now will show as not valid at the time of signing, unless a timestamp shows a later time.</p>`, [{ label: 'Cancel' }, { label: 'Sign anyway', value: 'go', primary: true }]); if (a !== 'go') return; }
     if (Date.now() > rec.notAfter) { const a = await dialog('This certificate has expired', `<p>The certificate in ${esc(rec.name)}’s signing ID expired on ${new Date(rec.notAfter).toLocaleDateString()}. A signature made with it will show as not valid at the time of signing.</p>`, [{ label: 'Cancel' }, { label: 'Sign anyway', value: 'go', primary: true }]); if (a !== 'go') return; }
     const place = places.find((p) => p.key === v.place);
     let box = null;
@@ -17905,13 +18101,28 @@ ribbonAdd('protect', 'Certificate', ['sgSign', 'sgPanel', 'sgIds']);
 menuAdd('Protect', ['sign']);
 menuAdd('Protect', ['sgSign', 'sgPanel', 'sgIds']);
 TEST_HOOKS.sgLoadLibs = async () => { const l = await sgLoadLibs(); await sgForge(); return Object.keys(l.pkijs).length > 50 && !!l.asn1js.Sequence; };
-TEST_HOOKS.sgSignatures = async () => { if (sgState.checking) await sgState.checking; return (sgState.sigs || []).map((x) => ({ n: x.n, status: x.status, statusText: x.statusText, name: x.name, when: x.when ? x.when.toISOString() : null, ts: x.ts ? { ok: x.ts.ok, time: x.ts.time && x.ts.time.toISOString(), tsa: x.ts.tsa } : null, digestOk: x.digestOk, sigOk: x.sigOk, trusted: !!x.trusted, changes: x.changes || null, field: x.field, page: x.page, reason: x.reason, subFilter: x.subFilter, certify: x.certify || 0, notes: x.notes, cert: x.cert ? { subject: x.cert.subject, fp: x.cert.fp, key: x.cert.key } : null })); };
+// A checked signature as plain data (for tests)
+const sgPlain = (x) => ({
+  n: x.n, status: x.status, statusText: x.statusText, problem: x.problem || null, name: x.name, when: x.when ? x.when.toISOString() : null, digestOk: x.digestOk, sigOk: x.sigOk, attrSigOk: x.attrSigOk ?? null,
+  ts: x.ts ? { ok: x.ts.ok, time: x.ts.time && x.ts.time.toISOString(), tsa: x.ts.tsa, serial: x.ts.serial || '', policy: x.ts.policy || '', hash: x.ts.hash || '', imprint: x.ts.imprint || '', tokenLength: x.ts.der ? x.ts.der.length : 0, tsaIssuer: x.ts.tsaChain ? sgNameText(x.ts.tsaChain.certs[0].info.issuer) : '' } : null,
+  trusted: !!x.trusted, changes: x.changes || null, changeText: x.changeText || '', field: x.field, page: x.page, reason: x.reason, location: x.location, contact: x.contact, pdfName: x.pdfName, subFilter: x.subFilter, alg: x.alg || '', certify: x.certify || 0, notes: x.notes,
+  cert: x.cert ? { subject: x.cert.subject, issuer: x.cert.issuer, fp: x.cert.fp, key: x.cert.key, notAfter: x.cert.notAfter.toISOString() } : null,
+  chain: x.chain ? { complete: x.chain.complete, trusted: x.chain.trusted, problems: x.chain.problems, certs: x.chain.certs.map((y) => ({ name: y.info.name, subject: sgNameText(y.info.subject), issuer: sgNameText(y.info.issuer), notBefore: y.info.notBefore.toISOString(), notAfter: y.info.notAfter.toISOString(), key: y.key, trusted: y.trusted, at: y.at, fp: y.info.fp })) } : null,
+  rev: x.rev ? { verdict: x.rev.verdict, text: sgRevText(x.rev, x.when), items: x.rev.items.map((i) => ({ name: i.name, status: i.status, via: i.via || '', host: i.host || '', at: i.at ? i.at.toISOString() : null, reason: i.reason || '', error: i.error || '' })) } : null,
+  revHosts: x.revHosts || [], checks: x.checks || [],
+});
+TEST_HOOKS.sgSignatures = async () => { if (sgState.checking) await sgState.checking; return (sgState.sigs || []).map(sgPlain); };
 TEST_HOOKS.sgVerify = async (u8) => (await sgVerifyAll(new Uint8Array(u8))).map((x) => ({ status: x.status, statusText: x.statusText, name: x.name, changes: x.changes || null, ts: !!x.ts }));
 TEST_HOOKS.sgCreateId = async (o) => { const r = await sgCreateId(o); await sgIdPut(r); return { id: r.id, name: r.name, kind: r.kind, p12: Array.from(r.p12) }; };
 TEST_HOOKS.sgImportId = async (u8, password) => { const id = await sgOpenP12(new Uint8Array(u8), password); const r = sgIdRecord(new Uint8Array(u8), id); await sgIdPut(r); return { id: r.id, name: r.name, chain: id.chain.length, hash: id.hash, alg: id.alg.name }; };
 TEST_HOOKS.sgOpenP12 = async (u8, password) => { try { const id = await sgOpenP12(new Uint8Array(u8), password); return { name: id.info.name, chain: id.chain.length, alg: id.alg.name }; } catch (e) { return { error: e.message }; } };
 TEST_HOOKS.sgIds = async () => (await sgIdsAll()).map((r) => ({ id: r.id, name: r.name, kind: r.kind }));
 TEST_HOOKS.sgEdits = () => sgEdits();
+TEST_HOOKS.sgKeepBytes = async () => { const b = await sgKeepBytes(); return b ? Array.from(b) : null; };
+TEST_HOOKS.sgTrustImport = async (u8) => sgTrustImport(new Uint8Array(u8));
+TEST_HOOKS.sgTrusted = async () => (await sgTrustRecs()).map((r) => ({ fp: r.fp, name: r.name, der: !!r.der }));
+TEST_HOOKS.sgSetPrefs = (o) => { sgSetPrefs(o); return sgPrefs(); };
+TEST_HOOKS.sgDetails = async (u8, o = {}) => (await sgVerifyAll(new Uint8Array(u8), null, o)).map(sgPlain);
 TEST_HOOKS.sgHasSigFieldHook = () => typeof FEATURE.onSigField === 'function';
 TEST_HOOKS.sgSignNow = async ({ id, password, field, page, rect, o = {}, look = 'text', mark }) => {
   const rec = (await sgIdsAll()).find((r) => r.id === id) || (await sgIdsAll())[0];
@@ -17920,6 +18131,274 @@ TEST_HOOKS.sgSignNow = async ({ id, password, field, page, rect, o = {}, look = 
   const place = m || (field ? { key: 'f:' + field, field } : { key: 'draw' });
   return sgSignWith({ id: ident, place, box: field ? null : { n: page || 0, rect }, look: { key: look }, o });
 };
+
+// ---- src/features/76-sign2-trust.js
+/* ---------------- certificate signatures, part 2: certificate chains, revocation, timestamp details, Ed25519 ----------------
+   Used by 76-sign.js when it checks a signature.
+
+   The chain: from the signer's certificate up, each issuer is looked for among the certificates in the signature and
+   the certificates trusted on this device (a trusted root need not be in the signature), and its signature on the
+   certificate below is checked. Every certificate of the chain must have been valid when the document was signed:
+   at the time of the timestamp when there is one (a certificate that expired since still counts), else at the time
+   the signature says. An issuer must be a certificate authority. A signature is trusted when its chain reaches a
+   certificate trusted on this device.
+
+   Revocation (CRL and OCSP) is checked only when asked: a setting in Signing IDs, or "Check revocation online" in the
+   Signatures panel. It asks the servers each certificate names (its OCSP responder, else its CRL), sending the
+   certificate's serial number and its issuer's fingerprints, never the document. In the apps the requests go through a
+   native call (pki_fetch), so the servers need no CORS. A certificate revoked before the document was signed makes the
+   signature Revoked; revoked after its timestamp, the signature still counts and a warning says when.
+
+   Ed25519 (RFC 8419): pkijs has no Ed25519, so its CMS signatures are made and checked here with WebCrypto
+   (Chromium 137+, Safari 17+). A device without it says so. */
+const SG_ED = '1.3.101.112';
+const SG_SIGALG = {
+  '1.2.840.113549.1.1.1': 'RSA', '1.2.840.113549.1.1.5': 'RSA with SHA-1', '1.2.840.113549.1.1.11': 'RSA with SHA-256', '1.2.840.113549.1.1.12': 'RSA with SHA-384', '1.2.840.113549.1.1.13': 'RSA with SHA-512',
+  '1.2.840.113549.1.1.10': 'RSA-PSS', '1.2.840.10045.4.3.2': 'ECDSA with SHA-256', '1.2.840.10045.4.3.3': 'ECDSA with SHA-384', '1.2.840.10045.4.3.4': 'ECDSA with SHA-512', [SG_ED]: 'Ed25519',
+};
+const SG_REASONS = ['unspecified', 'key compromise', 'CA compromise', 'affiliation changed', 'superseded', 'cessation of operation', 'certificate hold', '', 'removed from CRL', 'privilege withdrawn', 'AA compromise'];
+const sgDer = (c) => new Uint8Array(c.toSchema(true).toBER(false));
+const sgNameEq = (a, b) => { try { return sgEq(a.toSchema().toBER(false), b.toSchema().toBER(false)); } catch { return false; } };
+const sgWhenS = (d) => d ? d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+const sgDay = (d) => d ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+
+// What kind of key a certificate has: RSA 2048, ECDSA P-384, Ed25519…
+function sgKeyText(c) {
+  const a = c.subjectPublicKeyInfo.algorithm, id = a.algorithmId;
+  if (id === SG_ED) return 'Ed25519';
+  if (id === '1.2.840.10045.2.1') { let o = ''; try { o = a.algorithmParams.valueBlock.toString(); } catch {} return 'ECDSA ' + ((SG_CURVES[o] || [])[0] || 'curve ' + o); }
+  if (id === '1.2.840.113549.1.1.1' || id === '1.2.840.113549.1.1.10') {
+    try { const m = sgStrip0(c.subjectPublicKeyInfo.parsedKey.modulus.valueBlock.valueHexView); return (id === '1.2.840.113549.1.1.10' ? 'RSA-PSS ' : 'RSA ') + m.length * 8; } catch { return 'RSA'; }
+  }
+  return 'Other (' + id + ')';
+}
+// The extensions that matter here
+function sgExt(c) {
+  const o = { ca: false, ocsp: [], crl: [], eku: [], ski: null, aki: null };
+  for (const e of c.extensions || []) {
+    const v = e.parsedValue;
+    try {
+      if (e.extnID === '2.5.29.19' && v) { o.ca = !!v.cA; o.pathLen = v.pathLenConstraint; }
+      else if (e.extnID === '2.5.29.37' && v) o.eku = v.keyPurposes || [];
+      else if (e.extnID === '2.5.29.14' && v) o.ski = sgHex(v.valueBlock.valueHexView);
+      else if (e.extnID === '2.5.29.35' && v && v.keyIdentifier) o.aki = sgHex(v.keyIdentifier.valueBlock.valueHexView);
+      else if (e.extnID === '1.3.6.1.5.5.7.1.1' && v) for (const d of v.accessDescriptions || []) { if (d.accessMethod === '1.3.6.1.5.5.7.48.1' && d.accessLocation.type === 6) o.ocsp.push(String(d.accessLocation.value)); }
+      else if (e.extnID === '2.5.29.31' && v) for (const p of v.distributionPoints || []) for (const g of Array.isArray(p.distributionPoint) ? p.distributionPoint : []) { if (g.type === 6) o.crl.push(String(g.value)); }
+    } catch {}
+  }
+  o.ocsp = o.ocsp.filter((u) => /^https?:\/\//i.test(u)); o.crl = o.crl.filter((u) => /^https?:\/\//i.test(u));
+  return o;
+}
+// Ed25519 with WebCrypto: true/false, or null when this device has no Ed25519
+async function sgEdVerify(spki, sig, data) {
+  let key;
+  try { key = await crypto.subtle.importKey('spki', new Uint8Array(spki.toSchema().toBER(false)), { name: 'Ed25519' }, false, ['verify']); }
+  catch { return null; }
+  try { return await crypto.subtle.verify({ name: 'Ed25519' }, key, new Uint8Array(sig), new Uint8Array(data)); } catch { return false; }
+}
+// Whether `issuer`'s key signed `cert` (a certificate, or anything with tbsView, signatureValue and signatureAlgorithm)
+async function sgSignedBy(cert, issuer) {
+  try {
+    if (cert.signatureAlgorithm.algorithmId === SG_ED) return !!(await sgEdVerify(issuer.subjectPublicKeyInfo, cert.signatureValue.valueBlock.valueHexView, cert.tbsView));
+    const { pkijs } = await sgLoadLibs();
+    return !!(await pkijs.getCrypto(true).verifyWithPublicKey(cert.tbsView, cert.signatureValue, issuer.subjectPublicKeyInfo, cert.signatureAlgorithm));
+  } catch { return false; }
+}
+// The certificates trusted on this device: [{ fp, name, der? }] (those trusted from a signature before 1.2 have no der)
+const sgTrustRecs = async () => (await sgTx('trust', 'readonly', (s) => s.getAll()).catch(() => [])) || [];
+// Fingerprints are worked out before the transaction (an await inside it would end it)
+async function sgTrustAdd(der, name) { const fp = await sgFp(der); return sgTx('trust', 'readwrite', (s) => s.put({ fp, name, der: new Uint8Array(der), added: Date.now() })); }
+
+// The chain from `leaf` up: { certs: [{ c, info, ext, key, trusted, at: 'ok'|'expired'|'early', now: … }], complete,
+// trusted, problems: [text] (each one makes the signature invalid), notes: [text] }
+async function sgBuildChain(leaf, pool, trust, at) {
+  const { pkijs } = await sgLoadLibs();
+  const fps = new Set(trust.map((r) => r.fp));
+  const extra = []; for (const r of trust) if (r.der) try { extra.push(pkijs.Certificate.fromBER(new Uint8Array(r.der))); } catch {}
+  const cands = [...(pool || []), ...extra];
+  const chain = [leaf], out = { certs: [], complete: false, trusted: false, problems: [], notes: [] };
+  for (let cur = leaf, hop = 0; hop < 10; hop++) {
+    if (sgNameEq(cur.subject, cur.issuer) && await sgSignedBy(cur, cur)) { out.complete = true; break; }
+    let up = null;
+    for (const x of cands) {
+      if (!sgNameEq(x.subject, cur.issuer) || chain.some((y) => sgEq(sgDer(y), sgDer(x)))) continue;
+      if (await sgSignedBy(cur, x)) { up = x; break; }
+    }
+    if (!up) break;
+    chain.push(up); cur = up;
+  }
+  const when = at || new Date(), now = new Date();
+  for (let k = 0; k < chain.length; k++) {
+    const c = chain[k], der = sgDer(c), info = await sgCertInfo(der), ext = sgExt(c);
+    const state = (t) => t < info.notBefore ? 'early' : t > info.notAfter ? 'expired' : 'ok';
+    const x = { c, der, info, ext, key: sgKeyText(c), trusted: fps.has(info.fp), at: state(when), now: state(now), alg: SG_SIGALG[c.signatureAlgorithm.algorithmId] || c.signatureAlgorithm.algorithmId };
+    out.certs.push(x);
+    const who = k ? `The certificate “${info.name}”, which vouches for the signer’s,` : 'The signer’s certificate';
+    if (x.at === 'expired') out.problems.push(`${who} had expired when this was signed (it expired on ${sgDay(info.notAfter)}).`);
+    else if (x.at === 'early') out.problems.push(`${who} was not valid yet when this was signed (it is valid from ${sgDay(info.notBefore)}).`);
+    else if (x.now === 'expired' && !k) out.notes.push(`The signer’s certificate has expired since (on ${sgDay(info.notAfter)}). It was valid when this was signed.`);
+    if (k && !ext.ca && !(info.selfSigned && k === chain.length - 1 && !(c.extensions || []).some((e) => e.extnID === '2.5.29.19'))) out.problems.push(`The certificate “${info.name}” is not allowed to issue certificates, so the chain is broken.`);
+  }
+  out.trusted = out.certs.some((x) => x.trusted);
+  const top = out.certs[out.certs.length - 1];
+  if (!out.complete) out.notes.push(`The certificate that issued “${top.info.name}” is not in the signature or trusted on this device, so the chain stops there.`);
+  else if (!out.trusted && out.certs.length > 1) out.notes.push(`The chain ends at “${top.info.name}”, which is not trusted on this device.`);
+  return out;
+}
+
+/* ---- revocation ---- */
+// GET (no body) or POST to a revocation server: fetch on the web, a native call in the apps (no CORS needed there)
+async function sgNetFetch(url, body, type) {
+  if (!/^https?:\/\//i.test(url)) throw new SgError('Not a web address: ' + url);
+  if (NATIVE && !ANDROID_APP) {
+    try { return b64ToBytes(await NATIVE.core.invoke('pki_fetch', { url, body: body ? bytesToB64(body) : null, contentType: type || null })); }
+    catch (e) { throw new SgError(`${new URL(url).host} could not be reached (${e && e.message ? e.message : e})`); }
+  }
+  const ac = new AbortController(), t = setTimeout(() => ac.abort(), 20000);
+  let r;
+  try { r = await fetch(url, { method: body ? 'POST' : 'GET', ...(body ? { headers: { 'Content-Type': type }, body } : {}), cache: 'no-store', credentials: 'omit', signal: ac.signal }); }
+  catch { throw new SgError(`${new URL(url).host} could not be reached, or it blocks requests from web pages (the apps can ask it)`); }
+  finally { clearTimeout(t); }
+  if (!r.ok) throw new SgError(`${new URL(url).host} said no (error ${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+const sgPemOrDer = (u) => { const t = sgLatin1(u.subarray(0, 64)); if (!/-----BEGIN/.test(t)) return u; const b = sgLatin1(u).replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''); return b64ToBytes(b); };
+const sgRevTime = (x) => { try { return x.toDate ? x.toDate() : x.value instanceof Date ? x.value : new Date(x); } catch { return null; } };
+// OCSP for `cert`, issued by `issuer`: { status: 'good'|'revoked'|'unknown', at, reason, produced }
+async function sgOcsp(url, cert, issuer) {
+  const { pkijs, asn1js } = await sgLoadLibs();
+  const req = new pkijs.OCSPRequest();
+  await req.createForCertificate(cert, { hashAlgorithm: 'SHA-1', issuerCertificate: issuer });
+  const answer = await sgNetFetch(url, new Uint8Array(req.toSchema(true).toBER(false)), 'application/ocsp-request');
+  let or, basic;
+  try { or = pkijs.OCSPResponse.fromBER(answer); } catch { throw new SgError('The OCSP answer could not be read'); }
+  const code = or.responseStatus.valueBlock.valueDec;
+  if (code !== 0) throw new SgError(`The OCSP server could not answer (${['', 'malformed request', 'internal error', 'try later', '', 'signature required', 'unauthorized'][code] || 'code ' + code})`);
+  try { basic = pkijs.BasicOCSPResponse.fromBER(or.responseBytes.response.valueBlock.valueHexView); } catch { throw new SgError('The OCSP answer could not be read'); }
+  // who signed the answer: the issuer itself, or a responder the issuer made for this (id-kp-OCSPSigning)
+  const rid = basic.tbsResponseData.responderID, cands = [issuer, ...(basic.certs || [])];
+  let signer = null;
+  for (const c of cands) {
+    if (rid instanceof pkijs.RelativeDistinguishedNames ? sgNameEq(c.subject, rid) : rid instanceof asn1js.OctetString && sgEq(await sgDigest('SHA-1', c.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView), rid.valueBlock.valueHexView)) { signer = c; break; }
+  }
+  if (!signer) throw new SgError('The OCSP answer is signed by someone else');
+  if (signer !== issuer && !sgEq(sgDer(signer), sgDer(issuer)) && !((await sgSignedBy(signer, issuer)) && sgExt(signer).eku.includes('1.3.6.1.5.5.7.3.9'))) throw new SgError('The OCSP answer is signed by someone the issuer did not authorise');
+  const sigOk = basic.signatureAlgorithm.algorithmId === SG_ED ? await sgEdVerify(signer.subjectPublicKeyInfo, basic.signature.valueBlock.valueHexView, basic.tbsResponseData.tbsView)
+    : await pkijs.getCrypto(true).verifyWithPublicKey(basic.tbsResponseData.tbsView, basic.signature, signer.subjectPublicKeyInfo, basic.signatureAlgorithm).catch(() => false);
+  if (!sigOk) throw new SgError('The OCSP answer’s signature is not valid');
+  const one = (basic.tbsResponseData.responses || []).find((r) => r.certID.serialNumber.isEqual(cert.serialNumber));
+  if (!one) throw new SgError('The OCSP answer is about another certificate');
+  const st = one.certStatus, tag = st && st.idBlock ? st.idBlock.tagNumber : 2, out = { produced: basic.tbsResponseData.producedAt, via: 'OCSP' };
+  if (tag === 0) out.status = 'good';
+  else if (tag === 1) {
+    out.status = 'revoked';
+    const parts = st.valueBlock.value || [];
+    out.at = parts[0] ? sgRevTime(parts[0]) : null;
+    const rs = parts.find((p) => p.idBlock && p.idBlock.tagClass === 3 && p.idBlock.tagNumber === 0);
+    if (rs) try { const e = rs.valueBlock.value ? rs.valueBlock.value[0] : null; const n = e ? e.valueBlock.valueDec : asn1js.fromBER(rs.valueBlock.valueHexView).result.valueBlock.valueDec; out.reason = SG_REASONS[n] || ''; } catch {}
+  } else out.status = 'unknown';
+  return out;
+}
+// The CRL at `url` for `cert`, issued by `issuer`
+async function sgCrl(url, cert, issuer) {
+  const { pkijs } = await sgLoadLibs();
+  const der = sgPemOrDer(await sgNetFetch(url));
+  let crl; try { crl = pkijs.CertificateRevocationList.fromBER(der); } catch { throw new SgError('The revocation list could not be read'); }
+  if (!sgNameEq(crl.issuer, issuer.subject) || !(await sgSignedBy(crl, issuer))) throw new SgError('The revocation list is not signed by the certificate’s issuer');
+  const out = { via: 'CRL', produced: crl.thisUpdate && crl.thisUpdate.value, next: crl.nextUpdate && crl.nextUpdate.value };
+  const e = (crl.revokedCertificates || []).find((r) => r.userCertificate.isEqual(cert.serialNumber));
+  if (!e) { out.status = 'good'; if (out.next && out.next < new Date()) out.stale = true; return out; }
+  out.status = 'revoked'; out.at = e.revocationDate && e.revocationDate.value;
+  const rc = (e.crlEntryExtensions && e.crlEntryExtensions.extensions || []).find((x) => x.extnID === '2.5.29.21');
+  if (rc) try { const { asn1js } = await sgLoadLibs(); out.reason = SG_REASONS[asn1js.fromBER(rc.extnValue.valueBlock.valueHexView).result.valueBlock.valueDec] || ''; } catch {}
+  return out;
+}
+const sgRevCache = new Map();
+// The hosts a revocation check would ask, for the chain of a checked signature
+const sgRevHosts = (chain) => [...new Set((chain || []).slice(0, -1).flatMap((x) => [...x.ext.ocsp.slice(0, 1), ...(x.ext.ocsp.length ? [] : x.ext.crl.slice(0, 1))]).map((u) => { try { return new URL(u).host; } catch { return ''; } }).filter(Boolean))];
+// Checks every certificate of a chain that has an issuer above it: OCSP first, then the CRL.
+// { verdict: 'good'|'revoked'|'revokedAfter'|'unknown'|'none', items: [{ name, status, via, host, at, reason, error }] }
+async function sgRevocation(chain, when, stamped) {
+  const items = [];
+  for (let k = 0; k < chain.length; k++) {
+    const x = chain[k], up = chain[k + 1];
+    if (!up) { if (!x.info.selfSigned) items.push({ name: x.info.name, status: 'unknown', error: 'Its issuer is not known, so it can’t be checked' }); continue; }
+    const tries = [...x.ext.ocsp.map((u) => ['OCSP', u]), ...x.ext.crl.map((u) => ['CRL', u])];
+    if (!tries.length) { items.push({ name: x.info.name, status: 'none' }); continue; }
+    let res = null; const errors = [];
+    for (const [via, url] of tries) {
+      const key = via + ' ' + url + ' ' + x.info.serial;
+      try {
+        if (!sgRevCache.has(key)) sgRevCache.set(key, via === 'OCSP' ? sgOcsp(url, x.c, up.c) : sgCrl(url, x.c, up.c));
+        res = { ...(await sgRevCache.get(key)), host: new URL(url).host, url };
+        if (res.status === 'unknown' && via === 'OCSP') { errors.push(`${res.host}: does not know this certificate`); res = null; continue; }
+        break;
+      } catch (e) { sgRevCache.delete(key); errors.push(e.message || String(e)); }
+    }
+    items.push(res ? { name: x.info.name, ...res } : { name: x.info.name, status: 'unknown', error: errors.join('; ') });
+  }
+  let verdict = 'good';
+  const revoked = items.filter((i) => i.status === 'revoked');
+  if (revoked.length) verdict = stamped && when && revoked.every((i) => i.at && i.at > when) ? 'revokedAfter' : 'revoked';
+  else if (items.some((i) => i.status === 'unknown')) verdict = 'unknown';
+  else if (items.every((i) => i.status === 'none')) verdict = 'none';
+  return { verdict, items, checkedAt: new Date() };
+}
+function sgRevText(rev, when) {
+  if (!rev) return 'Not checked';
+  const r = rev.items.find((i) => i.status === 'revoked');
+  const why = (i) => i.reason ? ` (${i.reason})` : '';
+  if (rev.verdict === 'revoked') return `Revoked: “${r.name}” was revoked${r.at ? ' on ' + sgWhenS(r.at) : ''}${why(r)}${when && r.at && r.at > when ? ', and the signing time is not proven by a timestamp' : ''} (${r.via} from ${r.host}).`;
+  if (rev.verdict === 'revokedAfter') return `Warning: “${r.name}” was revoked on ${sgWhenS(r.at)}${why(r)}, after the timestamp (${sgWhenS(when)}). The signature was made before that, so it still counts (${r.via} from ${r.host}).`;
+  if (rev.verdict === 'none') return 'Not checked: the certificates name no revocation service.';
+  const good = rev.items.filter((i) => i.status === 'good');
+  if (rev.verdict === 'unknown') { const u = rev.items.find((i) => i.status === 'unknown'); return `Not checked for “${u.name}”: ${u.error || 'no answer'}.${good.length ? ` Not revoked: ${good.map((i) => `“${i.name}” (${i.via} from ${i.host})`).join(', ')}.` : ''}`; }
+  return `Not revoked: ${good.map((i) => `“${i.name}” (${i.via} from ${i.host})`).join(', ')}.`;
+}
+
+/* ---- Ed25519 CMS (RFC 8419: SHA-512 for the message digest, the signature over the signed attributes) ---- */
+async function sgEdSignCms(pkijs, asn1js, sd, key) {
+  const si = sd.signerInfos[0];
+  si.digestAlgorithm = new pkijs.AlgorithmIdentifier({ algorithmId: SG_OID.sha512 });
+  si.signatureAlgorithm = new pkijs.AlgorithmIdentifier({ algorithmId: SG_ED });
+  sd.digestAlgorithms = [new pkijs.AlgorithmIdentifier({ algorithmId: SG_OID.sha512 })];
+  const enc = new Uint8Array(si.signedAttrs.toSchema(true).toBER(false)); si.signedAttrs.encodedValue = enc.slice().buffer;
+  enc[0] = 0x31;
+  let sig;
+  try { sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, enc)); } catch { throw new SgError('This device can’t sign with Ed25519 keys.'); }
+  si.signature = new asn1js.OctetString({ valueHex: sig.buffer });
+}
+// The signer's signature over the signed attributes alone (not the content): true/false/null (can't tell)
+async function sgAttrsSigOk(si, signer) {
+  if (!si.signedAttrs || !signer) return null;
+  const v = new Uint8Array(si.signedAttrs.encodedValue).slice(); if (!v.length) return null;
+  v[0] = 0x31;
+  const id = si.signatureAlgorithm.algorithmId;
+  if (id === SG_ED) return sgEdVerify(signer.subjectPublicKeyInfo, si.signature.valueBlock.valueHexView, v);
+  try {
+    const { pkijs } = await sgLoadLibs();
+    const hash = SG_HASH[si.digestAlgorithm.algorithmId];
+    // rsaEncryption as the signature algorithm (common in CMS): the hash is the digest algorithm's
+    return !!(await pkijs.getCrypto(true).verifyWithPublicKey(v, si.signature, signer.subjectPublicKeyInfo, si.signatureAlgorithm, id === '1.2.840.113549.1.1.1' || id === '1.2.840.10045.2.1' ? hash : undefined));
+  } catch { return false; }
+}
+
+/* ---- timestamp details ---- */
+const SG_HASHNAME = { [SG_OID.sha1]: 'SHA-1', [SG_OID.sha256]: 'SHA-256', [SG_OID.sha384]: 'SHA-384', [SG_OID.sha512]: 'SHA-512' };
+async function sgTokenDetails(tst, sd, trust) {
+  const out = { serial: '', policy: '', hash: '', imprint: '', tsaChain: null };
+  try { out.serial = sgHex(tst.serialNumber.valueBlock.valueHexView).toUpperCase(); } catch {}
+  try { out.policy = tst.policy; } catch {}
+  try { out.hash = SG_HASHNAME[tst.messageImprint.hashAlgorithm.algorithmId] || tst.messageImprint.hashAlgorithm.algorithmId; out.imprint = sgHex(tst.messageImprint.hashedMessage.valueBlock.valueHexView).toUpperCase(); } catch {}
+  try { if (tst.accuracy) { const a = tst.accuracy; out.accuracy = [a.seconds && a.seconds + ' s', a.millis && a.millis + ' ms', a.micros && a.micros + ' µs'].filter(Boolean).join(' '); } } catch {}
+  try {
+    const si = sd.signerInfos[0], certs = (sd.certificates || []).filter((c) => c.subject);
+    const signer = certs.find((c) => si.sid && si.sid.serialNumber && c.serialNumber.isEqual(si.sid.serialNumber)) || certs[0];
+    if (signer) out.tsaChain = await sgBuildChain(signer, certs, trust, tst.genTime);
+  } catch (e) { console.warn(e); }
+  return out;
+}
+TEST_HOOKS.sgRevCacheClear = () => { sgRevCache.clear(); return true; };
 
 // ---- src/features/80-protect.js
 /* ---------------- protect ----------------

@@ -171,7 +171,8 @@ export default async (h) => {
     await p.waitForSelector('.sg-bar');
     const t = await panelText(p);
     ok(t.includes('Valid, signer not verified') && t.includes('Test Signer') && /Signed .*20\d\d/.test(t) && t.includes('No timestamp') && t.includes('Reason: Approved'), t);
-    ok((await p.textContent('#dialog')).includes('Revocation is not checked'), 'says revocation is not checked');
+    ok((await p.textContent('#dialog')).includes('Revocation is checked only when you ask'), 'says revocation is checked only when asked');
+    ok(t.includes('Document: Not changed since it was signed') && t.includes('Revocation: Can’t be checked: the certificates name no revocation service') && t.includes('Certificates (1)'), t);
     await p.click('#dialog [data-sg-trust]');
     await p.waitForFunction(() => document.querySelector('#dialog .sg-list').textContent.includes('Valid, signer trusted'));
     await closeDialog(p);
@@ -184,21 +185,21 @@ export default async (h) => {
     await p.click('#dialog [data-sg-go]'); await p.waitForSelector('.sg-flash');
     eq(p.errors, []); await p.ctx.close();
   });
-  await test('certificate signing: a byte changed in the signed part is Invalid; a comment added later is Changed after signing', async () => {
+  await test('certificate signing: a byte changed in the signed part is Invalid; a comment added later is allowed and said', async () => {
     const p = await open();
     const bad = Buffer.from(signedA), k = bad.indexOf('/BBox [ 0 0 201 23 ]');
     ok(k > 0 && k < ranges(signedA)[0][1]); bad[k + 13] = '2'.charCodeAt(0); // 201 -> 202
     await openBuf(p, bad);
     const s1 = await sigs(p);
-    eq([s1[0].status, s1[0].digestOk], ['invalid', false]);
+    eq([s1[0].status, s1[0].digestOk, s1[0].problem, s1[0].statusText], ['invalid', false, 'tampered', 'Invalid: the document was changed after signing']);
     ok((await panelText(p)).includes('Invalid'), 'panel'); await closeDialog(p);
     ok(!nodeVerify(bad, ranges(bad)[0]).digestOk, 'Node agrees');
     const more = await appendComment(signedA);
     await openBuf(p, more);
     const s2 = await sigs(p);
-    eq([s2[0].status, s2[0].statusText, s2[0].digestOk, s2[0].sigOk], ['changed', 'Changed after signing (comments added)', true, true]);
+    eq([s2[0].status, s2[0].statusText, s2[0].digestOk, s2[0].sigOk, s2[0].changeText], ['valid', 'Valid, signer not verified', true, true, 'Changed after signing: comments added (allowed).']);
     eq(s2[0].changes, { comments: true, form: false, sign: false, other: false });
-    ok((await p.textContent('.sg-bar')).includes('changed after signing'), 'the bar says so');
+    ok((await p.textContent('.sg-bar')).includes('Comments or form entries were added after signing'), 'the bar says so');
     eq(p.errors, []); await p.ctx.close();
   });
   // Appends an incremental update by hand: `objs` ([[num, body]]) and a cross-reference section that lists them.
@@ -294,7 +295,7 @@ export default async (h) => {
   tsaCert.extensions = [new pkijs.Extension({ extnID: '2.5.29.37', critical: true, extnValue: new pkijs.ExtKeyUsage({ keyPurposes: ['1.3.6.1.5.5.7.3.8'] }).toSchema().toBER(false) })];
   await tsaCert.subjectPublicKeyInfo.importKey(tsaKeys.publicKey); await tsaCert.sign(tsaKeys.privateKey, 'SHA-256');
   let tsaSerial = 0, tsaHits = 0;
-  const TSA_TIME = new Date(Date.UTC(2026, 0, 2, 3, 4, 5));
+  const TSA_TIME = new Date(Math.floor(Date.now() / 1000) * 1000 - 3600000); // the certificates are valid from a day ago
   const tsa = http.createServer((rq, rs) => {
     const chunks = []; rq.on('data', (c) => chunks.push(c));
     rq.on('end', async () => {
@@ -379,12 +380,19 @@ export default async (h) => {
     const filled = fs.readFileSync(await d1.path());
     ok(filled.length > signedA.length && filled.subarray(0, signedA.length).equals(signedA), 'signed bytes kept as a prefix');
     eq((await h.PDFDocument.load(filled)).getForm().getTextField('name').getText(), 'Bradley');
-    eq(await p.evaluate(async (b) => window.__cowdreyPdf.sgVerify(b), Array.from(filled)), [{ status: 'changed', statusText: 'Changed after signing (form filled)', name: 'Test Signer', changes: { comments: false, form: true, sign: false, other: false }, ts: false }]);
-    // an edit: the warning; Cancel saves nothing
+    eq(await p.evaluate(async (b) => window.__cowdreyPdf.sgVerify(b), Array.from(filled)), [{ status: 'valid', statusText: 'Valid, signer not verified', name: 'Test Signer', changes: { comments: false, form: true, sign: false, other: false }, ts: false }]);
+    // a comment: added as an incremental update too, no warning
     await p.evaluate(() => window.__cowdreyPdf.run('tool_rect'));
     const g = await p.locator('.page[data-n="0"]').boundingBox();
     await p.mouse.move(g.x + 100, g.y + 40); await p.mouse.down(); await p.mouse.move(g.x + 200, g.y + 90, { steps: 3 }); await p.mouse.up();
     eq(await p.evaluate(() => window.__cowdreyPdf.sgEdits()), 'other');
+    const [dc] = await Promise.all([p.waitForEvent('download'), p.evaluate(() => window.__cowdreyPdf.run('save'))]);
+    const commented = fs.readFileSync(await dc.path());
+    ok(commented.length > filled.length && commented.subarray(0, signedA.length).equals(signedA), 'signed bytes kept as a prefix');
+    const vc = await p.evaluate(async (b) => window.__cowdreyPdf.sgVerify(b), Array.from(commented));
+    eq([vc[0].status, vc[0].changes], ['valid', { comments: true, form: true, sign: false, other: false }]);
+    // an edit that is not a comment (a page turned): the warning; Cancel saves nothing
+    await p.evaluate(() => window.__cowdreyPdf.run('rotR'));
     let downloads = 0; p.on('download', () => downloads++);
     await p.evaluate(() => { window.__lastSaved = null; window.__cowdreyPdf.run('save'); });
     await p.waitForSelector('#dialog[open]');
@@ -427,7 +435,7 @@ export default async (h) => {
     ok(/CN=Ada Device/.test(v.signer), v.signer);
     await p.waitForSelector('.sg-bar');
     const s = await sigs(p);
-    eq([s[0].status, s[0].name, s[0].cert.key], ['valid', 'Ada Device', 'ECDSA']);
+    eq([s[0].status, s[0].name, s[0].cert.key], ['valid', 'Ada Device', 'ECDSA P-256']);
     if (hasPdfsig) { const r = pdfsig(out); ok(/Signature is Valid/.test(r), r); }
     // the password was remembered (in memory): the next signing does not ask
     await p.evaluate(() => window.__cowdreyPdf.run('sgSign')); await p.waitForSelector('#dialog[open] #sgPlace');
