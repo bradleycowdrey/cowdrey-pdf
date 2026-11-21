@@ -257,4 +257,49 @@ export default async (h) => {
       noErrors(p); await p.ctx.close();
     } finally { fs.unlinkSync(file); }
   });
+
+  // Redacts every match of `word` (whole words off), applies the boxes and returns the saved file and the box.
+  async function redactAll(file, name, word) {
+    const p = await open(); await openPdf(p, file, name);
+    await redact(p, word, { whole: false }); await answer(p, 'Mark'); await p.waitForTimeout(200);
+    await run(p, 'protRedApply'); await answer(p, 'Apply'); await p.waitForTimeout(500);
+    if (await p.$('#dialog[open]')) await answer(p, 'Not now');
+    const boxes = await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'redact').flatMap((m) => m.quads).map((q) => { const xs = q.map((t) => t[0]), ys = q.map((t) => t[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; }));
+    const out = await savedOf(p); noErrors(p); await p.ctx.close();
+    return { out, boxes };
+  }
+  async function plainPdf(content, extra) {
+    const d = await L.PDFDocument.create(), pg = d.addPage([612, 792]), c = d.context, f = await d.embedFont(L.StandardFonts.Helvetica);
+    const res = { Font: { F1: f.ref } }; if (extra) extra(c, res, f);
+    pg.node.set(N('Resources'), c.obj(res)); pg.node.set(N('Contents'), c.register(c.flateStream(content)));
+    return d.save({ useObjectStreams: false });
+  }
+
+  await h.test('redaction scrub: on tightly spaced lines (a standard font, no font descriptor) the line below the box keeps its letters', async () => {
+    const file = tmp('tight.pdf', await plainPdf('BT /F1 12 Tf 72 700 Td (Hello SECRETWORD world) Tj ET BT /F1 12 Tf 72 690 Td (another line) Tj ET'));
+    try {
+      const { out, boxes } = await redactAll(file, 'Tight.pdf', 'SECRETWORD');
+      ok(boxes.length === 1 && boxes[0][1] > 690 + .52 * 12, 'the box stays above the next line\'s letters: ' + boxes);
+      const t = await textOf(out);
+      ok(t.includes('another line') && t.includes('Hello') && t.includes('world') && !/SECRET|WORD/.test(t), t);
+    } finally { fs.unlinkSync(file); }
+  });
+
+  await h.test('redaction scrub: a shape filled and used as the clip (W f) under the box goes; a form drawn squeezed (Tz from the page) loses the right letters', async () => {
+    const file = tmp('clipform.pdf', await plainPdf(
+      'BT /F1 40 Tf 100 500 Td (TOPSECRET) Tj ET q 150 505 30 10 re W f Q q 0.9 0.1 0.1 rg 300 505 120 15 re W f 0 0 1 rg 0 0 612 792 re f Q\n' +
+      'BT /F1 20 Tf 50 Tz 72 300 Td (sq) Tj ET q 1 0 0 1 72 200 cm /Fx Do Q',
+      (c, res, f) => { res.XObject = { Fx: c.register(c.flateStream('BT /F1 20 Tf 0 0 Td (in form TOPSECRET here) Tj ET', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 400, 40], Resources: { Font: { F1: f.ref } } })) }; }));
+    try {
+      const { out, boxes } = await redactAll(file, 'ClipForm.pdf', 'TOPSECRET');
+      eq(boxes.length, 2, 'the word on the page and in the form');
+      const d = await L.PDFDocument.load(out), cs = contentOf(d);
+      ok(!/150 505 30 10 re/.test(cs) && !/\b150 505 m\b/.test(cs), 'the covered clip-and-fill shape is gone: ' + cs.slice(0, 400));
+      ok(/0 0 0 0 re\s+W n/.test(cs), 'an empty clip in its place');
+      ok(/300 505 120 15 re\s+W n/.test(cs), 'the crossing one keeps its clip');
+      const t = await textOf(out);
+      ok(!/TOP|SECRET|CRET/.test(t), 'nothing of the word is left: ' + t);
+      ok(/in form/.test(t) && /here/.test(t), 'the rest of the form\'s line stays: ' + t);
+    } finally { fs.unlinkSync(file); }
+  });
 };

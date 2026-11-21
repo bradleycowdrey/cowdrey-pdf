@@ -547,16 +547,18 @@ function protJpegXObject(out, c, smask) {
 }
 // Rewrites a content stream so nothing under the redaction areas is left in it: letters are taken out (the rest of
 // their line stays where it was), pictures are cut or painted over, and forms are rewritten the same way.
-async function protRewrite(st, src, res, ctm0, depth, mcKey = null) {
+// `gs0`: the text state and line width a form starts with (those of the content that draws it).
+async function protRewrite(st, src, res, ctm0, depth, mcKey = null, gs0 = null) {
   const { L, out } = st, { PDFName, PDFDict, PDFRef, PDFStream, PDFNumber } = L;
   const { fonts, fontWidth } = pageFonts(L, out, { Resources: () => res });
   const xo = res && res.lookup(PDFName.of('XObject')), xod = xo instanceof PDFDict ? xo : null;
   const toks = tokenizeContent(src);
   // lw: line width; clip: the clip path's extent on the page (null: the whole page)
   let ctm = ctm0.slice(), tm = [1, 0, 0, 1, 0, 0], tlm = tm, font = null, fs = 1, tc = 0, tw = 0, th = 1, tl = 0, rise = 0, lw = 1, clip = null;
+  if (gs0) ({ font, fs, tc, tw, th, tl, rise, lw } = gs0);
   const gstack = [], edits = [], touched = new Set(), shTouched = new Set();
   const mc = rsMarked(st, src, res, mcKey, edits);
-  let operands = [], opStart = null, arrStack = [], bi = null, path = null, clipNext = false;
+  let operands = [], opStart = null, arrStack = [], bi = null, path = null, clipNext = null;
   for (const t of toks) {
     if (t.t !== 'op') {
       if (opStart == null) opStart = t.start;
@@ -573,17 +575,23 @@ async function protRewrite(st, src, res, ctm0, depth, mcKey = null) {
     if (bi) continue;
     // Paths: drawn in full outside the boxes, cut along them, or taken out when all under one.
     if (RS_PATH_OPS.has(o)) { path = rsPathOp(path, o, num, start, ctm); continue; }
-    if (o === 'W' || o === 'W*') { clipNext = true; continue; }
+    if (o === 'W' || o === 'W*') { clipNext = { op: o, start }; continue; }
     if (RS_PAINT_OPS.has(o)) {
       if (path) {
         const dev = rsBox(path.subs.flatMap((s) => s.pts.map(([x, y]) => apply(ctm, x, y))));
         if (clipNext) clip = rsBoxAnd(clip, dev || [0, 0, 0, 0]);
-        else if (o !== 'n') {
+        if (o !== 'n') {
           const r = rsPaint(path, o, ctm, lw, st.areas);
-          if (r == null) mc.kept(); else { edits.push([path.start, end, r]); mc.hit(); if (r.trim()) mc.kept(); }
+          if (r == null) mc.kept();
+          else {
+            // Painted and then used as the clip (W f): the clip stays. All under a box, everything drawn inside it is
+            // under the box too, so an empty clip does the same without the shape; otherwise the shape is kept for it.
+            const keep = !clipNext ? '' : r.trim() ? ` ${src.slice(path.start, clipNext.start)} ${clipNext.op} n ` : ` 0 0 0 0 re ${clipNext.op} n `;
+            edits.push([path.start, end, r + keep]); mc.hit(); if (r.trim()) mc.kept();
+          }
         }
       }
-      path = null; clipNext = false; continue;
+      path = null; clipNext = null; continue;
     }
     if (o === 'BMC' || o === 'BDC') { mc.open(o, a, start, end); continue; }
     if (o === 'EMC') { mc.close(); continue; }
@@ -619,8 +627,8 @@ async function protRewrite(st, src, res, ctm0, depth, mcKey = null) {
         if (p.t === 'num') { flushRun(); pend += p.v; adv -= p.v / 1000 * fs * th; continue; }
         for (const { code, w, space } of fontWidth(font, p.v)) {
           const gw = (w * fm.k * fs + tc + (space ? tw : 0)) * th, ink = w * fm.k * fs * th;
-          // the letter's box: its advance, from its font's descent to its ascent
-          if (fs && th && rsGlyphHit(st.areas, M, adv, adv + ink, rise + fm.desc * fs, rise + fm.asc * fs)) { any = true; flushRun(); pend -= (w * fm.k * fs + tc + (space ? tw : 0)) * 1000 / fs; mc.hit(); }
+          // the letter's box: its advance, from just below the baseline to its font's capital height
+          if (fs && th && rsGlyphHit(st.areas, M, adv, adv + ink, rise + fm.bot * fs, rise + fm.top * fs)) { any = true; flushRun(); pend -= (w * fm.k * fs + tc + (space ? tw : 0)) * 1000 / fs; mc.hit(); }
           else { flushPend(); run = (run || '') + code.toString(16).padStart(nb * 2, '0'); if (!space) mc.kept(); }
           adv += gw;
         }
@@ -642,7 +650,7 @@ async function protRewrite(st, src, res, ctm0, depth, mcKey = null) {
         if (bb) { const q = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[2], bb[3]], [bb[0], bb[3]]].map(([x, y]) => apply(fctm, x, y)); if (!st.areas.some((ar) => protOverlap(ar.box, quadBox(q)))) { mc.kept(); continue; } }
         const fr0 = obj.dict.lookup(PDFName.of('Resources')), fres = protCloneRes(L, out, fr0 instanceof PDFDict ? fr0 : res);
         const sp = obj.dict.lookup(PDFName.of('StructParents')), fkey = sp instanceof PDFNumber ? sp.asNumber() : null;
-        const fsrc = protStreamText(L, obj), nsrc = await protRewrite(st, fsrc, fres, fctm, depth + 1, fkey);
+        const fsrc = protStreamText(L, obj), nsrc = await protRewrite(st, fsrc, fres, fctm, depth + 1, fkey, { font, fs, tc, tw, th, tl, rise, lw });
         mc.kept();
         if (nsrc === fsrc) continue;
         mc.hit();
@@ -1060,6 +1068,32 @@ function protGuard() {
   }
 }
 setTimeout(() => { try { protGuard(); } catch (e) { console.warn(e); } }, 0);
+/* Pages changed from the sidebar or the Organize grid (dragging a page, the Delete key) don't go through the commands,
+   so they are stopped here, before they start; and any other change to the pages stops in pageOp. */
+const protSayBlocked = (kind) => toast(PROT_BLOCKED_SAY[kind], { label: 'Enter password', run: () => run('protOwnerPw') });
+const PROT_PAGE_EL = '#sidePanel .thumb, .pg60-cell';
+document.addEventListener('drop', (e) => {
+  const el = e.target && e.target.closest && e.target.closest(PROT_PAGE_EL);
+  if (!el || !protBlocked('assemble')) return;
+  e.preventDefault(); e.stopPropagation(); el.classList.remove('drag-over');
+  for (const x of $$('.pg60-drop-before, .pg60-drop-after')) x.classList.remove('pg60-drop-before', 'pg60-drop-after');
+  protSayBlocked('assemble');
+}, true);
+document.addEventListener('keydown', (e) => {
+  if (!(e.key === 'Delete' || e.key === 'Backspace') || $('#dialog').open || selMark || selContent) return;
+  const el = document.activeElement;
+  if (!(el && el.closest && el.closest(PROT_PAGE_EL)) || !protBlocked('assemble')) return;
+  e.preventDefault(); e.stopPropagation(); protSayBlocked('assemble');
+}, true);
+let protPageRefused = false;
+const protPageOp0 = pageOp, protMoved0 = pagesMoved, protDeleted0 = pagesDeleted;
+pageOp = function (fn, layout) {
+  if (protBlocked('assemble')) { protPageRefused = true; queueMicrotask(() => { protPageRefused = false; }); protSayBlocked('assemble'); return; }
+  return protPageOp0(fn, layout);
+};
+// ...and then doesn't say the pages moved or went.
+pagesMoved = function (...a) { if (!protPageRefused) return protMoved0(...a); };
+pagesDeleted = function (...a) { if (!protPageRefused) return protDeleted0(...a); };
 TEST_HOOKS.protBlocked = (kind) => protBlocked(kind);
 // Enter the permissions password: the source is opened again with it, which only works with the right one.
 async function protUnlock() {

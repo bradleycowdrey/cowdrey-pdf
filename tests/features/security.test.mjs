@@ -165,4 +165,30 @@ export default async (h) => {
     eq(await p.evaluate(() => [window.__cowdreyPdf.cmdEnabled('protUnsecure'), window.__cowdreyPdf.cmdEnabled('tool_edit'), window.__cowdreyPdf.cmdShown('protOwnerPw')]), [true, true, false]);
     noErrors(p); await p.ctx.close();
   });
+
+  await test('Security: a PDF whose author forbids page changes: the sidebar\'s drag and drop and Delete key don\'t change its pages either', async () => {
+    const d0 = await C.PDFDocument.create(), font = await d0.embedFont(C.StandardFonts.Helvetica);
+    for (let i = 0; i < 3; i++) d0.addPage([612, 792]).drawText('Page ' + (i + 1), { x: 72, y: 700, size: 18, font });
+    d0.encrypt({ userPassword: '', ownerPassword: 'author-secret', permissions: { printing: 'highResolution', modifying: false, copying: true, annotating: false, fillingForms: false, contentAccessibility: true, documentAssembly: false } });
+    const file = tmp('pages.pdf', await d0.save());
+    try {
+      const p = await open(); await openPdf(p, file, 'Pages.pdf'); await p.waitForTimeout(300);
+      const order = () => p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.i));
+      eq([await p.evaluate(() => window.__cowdreyPdf.cmdEnabled('rotR')), await p.evaluate(() => window.__cowdreyPdf.cmdEnabled('delPage'))], [false, false]);
+      await p.dragAndDrop('.thumb[data-n="0"]', '.thumb[data-n="2"]'); await p.waitForTimeout(200);
+      eq(await order(), [0, 1, 2], 'dragging a page does not move it');
+      ok(/doesn’t allow changes to its pages/.test(await p.textContent('#toast')), await p.textContent('#toast'));
+      await p.focus('.thumb[data-n="1"]'); await p.keyboard.press('Delete'); await p.waitForTimeout(200);
+      eq(await p.$('#dialog[open]'), null, 'no Delete pages dialog');
+      eq(await order(), [0, 1, 2], 'the Delete key does not delete it');
+      // Any other way to the pages stops too (the Organize grid's move)
+      await p.evaluate(() => window.__cowdreyPdf.pg60Org.move(0, 3));
+      eq(await order(), [0, 1, 2], 'nor a move from elsewhere');
+      // With the permissions password the pages can be changed again
+      await run(p, 'protOwnerPw'); await p.waitForSelector('#dialog[open] #dlgInput'); await p.fill('#dlgInput', 'author-secret'); await p.click('#dialog .btn.primary'); await p.waitForTimeout(300);
+      await p.dragAndDrop('.thumb[data-n="0"]', '.thumb[data-n="2"]'); await p.waitForTimeout(200);
+      eq(await order(), [1, 2, 0], 'unlocked: dragging moves the page');
+      noErrors(p); await p.ctx.close();
+    } finally { fs.unlinkSync(file); }
+  });
 };

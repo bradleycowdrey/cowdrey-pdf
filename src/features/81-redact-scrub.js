@@ -150,15 +150,21 @@ function rsShadingBox(L, out, res, name, ctm, clip) {
 /* ----- letters ----- */
 // A font's extent above and below the baseline (in text space per point of size) and the scale of its widths:
 // 1/1000 for most fonts, the FontMatrix for a Type 3 font (whose letters are little drawings).
+// `top` and `bot` are how far its letters' ink goes (capital height, and not much below the baseline): what is
+// measured against a box, so that the room a font keeps for accents and descenders does not reach into a box on the
+// line above or below and take out letters the box doesn't touch.
+// The capital height of the standard 14 fonts, which have no font descriptor in most PDFs.
+const RS_STD_CAP = [[/Courier/i, .571], [/Times/i, .662], [/Helvetica|Arial/i, .718]];
 function rsFontMetrics(L, out, f) {
-  if (!f) return { asc: .8, desc: -.2, k: .001 };
+  if (!f) return { asc: .8, desc: -.2, k: .001, top: .72, bot: -.15 };
   if (f.rsMetrics) return f.rsMetrics;
   const { PDFName, PDFDict, PDFArray, PDFNumber } = L, N = PDFName.of;
   const num = (x) => { const v = x && out.context.lookup(x); return v instanceof PDFNumber ? v.asNumber() : null; };
-  let asc = null, desc = null, k = .001;
+  let asc = null, desc = null, cap = null, k = .001, t3 = false;
   try {
     const d = out.context.lookup(f.ref);
     if (String(d.lookup(N('Subtype'))) === '/Type3') {
+      t3 = true;
       const fm = d.lookup(N('FontMatrix')), m = fm instanceof PDFArray ? fm.asArray().map(num) : null;
       if (m && m[0]) k = Math.abs(m[0]);
       const bb = d.lookup(N('FontBBox')), b = bb instanceof PDFArray ? bb.asArray().map(num) : null, ky = m && m[3] ? Math.abs(m[3]) : k;
@@ -166,12 +172,20 @@ function rsFontMetrics(L, out, f) {
     } else {
       let fd = d.lookup(N('FontDescriptor'));
       if (!(fd instanceof PDFDict)) { const df = d.lookup(N('DescendantFonts')), cid = df instanceof PDFArray ? df.lookup(0) : null; fd = cid instanceof PDFDict ? cid.lookup(N('FontDescriptor')) : null; }
-      if (fd instanceof PDFDict) { asc = num(fd.get(N('Ascent'))); desc = num(fd.get(N('Descent'))); if (asc != null) asc /= 1000; if (desc != null) desc /= 1000; }
+      if (fd instanceof PDFDict) {
+        asc = num(fd.get(N('Ascent'))); desc = num(fd.get(N('Descent'))); cap = num(fd.get(N('CapHeight')));
+        if (asc != null) asc /= 1000; if (desc != null) desc /= 1000; if (cap != null) cap /= 1000;
+      } else {
+        const base = String(d.lookup(N('BaseFont')) || ''), hit = RS_STD_CAP.find(([rx]) => rx.test(base));
+        if (hit) cap = hit[1];
+      }
     }
   } catch {}
   if (!(asc > .3 && asc < 1.6)) asc = .8;
   if (!(desc <= 0 && desc > -.6)) desc = -.2;
-  return (f.rsMetrics = { asc, desc, k });
+  // A Type 3 font's letters are drawings that may fill their whole box; other fonts' ink stops near the capitals.
+  const top = t3 ? asc : Math.min(asc, cap > .3 && cap < 1.2 ? cap : .72), bot = t3 ? desc : Math.max(desc, -.15);
+  return (f.rsMetrics = { asc, desc, k, top, bot });
 }
 // Whether a redaction takes a letter out: its middle is under a box, or a box covers more than a tenth of it.
 function rsGlyphHit(areas, M, x0, x1, y0, y1) {
