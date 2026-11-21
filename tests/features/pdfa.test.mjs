@@ -19,12 +19,13 @@ export default async (h) => {
     await d.loadingTask.destroy(); return out;
   };
   // Save as PDF/A…: choose the level, then the file comes as a download (the web app) when every check passes.
-  async function savePdfa(p, level = '2b', { expectProblems = false, attachments } = {}) {
+  async function savePdfa(p, level = '2b', { expectProblems = false, attachments, scripts } = {}) {
     await run(p, 'savePdfa'); await p.waitForSelector('#dialog[open] .pdfa-levels');
     await p.check(`#dialog [name="pdfaLevel"][value="${level}"]`);
-    const dl = p.waitForEvent('download', { timeout: 30000 });
+    const dl = p.waitForEvent('download', { timeout: 30000 }); dl.catch(() => {});
     await p.click('#dialog .dlg-foot .btn.primary');
     if (attachments) { await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Use PDF/A-3b")', { timeout: 30000 }); await p.click('#dialog .dlg-foot button:has-text("Use PDF/A-3b")'); }
+    if (scripts) { await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Remove and save")', { timeout: 30000 }); await p.click('#dialog .dlg-foot button:has-text("Remove and save")'); }
     if (expectProblems) return null;
     const winner = await Promise.race([dl.then((d) => ['dl', d]), p.waitForSelector('#dialog[open] .pdfa-probs', { timeout: 30000 }).then(() => ['probs'])]);
     if (winner[0] === 'probs') throw new Error('PDF/A check found problems: ' + (await p.textContent('#dialog .pdfa-sum')) + ' ' + (await p.textContent('#dialog .pdfa-probs')));
@@ -339,6 +340,11 @@ export default async (h) => {
     ok(new RegExp(`^${ck.passed.length} checks passed\\. 1 problem: font Wingdings-Regular is not embedded on page 1\\.$`).test(ck.summary), ck.summary);
     // through the menu: the results dialog, then Save anyway (not PDF/A)
     await savePdfa(p, '2b', { expectProblems: true });
+    // scripts are not taken out without asking
+    await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Remove and save")', { timeout: 30000 });
+    eq(await p.textContent('#dialog h2'), 'Scripts and actions');
+    ok(/This PDF has JavaScript \(\d scripts?\), Launch actions, actions that run by themselves\./.test(await p.textContent('#dialog .dlg-body')), await p.textContent('#dialog .dlg-body'));
+    await answer(p, 'Remove and save');
     await p.waitForSelector('#dialog[open] .pdfa-probs', { timeout: 30000 });
     eq(await p.textContent('#dialog h2'), 'Not PDF/A-2b yet');
     ok((await p.textContent('#dialog .pdfa-sum')).endsWith('1 problem: font Wingdings-Regular is not embedded on page 1.'), await p.textContent('#dialog .pdfa-sum'));
@@ -354,7 +360,7 @@ export default async (h) => {
   await test('PDF/A-2u: every font has a Unicode mapping; PDF/A-3b keeps an attachment (described), PDF/A-2b offers 3b for it', async () => {
     const p = await open();
     await openBytes(p, await messyPdf({ wingdings: false }), 'Clean.pdf');
-    const r = await savePdfa(p, '2u');
+    const r = await savePdfa(p, '2u', { scripts: true });
     const d = await L.PDFDocument.load(r.bytes, { updateMetadata: false });
     ok(/<pdfaid:conformance>U<\/pdfaid:conformance>/.test(xmpOf(d).text), '2u claimed');
     const ck = await check(p, r.bytes);
@@ -364,7 +370,7 @@ export default async (h) => {
     await openBytes(p, await messyPdf({ wingdings: false, attach: true }), 'With data.pdf');
     const blocked = await p.evaluate(async () => { const b = await window.__cowdreyPdf.buildPdf(); const r = await window.__cowdreyPdf.pdfaConvert(b, { part: 2 }); return [r.blocked, r.names]; });
     eq(blocked, ['attachments', ['counts.csv']]);
-    const r3 = await savePdfa(p, '2b', { attachments: true });
+    const r3 = await savePdfa(p, '2b', { attachments: true, scripts: true });
     const d3 = await L.PDFDocument.load(r3.bytes, { updateMetadata: false });
     ok(/<pdfaid:part>3<\/pdfaid:part>/.test(xmpOf(d3).text), 'PDF/A-3');
     const af = d3.catalog.lookup(N('AF')); ok(af instanceof PDFArray && af.size() === 1, 'catalog /AF');

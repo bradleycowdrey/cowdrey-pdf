@@ -1,18 +1,29 @@
 /* ---------------- document properties (src/features/12-docinfo.js) ----------------
-   File > Document properties (Ctrl/Cmd+D), like PDFelement's, in four tabs:
-   Description  Title, Author, Subject, Keywords (a list, shown as chips), the app that made it (Creator), the
-                language (the catalog's /Lang) and the created and modified dates, all editable.
+   File > Document properties (Ctrl/Cmd+D), like PDFelement's, in five tabs:
+   Description  Title, Author, Subject, Keywords (a list, shown as chips), the app that made it (Creator), the app
+                that wrote the PDF (Producer), the language (the catalog's /Lang) and the created and modified dates,
+                all editable.
    Custom       the Info dictionary's own keys: add, rename and delete them (the app's page-design key is hidden).
    Initial view the page it opens at (/OpenAction [page /XYZ null null null]), the page layout (/PageLayout), the
-                panel shown (/PageMode) and the reader's window (/ViewerPreferences: DisplayDocTitle, HideToolbar,
-                HideMenubar, FitWindow, CenterWindow).
+                panel shown (/PageMode), the reader's window (/ViewerPreferences: DisplayDocTitle, HideToolbar,
+                HideMenubar, FitWindow, CenterWindow) and the page numbers readers show (/PageLabels: ranges with
+                a style, a prefix and a first number, such as i, ii, iii then 1, 2, 3).
+   XMP          the XMP metadata packet itself, as text, editable. What you change there in the properties the app
+                keeps in step (title, author, subject, keywords, creator, producer, dates) goes into the fields
+                above too; everything else is saved as you typed it.
    File         read-only facts: file name and size, page size and count, PDF version, producer, security, fonts.
-   docMarks(): { id, type: 'docinfo', title?, author?, subject?, keywords?, creator?, lang?, created?, modified?,
-   custom?: { key: text }, view?: { page, layout, mode, displayTitle, toolbar, menubar, fit, center } }: only what
-   was changed (a cleared field is ''), so undo, Documents and saving keep them. Saving writes them into the Info
-   dictionary and the catalog. The XMP packet (pdfaWriteXmp, in 84-pdfa.js) is written again from the final Info
-   on every save of a file that had one or whose properties were changed, so the two always agree. When the pages
-   are copied into a new PDF, the opened file's Info is carried over; the core only sets the title to the file name
+   docMarks(): { id, type: 'docinfo', title?, author?, subject?, keywords?, creator?, producer?, lang?, created?,
+   modified?, custom?: { key: text }, view?: { page, layout, mode, displayTitle, toolbar, menubar, fit, center },
+   labels?: [{ from, style, prefix, start }], xmp?: text }: only what was changed (a cleared field is ''), so undo,
+   Documents and saving keep them. Saving writes them into the Info dictionary and the catalog.
+   Producer and modified date: the app writes its own name and the time of saving on every save. A producer or a
+   modification date typed here is used by the next save (Save, Save a copy, PDF/A, PDF/X) instead, then let go,
+   so later saves are stamped as usual again.
+   XMP: when the file had a packet, it is changed in place (pdfaPatchXmp, 84-pdfa.js): only the properties whose
+   value differs from the final Info dictionary are rewritten, so a file whose properties were not touched keeps its
+   packet as it was, except for the producer, the modification and metadata dates and the instance id, which follow
+   each save. A file with no packet gets one (pdfaWriteXmp) once its properties are changed. When the pages are
+   copied into a new PDF, the opened file's Info is carried over; the core only sets the title to the file name
    when the PDF has none. */
 
 const DI_FIELDS = [['title', 'Title'], ['author', 'Author'], ['subject', 'Subject'], ['keywords', 'Keywords']];
@@ -23,6 +34,50 @@ const DI_MODES = [['', "Reader's choice"], ['UseNone', 'Page only'], ['UseOutlin
 const DI_PREFS = [['displayTitle', 'DisplayDocTitle', 'Show the document title in the title bar'], ['fit', 'FitWindow', 'Fit the window to the first page'], ['center', 'CenterWindow', 'Centre the window on the screen'], ['toolbar', 'HideToolbar', "Hide the reader's toolbar"], ['menubar', 'HideMenubar', "Hide the reader's menu bar"]];
 const DI_LANGS = [['en', 'English'], ['en-GB', 'English (UK)'], ['en-US', 'English (US)'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'], ['pt', 'Portuguese'], ['pt-BR', 'Portuguese (Brazil)'], ['nl', 'Dutch'], ['sv', 'Swedish'], ['da', 'Danish'], ['nb', 'Norwegian'], ['fi', 'Finnish'], ['pl', 'Polish'], ['cs', 'Czech'], ['el', 'Greek'], ['tr', 'Turkish'], ['ru', 'Russian'], ['uk', 'Ukrainian'], ['ar', 'Arabic'], ['he', 'Hebrew'], ['hi', 'Hindi'], ['zh-Hans', 'Chinese (Simplified)'], ['zh-Hant', 'Chinese (Traditional)'], ['ja', 'Japanese'], ['ko', 'Korean'], ['id', 'Indonesian'], ['vi', 'Vietnamese'], ['th', 'Thai'], ['ga', 'Irish'], ['cy', 'Welsh'], ['mi', 'Māori']];
 const DI_LANG_RE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
+const DI_LABEL_STYLES = [['D', '1, 2, 3'], ['r', 'i, ii, iii'], ['R', 'I, II, III'], ['a', 'a, b, c'], ['A', 'A, B, C'], ['', 'No number']];
+// The XMP properties kept in step with the fields: [field, XMP property]
+const DI_XMP_FIELDS = [['title', 'dc:title'], ['author', 'dc:creator'], ['subject', 'dc:description'], ['keywords', 'pdf:Keywords'], ['creator', 'xmp:CreatorTool'], ['producer', 'pdf:Producer'], ['created', 'xmp:CreateDate'], ['modified', 'xmp:ModifyDate']];
+// A save is starting (Save, Save a copy, PDF/A, PDF/X): the producer and modification date typed here are used once.
+let diSaveAt = 0;
+const diSaving = () => { diSaveAt = Date.now(); };
+FEATURE.beforeSave.push(async () => { diSaving(); });
+// The page label ranges of a catalog's /PageLabels number tree: [{ from (page number), style, prefix, start }]
+function diReadLabels(L, d) {
+  const { PDFDict, PDFArray, PDFNumber, PDFName } = L, N = PDFName.of, look = (o) => d.context.lookup(o), out = [];
+  const walk = (node, depth) => {
+    if (!(node instanceof PDFDict) || depth > 12) return;
+    const nums = node.lookup(N('Nums'));
+    if (nums instanceof PDFArray) for (let i = 0; i + 1 < nums.size(); i += 2) {
+      const k = look(nums.get(i)), v = look(nums.get(i + 1)); if (!(k instanceof PDFNumber) || !(v instanceof PDFDict)) continue;
+      const st = v.lookup(N('St'));
+      out.push({ from: k.asNumber() + 1, style: pdfaName(L, v.get(N('S'))) || '', prefix: pdfaText(L, v, 'P') || '', start: st instanceof PDFNumber ? st.asNumber() : 1 });
+    }
+    const kids = node.lookup(N('Kids')); if (kids instanceof PDFArray) for (const x of kids.asArray()) walk(look(x), depth + 1);
+  };
+  walk(d.catalog.lookup(N('PageLabels')), 0);
+  return out.sort((a, b) => a.from - b.from);
+}
+// What page n (1-based) is called under these ranges: "iii", "A-2"
+function diLabelOf(labels, n) {
+  let r = null; for (const x of labels) if (x.from <= n) r = x; if (!r) return String(n);
+  const k = r.start + n - r.from, roman = (v) => { let s = ''; for (const [d, t] of [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']]) while (v >= d) { s += t; v -= d; } return s; };
+  const letters = (v) => { const c = String.fromCharCode(97 + ((v - 1) % 26)); return c.repeat(Math.floor((v - 1) / 26) + 1); };
+  const num = { D: String(k), r: roman(k), R: roman(k).toUpperCase(), a: letters(k), A: letters(k).toUpperCase(), '': '' }[r.style] ?? String(k);
+  return r.prefix + num;
+}
+// Ranges as typed: sorted, one per first page, inside the document, and starting at page 1.
+function diNormLabels(rows, count) {
+  const seen = new Map();
+  for (const r of rows) {
+    const from = Math.round(+r.from); if (!(from >= 1 && from <= count)) continue;
+    const style = DI_LABEL_STYLES.some(([v]) => v === r.style) ? r.style : 'D';
+    const start = Math.max(1, Math.round(+r.start) || 1);
+    seen.set(from, { from, style, prefix: String(r.prefix || ''), start });
+  }
+  const list = [...seen.values()].sort((a, b) => a.from - b.from);
+  if (list.length && list[0].from !== 1) list.unshift({ from: 1, style: 'D', prefix: '', start: 1 });
+  return list;
+}
 const diMark = () => (doc ? docMarks().find((m) => m.type === 'docinfo') : null);
 const diPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 function diSize(b) {
@@ -120,6 +175,8 @@ function diMeta(k = 0) {
     for (const [key] of info.entries()) { const name = key.decodeText(); if (DI_STD_KEYS.has(name) || DI_HIDDEN_KEYS.has(name) || info.lookup(key) instanceof PDFName) continue; const t = pdfaText(L, info, name); if (typeof t === 'string') meta.custom[name] = t; }
     meta.lang = pdfaText(L, cat, 'Lang') || '';
     meta.hasXmp = !!cat.get(N('Metadata'));
+    try { meta.xmp = pdfaXmpOf(L, d); } catch { meta.xmp = ''; }
+    try { meta.labels = diReadLabels(L, d); } catch { meta.labels = []; }
     meta.view.layout = pdfaName(L, cat.lookup(N('PageLayout'))) || '';
     meta.view.mode = pdfaName(L, cat.lookup(N('PageMode'))) || '';
     const vp = cat.lookup(N('ViewerPreferences'));
@@ -132,7 +189,7 @@ function diMeta(k = 0) {
       else if (p0 instanceof PDFNumber) meta.view.page = p0.asNumber() + 1;
     }
     return meta;
-  })().catch(() => ({ custom: {}, view: {}, lang: '' })));
+  })().catch(() => ({ custom: {}, view: {}, lang: '', xmp: '', labels: [] })));
   return diMetaCache.get(src);
 }
 // The values the saved PDF will have: changes first, then what the file had.
@@ -140,7 +197,7 @@ function diValue(info, f) { const m = diMark(); return m && m[f] != null ? m[f] 
 const diExtra = (info, meta) => {
   const m = diMark() || {}, view = { ...meta.view, ...(m.view || {}) };
   const created = m.created != null ? (m.created ? new Date(m.created) : null) : diDateObj(info.CreationDate);
-  return { creator: m.creator != null ? m.creator : String(info.Creator ?? ''), lang: m.lang != null ? m.lang : meta.lang || '', created: diLocal(created), modified: m.modified ? diLocal(new Date(m.modified)) : '', custom: m.custom || meta.custom || {}, view };
+  return { creator: m.creator != null ? m.creator : String(info.Creator ?? ''), producer: m.producer != null ? m.producer : String(info.Producer ?? ''), labels: m.labels || meta.labels || [], xmp: m.xmp != null ? m.xmp : meta.xmp || '', lang: m.lang != null ? m.lang : meta.lang || '', created: diLocal(created), modified: m.modified ? diLocal(new Date(m.modified)) : '', custom: m.custom || meta.custom || {}, view };
 };
 // Does the document change what the pages show (so a PDF/A claim the file had may no longer hold)? Marks on pages,
 // document-wide changes other than these properties, and pages added, moved, deleted or copied in from another file
@@ -163,17 +220,19 @@ async function diShow() {
   const pending = docMarks().some((m) => m.type === 'protsec');
   const opt = (list, now) => { const l = list.some(([v]) => v === now) ? list : [...list, [now, now]]; return l.map(([v, t]) => `<option value="${esc(v)}"${v === now ? ' selected' : ''}>${esc(t)}</option>`).join(''); };
   const tab = (k, t, on) => `<button type="button" role="tab" id="di-t-${k}" data-di-tab="${k}" aria-controls="di-p-${k}" aria-selected="${on}" tabindex="${on ? 0 : -1}">${t}</button>`;
+  const labelRow = (r = { from: '', style: 'D', prefix: '', start: 1 }) => `<div class="di-lrow"><input type="number" min="1" max="${doc.pages.length}" step="1" data-lf value="${esc(r.from)}" aria-label="From page"><select data-ls aria-label="Style">${DI_LABEL_STYLES.map(([v, t]) => `<option value="${v}"${v === r.style ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select><input type="text" data-lp value="${esc(r.prefix || '')}" aria-label="Prefix" autocomplete="off" spellcheck="false"><input type="number" min="1" step="1" data-ln value="${esc(r.start || 1)}" aria-label="Start at"><button type="button" class="icon-btn" data-ldel aria-label="Delete range">${ic('trash-2')}</button></div>`;
   const custRow = (k, v) => `<div class="di-crow"><input type="text" data-ck value="${esc(k)}" placeholder="Name" aria-label="Property name" autocomplete="off" spellcheck="false"><input type="text" data-cv value="${esc(v)}" placeholder="Value" aria-label="Property value" autocomplete="off"><button type="button" class="icon-btn" data-cdel aria-label="Delete property">${ic('trash-2')}</button></div>`;
   const body = `<div class="di">
-    <div class="di-tabs seg" role="tablist" aria-label="Document properties">${tab('desc', 'Description', true)}${tab('custom', 'Custom', false)}${tab('view', 'Initial view', false)}${tab('file', 'File', false)}</div>
+    <div class="di-tabs seg" role="tablist" aria-label="Document properties">${tab('desc', 'Description', true)}${tab('custom', 'Custom', false)}${tab('view', 'Initial view', false)}${tab('xmp', 'XMP', false)}${tab('file', 'File', false)}</div>
     <section class="di-panel" id="di-p-desc" role="tabpanel" aria-labelledby="di-t-desc">
       <div class="di-fields">${DI_FIELDS.map(([f, label]) => `<label class="field${f === 'keywords' ? ' di-kw' : ''}"><span>${label}</span><input type="text" data-di="${f}" value="${esc(diValue(info, f))}" autocomplete="off" spellcheck="${f !== 'keywords'}"${f === 'keywords' ? ' placeholder="Separate them with ; or ,"' : ''}></label>`).join('')}
       <div class="di-chips" data-chips aria-label="Keywords" role="list"></div>
       <label class="field"><span>Made with</span><input type="text" data-dx="creator" value="${esc(x.creator)}" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Producer</span><input type="text" data-dx="producer" value="${esc(x.producer)}" autocomplete="off" spellcheck="false"><small class="di-hint">A change is used for the next save. Saves after it write Cowdrey.PDF.</small></label>
       <label class="field"><span>Language</span><input type="text" data-dx="lang" value="${esc(x.lang)}" list="diLangs" placeholder="For example en or fr-CA" autocomplete="off" spellcheck="false"></label>
       <datalist id="diLangs">${DI_LANGS.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('')}</datalist>
       <label class="field"><span>Created</span><input type="datetime-local" step="1" data-dx="created" value="${esc(x.created)}"></label>
-      <label class="field"><span>Modified</span><input type="datetime-local" step="1" data-dx="modified" value="${esc(x.modified)}"><small class="di-hint">Leave empty to use the time you save.</small></label></div>
+      <label class="field"><span>Modified</span><input type="datetime-local" step="1" data-dx="modified" value="${esc(x.modified)}"><small class="di-hint">Leave empty to use the time you save. A date is used for the next save only.</small></label></div>
     </section>
     <section class="di-panel" id="di-p-custom" role="tabpanel" aria-labelledby="di-t-custom" hidden>
       <p class="di-note">Your own properties, saved in the file's document information. Other apps show them as custom properties.</p>
@@ -187,6 +246,16 @@ async function diShow() {
       <label class="field"><span>Page layout</span><select data-dx="layout">${opt(DI_LAYOUTS, x.view.layout || '')}</select></label>
       <label class="field"><span>Show</span><select data-dx="mode">${opt(DI_MODES, x.view.mode || '')}</select></label></div>
       <div class="di-checks">${DI_PREFS.map(([k, , t]) => `<label class="di-check"><input type="checkbox" data-dx="${k}"${x.view[k] ? ' checked' : ''}><span>${esc(t)}</span></label>`).join('')}</div>
+      <h3 class="di-h">Page numbers</h3>
+      <p class="di-note">What readers call each page, such as i, ii, iii for the front pages and 1, 2, 3 after them. With no ranges, pages are 1, 2, 3.</p>
+      <div class="di-lhead" aria-hidden="true"><span>From page</span><span>Style</span><span>Prefix</span><span>Start at</span><span></span></div>
+      <div class="di-labels" data-labels>${x.labels.map((r) => labelRow(r)).join('')}</div>
+      <button type="button" class="btn di-cadd" data-ladd>${ic('plus')}<span>Add range</span></button>
+      <p class="di-note" data-lpreview aria-live="polite"></p>
+    </section>
+    <section class="di-panel" id="di-p-xmp" role="tabpanel" aria-labelledby="di-t-xmp" hidden>
+      <p class="di-note">${meta.xmp ? 'The XMP metadata packet saved in the file. Edit it as text; the title, author, subject, keywords, creator, producer and dates you change here change the fields too.' : 'This PDF has no XMP metadata packet. Paste one here to add it; one is also written when you change the properties.'}</p>
+      <textarea class="di-xmp" data-dx="xmp" spellcheck="false" autocomplete="off" aria-label="XMP metadata" rows="14">${esc(x.xmp)}</textarea>
     </section>
     <section class="di-panel" id="di-p-file" role="tabpanel" aria-labelledby="di-t-file" hidden>
     <h3 class="di-h">File</h3>
@@ -206,6 +275,8 @@ async function diShow() {
       $$('[data-di]', dlg).forEach((i) => { vals[i.dataset.di] = i.value; });
       $$('[data-dx]', dlg).forEach((i) => { vals.x[i.dataset.dx] = i.type === 'checkbox' ? i.checked : i.value; });
       $$('.di-crow', dlg).forEach((r) => vals.custom.push([$('[data-ck]', r).value, $('[data-cv]', r).value]));
+      vals.labels = $$('.di-lrow', dlg).map((r) => ({ from: $('[data-lf]', r).value, style: $('[data-ls]', r).value, prefix: $('[data-lp]', r).value, start: $('[data-ln]', r).value }));
+      const pv = $('[data-lpreview]', dlg); if (pv) { const l = diNormLabels(vals.labels, doc.pages.length); pv.textContent = l.length ? 'Pages: ' + Array.from({ length: Math.min(doc.pages.length, 8) }, (_, k) => diLabelOf(l, k + 1)).join(', ') + (doc.pages.length > 8 ? '…' : '') : ''; }
     };
     // tabs
     const tabs = $$('[data-di-tab]', dlg);
@@ -225,6 +296,10 @@ async function diShow() {
     const cust = $('[data-custom]', dlg);
     $('[data-cadd]', dlg).addEventListener('click', () => { cust.insertAdjacentHTML('beforeend', custRow('', '')); icons(); read(); const r = cust.lastElementChild; $('[data-ck]', r).focus(); });
     cust.addEventListener('click', (e) => { const b = e.target.closest('[data-cdel]'); if (!b) return; b.closest('.di-crow').remove(); read(); });
+    // page number ranges
+    const labs = $('[data-labels]', dlg);
+    $('[data-ladd]', dlg).addEventListener('click', () => { const last = $$('.di-lrow', dlg).pop(); const from = last ? Math.min(doc.pages.length, (+$('[data-lf]', last).value || 1) + 1) : 1; labs.insertAdjacentHTML('beforeend', labelRow({ from, style: 'D', prefix: '', start: 1 })); icons(); read(); $('[data-lf]', labs.lastElementChild).focus(); });
+    labs.addEventListener('click', (e) => { const b = e.target.closest('[data-ldel]'); if (!b) return; b.closest('.di-lrow').remove(); read(); });
     dlg.addEventListener('input', read); dlg.addEventListener('change', read);
     $$('[data-di]', dlg).forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); read(); $('.dlg-foot .btn.primary', dlg).click(); } }));
     read();
@@ -237,12 +312,32 @@ async function diShow() {
 // Keeps the fields that differ from the file's own values (or from earlier changes); one undo step.
 function diSet(vals, info, meta = { custom: {}, view: {}, lang: '' }) {
   const old = diMark(), next = { id: old ? old.id : uid(), type: 'docinfo' };
+  // XMP edits: the properties kept in step become the fields' values, where the field itself wasn't changed.
+  let xmpNext = old && old.xmp != null ? old.xmp : null;
+  if (vals.x && vals.x.xmp != null) {
+    const was = old && old.xmp != null ? old.xmp : meta.xmp || '', now = String(vals.x.xmp);
+    if (now.trim() !== was.trim()) {
+      if (now.trim() && !pdfaReadXmp(now).ok) toast('The XMP is not valid XML, so it was not kept.');
+      else {
+        xmpNext = now.trim() ? now : '';
+        const a = pdfaReadXmp(was), b = pdfaReadXmp(now), shown = diExtra(info, meta);
+        const val = (r, k) => (k === 'dc:creator' ? (r.props['dc:creator#list'] ? r.props['dc:creator#list'].join('; ') : undefined) : r.props[k]);
+        for (const [f, k] of DI_XMP_FIELDS) {
+          const va = val(a, k), vb = val(b, k); if (vb == null || vb === va) continue;
+          if (f === 'created' || f === 'modified') { const d = pdfaParseXmpDate(vb); if (!d) continue; if (vals.x[f] === shown[f]) vals.x[f] = diLocal(d); }
+          else if (f === 'creator' || f === 'producer') { if (vals.x[f] === shown[f]) vals.x[f] = vb; }
+          else if (vals[f] === diValue(info, f)) vals[f] = vb;
+        }
+      }
+    }
+  }
   for (const [f] of DI_FIELDS) {
     const v = String(vals[f] ?? '').trim(), orig = String(info[f[0].toUpperCase() + f.slice(1)] ?? '');
     if (v !== orig.trim()) next[f] = v;
   }
   const x = vals.x || {};
   if (x.creator != null && String(x.creator).trim() !== String(info.Creator ?? '').trim()) next.creator = String(x.creator).trim();
+  if (x.producer != null && String(x.producer).trim() !== String(info.Producer ?? '').trim()) next.producer = String(x.producer).trim();
   if (x.lang != null) {
     const v = String(x.lang).trim();
     if (v && !DI_LANG_RE.test(v)) toast(`“${v}” is not a language code. Use one like en, fr or pt-BR.`);
@@ -271,6 +366,9 @@ function diSet(vals, info, meta = { custom: {}, view: {}, lang: '' }) {
   if (x.mode != null && x.mode !== (mv.mode || '')) view.mode = x.mode;
   for (const [k] of DI_PREFS) if (x[k] != null && !!x[k] !== !!mv[k]) view[k] = !!x[k];
   if (Object.keys(view).length) next.view = view;
+  if (vals.labels) { const l = diNormLabels(vals.labels, doc.pages.length); if (JSON.stringify(l) !== JSON.stringify(diNormLabels(meta.labels || [], doc.pages.length))) next.labels = l; }
+  else if (old && old.labels) next.labels = old.labels;
+  if (xmpNext != null && xmpNext.trim() !== String(meta.xmp || '').trim()) next.xmp = xmpNext;
   const same = JSON.stringify(old || { id: next.id, type: 'docinfo' }) === JSON.stringify(next);
   if (same) return;
   const before = snapshot();
@@ -333,19 +431,40 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
     for (const [k, key] of DI_PREFS) if (view[k] != null) { if (view[k]) vp.set(N(key), PDFBool.True); else vp.delete(N(key)); }
     if (!vp.keys().length) out.catalog.delete(N('ViewerPreferences'));
   }
+  // page numbers
+  if (m && m.labels) {
+    const list = m.labels.filter((r) => r.from <= pages.length);
+    if (!list.length) out.catalog.delete(N('PageLabels'));
+    else out.catalog.set(N('PageLabels'), out.context.obj({ Nums: list.flatMap((r) => [r.from - 1, out.context.obj({ Type: 'PageLabel', ...(r.style ? { S: r.style } : {}), ...(r.prefix ? { P: PDFHexString.fromText(r.prefix) } : {}), ...(r.start !== 1 ? { St: r.start } : {}) })]) }));
+  }
   // The XMP packet is written last, from the final Info (the core sets the producer, the modification date and the
   // title after these hooks), so readers that show the XMP title show the one set here. Removing hidden information
   // (Protect) takes it out instead.
   const hadXmp = !!out.catalog.get(N('Metadata'));
   const cleaning = docMarks().some((x) => x.type === 'protclean' && x.metadata);
-  if (!cleaning && (hadXmp || m) && !out.__diXmp) {
+  // A producer and a modification date typed in the dialog are used by the next save (and then let go).
+  if (!out.__diXmp) {
     out.__diXmp = true;
     const save = out.save.bind(out), keepClaims = !diContentChanged(entries || doc.pages);
     out.save = async (...a) => {
       const mm = diMark();
       if (mm && mm.modified) out.setModificationDate(new Date(mm.modified));
-      if (!hadXmp || out.catalog.get(N('Metadata'))) { try { pdfaWriteXmp(L, out, out.__diNoPdfa ? { keepClaims: false, pdfua: keepClaims ? out.__diPdfua : null } : { keepClaims }); } catch (e) { console.warn('Could not write the XMP metadata', e); } }
-      return save(...a);
+      if (mm && mm.producer != null) { if (mm.producer) out.setProducer(mm.producer); else out.getInfoDict().delete(N('Producer')); }
+      if (!cleaning && mm && mm.xmp != null) {
+        if (mm.xmp === '') out.catalog.delete(N('Metadata'));
+        else { const st = out.context.stream(new TextEncoder().encode(mm.xmp), { Type: 'Metadata', Subtype: 'XML' }), ref = out.catalog.get(N('Metadata')); if (ref instanceof L.PDFRef) out.context.assign(ref, st); else out.catalog.set(N('Metadata'), out.context.register(st)); }
+      }
+      const removed = mm && mm.xmp === '';
+      if (!cleaning && !removed && (hadXmp || mm) && (!hadXmp || out.catalog.get(N('Metadata')))) {
+        const o = out.__diNoPdfa ? { keepClaims: false, pdfua: keepClaims ? out.__diPdfua : null } : { keepClaims };
+        try { if (!(out.catalog.get(N('Metadata')) && pdfaPatchXmp(L, out, o))) pdfaWriteXmp(L, out, o); } catch (e) { console.warn('Could not write the XMP metadata', e); }
+      }
+      const r = await save(...a);
+      if (mm && Date.now() - diSaveAt < 120000 && (mm.producer != null || mm.modified)) {
+        diSaveAt = 0; delete mm.producer; delete mm.modified;
+        const list = docMarks(), k = list.indexOf(mm); if (k >= 0 && Object.keys(mm).length <= 2) list.splice(k, 1);
+      }
+      return r;
     };
   }
 });
@@ -361,11 +480,12 @@ document.addEventListener('keydown', (e) => {
 TEST_HOOKS.diFonts = diFonts;
 TEST_HOOKS.diSecurity = diSecurity;
 TEST_HOOKS.diMeta = (k) => diMeta(k);
+TEST_HOOKS.diLabelOf = diLabelOf;
 
 addStyle(`
 .di-dlg { width: min(580px, calc(100vw - 32px)); }
 .di-dlg .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
-.di-tabs.seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 10px; }
+.di-tabs.seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0 0 10px; }
 .di-tabs.seg > button { padding: 5px 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .di-panel[hidden] { display: none; }
 .di-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
@@ -387,6 +507,12 @@ addStyle(`
 .di-cadd { display: inline-flex; align-items: center; gap: 6px; }
 .di-cadd svg { width: 16px; height: 16px; }
 .di-checks { display: grid; gap: 6px; margin: 8px 0 0; }
+.di-labels { display: grid; gap: 6px; margin: 0 0 8px; }
+.di-lrow, .di-lhead { display: grid; grid-template-columns: 80px minmax(0, 1.3fr) minmax(0, 1fr) 72px auto; gap: 6px; align-items: center; }
+.di-lhead { font-size: 12px; color: var(--ink-3); margin: 4px 0 2px; }
+.di-lhead:has(+ .di-labels:empty) { display: none; }
+.di-lrow input, .di-lrow select, .di-xmp { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; min-width: 0; }
+.di-xmp { width: 100%; box-sizing: border-box; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; line-height: 1.45; resize: vertical; min-height: 220px; white-space: pre; overflow: auto; }
 .di-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
 .di-h { margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; }
 #di-p-file > .di-h:first-child { margin-top: 2px; }
@@ -401,5 +527,5 @@ addStyle(`
 .di-fonts li:last-child { border-bottom: 0; }
 .di-fn { color: var(--ink); overflow-wrap: anywhere; }
 .di-ft { color: var(--ink-3); white-space: nowrap; }
-@media (max-width: 560px) { .di-fields { grid-template-columns: 1fr; } .di-dl { grid-template-columns: 130px 1fr; } .di-fonts li { flex-direction: column; gap: 0; } .di-ft { white-space: normal; } .di-tabs.seg > button { padding: 5px 2px; font-size: 12px; } }
+@media (max-width: 560px) { .di-fields { grid-template-columns: 1fr; } .di-dl { grid-template-columns: 130px 1fr; } .di-fonts li { flex-direction: column; gap: 0; } .di-ft { white-space: normal; } .di-tabs.seg > button { padding: 5px 2px; font-size: 12px; } .di-lrow, .di-lhead { grid-template-columns: 58px minmax(0, 1.2fr) minmax(0, 1fr) 52px auto; gap: 4px; } }
 `);

@@ -34,6 +34,26 @@ jobs:
             echo "== open a PDF in the copy the apps ship"; (cd desktop && node build.mjs) && node tests/bundle.mjs
           } 2>&1 | tee "$L"
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # PDF/A and PDF/X (package 3): makes the input files, exports each through the app, validates every PDF/A output
+      # with veraPDF (from Maven Central, checksum pinned) and every PDF/X output with tests/conformance/pdfx_check.py.
+      - name: PDF/A and PDF/X conformance
+        run: |
+          set -o pipefail
+          L="$RUNNER_TEMP/tests.log"
+          {
+            echo "== PDF/A and PDF/X conformance (tests/conformance/pkg3.mjs)"
+            pip install --quiet fonttools==4.68.0 pillow==12.3.0 pikepdf==10.18.2
+            J=tests/conformance/.cache/verapdf-cli-1.30.4.jar; mkdir -p tests/conformance/.cache
+            curl -fsSL -o "$J" https://repo1.maven.org/maven2/org/verapdf/apps/cli/1.30.4/cli-1.30.4.jar
+            echo "f00c4d2a18dd3af7e9450bc9ac6688726fc4acf1a9d97d52e3e992021e84f93e  $J" | sha256sum -c -
+            VERAPDF="$J" node tests/conformance/pkg3.mjs
+          } 2>&1 | tee -a "$L"
+
       # The result goes on the tests-log branch, so it can be read without signing in to GitHub.
       - name: Publish the result
         if: always() && github.event_name != 'pull_request'

@@ -1,12 +1,22 @@
-/* ---------------- PDF/A (src/features/84-pdfa.js) ----------------
-   File > Save as PDF/A… (and Export > Archive): an archival copy in PDF/A-2b (the default), PDF/A-2u or PDF/A-3b,
-   made on this device, then checked by a built-in rule subset modelled on the veraPDF profiles for those parts.
+/* ---------------- PDF/A and PDF/X (src/features/84-pdfa.js) ----------------
+   File > Save as PDF/A… (and Export > Archive): an archival copy in PDF/A-1b, 2b (the default), 2u, 3b or 3u, with
+   screen (sRGB) or print (CMYK, FOGRA39) colours. Save as PDF/X… (85-pdfx.js) uses the same conversion for PDF/X-1a,
+   X-3 and X-4. Both are made on this device, then checked by a built-in rule subset (modelled on the veraPDF profiles
+   for PDF/A, on ISO 15930 for PDF/X), which is not a certified validator.
    - pdfaWriteXmp(L, out, extra): writes the XMP packet from the Info dictionary (title, author, subject, keywords,
      creator tool, producer, dates, document and instance ids, language). 12-docinfo.js calls it on every save that
      keeps or edits metadata; extra = { pdfa: { part, conformance }, pdfua: { part }, extensions: [schema…],
      props: [{ ns, prefix, name, value }], keepClaims, strict } lets PDF/A and PDF/UA add their own schemas.
-   - pdfaConvert(bytes, { part, conformance }) -> { bytes, fixes: [text], blocked? }: the conversion (used by the
-     batch tools too). Fonts that were not embedded (the standard 14 that page design, Add text, stamps and form
+     pdfaPatchXmp(L, out, opts) changes only what differs in the file's own packet (12-docinfo.js uses it when the
+     file had one), so properties the app doesn't manage keep their exact form.
+   - pdfaConvert(bytes, { part, conformance, intent: 'srgb' | 'cmyk', pdfx: '1a' | '3' | '4', scripts: 'remove' |
+     'refuse' }) -> { bytes, fixes: [text] } or { blocked: 'attachments' | 'scripts' | 'profile', problems? }: the
+     conversion (used by the batch tools too). It refuses (blocked 'profile', a plain reason for each problem) what it
+     can't make conform without changing how the pages look: CMYK colours with an sRGB output intent and RGB with a
+     CMYK one (PDF/A), RGB in PDF/X-1a, transparency in PDF/A-1b, X-1a and X-3, 16-bit and JPEG 2000 pictures in those
+     PDF 1.4 kinds, attachments and layers where they are not allowed. scripts: 'refuse' stops at JavaScript and
+     forbidden actions (the dialogs ask before removing them); 'remove', the default, removes them.
+     PDF/A-1 also gets the CIDSet and CharSet lists its font subsets need. Fonts that were not embedded (the standard 14 that page design, Add text, stamps and form
      fields use) are replaced by metric-compatible embedded fonts: Arimo for Helvetica, Tinos for Times, Cousine for
      Courier (SIL Open Font License, from the pinned @expo-google-fonts packages; the desktop and mobile bundle
      vendors them with every other jsDelivr file). They are cut down here to the Latin glyphs a simple font can
@@ -16,9 +26,10 @@
    - pdfaCheck(bytes, { part, conformance }?) -> [{ rule, severity, page?, fix?, text }] with .passed (rule names):
      a built-in check, not a certified validator.
    - The sRGB output intent profile (ICC v2, matrix/TRC with a 1024-point curve) is made in code, so no profile file
-     needs a licence.
-   PDF/X-4 is not offered: it needs a CMYK printing-condition profile (ISO Coated, GRACoL…) and no pinned package with
-   a licence that allows shipping one in the app was found; a made-up CMYK profile would print the wrong colours. */
+     needs a licence. The CMYK one is colord's FOGRA39L Coated (CC0, src/icc/README.md), carried in 84-pdfa-icc.js.
+   Annotations keep their dictionaries; where a kind forbids transparency or RGB, the appearances the app can draw
+   (notes, boxes, ovals, lines, drawings, highlights) are drawn again opaque or in CMYK (a highlight becomes a bar
+   under its text). PDF/X: comments inside the printed area are kept and set not to print. */
 
 const PDFA_NS = {
   x: 'adobe:ns:meta/', rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#', dc: 'http://purl.org/dc/elements/1.1/',
@@ -153,7 +164,8 @@ function pdfaWriteXmp(L, out, extra = {}) {
   for (const p of extra.props || []) blocks.push(`<rdf:Description rdf:about="" xmlns:${p.prefix}="${pdfaXml(p.ns)}">${el(`${p.prefix}:${p.name}`, p.value)}</rdf:Description>`);
   // Properties the app doesn't manage: kept, except (strict, for PDF/A) those PDF/A doesn't know.
   const strict = !!(extra.strict || extra.pdfa);
-  const kept = old.foreign.filter((x, k) => !strict || PDFA_PREDEFINED.has(old.foreignNs[k]));
+  const drop = new Set(extra.dropNs || []);
+  const kept = old.foreign.filter((x, k) => (!strict || PDFA_PREDEFINED.has(old.foreignNs[k])) && !drop.has(old.foreignNs[k]));
   if (kept.length) blocks.push(`<rdf:Description rdf:about="">${kept.join('')}</rdf:Description>`);
   const ext = [...(extra.extensions || [])];
   if (pdfa && pdfua && !ext.some((s) => s.ns === PDFUA_EXTENSION.ns)) ext.push(PDFUA_EXTENSION);
@@ -172,6 +184,101 @@ ${pad}<?xpacket end="w"?>`;
   const ref = out.catalog.get(N('Metadata'));
   if (ref instanceof L.PDFRef) out.context.assign(ref, stream); else out.catalog.set(N('Metadata'), out.context.register(stream));
   return xml;
+}
+
+// Changes the catalog's XMP packet in place, so it says what the Info dictionary (and /Lang) says: only properties
+// whose value differs are touched (a title's other languages, several authors, dc:subject, rights and every property
+// the app doesn't manage keep their exact form). The modification and metadata dates and the instance id follow the
+// save. extra = { keepClaims, pdfua: { part } | null }: without keepClaims the PDF/A claim is taken out (and PDF/UA's,
+// unless pdfua is given). Returns the packet's text, or null when the packet can't be read (then nothing is changed).
+function pdfaPatchXmp(L, out, extra = {}) {
+  const xml = pdfaXmpOf(L, out);
+  if (!xml || typeof DOMParser === 'undefined') return null;
+  const start = xml.indexOf('<x:xmpmeta') >= 0 ? xml.indexOf('<x:xmpmeta') : xml.indexOf('<rdf:RDF');
+  const endTag = xml.indexOf('</x:xmpmeta>') >= 0 ? '</x:xmpmeta>' : '</rdf:RDF>', end = xml.indexOf(endTag);
+  if (start < 0 || end < 0) return null;
+  const X = new DOMParser().parseFromString(xml.slice(start, end + endTag.length), 'application/xml');
+  if (X.getElementsByTagName('parsererror').length) return null;
+  const R = PDFA_NS.rdf, rdf = X.getElementsByTagNameNS(R, 'RDF')[0]; if (!rdf) return null;
+  const info = out.getInfoDict(), t = (k) => pdfaText(L, info, k);
+  const descs = () => [...rdf.childNodes].filter((n) => n.nodeType === 1 && n.namespaceURI === R && n.localName === 'Description');
+  const prefixOf = { [PDFA_NS.dc]: 'dc', [PDFA_NS.xmp]: 'xmp', [PDFA_NS.pdf]: 'pdf', [PDFA_NS.xmpMM]: 'xmpMM' };
+  // the element or attribute holding a property
+  const find = (ns, name) => {
+    for (const d of descs()) {
+      if (d.hasAttributeNS(ns, name)) return { d, attr: d.getAttributeNodeNS(ns, name) };
+      const el = [...d.children].find((c) => c.namespaceURI === ns && c.localName === name); if (el) return { d, el };
+    }
+    return null;
+  };
+  const host = (ns) => {
+    let d = descs().find((x) => [...x.children].some((c) => c.namespaceURI === ns) || [...x.attributes].some((a) => a.namespaceURI === ns));
+    if (!d) { d = X.createElementNS(R, 'rdf:Description'); d.setAttributeNS(R, 'rdf:about', descs()[0] ? descs()[0].getAttributeNS(R, 'about') || '' : ''); rdf.appendChild(X.createTextNode('\n')); rdf.appendChild(d); }
+    if (d.lookupNamespaceURI(prefixOf[ns]) !== ns) d.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:' + prefixOf[ns], ns);
+    return d;
+  };
+  const make = (ns, name) => X.createElementNS(ns, `${prefixOf[ns]}:${name}`);
+  let changed = false;
+  const remove = (ns, name) => { const f = find(ns, name); if (!f) return; if (f.attr) f.d.removeAttributeNode(f.attr); else f.el.remove(); changed = true; };
+  const simple = (ns, name, v, same = (a, b) => a === b) => {
+    const f = find(ns, name);
+    if (v == null || v === '') { if (f && v == null) return; if (f) remove(ns, name); return; }
+    const cur = f ? (f.attr ? f.attr.value : f.el.textContent) : null;
+    if (cur != null && same(cur, v)) return;
+    if (f && f.attr) f.attr.value = v; else if (f) f.el.textContent = v; else { const el = make(ns, name); el.textContent = v; host(ns).appendChild(el); }
+    changed = true;
+  };
+  const alt = (ns, name, v) => {
+    const f = find(ns, name);
+    if (v == null) return;
+    if (f && f.attr) { if (f.attr.value !== v) { f.attr.value = v; changed = true; } return; }
+    const lis = f ? [...f.el.getElementsByTagNameNS(R, 'li')] : [];
+    const li = lis.find((x) => x.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang') === 'x-default') || lis[0];
+    if (li) { if (li.textContent !== v) { li.textContent = v; changed = true; } return; }
+    if (f) f.el.remove();
+    const el = make(ns, name), a = X.createElementNS(R, 'rdf:Alt'), l = X.createElementNS(R, 'rdf:li');
+    l.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:lang', 'x-default'); l.textContent = v; a.appendChild(l); el.appendChild(a); host(ns).appendChild(el); changed = true;
+  };
+  const list = (ns, name, kind, values, keep) => {
+    const f = find(ns, name);
+    if (f && f.el) { const cur = [...f.el.getElementsByTagNameNS(R, 'li')].map((x) => x.textContent); if (keep(cur)) return; f.el.remove(); }
+    else if (f && f.attr) { if (keep([f.attr.value])) return; f.d.removeAttributeNode(f.attr); }
+    if (!values.length) { if (f) changed = true; return; }
+    const el = make(ns, name), s = X.createElementNS(R, 'rdf:' + kind);
+    for (const v of values) { const l = X.createElementNS(R, 'rdf:li'); l.textContent = v; s.appendChild(l); }
+    el.appendChild(s); host(ns).appendChild(el); changed = true;
+  };
+  const sameTime = (a, b) => { const x = pdfaParseXmpDate(a), y = pdfaParseXmpDate(b); return !!x && !!y && Math.abs(x - y) < 1000; };
+  const date = (k) => { const v = t(k), d = v ? pdfaParseDate(v) : null; return d ? pdfaIso(d) : null; };
+  alt(PDFA_NS.dc, 'title', t('Title'));
+  const author = t('Author');
+  if (author != null) list(PDFA_NS.dc, 'creator', 'Seq', [author], (cur) => cur.length === 1 ? cur[0] === author : cur.length > 1 && [';', '; ', ',', ', '].some((j) => cur.join(j).trim() === author.trim()));
+  alt(PDFA_NS.dc, 'description', t('Subject'));
+  const kw = t('Keywords');
+  if (kw != null) { const f = find(PDFA_NS.pdf, 'Keywords'), before = f ? (f.attr ? f.attr.value : f.el.textContent) : null; simple(PDFA_NS.pdf, 'Keywords', kw); if (before !== kw && find(PDFA_NS.dc, 'subject')) list(PDFA_NS.dc, 'subject', 'Bag', String(kw).split(/\s*[;,]\s*/).filter(Boolean), (cur) => cur.join(', ') === kw); }
+  simple(PDFA_NS.xmp, 'CreatorTool', t('Creator'));
+  simple(PDFA_NS.pdf, 'Producer', t('Producer'));
+  simple(PDFA_NS.xmp, 'CreateDate', date('CreationDate'), sameTime);
+  const mod = date('ModDate'), fm = find(PDFA_NS.xmp, 'ModifyDate'), cm = fm ? (fm.attr ? fm.attr.value : fm.el.textContent) : null, modChanged = !!mod && !(cm && sameTime(cm, mod));
+  simple(PDFA_NS.xmp, 'ModifyDate', mod, sameTime);
+  if (modChanged || changed) simple(PDFA_NS.xmp, 'MetadataDate', mod || pdfaIso(new Date()), sameTime);
+  const lang = pdfaText(L, out.catalog, 'Lang');
+  if (lang) list(PDFA_NS.dc, 'language', 'Bag', [lang], (cur) => cur.length === 1 && cur[0] === lang);
+  if (!find(PDFA_NS.xmpMM, 'DocumentID')) simple(PDFA_NS.xmpMM, 'DocumentID', 'uuid:' + pdfaUuid());
+  if (changed) simple(PDFA_NS.xmpMM, 'InstanceID', 'uuid:' + pdfaUuid());
+  if (!extra.keepClaims) {
+    for (const n of ['part', 'conformance', 'amd', 'rev']) remove(PDFA_NS.pdfaid, n);
+    if (!extra.pdfua) remove(PDFA_NS.pdfuaid, 'part');
+  }
+  // an emptied rdf:Description goes
+  for (const d of descs()) if (!d.children.length && ![...d.attributes].some((a) => a.namespaceURI !== R && a.namespaceURI !== 'http://www.w3.org/2000/xmlns/')) d.remove();
+  if (!changed) return xml;
+  const head = xml.slice(0, start), tail = xml.slice(end + endTag.length);
+  const text = head + new XMLSerializer().serializeToString(X.documentElement) + tail;
+  const stream = out.context.stream(new TextEncoder().encode(text), { Type: 'Metadata', Subtype: 'XML' });
+  const ref = out.catalog.get(L.PDFName.of('Metadata'));
+  if (ref instanceof L.PDFRef) out.context.assign(ref, stream); else out.catalog.set(L.PDFName.of('Metadata'), out.context.register(stream));
+  return text;
 }
 
 /* ----- the sRGB output intent profile: ICC v2, display class, matrix/TRC (D50-adapted sRGB primaries) ----- */
@@ -197,6 +304,37 @@ function pdfaSrgbIcc() {
   v.setUint32(128, tags.length);
   tags.forEach(([t, d], i) => { const [o, l] = at[typeof d === 'string' ? d : t]; icc.set(ascii(t), 132 + i * 12); v.setUint32(136 + i * 12, o); v.setUint32(140 + i * 12, l); if (typeof d !== 'string') icc.set(d, o); });
   return (pdfaIccCache = icc);
+}
+/* ----- the CMYK printing condition: FOGRA39 (84-pdfa-icc.js), kept deflated: it goes into the PDF as it is ----- */
+let pdfaCmykCache = null;
+const pdfaCmykZ = () => { if (!pdfaCmykCache) { const s = atob(PDFA_FOGRA39.z); pdfaCmykCache = pdfaBytes(s); } return pdfaCmykCache; };
+const PDFA_CMYK_COND = { id: 'FOGRA39', info: 'Coated FOGRA39 (ISO 12647-2:2004)', registry: 'http://www.color.org' };
+// An ICC profile stream in `out`: { srgb, cmyk } -> ref (one of each per file).
+function pdfaIccRef(L, out, kind) {
+  out.__pdfaIcc ||= {};
+  if (!out.__pdfaIcc[kind]) {
+    const ctx = out.context;
+    out.__pdfaIcc[kind] = kind === 'cmyk'
+      ? ctx.register(L.PDFRawStream.of(ctx.obj({ N: 4, Filter: 'FlateDecode', Length: pdfaCmykZ().length }), pdfaCmykZ()))
+      : ctx.register(ctx.flateStream(pdfaSrgbIcc(), { N: 3 }));
+  }
+  return out.__pdfaIcc[kind];
+}
+
+/* ----- the kinds: what each allows ----- */
+// pdfaProfile({ part, conformance, intent, pdfx }) -> { kind: 'A' | 'X', label, version (PDF), objStreams, alpha, bits16,
+// jpx, intent, rgb: 'ok' | 'default' | 'no', files, layers }
+function pdfaProfile(o = {}) {
+  if (o.pdfx) {
+    const v = String(o.pdfx).toLowerCase();
+    const x = { '1a': { label: 'PDF/X-1a', gts: 'PDF/X-1a:2003', version: 4, rgb: 'no', alpha: false }, '3': { label: 'PDF/X-3', gts: 'PDF/X-3:2003', version: 4, rgb: 'default', alpha: false }, '4': { label: 'PDF/X-4', gts: 'PDF/X-4', version: 6, rgb: 'default', alpha: true } }[v];
+    if (!x) throw new Error('Unknown PDF/X kind ' + o.pdfx);
+    return { kind: 'X', pdfx: v, ...x, objStreams: x.version >= 5, bits16: x.version >= 5, jpx: x.version >= 5, intent: 'cmyk', files: false, layers: v === '4' };
+  }
+  const part = +(o.part || 2), conformance = String(o.conformance || 'B').toUpperCase(), intent = o.intent === 'cmyk' ? 'cmyk' : 'srgb';
+  const old = part === 1;
+  return { kind: 'A', part, conformance, label: `PDF/A-${part}${conformance.toLowerCase()}`, version: old ? 4 : 7, objStreams: !old, alpha: !old, bits16: !old, jpx: !old,
+    intent, rgb: intent === 'cmyk' ? 'no' : 'ok', cmyk: intent === 'cmyk', files: part === 3 ? 'any' : part === 2 ? 'pdfa' : false, layers: !old };
 }
 
 /* ----- TrueType: read a font, and cut it down to some glyphs keeping their ids ----- */
@@ -433,23 +571,199 @@ function pdfaBadAction(L, d) {
   return false;
 }
 
+/* ----- what the pages draw with: colour spaces, transparency, 16-bit and JPEG 2000 pictures ----- */
+// A record of what some content uses: { RGB, CMYK, Gray (device colours not remapped by a Default colour space),
+// icc: Set(N), iccV4, cie, spot, alpha: Set(why), bits16, jpx }
+const pdfaRec = () => ({ RGB: false, CMYK: false, Gray: false, icc: new Set(), iccV4: false, cie: false, spot: false, alpha: new Set(), bits16: false, jpx: false });
+const PDFA_INLINE_CS = { RGB: 'DeviceRGB', G: 'DeviceGray', CMYK: 'DeviceCMYK', I: 'Indexed' };
+function pdfaUseCs(L, out, cs, res, rec, depth = 0) {
+  const { PDFName, PDFArray, PDFDict, PDFStream } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
+  if (depth > 8) return;
+  cs = look(cs);
+  if (cs instanceof PDFName || typeof cs === 'string') {
+    let n = typeof cs === 'string' ? cs : cs.decodeText(); n = PDFA_INLINE_CS[n] || n;
+    const dev = { DeviceRGB: 'RGB', DeviceCMYK: 'CMYK', DeviceGray: 'Gray' }[n];
+    const csd = res instanceof PDFDict ? res.lookup(N('ColorSpace')) : null;
+    if (dev) { const def = csd instanceof PDFDict ? csd.get(N('Default' + dev)) : null; if (def && depth === 0) pdfaUseCs(L, out, def, null, rec, depth + 1); else rec[dev] = true; return; }
+    if (n === 'Pattern' || n === 'Indexed') return;
+    if (csd instanceof PDFDict && csd.get(N(n))) pdfaUseCs(L, out, csd.get(N(n)), res, rec, depth + 1);
+    return;
+  }
+  if (!(cs instanceof PDFArray) || !cs.size()) return;
+  const fam = pdfaName(L, look(cs.get(0)));
+  if (fam === 'ICCBased') {
+    const s = look(cs.get(1)); if (!(s instanceof PDFStream)) return;
+    const nn = s.dict.lookup(N('N')); rec.icc.add(nn ? nn.asNumber() : 0);
+    const b = pdfaStreamBytes(L, s); if (b && b.length > 8 && b[8] >= 4) rec.iccV4 = true;
+  } else if (fam === 'Indexed' || fam === 'I') pdfaUseCs(L, out, cs.get(1), res, rec, depth + 1);
+  else if (fam === 'Pattern') { if (cs.size() > 1) pdfaUseCs(L, out, cs.get(1), res, rec, depth + 1); }
+  else if (fam === 'Separation' || fam === 'DeviceN') { rec.spot = true; const names = look(cs.get(1)); const all = names instanceof PDFArray ? names.asArray().map((x) => pdfaName(L, look(x))) : [pdfaName(L, names)]; if (!all.every((x) => x === 'None')) pdfaUseCs(L, out, cs.get(2), res, rec, depth + 1); }
+  else if (fam === 'CalRGB' || fam === 'CalGray' || fam === 'Lab') rec.cie = true;
+  else if (fam) pdfaUseCs(L, out, look(cs.get(0)), res, rec, depth + 1);
+}
+function pdfaUseGs(L, gs, rec) {
+  if (!(gs instanceof L.PDFDict)) return;
+  const N = L.PDFName.of, num = (k) => { const x = gs.lookup(N(k)); return x instanceof L.PDFNumber ? x.asNumber() : 1; };
+  if (num('CA') < 1 || num('ca') < 1) rec.alpha.add('see-through drawing');
+  const sm = gs.get(N('SMask')); if (sm && pdfaName(L, sm) !== 'None') rec.alpha.add('soft mask');
+  const bm = gs.lookup(N('BM')), bmn = bm instanceof L.PDFArray ? pdfaName(L, gs.context.lookup(bm.get(0))) : pdfaName(L, bm);
+  if (bmn && !PDFA_TRANSPARENT_BM.has(bmn)) rec.alpha.add('blend mode');
+}
+function pdfaUseImage(L, out, s, res, rec) {
+  const N = L.PDFName.of, d = s.dict, look = (o) => out.context.lookup(o);
+  if (d.lookup(N('ImageMask')) !== L.PDFBool.True) {
+    const cs = d.get(N('ColorSpace'));
+    if (cs) pdfaUseCs(L, out, cs, res, rec);
+    const bpc = d.lookup(N('BitsPerComponent')); if (bpc instanceof L.PDFNumber && bpc.asNumber() > 8) rec.bits16 = true;
+  }
+  if (pdfaFilters(L, s).includes('JPXDecode')) rec.jpx = true;
+  if (look(d.get(N('SMask'))) instanceof L.PDFStream) rec.alpha.add('picture with see-through parts');
+  const sid = d.lookup(N('SMaskInData')); if (sid instanceof L.PDFNumber && sid.asNumber() > 0) rec.alpha.add('picture with see-through parts');
+}
+// Scans a content stream (and what it draws: forms, patterns, shadings, pictures) into `rec`.
+function pdfaScan(L, out, bytes, res, rec, seen, depth = 0) {
+  if (!bytes || depth > 12) return;
+  const { PDFDict, PDFStream, PDFName, PDFNumber } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
+  const sub = (kind, name) => { const d = res instanceof PDFDict ? res.lookup(N(kind)) : null; return d instanceof PDFDict ? look(d.get(N(name))) : null; };
+  let toks; try { toks = tokenizeContent(pdfaLatin1(bytes)); } catch { return; }
+  let ops = [], bi = null;
+  const form = (s) => {
+    if (!(s instanceof PDFStream) || seen.has(s)) return; seen.add(s);
+    const g = s.dict.lookup(N('Group')); if (g instanceof PDFDict && pdfaName(L, g.get(N('S'))) === 'Transparency') rec.alpha.add('transparency group');
+    const r = s.dict.lookup(N('Resources'));
+    pdfaScan(L, out, pdfaStreamBytes(L, s), r instanceof PDFDict ? r : res, rec, seen, depth + 1);
+  };
+  const shading = (sh) => { if (!sh) return; const d = sh instanceof PDFStream ? sh.dict : sh; if (d instanceof PDFDict) pdfaUseCs(L, out, d.get(N('ColorSpace')), res, rec); };
+  for (const t of toks) {
+    if (bi) { if (t.t === 'op' && t.v === 'ID') { for (let i = 0; i + 1 < bi.length; i++) { const k = bi[i]; if (k.t !== 'name') continue; const v = bi[i + 1]; if ((k.v === 'CS' || k.v === 'ColorSpace') && v.t === 'name') pdfaUseCs(L, out, v.v, res, rec); if ((k.v === 'BPC' || k.v === 'BitsPerComponent') && v.t === 'num' && v.v > 8) rec.bits16 = true; } bi = null; } else bi.push(t); continue; }
+    if (t.t !== 'op') { ops.push(t); continue; }
+    const v = t.v, last = ops[ops.length - 1];
+    if (v === 'BI') bi = [];
+    else if (v === 'rg' || v === 'RG') pdfaUseCs(L, out, 'DeviceRGB', res, rec);
+    else if (v === 'k' || v === 'K') pdfaUseCs(L, out, 'DeviceCMYK', res, rec);
+    else if (v === 'g' || v === 'G') pdfaUseCs(L, out, 'DeviceGray', res, rec);
+    else if ((v === 'cs' || v === 'CS') && last && last.t === 'name') pdfaUseCs(L, out, last.v, res, rec);
+    else if ((v === 'scn' || v === 'SCN') && last && last.t === 'name') {
+      const pat = sub('Pattern', last.v); const pd = pat instanceof PDFStream ? pat.dict : pat;
+      if (pd instanceof PDFDict) {
+        const pt = pd.lookup(N('PatternType'));
+        if (pt instanceof PDFNumber && pt.asNumber() === 2) { shading(look(pd.get(N('Shading')))); pdfaUseGs(L, look(pd.get(N('ExtGState'))), rec); }
+        else if (pat instanceof PDFStream) form(pat);
+      }
+    } else if (v === 'sh' && last && last.t === 'name') shading(sub('Shading', last.v));
+    else if (v === 'gs' && last && last.t === 'name') pdfaUseGs(L, sub('ExtGState', last.v), rec);
+    else if (v === 'Do' && last && last.t === 'name') {
+      const x = sub('XObject', last.v);
+      if (x instanceof PDFStream) { const st = pdfaName(L, x.dict.get(N('Subtype'))); if (st === 'Image') pdfaUseImage(L, out, x, res, rec); else if (st === 'Form') form(x); }
+    }
+    ops = [];
+  }
+}
+// What each page uses, its content and (separately) each annotation's appearance:
+// { pages: [rec], annots: [{ page, a, sub, rec }] }
+function pdfaInspect(L, out) {
+  const { PDFDict, PDFArray, PDFStream, PDFName } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
+  const pages = [], annots = [];
+  out.getPages().forEach((p, i) => {
+    const rec = pdfaRec(), seen = new Set();
+    let res = null; try { res = p.node.Resources(); } catch {}
+    const g = p.node.lookup(N('Group')); if (g instanceof PDFDict && pdfaName(L, g.get(N('S'))) === 'Transparency') rec.alpha.add('transparency group');
+    let c = null; try { c = p.node.Contents(); } catch {}
+    const parts = c instanceof PDFArray ? c.asArray().map(look) : c ? [c] : [];
+    const chunks = parts.filter((s) => s instanceof PDFStream).map((s) => pdfaStreamBytes(L, s)).filter(Boolean);
+    if (chunks.length) { const all = new Uint8Array(chunks.reduce((t, b) => t + b.length + 1, 0)); let o = 0; for (const b of chunks) { all.set(b, o); o += b.length; all[o++] = 10; } pdfaScan(L, out, all, res, rec, seen); }
+    pages.push(rec);
+    const an = p.node.lookup(N('Annots'));
+    if (an instanceof PDFArray) for (const r of an.asArray()) {
+      const a = look(r); if (!(a instanceof PDFDict)) continue;
+      const ar = pdfaRec(), sub = pdfaName(L, a.get(N('Subtype')));
+      const ca = a.lookup(N('CA')); if (ca instanceof L.PDFNumber && ca.asNumber() < 1) ar.alpha.add('see-through comment');
+      const ap = a.lookup(N('AP')), aseen = new Set();
+      if (ap instanceof PDFDict) for (const k of ['N', 'R', 'D']) {
+        const x = ap.lookup(N(k)); const list = x instanceof PDFStream ? [x] : x instanceof PDFDict ? [...x.entries()].map(([, v]) => look(v)) : [];
+        for (const s of list) if (s instanceof PDFStream && !aseen.has(s)) { aseen.add(s); const gg = s.dict.lookup(N('Group')); if (gg instanceof PDFDict && pdfaName(L, gg.get(N('S'))) === 'Transparency') ar.alpha.add('transparency group'); const rr = s.dict.lookup(N('Resources')); pdfaScan(L, out, pdfaStreamBytes(L, s), rr instanceof PDFDict ? rr : null, ar, aseen); }
+      }
+      annots.push({ page: i + 1, a, ref: r, sub, rec: ar });
+    }
+  });
+  return { pages, annots };
+}
+// JavaScript and the actions PDF/A and PDF/X don't allow: { js: count, actions: Set(names), auto: bool }
+function pdfaScripts(L, out) {
+  const N = L.PDFName.of, r = { js: 0, actions: new Set(), auto: false };
+  const nm = out.catalog.lookup(N('Names')); if (nm instanceof L.PDFDict && nm.get(N('JavaScript'))) r.js++;
+  for (const { obj } of pdfaReachable(L, out)) {
+    const d = obj instanceof L.PDFStream ? obj.dict : obj;
+    if (d.get(N('AA'))) r.auto = true;
+    const s = pdfaName(L, d.get(N('S'))), type = pdfaName(L, d.get(N('Type')));
+    if (s === 'JavaScript' && (!type || type === 'Action')) r.js++;
+    else if (pdfaBadAction(L, d)) r.actions.add(s === 'Named' ? 'menu' : s);
+  }
+  r.any = !!(r.js || r.actions.size || r.auto);
+  return r;
+}
+// "JavaScript (2 scripts), Launch actions, automatic actions"
+function pdfaScriptsText(r) {
+  const parts = [];
+  if (r.js) parts.push(`JavaScript (${pdfaPlural(r.js, 'script')})`);
+  for (const a of r.actions) parts.push(a === 'menu' ? 'menu actions' : `${a} actions`);
+  if (r.auto) parts.push('actions that run by themselves');
+  return parts.join(', ');
+}
+// What the kind can't take, in plain words: [{ code, page?, text }]. Nothing here is changed by the conversion.
+const PDFA_A1_ANNOTS = new Set(['Text', 'Link', 'FreeText', 'Line', 'Square', 'Circle', 'Highlight', 'Underline', 'Squiggly', 'StrikeOut', 'Stamp', 'Ink', 'Popup', 'Widget', 'TrapNet', 'PrinterMark']);
+const PDFA_REDRAWN = new Set(['Text', 'Square', 'Circle', 'Line', 'Ink', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly']);
+function pdfaBlockers(L, out, P, seen = pdfaInspect(L, out)) {
+  const N = L.PDFName.of, probs = [], once = new Set();
+  const add = (code, page, text) => { if (once.has(code)) return; once.add(code); probs.push({ code, page, text }); };
+  const nk = P.kind === 'X' ? 'PDF/X' : 'PDF/A';
+  const better = { alpha: P.kind === 'X' ? 'PDF/X-4' : 'PDF/A-2b', old: P.kind === 'X' ? 'PDF/X-4' : 'PDF/A-2b' };
+  seen.pages.forEach((r, i) => {
+    const n = i + 1;
+    if (P.kind === 'A' && P.intent === 'srgb' && r.CMYK) add('cmyk', n, `Page ${n} uses CMYK colours, which screen (sRGB) colours don't cover. Choose print colours (CMYK) instead.`);
+    if (P.kind === 'A' && P.intent === 'cmyk' && r.RGB) add('rgb', n, `Page ${n} uses RGB colours, which print (CMYK) colours don't cover. Choose screen colours (sRGB) instead.`);
+    if (P.kind === 'X' && P.rgb === 'no' && (r.RGB || r.icc.size || r.cie)) add('rgb', n, `Page ${n} uses RGB or calibrated colours. PDF/X-1a takes CMYK and grey only: use PDF/X-3 or PDF/X-4.`);
+    if (!P.alpha && r.alpha.size) add('alpha', n, `Page ${n} has see-through objects (transparency: ${[...r.alpha][0]}). ${P.label} can't keep them: use ${better.alpha}.`);
+    if (!P.bits16 && r.bits16) add('bits16', n, `Page ${n} has a picture with 16 bits per colour. ${P.label} takes 8 bits at most (it is based on PDF 1.4): use ${better.old}.`);
+    if (!P.jpx && r.jpx) add('jpx', n, `Page ${n} has a JPEG 2000 picture, which ${P.label} doesn't allow: use ${better.old}.`);
+    if (P.version <= 4 && r.iccV4) add('iccv4', n, `Page ${n} uses an ICC version 4 colour profile, which ${P.label} doesn't allow: use ${better.old}.`);
+  });
+  for (const x of seen.annots) {
+    const r = x.rec, redraw = PDFA_REDRAWN.has(x.sub);
+    if (P.kind === 'A' && P.part === 1 && !PDFA_A1_ANNOTS.has(x.sub) && !PDFA_BAD_ANNOTS.has(x.sub) && x.sub !== 'FileAttachment') add('annot-' + x.sub, x.page, `Page ${x.page} has a ${(CM_SUBTYPES_A[x.sub] || x.sub).toLowerCase()} comment, which PDF/A-1b can't keep: use PDF/A-2b.`);
+    if (redraw) continue;
+    if (!P.alpha && r.alpha.size) add('annot-alpha', x.page, `A comment on page ${x.page} is see-through. ${P.label} can't keep that: use ${better.alpha}.`);
+    if ((P.kind === 'A' && P.intent === 'cmyk' || P.rgb === 'no') && (r.RGB || (P.kind === 'X' && (r.icc.size || r.cie)))) add('annot-rgb', x.page, `A comment on page ${x.page} is drawn in RGB colours, which ${P.kind === 'X' ? P.label : 'print (CMYK) colours'} can't take.`);
+    if (P.kind === 'A' && P.intent === 'srgb' && r.CMYK) add('annot-cmyk', x.page, `A comment on page ${x.page} is drawn in CMYK colours, which screen (sRGB) colours don't cover.`);
+  }
+  const files = pdfaEmbeddedFiles(L, out);
+  if (files.length && !P.files) add('files', null, P.kind === 'X' ? `${nk} files can't keep attachments (${files.map((f) => f.name).slice(0, 3).join(', ')}). Remove them first, or use PDF/A-3b.` : `PDF/A-1b can't keep attachments (${files.map((f) => f.name).slice(0, 3).join(', ')}): use PDF/A-3b.`);
+  if (!P.layers && out.catalog.get(N('OCProperties'))) add('layers', null, `${P.label} can't keep layers (optional content): use ${better.old}.`);
+  return probs;
+}
+const CM_SUBTYPES_A = { Polygon: 'Polygon', PolyLine: 'Polyline', Caret: 'Caret', Redact: 'Redaction', Watermark: 'Watermark', Screen: 'Screen' };
+
 /* ----- appearances for annotations that have none ----- */
-function pdfaAppearance(L, out, a) {
+// o.cmyk: colours in CMYK (a simple conversion, for appearances only); o.opaque: no transparency (a highlight is then a
+// bar under its text, so the words stay readable).
+const pdfaToCmyk = (c) => { const k = 1 - Math.max(c[0], c[1], c[2]); return k >= 1 ? [0, 0, 0, 1] : [(1 - c[0] - k) / (1 - k), (1 - c[1] - k) / (1 - k), (1 - c[2] - k) / (1 - k), k]; };
+function pdfaAppearance(L, out, a, o = {}) {
   const N = L.PDFName.of, sub = pdfaName(L, a.get(N('Subtype'))), rect = a.lookup(N('Rect'));
   const r = rect instanceof L.PDFArray ? rect.asArray().map((x) => (out.context.lookup(x) instanceof L.PDFNumber ? out.context.lookup(x).asNumber() : 0)) : [0, 0, 0, 0];
   const [x1, y1, x2, y2] = [Math.min(r[0], r[2]), Math.min(r[1], r[3]), Math.max(r[0], r[2]), Math.max(r[1], r[3])];
   const nums = (k) => { const v = a.lookup(N(k)); return v instanceof L.PDFArray ? v.asArray().map((x) => { const n = out.context.lookup(x); return n instanceof L.PDFNumber ? n.asNumber() : 0; }) : null; };
   const f = (n) => (Math.round(n * 1000) / 1000).toString();
-  const c = nums('C'), col = (stroke) => (c && c.length === 3 ? `${c.map(f).join(' ')} ${stroke ? 'RG' : 'rg'}` : c && c.length === 1 ? `${f(c[0])} ${stroke ? 'G' : 'g'}` : c && c.length === 4 ? `${c.map(f).join(' ')} ${stroke ? 'K' : 'k'}` : stroke ? '0 G' : '0 g');
+  const paint = (v, stroke) => (v && v.length === 3 ? (o.cmyk ? `${pdfaToCmyk(v).map(f).join(' ')} ${stroke ? 'K' : 'k'}` : `${v.map(f).join(' ')} ${stroke ? 'RG' : 'rg'}`) : v && v.length === 1 ? `${f(v[0])} ${stroke ? 'G' : 'g'}` : v && v.length === 4 ? `${v.map(f).join(' ')} ${stroke ? 'K' : 'k'}` : stroke ? '0 G' : '0 g');
+  const c = nums('C'), col = (stroke) => paint(c, stroke);
   const bs = a.lookup(N('BS')), bw = bs instanceof L.PDFDict && bs.lookup(N('W')) instanceof L.PDFNumber ? bs.lookup(N('W')).asNumber() : 1;
   let ops = '';
   if (sub === 'Text') {
     const w = x2 - x1, h = y2 - y1, k = Math.min(w, h) / 20;
-    ops = `q ${c && c.length === 3 ? col(false) : '1 0.83 0.23 rg'} 0.35 0.3 0.1 RG ${f(k)} w ${f(x1 + k)} ${f(y1 + 4 * k)} ${f(w - 2 * k)} ${f(h - 5 * k)} re B ${f(x1 + 4 * k)} ${f(y1 + 4 * k)} m ${f(x1 + 4 * k)} ${f(y1 + k)} l ${f(x1 + 8 * k)} ${f(y1 + 4 * k)} l f`;
+    ops = `q ${paint(c && c.length === 3 ? c : [1, 0.83, 0.23], false)} ${paint([0.35, 0.3, 0.1], true)} ${f(k)} w ${f(x1 + k)} ${f(y1 + 4 * k)} ${f(w - 2 * k)} ${f(h - 5 * k)} re B ${f(x1 + 4 * k)} ${f(y1 + 4 * k)} m ${f(x1 + 4 * k)} ${f(y1 + k)} l ${f(x1 + 8 * k)} ${f(y1 + 4 * k)} l f`;
     for (let i = 0; i < 3; i++) ops += ` ${f(x1 + 4 * k)} ${f(y2 - (5 + i * 4) * k)} m ${f(x2 - 4 * k)} ${f(y2 - (5 + i * 4) * k)} l S`;
     ops += ' Q';
   } else if (sub === 'Square' || sub === 'Circle') {
-    const ic = nums('IC'), fill = ic && ic.length === 3 ? `${ic.map(f).join(' ')} rg ` : '';
+    const ic = nums('IC'), fill = ic && ic.length === 3 ? `${paint(ic, false)} ` : '';
     const ix = x1 + bw / 2, iy = y1 + bw / 2, iw = x2 - x1 - bw, ih = y2 - y1 - bw;
     if (sub === 'Square') ops = `q ${col(true)} ${fill}${f(bw)} w ${f(ix)} ${f(iy)} ${f(iw)} ${f(ih)} re ${fill ? 'B' : 'S'} Q`;
     else { const cx = ix + iw / 2, cy = iy + ih / 2, rx = iw / 2, ry = ih / 2, m = 0.5523; ops = `q ${col(true)} ${fill}${f(bw)} w ${f(cx + rx)} ${f(cy)} m ${f(cx + rx)} ${f(cy + ry * m)} ${f(cx + rx * m)} ${f(cy + ry)} ${f(cx)} ${f(cy + ry)} c ${f(cx - rx * m)} ${f(cy + ry)} ${f(cx - rx)} ${f(cy + ry * m)} ${f(cx - rx)} ${f(cy)} c ${f(cx - rx)} ${f(cy - ry * m)} ${f(cx - rx * m)} ${f(cy - ry)} ${f(cx)} ${f(cy - ry)} c ${f(cx + rx * m)} ${f(cy - ry)} ${f(cx + rx)} ${f(cy - ry * m)} ${f(cx + rx)} ${f(cy)} c ${fill ? 'B' : 'S'} Q`; }
@@ -461,18 +775,63 @@ function pdfaAppearance(L, out, a) {
     ops += ' Q';
   } else if (/^(Highlight|Underline|StrikeOut|Squiggly)$/.test(sub)) {
     const q = nums('QuadPoints') || [];
-    ops = sub === 'Highlight' ? `q /PdfaGs gs ${col(false)}` : `q ${col(true)} 1 w`;
+    ops = sub === 'Highlight' ? (o.opaque ? `q ${col(false)}` : `q /PdfaGs gs ${col(false)}`) : `q ${col(true)} 1 w`;
     for (let i = 0; i + 7 < q.length; i += 8) {
       const xs = [q[i], q[i + 2], q[i + 4], q[i + 6]], ys = [q[i + 1], q[i + 3], q[i + 5], q[i + 7]];
       const lx = Math.min(...xs), hx = Math.max(...xs), ly = Math.min(...ys), hy = Math.max(...ys);
-      if (sub === 'Highlight') ops += ` ${f(lx)} ${f(ly)} ${f(hx - lx)} ${f(hy - ly)} re f`;
+      if (sub === 'Highlight') ops += o.opaque ? ` ${f(lx)} ${f(ly)} ${f(hx - lx)} ${f(Math.max(1, (hy - ly) * 0.14))} re f` : ` ${f(lx)} ${f(ly)} ${f(hx - lx)} ${f(hy - ly)} re f`;
       else { const y = sub === 'StrikeOut' ? (ly + hy) / 2 : ly + (hy - ly) * 0.08; ops += ` ${f(lx)} ${f(y)} m ${f(hx)} ${f(y)} l S`; }
     }
     ops += ' Q';
   }
   const dict = { Type: 'XObject', Subtype: 'Form', BBox: [x1, y1, x2, y2], Resources: {} };
-  if (sub === 'Highlight') dict.Resources = { ExtGState: { PdfaGs: { Type: 'ExtGState', BM: 'Multiply', CA: 1, ca: 0.4 } } };
+  if (sub === 'Highlight' && !o.opaque) dict.Resources = { ExtGState: { PdfaGs: { Type: 'ExtGState', BM: 'Multiply', CA: 1, ca: 0.4 } } };
   return out.context.register(out.context.flateStream(pdfaBytes(ops), dict));
+}
+
+/* ----- PDF/A-1: font subsets list the glyphs they hold ----- */
+// Type 1 subsets: /CharSet from the glyph names in the font program; CID TrueType subsets: /CIDSet from the glyphs in
+// the font (CIDToGIDMap Identity or a map). Returns true when one was added.
+function pdfaT1Names(b, len1) {
+  // the eexec part: decrypt (r = 55665), then the /CharStrings entries "/name len RD"
+  let r = 55665; const n = b.length - len1; const plain = new Uint8Array(Math.max(0, n));
+  let start = len1; while (start < b.length && /\s/.test(String.fromCharCode(b[start]))) start++;
+  // a hexadecimal eexec section is decoded first
+  let enc = b.subarray(start);
+  if (enc.length > 4 && /^[0-9A-Fa-f]{4}$/.test(String.fromCharCode(...enc.subarray(0, 4)))) { const h = pdfaLatin1(enc).replace(/[^0-9A-Fa-f]/g, ''); enc = new Uint8Array(h.length >> 1); for (let i = 0; i < enc.length; i++) enc[i] = parseInt(h.substr(i * 2, 2), 16); }
+  let k = 0; for (const c of enc) { plain[k++] = c ^ (r >> 8); r = ((c + r) * 52845 + 22719) & 0xFFFF; }
+  const text = pdfaLatin1(plain.subarray(4, k)), at = text.indexOf('/CharStrings'); if (at < 0) return null;
+  const names = new Set(), re = /\/([^\s\/\[\]{}()<>]+)\s+(\d+)\s+(RD|-\|)\s/g; re.lastIndex = at;
+  let m; while ((m = re.exec(text))) { names.add(m[1]); re.lastIndex = m.index + m[0].length + +m[2]; }
+  return names;
+}
+function pdfaSubsetLists(L, out, f) {
+  const { PDFName, PDFDict, PDFArray, PDFStream, PDFNumber } = L, N = PDFName.of, look = (o) => out.context.lookup(o);
+  const sub = pdfaName(L, f.get(N('Subtype')));
+  if (sub === 'Type1' || sub === 'MMType1') {
+    const fd = f.lookup(N('FontDescriptor')); if (!(fd instanceof PDFDict) || fd.get(N('CharSet'))) return false;
+    const subset = /^[A-Z]{6}\+/.test(pdfaName(L, f.get(N('BaseFont'))) || ''); if (!subset) return false;
+    const ff = fd.lookup(N('FontFile')); if (!(ff instanceof PDFStream)) return false;
+    const b = pdfaStreamBytes(L, ff), l1 = ff.dict.lookup(N('Length1')); if (!b || !(l1 instanceof PDFNumber)) return false;
+    const names = pdfaT1Names(b, l1.asNumber()); if (!names || !names.size) return false;
+    fd.set(N('CharSet'), L.PDFString.of([...names].filter((x) => x !== '.notdef').map((x) => '/' + x).join('')));
+    return true;
+  }
+  if (sub !== 'Type0') return false;
+  const ds = f.lookup(N('DescendantFonts')), cid = ds instanceof PDFArray && ds.size() ? look(ds.get(0)) : null;
+  if (!(cid instanceof PDFDict) || pdfaName(L, cid.get(N('Subtype'))) !== 'CIDFontType2') return false;
+  const fd = cid.lookup(N('FontDescriptor')); if (!(fd instanceof PDFDict) || fd.get(N('CIDSet'))) return false;
+  const ff = fd.lookup(N('FontFile2')); if (!(ff instanceof PDFStream)) return false;
+  // the glyph count, from the maxp table (font subsets made for CID fonts often have no cmap)
+  const t = (() => { const b = pdfaStreamBytes(L, ff); if (!b || b.length < 12) return null; const v = new DataView(b.buffer, b.byteOffset, b.byteLength); for (let i = 0, n = v.getUint16(4); i < n && 12 + i * 16 + 16 <= b.length; i++) { const o = 12 + i * 16; if (String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]) === 'maxp') { const at = v.getUint32(o + 8); return at + 6 <= b.length ? { numGlyphs: v.getUint16(at + 4) } : null; } } return null; })();
+  if (!t) return false;
+  const map = cid.lookup(N('CIDToGIDMap')), present = [];
+  if (map instanceof PDFStream) { const m = pdfaStreamBytes(L, map); if (!m) return false; for (let c = 0; c * 2 + 1 < m.length; c++) { const g = (m[c * 2] << 8) | m[c * 2 + 1]; if ((g || !c) && g < t.numGlyphs) present.push(c); } }
+  else for (let g = 0; g < t.numGlyphs; g++) present.push(g);
+  const max = present.length ? present[present.length - 1] : 0, bits = new Uint8Array((max >> 3) + 1);
+  for (const c of present) bits[c >> 3] |= 0x80 >> (c & 7);
+  fd.set(N('CIDSet'), out.context.register(out.context.flateStream(bits)));
+  return true;
 }
 
 /* ----- the conversion ----- */
@@ -504,19 +863,25 @@ function pdfaEmbeddedFiles(L, out) {
 const PDFA_MIME = { pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', xml: 'application/xml', json: 'application/json', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', html: 'text/html', htm: 'text/html', zip: 'application/zip', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', doc: 'application/msword', xls: 'application/vnd.ms-excel', md: 'text/markdown', rtf: 'application/rtf', svg: 'image/svg+xml', mp3: 'audio/mpeg', mp4: 'video/mp4', wav: 'audio/wav', tif: 'image/tiff', tiff: 'image/tiff' };
 
 async function pdfaConvert(bytes, opts = {}) {
-  const part = +(opts.part || 2), conformance = String(opts.conformance || 'B').toUpperCase();
+  const P = pdfaProfile(opts), part = P.part || 0, conformance = P.conformance || 'B', isX = P.kind === 'X';
   const L = await loadPdfLib(), { PDFName, PDFDict, PDFArray, PDFStream, PDFRawStream, PDFNumber, PDFRef, PDFHexString, PDFString } = L, N = PDFName.of;
   const out = await L.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
-  if (out.isEncrypted) { const e = new Error("PDF/A files can't have a password. Remove it to continue."); e.code = 'encrypted'; throw e; }
+  if (out.isEncrypted) { const e = new Error(`${isX ? 'PDF/X' : 'PDF/A'} files can't have a password. Remove it to continue.`); e.code = 'encrypted'; throw e; }
   const ctx = out.context, look = (o) => ctx.lookup(o), fixes = new Set(), fix = (t) => fixes.add(t);
   const cat = out.catalog, pages = out.getPages();
   // Attachments: PDF/A-2 takes only PDF/A attachments; PDF/A-3 takes any, described (AFRelationship, MIME type).
   const files = pdfaEmbeddedFiles(L, out);
-  if (part === 2) {
+  if (P.files === 'pdfa') {
     const bad = files.filter((f) => { const b = pdfaStreamBytes(L, f.stream); return !b || !pdfaClaimsPdfa(b); });
     if (bad.length) return { blocked: 'attachments', names: bad.map((f) => f.name), fixes: [] };
   }
-  if (part === 3 && files.length) {
+  // Scripts: removed, or (scripts: 'refuse') reported so the person can choose.
+  if (opts.scripts === 'refuse') { const sc = pdfaScripts(L, out); if (sc.any) return { blocked: 'scripts', scripts: { js: sc.js, actions: [...sc.actions], auto: sc.auto }, text: pdfaScriptsText(sc), fixes: [] }; }
+  // What can't be made to conform without changing how pages look: refused, with the reasons.
+  const seen = pdfaInspect(L, out);
+  const problems = pdfaBlockers(L, out, P, seen);
+  if (problems.length) return { blocked: 'profile', problems, label: P.label, fixes: [] };
+  if (P.files === 'any' && files.length) {
     let af = cat.lookup(N('AF')); if (!(af instanceof PDFArray)) { af = ctx.obj([]); cat.set(N('AF'), af); }
     const inAf = new Set(af.asArray().map((x) => look(x)));
     for (const f of files) {
@@ -530,7 +895,7 @@ async function pdfaConvert(bytes, opts = {}) {
     }
     fix('Described the attachments for PDF/A-3');
   }
-  // Scripts and actions PDF/A doesn't allow; additional actions anywhere.
+  // Scripts and actions PDF/A and PDF/X don't allow; additional actions anywhere.
   const names = cat.lookup(N('Names'));
   if (names instanceof PDFDict) {
     if (names.get(N('JavaScript'))) { names.delete(N('JavaScript')); fix('Removed JavaScript'); }
@@ -596,25 +961,43 @@ async function pdfaConvert(bytes, opts = {}) {
     if (acro.lookup(N('NeedAppearances')) === L.PDFBool.True) { try { out.getForm().updateFieldAppearances(); if (out.flush) await out.flush(); } catch {} fix('Drew the form fields'); }
     acro.delete(N('NeedAppearances'));
   }
-  // Annotations: printed, shown, with a normal appearance only; ones PDF/A forbids removed.
+  // Annotations. The appearances to draw again: none yet, or see-through / RGB where the kind doesn't allow it.
+  const recOf = new Map(seen.annots.map((x) => [x.a, x.rec]));
+  const noRgb = P.rgb === 'no';
+  const mustRedraw = (a, sub) => {
+    const r = recOf.get(a); if (!r || !PDFA_REDRAWN.has(sub)) return false;
+    return (!P.alpha && r.alpha.size > 0) || (noRgb && (r.RGB || (isX && (r.icc.size > 0 || r.cie))));
+  };
+  const trimOf = (p) => { const b = p.node.lookup(N('TrimBox')) || p.node.lookup(N('ArtBox')) || p.node.lookup(N('CropBox')) || p.node.lookup(N('MediaBox')); return b instanceof PDFArray ? b.asArray().map((x) => look(x).asNumber()) : [0, 0, 612, 792]; };
   pages.forEach((p, i) => {
     const an = p.node.lookup(N('Annots')); if (!(an instanceof PDFArray)) return;
+    const bleed = isX ? (() => { const b = p.node.lookup(N('BleedBox')); return b instanceof PDFArray ? b.asArray().map((x) => look(x).asNumber()) : trimOf(p); })() : null;
     for (let k = an.size() - 1; k >= 0; k--) {
       const a = look(an.get(k)); if (!(a instanceof PDFDict)) continue;
       const sub = pdfaName(L, a.get(N('Subtype')));
-      if (PDFA_BAD_ANNOTS.has(sub) || !PDFA_KNOWN_ANNOTS.has(sub)) { an.remove(k); fix(`Removed ${sub === '3D' ? '3D' : 'media'} content PDF/A can't keep`); continue; }
+      if (PDFA_BAD_ANNOTS.has(sub) || !PDFA_KNOWN_ANNOTS.has(sub)) { an.remove(k); fix(`Removed ${sub === '3D' ? '3D' : 'media'} content ${isX ? 'PDF/X' : 'PDF/A'} can't keep`); continue; }
       let fl = pdfaFlag(L, a);
-      if (sub !== 'Widget' && sub !== 'Popup' && fl & (1 | 2 | 32)) { an.remove(k); fix('Removed hidden comments'); continue; }
-      const nf = ((fl | 4) & ~(1 | 2 | 32 | 256)) | (sub === 'Text' ? 8 | 16 : 0); // a note's icon doesn't zoom or turn
-      if (nf !== fl) { a.set(N('F'), PDFNumber.of(nf)); fix('Set comments and fields to print'); }
+      if (!isX) {
+        if (sub !== 'Widget' && sub !== 'Popup' && fl & (1 | 2 | 32)) { an.remove(k); fix('Removed hidden comments'); continue; }
+        const nf = ((fl | 4) & ~(1 | 2 | 32 | 256)) | (sub === 'Text' ? 8 | 16 : 0); // a note's icon doesn't zoom or turn
+        if (nf !== fl) { a.set(N('F'), PDFNumber.of(nf)); fix('Set comments and fields to print'); }
+      } else if (sub !== 'TrapNet' && sub !== 'PrinterMark' && fl & 4) {
+        // PDF/X: what prints is the page; comments and links inside the printed area are kept, set not to print.
+        const r = a.lookup(N('Rect')), v = r instanceof PDFArray ? r.asArray().map((x) => look(x).asNumber()) : null;
+        if (!v || !(Math.max(v[0], v[2]) < bleed[0] || Math.min(v[0], v[2]) > bleed[2] || Math.max(v[1], v[3]) < bleed[1] || Math.min(v[1], v[3]) > bleed[3])) { a.set(N('F'), PDFNumber.of(fl & ~4)); fix('Kept comments, set not to print (PDF/X prints the page only)'); }
+      }
+      if (!P.alpha) { const ca = a.lookup(N('CA')); if (ca instanceof PDFNumber && ca.asNumber() < 1) { a.delete(N('CA')); fix('Made see-through comments solid'); } for (const kk of ['BM', 'ca']) if (a.get(N(kk))) a.delete(N(kk)); }
+      if (P.kind === 'A' && part === 1 && P.intent === 'cmyk' && (a.get(N('C')) || a.get(N('IC')))) { a.delete(N('C')); a.delete(N('IC')); fix('Took out comment colour hints (PDF/A-1 with CMYK colours)'); }
       let ap = a.lookup(N('AP'));
       const nApp = ap instanceof PDFDict ? ap.get(N('N')) : null;
-      if (!(ap instanceof PDFDict) || !nApp) {
-        const ref = pdfaAppearance(L, out, a);
+      const redraw = nApp && mustRedraw(a, sub);
+      if (!(ap instanceof PDFDict) || !nApp || redraw) {
+        if (sub === 'Popup' && !(ap instanceof PDFDict)) continue; // a popup needs no appearance
+        const ref = pdfaAppearance(L, out, a, { cmyk: noRgb || (P.kind === 'A' && P.intent === 'cmyk'), opaque: !P.alpha });
         if (!(ap instanceof PDFDict)) { ap = ctx.obj({}); a.set(N('AP'), ap); }
-        ap.set(N('N'), ref); fix('Drew comments that had no appearance');
+        ap.set(N('N'), ref); fix(redraw ? (P.alpha ? 'Drew comments again in CMYK' : `Drew comments again without transparency (${P.label} doesn't allow it)`) : 'Drew comments that had no appearance');
       }
-      for (const x of ['R', 'D']) if (ap.get(N(x))) ap.delete(N(x));
+      if (ap instanceof PDFDict) for (const x of ['R', 'D']) if (ap.get(N(x))) ap.delete(N(x));
     }
   });
   // Optional content: every configuration named, no automatic state changes.
@@ -623,21 +1006,33 @@ async function pdfaConvert(bytes, opts = {}) {
     const cfgs = [ocp.lookup(N('D'))]; const more = ocp.lookup(N('Configs')); if (more instanceof PDFArray) cfgs.push(...more.asArray().map(look));
     cfgs.forEach((c, i) => { if (!(c instanceof PDFDict)) return; if (!c.get(N('Name'))) c.set(N('Name'), PDFHexString.fromText(i ? `Layers ${i}` : 'Layers')); if (c.get(N('AS'))) c.delete(N('AS')); });
   }
-  // Transparency: pages that use it get a transparency group in the output intent's colour space.
-  const seenT = new Set();
-  const usesT = (res, depth) => {
-    if (!(res instanceof PDFDict) || depth > 8 || seenT.has(res)) return false; seenT.add(res);
-    const gs = res.lookup(N('ExtGState'));
-    if (gs instanceof PDFDict) for (const [, v] of gs.entries()) { const g = look(v); if (!(g instanceof PDFDict)) continue; const n = (k) => { const x = g.lookup(N(k)); return x instanceof PDFNumber ? x.asNumber() : 1; }; const sm = g.get(N('SMask')); const bm = pdfaName(L, look(g.get(N('BM')))); if (n('CA') < 1 || n('ca') < 1 || (sm && pdfaName(L, sm) !== 'None') || (bm && !PDFA_TRANSPARENT_BM.has(bm))) return true; }
-    const xo = res.lookup(N('XObject'));
-    if (xo instanceof PDFDict) for (const [, v] of xo.entries()) { const s = look(v); if (!(s instanceof PDFStream)) continue; if (s.dict.get(N('SMask')) || s.dict.get(N('SMaskInData'))) return true; if (pdfaName(L, s.dict.get(N('Subtype'))) === 'Form' && (s.dict.get(N('Group')) || usesT(s.dict.lookup(N('Resources')), depth + 1))) return true; }
-    return false;
-  };
-  for (const p of pages) {
-    let t = false; try { t = usesT(p.node.Resources(), 0); } catch {}
-    const g = p.node.lookup(N('Group'));
-    if (g instanceof PDFDict) { if (!g.get(N('CS'))) { g.set(N('CS'), N('DeviceRGB')); fix('Gave transparent pages a colour space'); } }
-    else if (t) { p.node.set(N('Group'), ctx.obj({ Type: 'Group', S: 'Transparency', CS: 'DeviceRGB' })); fix('Gave transparent pages a colour space'); }
+  // Transparency (where allowed): pages that use it get a transparency group in the output intent's colour space.
+  const blendCs = P.intent === 'cmyk' ? 'DeviceCMYK' : 'DeviceRGB';
+  if (P.alpha) {
+    pages.forEach((p, i) => {
+      const t = seen.pages[i].alpha.size > 0 || seen.annots.some((x) => x.page === i + 1 && x.rec.alpha.size > 0 && !mustRedraw(x.a, x.sub));
+      const g = p.node.lookup(N('Group'));
+      if (g instanceof PDFDict) { if (!g.get(N('CS'))) { g.set(N('CS'), N(blendCs)); fix('Gave transparent pages a colour space'); } }
+      else if (t) { p.node.set(N('Group'), ctx.obj({ Type: 'Group', S: 'Transparency', CS: blendCs })); fix('Gave transparent pages a colour space'); }
+    });
+  }
+  // PDF/X-3 and X-4: device RGB colours are defined as sRGB (DefaultRGB), wherever content draws with them.
+  if (isX && P.rgb === 'default' && (seen.pages.some((r) => r.RGB) || seen.annots.some((x) => x.rec.RGB))) {
+    const srgb = ctx.obj([N('ICCBased'), pdfaIccRef(L, out, 'srgb')]), done = new Set();
+    const addDefault = (holder, key = 'Resources') => {
+      let res = holder.lookup(N(key)); if (!(res instanceof PDFDict)) { res = ctx.obj({}); holder.set(N(key), res); }
+      if (done.has(res)) return res; done.add(res);
+      let cs = res.lookup(N('ColorSpace')); if (!(cs instanceof PDFDict)) { cs = ctx.obj({}); res.set(N('ColorSpace'), cs); }
+      if (!cs.get(N('DefaultRGB'))) cs.set(N('DefaultRGB'), srgb);
+      const xo = res.lookup(N('XObject'));
+      if (xo instanceof PDFDict) for (const [, v] of xo.entries()) { const s = look(v); if (s instanceof PDFStream && pdfaName(L, s.dict.get(N('Subtype'))) === 'Form' && s.dict.get(N('Resources'))) addDefault(s.dict); }
+      const pat = res.lookup(N('Pattern'));
+      if (pat instanceof PDFDict) for (const [, v] of pat.entries()) { const s = look(v); if (s instanceof PDFStream && s.dict.get(N('Resources'))) addDefault(s.dict); }
+      return res;
+    };
+    for (const p of pages) { let res = null; try { res = p.node.Resources(); } catch {} if (res && !p.node.get(N('Resources'))) p.node.set(N('Resources'), res); addDefault(p.node); }
+    for (const x of seen.annots) { const ap = x.a.lookup(N('AP')); if (!(ap instanceof PDFDict)) continue; for (const k of ['N', 'R', 'D']) { const s = ap.lookup(N(k)); const list = s instanceof PDFStream ? [s] : s instanceof PDFDict ? [...s.entries()].map(([, v]) => look(v)) : []; for (const st of list) if (st instanceof PDFStream) addDefault(st.dict); } }
+    fix('Defined RGB colours as sRGB');
   }
   // Fonts: every font embedded. Ones that weren't get a metric-compatible stand-in, keeping their resource names.
   const fonts = pdfaPageFonts(L, out);
@@ -651,15 +1046,17 @@ async function pdfaConvert(bytes, opts = {}) {
     if (sub === 'Type0') { const ds = f.lookup(N('DescendantFonts')); const cid = ds instanceof PDFArray && ds.size() ? look(ds.get(0)) : null; fd = cid instanceof PDFDict ? cid.lookup(N('FontDescriptor')) : null; }
     return fd instanceof PDFDict && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => fd.get(N(k)));
   };
-  const unicodeFix = part === 2 && conformance === 'U' || part === 3 && conformance === 'U';
-  for (const [f, where] of fonts) {
+  const unicodeFix = P.kind === 'A' && conformance === 'U';
+  for (const [f] of fonts) {
     const sub = pdfaName(L, f.get(N('Subtype')));
     if (embedded(f)) {
-      // PDF/A-2u: simple fonts get a ToUnicode map from their encoding when every code can be named.
+      // PDF/A-2u, 3u: simple fonts get a ToUnicode map from their encoding when every code can be named.
       if (unicodeFix && sub !== 'Type0' && sub !== 'Type3' && !f.get(N('ToUnicode'))) {
         const { uni, unknown } = pdfaFontUnicodes(L, f);
         if (!unknown.length && f.get(N('Encoding'))) { f.set(N('ToUnicode'), ctx.register(ctx.flateStream(pdfaBytes(pdfaToUnicodeCMap(uni))))); fix('Added text mappings (ToUnicode) to fonts'); }
       }
+      // PDF/A-1: font subsets list what they hold (CharSet for Type 1, CIDSet for CID fonts).
+      if (P.kind === 'A' && part === 1 && pdfaSubsetLists(L, out, f)) fix('Listed the glyphs of font subsets (PDF/A-1)');
       continue;
     }
     if (sub === 'Type0' || !/^(Type1|MMType1|TrueType)$/.test(sub || '')) continue; // reported by the check
@@ -692,26 +1089,54 @@ async function pdfaConvert(bytes, opts = {}) {
     if (!f.get(N('ToUnicode'))) f.set(N('ToUnicode'), ctx.register(ctx.flateStream(pdfaBytes(pdfaToUnicodeCMap(enc)))));
     fix(`Embedded ${psName.replace(/-Regular$/, '')} in place of ${was || 'a font that was not embedded'}`);
   }
+  // PDF/X: the page's trimmed size is given (TrimBox), inside the bleed and the media box.
+  if (isX) {
+    for (const p of pages) {
+      const box = (k) => { const b = p.node.lookup(N(k)); return b instanceof PDFArray && b.size() === 4 ? b.asArray().map((x) => look(x).asNumber()) : null; };
+      const norm = (b) => [Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.max(b[0], b[2]), Math.max(b[1], b[3])];
+      const clip = (b, o) => [Math.max(b[0], o[0]), Math.max(b[1], o[1]), Math.min(b[2], o[2]), Math.min(b[3], o[3])];
+      const media = norm(box('MediaBox') || [0, 0, 612, 792]);
+      let bleed = box('BleedBox'); if (bleed) { const c = clip(norm(bleed), media); if (c.join() !== norm(bleed).join()) { p.node.set(N('BleedBox'), ctx.obj(c)); fix('Kept the bleed inside the page'); } bleed = c; }
+      if (!box('TrimBox') && !box('ArtBox')) { const t = clip(norm(box('CropBox') || media), bleed || media); p.node.set(N('TrimBox'), ctx.obj(t)); fix('Gave each page its trimmed size (TrimBox)'); }
+      else if (box('TrimBox')) { const t0 = norm(box('TrimBox')), t = clip(t0, bleed || media); if (t.join() !== t0.join()) { p.node.set(N('TrimBox'), ctx.obj(t)); fix('Kept the trimmed size inside the page'); } }
+    }
+  }
   // Identity, output intent, metadata.
-  out.context.header = L.PDFHeader.forVersion(1, 7);
+  out.context.header = L.PDFHeader.forVersion(1, P.version);
   if (!(look(ctx.trailerInfo.ID) instanceof PDFArray)) { const id = PDFHexString.of(Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')); ctx.trailerInfo.ID = ctx.obj([id, id]); }
-  const icc = ctx.register(ctx.flateStream(pdfaSrgbIcc(), { N: 3 }));
-  const intents = cat.lookup(N('OutputIntents')), keep = intents instanceof PDFArray ? intents.asArray().filter((x) => { const o = look(x); return o instanceof PDFDict && pdfaName(L, o.get(N('S'))) !== 'GTS_PDFA1'; }) : [];
-  cat.set(N('OutputIntents'), ctx.obj([ctx.register(ctx.obj({ Type: 'OutputIntent', S: 'GTS_PDFA1', OutputConditionIdentifier: PDFString.of('sRGB IEC61966-2.1'), Info: PDFString.of('sRGB IEC61966-2.1'), DestOutputProfile: icc })), ...keep]));
+  const S = isX ? 'GTS_PDFX' : 'GTS_PDFA1';
+  // Other output intents stay only when they name no profile: PDF/A wants every profile given to be the same one.
+  const intents = cat.lookup(N('OutputIntents')), keep = intents instanceof PDFArray ? intents.asArray().filter((x) => { const o = look(x); return o instanceof PDFDict && pdfaName(L, o.get(N('S'))) !== S && !o.get(N('DestOutputProfile')); }) : [];
+  const oi = P.intent === 'cmyk'
+    ? { Type: 'OutputIntent', S, OutputConditionIdentifier: PDFString.of(PDFA_CMYK_COND.id), OutputCondition: PDFString.of(PDFA_CMYK_COND.info), RegistryName: PDFString.of(PDFA_CMYK_COND.registry), Info: PDFString.of(PDFA_CMYK_COND.info), DestOutputProfile: pdfaIccRef(L, out, 'cmyk') }
+    : { Type: 'OutputIntent', S, OutputConditionIdentifier: PDFString.of('sRGB IEC61966-2.1'), Info: PDFString.of('sRGB IEC61966-2.1'), DestOutputProfile: pdfaIccRef(L, out, 'srgb') };
+  cat.set(N('OutputIntents'), ctx.obj([ctx.register(ctx.obj(oi)), ...keep]));
   const info = out.getInfoDict();
   for (const k of ['CreationDate', 'ModDate']) { const v = pdfaText(L, info, k), d = v ? pdfaParseDate(v) : null; if (d) info.set(N(k), PDFString.fromDate(d)); else if (v != null) info.delete(N(k)); }
   if (!pdfaText(L, info, 'ModDate')) info.set(N('ModDate'), PDFString.fromDate(new Date()));
   if (!pdfaText(L, info, 'CreationDate')) info.set(N('CreationDate'), PDFString.fromDate(new Date()));
   for (const [k, v] of [...info.entries()]) if (!(look(v) instanceof PDFString || look(v) instanceof PDFHexString || look(v) instanceof PDFName)) info.delete(k);
   const xmpBefore = pdfaReadXmp(pdfaXmpOf(L, out));
-  pdfaWriteXmp(L, out, { pdfa: { part, conformance }, pdfua: xmpBefore.props['pdfuaid:part'] ? { part: xmpBefore.props['pdfuaid:part'] } : null, extensions: opts.extensions, props: opts.props });
-  if (xmpBefore.foreign.some((x, k) => !PDFA_PREDEFINED.has(xmpBefore.foreignNs[k]))) fix('Removed metadata PDF/A doesn\'t know');
+  if (isX) {
+    // PDF/X: the version in the Info dictionary (and the XMP), trapping stated, a title.
+    info.set(N('GTS_PDFXVersion'), PDFString.of(P.gts));
+    if (info.get(N('GTS_PDFXConformance'))) info.delete(N('GTS_PDFXConformance'));
+    const tr = pdfaText(L, info, 'Trapped'); if (tr !== 'True' && tr !== 'False') { info.set(N('Trapped'), N('False')); fix('Said the file is not trapped'); }
+    if (!pdfaText(L, info, 'Title')) info.set(N('Title'), PDFHexString.fromText(opts.name || 'Untitled'));
+    const props = [{ ns: 'http://ns.adobe.com/pdfx/1.3/', prefix: 'pdfx', name: 'GTS_PDFXVersion', value: P.gts }];
+    if (P.pdfx === '4') props.push({ ns: 'http://www.npes.org/pdfx/ns/id/', prefix: 'pdfxid', name: 'GTS_PDFXVersion', value: P.gts });
+    pdfaWriteXmp(L, out, { props: [...props, ...(opts.props || [])], dropNs: [PDFA_NS.pdfaid, ...props.map((x) => x.ns)] });
+  } else {
+    pdfaWriteXmp(L, out, { pdfa: { part, conformance }, pdfua: part >= 2 && xmpBefore.props['pdfuaid:part'] ? { part: xmpBefore.props['pdfuaid:part'] } : null, extensions: opts.extensions, props: opts.props });
+    if (xmpBefore.foreign.some((x, k) => !PDFA_PREDEFINED.has(xmpBefore.foreignNs[k]))) fix('Removed metadata PDF/A doesn\'t know');
+  }
   if (cat.get(N('Perms'))) { const pm = cat.lookup(N('Perms')); if (pm instanceof PDFDict) for (const k of pm.keys()) if (!/^(DocMDP|UR3)$/.test(k.decodeText())) pm.delete(k); }
   if (cat.get(N('Requirements'))) cat.delete(N('Requirements'));
   // What nothing refers to any more (a removed script, an old font) is not written.
   const live = pdfaReachable(L, out).refs;
   for (const [ref] of ctx.enumerateIndirectObjects()) if (!live.has(ref.tag)) ctx.delete(ref);
-  return { bytes: await out.save({ useObjectStreams: true }), fixes: [...fixes] };
+  // PDF 1.4 kinds: no object streams (a PDF 1.5 feature).
+  return { bytes: await out.save({ useObjectStreams: P.objStreams }), fixes: [...fixes], label: P.label };
 }
 // The same file, no longer claiming to be PDF/A (Save anyway).
 async function pdfaDropClaim(bytes) {
@@ -853,21 +1278,38 @@ async function pdfaCheck(bytes, opts) {
   });
   rule('images', () => { for (const { obj } of all) if (obj instanceof PDFStream && pdfaName(L, obj.dict.get(N('Subtype'))) === 'Image' && (obj.dict.lookup(N('Interpolate')) === L.PDFBool.True || obj.dict.get(N('Alternates')) || obj.dict.get(N('OPI')))) { bad('A picture asks for smoothing or alternates.'); break; } });
   rule('graphics-state', () => { for (const { obj } of all) { if (obj instanceof PDFStream) continue; if (obj.get(N('HTP')) || (obj.get(N('TR')) && (pdfaName(L, obj.get(N('Type'))) === 'ExtGState' || obj.get(N('ca')) || obj.get(N('CA')))) || (obj.get(N('TR2')) && pdfaName(L, obj.get(N('TR2'))) !== 'Default')) { bad('The file uses transfer functions or halftone settings.'); break; } } });
+  const seen = pdfaInspect(L, out);
   rule('colour', () => {
     const oi = cat.lookup(N('OutputIntents')); const icc = oi instanceof PDFArray && oi.size() ? (() => { const o = look(oi.get(0)); const s = o instanceof PDFDict ? o.lookup(N('DestOutputProfile')) : null; return s instanceof PDFStream ? pdfaIccInfo(pdfaStreamBytes(L, s)) : null; })() : null;
-    if (icc && icc.space === 'CMYK') return;
-    let cmyk = 0;
-    out.getPages().forEach((p, i) => {
-      if (cmyk > 2) return;
-      let res; try { res = p.node.Resources(); } catch { return; }
-      const dc = res && res.lookup(N('ColorSpace')); if (dc instanceof PDFDict && dc.get(N('DefaultCMYK'))) return;
-      const cs = res && res.lookup(N('ColorSpace')); const csCmyk = cs instanceof PDFDict && [...cs.entries()].some(([, v]) => pdfaName(L, look(v)) === 'DeviceCMYK');
-      const xo = res && res.lookup(N('XObject')); const imgCmyk = xo instanceof PDFDict && [...xo.entries()].some(([, v]) => { const s = look(v); return s instanceof PDFStream && pdfaName(L, look(s.dict.get(N('ColorSpace')))) === 'DeviceCMYK'; });
-      let ops = false;
-      try { const c = p.node.Contents(); const parts = c instanceof PDFArray ? c.asArray().map(look) : [c]; for (const s of parts) { const b = s instanceof PDFStream ? pdfaStreamBytes(L, s) : null; if (b && /(^|[\s\]])-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+\s+-?[\d.]+\s+[kK](?=[\s/[(<]|$)/.test(pdfaLatin1(b))) { ops = true; break; } } } catch {}
-      if (csCmyk || imgCmyk || ops) { cmyk++; bad(`Page ${i + 1} uses CMYK colour, which an sRGB output intent doesn't cover.`, { page: i + 1, fix: 'manual' }); }
-    });
+    const space = icc ? icc.space : 'RGB ';
+    let n = 0;
+    const look2 = (r, where, page) => {
+      if (n > 2) return;
+      if (space !== 'CMYK' && r.CMYK) { n++; bad(`${where} uses CMYK colour, which an RGB output intent doesn't cover.`, { page, fix: 'manual' }); }
+      else if (space === 'CMYK' && r.RGB) { n++; bad(`${where} uses RGB colour, which a CMYK output intent doesn't cover.`, { page, fix: 'manual' }); }
+      else if (space === 'GRAY' && (r.RGB || r.CMYK)) { n++; bad(`${where} uses colour, which a grey output intent doesn't cover.`, { page, fix: 'manual' }); }
+    };
+    seen.pages.forEach((r, i) => look2(r, `Page ${i + 1}`, i + 1));
+    seen.annots.forEach((x) => look2(x.rec, `A comment on page ${x.page}`, x.page));
   });
+  if (part === 1) {
+    rule('pdf14', () => {
+      if (/\/Type\s*\/ObjStm\b/.test(pdfaLatin1(bytes.subarray(0, Math.min(bytes.length, 64 << 20))))) bad('The file uses object streams, which PDF/A-1 doesn\'t allow.');
+      if (/startxref\s+(\d+)/.test(pdfaLatin1(bytes.subarray(Math.max(0, bytes.length - 1024))))) { const at = +/startxref\s+(\d+)/.exec(pdfaLatin1(bytes.subarray(Math.max(0, bytes.length - 1024))))[1]; if (!/^\s*xref/.test(pdfaLatin1(bytes.subarray(at, at + 16)))) bad('The file uses a cross-reference stream, which PDF/A-1 doesn\'t allow.'); }
+    });
+    rule('transparency', () => {
+      seen.pages.forEach((r, i) => { if (r.alpha.size) bad(`Page ${i + 1} has see-through objects (${[...r.alpha][0]}), which PDF/A-1 doesn't allow.`, { page: i + 1, fix: 'manual' }); if (r.bits16) bad(`Page ${i + 1} has a 16-bit picture, which PDF/A-1 doesn't allow.`, { page: i + 1, fix: 'manual' }); if (r.jpx) bad(`Page ${i + 1} has a JPEG 2000 picture, which PDF/A-1 doesn't allow.`, { page: i + 1, fix: 'manual' }); });
+      seen.annots.forEach((x) => { if (x.rec.alpha.size) bad(`A comment on page ${x.page} is see-through, which PDF/A-1 doesn't allow.`, { page: x.page }); });
+    });
+    rule('font-subsets', () => {
+      for (const [f, w] of fonts) {
+        const sub = pdfaName(L, f.get(N('Subtype'))), base = pdfaName(L, f.get(N('BaseFont'))) || '';
+        if ((sub === 'Type1' || sub === 'MMType1') && /^[A-Z]{6}\+/.test(base)) { const fd = f.lookup(N('FontDescriptor')); if (fd instanceof PDFDict && fd.get(N('FontFile')) && !fd.get(N('CharSet'))) bad(`Font ${base.slice(7)} doesn't list its glyphs (CharSet).`, { page: w.page }); }
+        if (sub === 'Type0') { const ds = f.lookup(N('DescendantFonts')); const cid = ds instanceof PDFArray && ds.size() ? look(ds.get(0)) : null; const fd = cid instanceof PDFDict ? cid.lookup(N('FontDescriptor')) : null; const nm = fd instanceof PDFDict ? pdfaName(L, fd.get(N('FontName'))) || '' : ''; if (/^[A-Z]{6}\+/.test(nm) && !fd.get(N('CIDSet'))) bad(`Font ${nm.slice(7)} doesn't list its glyphs (CIDSet).`, { page: w.page }); }
+      }
+    });
+    rule('no-layers', () => { if (cat.get(N('OCProperties'))) bad('The file has layers (optional content), which PDF/A-1 doesn\'t allow.', { fix: 'manual' }); });
+  }
   rule('optional-content', () => { const ocp = cat.lookup(N('OCProperties')); if (!(ocp instanceof PDFDict)) return; const cfg = [ocp.lookup(N('D'))]; const more = ocp.lookup(N('Configs')); if (more instanceof PDFArray) cfg.push(...more.asArray().map(look)); if (cfg.some((c) => c instanceof PDFDict && (!c.get(N('Name')) || c.get(N('AS'))))) bad('A layer configuration has no name, or changes layers automatically.'); });
   problems.passed = passed; problems.checks = ruleNames.length;
   return problems;
@@ -881,57 +1323,95 @@ function pdfaSummary(r) {
   return `${head} ${pdfaPlural(errs.length, 'problem')}: ${errs.slice(0, 1).map((x) => x.text.replace(/^./, (c) => c.toLowerCase()).replace(/\.$/, '')).join('')}${errs.length > 1 ? `, and ${pdfaPlural(errs.length - 1, 'other')}` : ''}.`;
 }
 
-/* ----- Save as PDF/A… ----- */
-const PDFA_LEVELS = [['2b', 'PDF/A-2b', 'For most documents. Keeps how every page looks.'], ['2u', 'PDF/A-2u', 'Also makes sure all text can be searched and copied.'], ['3b', 'PDF/A-3b', 'Like PDF/A-2b, and keeps attachments of any kind.']];
+/* ----- Save as PDF/A… (and Save as PDF/X…, 85-pdfx.js) ----- */
+const PDFA_LEVELS = [['1b', 'PDF/A-1b', 'For systems that ask for PDF/A-1. No see-through objects.'], ['2b', 'PDF/A-2b', 'For most documents. Keeps how every page looks.'], ['2u', 'PDF/A-2u', 'Also makes sure all text can be searched and copied.'],
+  ['3b', 'PDF/A-3b', 'Like PDF/A-2b, and keeps attachments of any kind.'], ['3u', 'PDF/A-3u', 'Like PDF/A-3b, and all text can be searched and copied.']];
+const PDFA_INTENTS = [['srgb', 'Screen colours (sRGB)'], ['cmyk', 'Print colours (CMYK, coated FOGRA39)']];
 let pdfaBusy = false;
-async function pdfaSave(level) {
-  if (!has() || pdfaBusy) return;
-  if (!level) {
-    const body = `<p class="pdfa-intro">An archival copy that opens the same way for years: fonts are embedded, colours are defined, and scripts are removed.</p>
-      <div class="pdfa-levels" role="radiogroup" aria-label="Kind of PDF/A">${PDFA_LEVELS.map(([v, t, d], k) => `<label class="pdfa-level"><input type="radio" name="pdfaLevel" value="${v}"${k ? '' : ' checked'}><span><b>${t}</b><small>${esc(d)}</small></span></label>`).join('')}</div>`;
-    let pick = '2b';
-    const a = await dialog('Save as PDF/A', body, [{ label: 'Cancel' }, { label: 'Save', value: 'ok', primary: true }], (dlg) => { dlg.classList.add('pdfa-dlg'); $$('[name="pdfaLevel"]', dlg).forEach((i) => i.addEventListener('change', () => { pick = i.value; })); dlg.addEventListener('close', () => dlg.classList.remove('pdfa-dlg'), { once: true }); });
-    if (a !== 'ok') return;
-    level = pick;
-  }
-  pdfaBusy = true;
+// The colours a document's pages use, to choose the output intent: 'cmyk' when there is CMYK and no RGB.
+async function pdfaGuessIntent(bytes) {
   try {
-    let part = +level[0], conformance = level[1].toUpperCase();
+    const L = await loadPdfLib(), d = await L.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    const s = pdfaInspect(L, d); const rgb = s.pages.some((r) => r.RGB || [...r.icc].includes(3)), cmyk = s.pages.some((r) => r.CMYK || [...r.icc].includes(4));
+    return cmyk && !rgb ? 'cmyk' : 'srgb';
+  } catch { return 'srgb'; }
+}
+const pdfaDlg = (dlg) => { dlg.classList.add('pdfa-dlg'); dlg.addEventListener('close', () => dlg.classList.remove('pdfa-dlg'), { once: true }); };
+// Makes, checks and saves the copy: opts = { part, conformance, intent } or { pdfx }. Refusals are shown in a dialog
+// and save nothing.
+async function pdfaExport(opts) {
+  if (!has() || pdfaBusy) return;
+  pdfaBusy = true;
+  const isX = !!opts.pdfx, kind = isX ? 'PDF/X' : 'PDF/A';
+  try {
+    let P = pdfaProfile(opts);
+    if (typeof diSaving === 'function') diSaving(); // a producer or date typed in Document properties is used by this save
     const bytes = await buildPdf(); if (!bytes) return;
     const L = await loadPdfLib();
     let enc = false; try { enc = (await L.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })).isEncrypted; } catch {}
-    if (enc) { await dialog('Save as PDF/A', '<p>PDF/A files can\'t have a password. Remove it to continue.</p>', [{ label: 'OK', primary: true }]); return; }
-    toast('Making the PDF/A file…');
-    let res = await pdfaConvert(bytes, { part, conformance });
-    if (res.blocked === 'attachments') {
-      const a = await dialog('Attachments', `<p>PDF/A-2 only keeps attachments that are PDF/A files too. ${esc(res.names.slice(0, 3).join(', '))}${res.names.length > 3 ? ' and others' : ''} ${res.names.length === 1 ? 'is' : 'are'} not. PDF/A-3b keeps them.</p>`, [{ label: 'Cancel' }, { label: 'Use PDF/A-3b', value: '3b', primary: true }]);
-      if (a !== '3b') return;
-      part = 3; conformance = 'B';
-      res = await pdfaConvert(bytes, { part, conformance });
+    if (enc) { await dialog(`Save as ${kind}`, `<p>${kind} files can't have a password. Remove it to continue.</p>`, [{ label: 'OK', primary: true }]); return; }
+    toast(`Making the ${kind} file…`);
+    let o = { ...opts, scripts: 'refuse', name: doc.name };
+    let res = await pdfaConvert(bytes, o);
+    for (let guard = 0; res.blocked && guard < 4; guard++) {
+      if (res.blocked === 'attachments') {
+        const a = await dialog('Attachments', `<p>PDF/A-2 only keeps attachments that are PDF/A files too. ${esc(res.names.slice(0, 3).join(', '))}${res.names.length > 3 ? ' and others' : ''} ${res.names.length === 1 ? 'is' : 'are'} not. PDF/A-3b keeps them.</p>`, [{ label: 'Cancel' }, { label: 'Use PDF/A-3b', value: '3b', primary: true }]);
+        if (a !== '3b') return;
+        o = { ...o, part: 3, conformance: o.conformance === 'U' ? 'U' : 'B' };
+      } else if (res.blocked === 'scripts') {
+        const a = await dialog('Scripts and actions', `<p>${kind} files can't run scripts or actions. This PDF has ${esc(res.text)}.</p><p>Remove them to make the ${P.label} copy? Your document stays as it is.</p>`, [{ label: 'Cancel' }, { label: 'Remove and save', value: 'remove', primary: true }], pdfaDlg);
+        if (a !== 'remove') return;
+        o = { ...o, scripts: 'remove' };
+      } else if (res.blocked === 'profile') {
+        const only = res.problems.every((x) => x.code === 'cmyk');
+        const body = `<p class="pdfa-sum">This PDF can't be saved as ${esc(res.label)}. Nothing was saved.</p>
+          <ul class="pdfa-probs">${res.problems.slice(0, 12).map((x) => `<li>${ic('circle-alert')}<span>${esc(x.text)}</span></li>`).join('')}</ul>`;
+        const btns = only && !isX ? [{ label: 'Cancel' }, { label: 'Use print colours', value: 'cmyk', primary: true }] : [{ label: 'OK', primary: true }];
+        const a = await dialog(`Can't save as ${res.label}`, body, btns, pdfaDlg);
+        if (a !== 'cmyk') return;
+        o = { ...o, intent: 'cmyk' };
+      } else return;
+      P = pdfaProfile(o);
+      res = await pdfaConvert(bytes, o);
     }
-    const check = await pdfaCheck(res.bytes, { part, conformance });
+    if (res.blocked) return;
+    const check = isX ? await pdfxCheck(res.bytes, { pdfx: P.pdfx }) : await pdfaCheck(res.bytes, { part: P.part, conformance: P.conformance });
     const errs = check.filter((x) => x.severity === 'error');
-    const label = `PDF/A-${part}${conformance.toLowerCase()}`;
-    let out = res.bytes, name = `${doc.name} (PDF-A).pdf`;
+    let out = res.bytes, name = `${doc.name} (${kind.replace('/', '-')}).pdf`;
     if (errs.length) {
       const body = `<p class="pdfa-sum">${esc(pdfaSummary(check))}</p>
         <ul class="pdfa-probs">${errs.slice(0, 12).map((x) => `<li>${ic('circle-alert')}<span>${esc(x.text)}</span></li>`).join('')}${errs.length > 12 ? `<li><span>…and ${errs.length - 12} more</span></li>` : ''}</ul>
         <p class="pdfa-note">This is a built-in check, not a certified validator.</p>`;
-      const a = await dialog(`Not ${label} yet`, body, [{ label: 'Cancel' }, { label: 'Save anyway (not PDF/A)', value: 'anyway' }], (dlg) => { dlg.classList.add('pdfa-dlg'); dlg.addEventListener('close', () => dlg.classList.remove('pdfa-dlg'), { once: true }); });
+      const a = await dialog(`Not ${P.label} yet`, body, [{ label: 'Cancel' }, { label: `Save anyway (not ${kind})`, value: 'anyway' }], pdfaDlg);
       if (a !== 'anyway') return;
-      out = await pdfaDropClaim(res.bytes); name = `${doc.name} (archive).pdf`;
+      out = isX ? await pdfxDropClaim(res.bytes) : await pdfaDropClaim(res.bytes); name = `${doc.name} (${isX ? 'print' : 'archive'}).pdf`;
     }
     const saved = await saveFile(out, name, 'application/pdf');
-    window.__lastPdfa = { bytes: out, check, fixes: res.fixes, part, conformance };
-    if (saved && !errs.length) toast(`Saved as ${label}. ${pdfaPlural(check.passed.length, 'built-in check')} passed.`);
-  } catch (e) { console.error(e); toast(`Could not save as PDF/A: ${e.message || e}`); }
+    window.__lastPdfa = { bytes: out, check, fixes: res.fixes, part: P.part, conformance: P.conformance, pdfx: P.pdfx, intent: P.intent };
+    if (saved && !errs.length) toast(`Saved as ${P.label}. ${pdfaPlural(check.passed.length, 'built-in check')} passed.`);
+  } catch (e) { console.error(e); toast(`Could not save as ${kind}: ${e.message || e}`); }
   finally { pdfaBusy = false; }
+}
+async function pdfaSave(level, intent) {
+  if (!has() || pdfaBusy) return;
+  if (!level) {
+    const guess = await pdfaGuessIntent(doc.sources[doc.pages.length ? doc.pages[0].src : 0]);
+    const body = `<p class="pdfa-intro">An archival copy that opens the same way for years: fonts are embedded, colours are defined, and scripts are removed.</p>
+      <div class="pdfa-levels" role="radiogroup" aria-label="Kind of PDF/A">${PDFA_LEVELS.map(([v, t, d]) => `<label class="pdfa-level"><input type="radio" name="pdfaLevel" value="${v}"${v === '2b' ? ' checked' : ''}><span><b>${t}</b><small>${esc(d)}</small></span></label>`).join('')}</div>
+      <label class="field pdfa-intent"><span>Colours</span><select name="pdfaIntent">${PDFA_INTENTS.map(([v, t]) => `<option value="${v}"${v === guess ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+    let pick = '2b', pickIntent = guess;
+    const a = await dialog('Save as PDF/A', body, [{ label: 'Cancel' }, { label: 'Save', value: 'ok', primary: true }], (dlg) => { pdfaDlg(dlg); $$('[name="pdfaLevel"]', dlg).forEach((i) => i.addEventListener('change', () => { pick = i.value; })); $('[name="pdfaIntent"]', dlg).addEventListener('change', (e) => { pickIntent = e.target.value; }); });
+    if (a !== 'ok') return;
+    level = pick; intent = pickIntent;
+  }
+  return pdfaExport({ part: +level[0], conformance: level[1].toUpperCase(), intent: intent || 'srgb' });
 }
 
 cmd('savePdfa', { label: 'Save as PDF/A…', rlabel: 'Save as PDF/A', icon: 'archive', enabled: has, run: () => pdfaSave() });
 { const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('saveCopy') : -1; if (i >= 0) fm[1].splice(i + 1, 0, 'savePdfa'); else menuAdd('File', ['savePdfa']); }
 ribbonAdd('export', 'Archive', ['savePdfa'], 'Export');
-Object.assign(TEST_HOOKS, { pdfaCheck, pdfaConvert, pdfaSrgbIcc: () => Array.from(pdfaSrgbIcc()), pdfaSave, pdfaSummary, pdfaLast: () => window.__lastPdfa && { bytes: Array.from(window.__lastPdfa.bytes), check: [...window.__lastPdfa.check], fixes: window.__lastPdfa.fixes } });
+const pdfaInspectBytes = async (bytes) => { const L = await loadPdfLib(), d = await L.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false }); const r = pdfaInspect(L, d); const plain = (x) => ({ ...x, icc: [...x.icc], alpha: [...x.alpha] }); return { pages: r.pages.map(plain), annots: r.annots.map((x) => ({ page: x.page, sub: x.sub, rec: plain(x.rec) })) }; };
+Object.assign(TEST_HOOKS, { pdfaCheck, pdfaConvert, pdfaSrgbIcc: () => Array.from(pdfaSrgbIcc()), pdfaSave, pdfaExport, pdfaIsBusy: () => pdfaBusy, pdfaSummary, pdfaInspect: (b) => pdfaInspectBytes(new Uint8Array(b)), pdfaCmykIcc: () => Array.from(pdfaCmykZ()), pdfaLast: () => window.__lastPdfa && { bytes: Array.from(window.__lastPdfa.bytes), check: [...window.__lastPdfa.check], fixes: window.__lastPdfa.fixes } });
 
 addStyle(`
 .pdfa-dlg { width: min(520px, calc(100vw - 32px)); }
@@ -949,4 +1429,5 @@ addStyle(`
 .pdfa-probs li:last-child { border-bottom: 0; }
 .pdfa-probs svg { width: 16px; height: 16px; flex: none; color: var(--danger, #c92a2a); margin-top: 1px; }
 .pdfa-note { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
+.pdfa-intent { margin: 10px 0 0; }
 `);

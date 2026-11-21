@@ -7,3 +7,5 @@ tests/fixtures/.*.pdf
 desktop/src-tauri/embedded.provisionprofile
 __pycache__/
 tests/.*.pdf
+tests/conformance/.cache/
+tests/conformance/out/

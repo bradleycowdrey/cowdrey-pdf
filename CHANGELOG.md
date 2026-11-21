@@ -2,6 +2,13 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## Unreleased
+
+- **PDF/A:** also PDF/A-1b and PDF/A-3u, and a choice of screen (sRGB) or print (CMYK, FOGRA39) colours. PDF/A-1b gets the glyph lists its font subsets need and draws highlights without transparency (a bar under the text). Scripts and actions are removed only after you agree. What a kind can't keep (CMYK with screen colours, RGB with print colours, transparency, 16-bit or JPEG 2000 pictures in PDF/A-1b, attachments, layers) is refused with the reason, and nothing is saved.
+- **PDF/X:** **Save as PDF/X** (File menu, Export tab): PDF/X-1a, X-3 and X-4 for coated paper (FOGRA39 output intent with its ICC profile, CC0, works offline). Fonts embedded, TrimBox set, trapping stated, RGB defined as sRGB for X-3 and X-4, comments kept but not printed. RGB in X-1a, and transparency and 16-bit pictures in X-1a and X-3, are refused. Colours are not converted.
+- **Document properties:** producer, page numbers (ranges such as i, ii, iii then 1, 2, 3), and an XMP tab to edit the metadata packet as text. A producer or modification date you type is used by the next save; later saves are stamped as usual. A file's own XMP packet is kept as it was, apart from what changed.
+- **Tests:** `tests/conformance/pkg3.mjs` makes every input file, exports it through the app and validates each PDF/A output with veraPDF and each PDF/X output with an ISO 15930 rule check; it runs on every push.
+
 ## 1.1.0 — closer to Acrobat Pro, still on your device
 
 Cowdrey.PDF 1.1 fills most of the gaps against Acrobat Pro. Everything still runs on your device; the only things that ever go online are a font download you agree to, OCR language data you choose, and a timestamp server you set yourself (it gets a fingerprint of the signature, not the document).
