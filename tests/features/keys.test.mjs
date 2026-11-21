@@ -149,6 +149,14 @@ export default async (h) => {
     await p.ctx.close();
   });
 
+  await test('File menu: Close stays last; Export all pictures sits with the other exports', async () => {
+    const p = await open(); await p.waitForTimeout(300);
+    const f = await p.evaluate(() => window.__cowdreyPdf.menus().find(([t]) => t === 'File')[1]);
+    eq(f[f.length - 1], 'closeDoc', 'last in File');
+    eq(f[f.indexOf('exportText') + 1], 'picExportAll', 'after Export text');
+    await p.ctx.close();
+  });
+
   await test('phone: a tool hint toast goes once the page is tapped or the tool changes; ribbon rows fade at the edge with more', async () => {
     const p = await open({ width: 390, height: 844, touch: true, ua: ANDROID }); await openPdf(p);
     const shown = () => p.evaluate(() => document.querySelector('#toast').classList.contains('show') ? document.querySelector('#toast').textContent : '');

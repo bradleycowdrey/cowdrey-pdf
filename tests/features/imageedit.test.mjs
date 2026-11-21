@@ -149,6 +149,11 @@ export default async (h) => {
     await bar(p, 'imgEnhance');
     await p.waitForSelector('.ie-panel');
     await p.waitForSelector('.page[data-n="0"] canvas.ie-view');
+    // Threshold only shows with Black and white on
+    const thr = () => p.$eval('#ie_threshold_row', (r) => getComputedStyle(r).display !== 'none' && r.getBoundingClientRect().height > 0);
+    eq(await thr(), false, 'no Threshold while Black and white is off');
+    await p.check('#ie_bw'); eq(await thr(), true, 'Threshold with Black and white on');
+    await p.uncheck('#ie_bw'); eq(await thr(), false, 'and gone again');
     const before = await p.evaluate(() => { const c = document.querySelector('canvas.ie-view'); return [...c.getContext('2d').getImageData(c.width / 2, c.height / 2, 1, 1).data]; });
     await p.fill('#ie_brightness', '60'); await p.dispatchEvent('#ie_brightness', 'input'); await p.waitForTimeout(250);
     const after = await p.evaluate(() => { const c = document.querySelector('canvas.ie-view'); return [...c.getContext('2d').getImageData(c.width / 2, c.height / 2, 1, 1).data]; });

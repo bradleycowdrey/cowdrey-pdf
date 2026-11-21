@@ -34,9 +34,12 @@ export default async (h) => {
   await test('media: Attach file puts a file on a page as a file attachment comment; pdf.js reads its bytes back', async () => {
     const p = await open(); await openPdf(p);
     // with the tool: click the page, pick the file
+    // Wait for the picker before anything is clicked: Playwright turns its file-chooser interception on
+    // asynchronously, and a picker opened before that (here from pointerdown) is never reported.
+    const chooser = p.waitForEvent('filechooser'); await p.waitForTimeout(500);
     await p.click('[data-rt="markup"]'); await p.click('[data-cmd="md_attachFile"]');
     const [cx, cy] = await at(p, 500, 700);
-    const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.mouse.click(cx, cy)]);
+    await p.mouse.click(cx, cy); const fc = await chooser;
     await fc.setFiles({ name: 'figures.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b\n1,2\n') });
     await p.waitForFunction(() => Object.values(window.__cowdreyPdf.doc.marks).flat().some((m) => m.type === 'mdFile'));
     // and one on page 2
@@ -137,9 +140,10 @@ export default async (h) => {
     const p = await open(); await openPdf(p);
     // a small MP4 (its header boxes: enough to be kept and handed back byte for byte)
     const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.from([0, 0, 2, 0]), Buffer.from('isomiso2'), Buffer.from([0, 0, 0, 8]), Buffer.from('free'), crypto.randomBytes(256)]);
+    const chooser = p.waitForEvent('filechooser'); await p.waitForTimeout(500); // as above
     await p.click('[data-rt="edit"]');
     ok(await p.$('#ribbonBody [data-cmd="md_insertMedia"]'), 'on the Edit tab');
-    const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('#ribbonBody [data-cmd="md_insertMedia"]')]);
+    await p.click('#ribbonBody [data-cmd="md_insertMedia"]'); const fc = await chooser;
     await fc.setFiles({ name: 'clip.mp4', mimeType: 'video/mp4', buffer: mp4 });
     await p.waitForFunction(() => document.querySelector('#app').dataset.tool === 'mdplace', null, { timeout: 10000 });
     const a = await at(p, 100, 600), b = await at(p, 340, 465);

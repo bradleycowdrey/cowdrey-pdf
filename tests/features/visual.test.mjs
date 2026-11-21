@@ -131,7 +131,7 @@ export default async (h) => {
     await run(p, 'cm_underline');
     ok(await p.$eval('#ribbonBody [data-rmenu="fold:Text mark-up"]', (b) => b.hasAttribute('data-on')), 'Text mark-up on');
     await p.click('#ribbonBody [data-rmenu="fold:Add"]'); await p.waitForSelector('#popover:not([hidden])');
-    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'cm_stamp', 'sign']);
+    eq(await p.$$eval('#popover .mi', (m) => m.map((x) => x.dataset.cmd)), ['cm_callout', 'cm_typewriter', 'md_attachFile', 'cm_stamp', 'sign']);
     await p.screenshot({ path: '/tmp/claude-0/-home-user/5a94d03a-474e-54c6-ac96-d898e81e4eb4/scratchpad/rr3/fix-visual/ph-comment-add.png' });
     eq(p.errors, []); await p.ctx.close();
   });

@@ -620,7 +620,8 @@ cmd('picDelete', { label: 'Delete picture', icon: 'trash-2', enabled: picOn, run
 cmd('picExportAll', { rlabel: 'All pictures', label: 'Export all pictures…', icon: 'images', enabled: has, run: picExportAll });
 ribbonAdd('edit', 'Picture', ['picRotL', 'picRotR', 'picFlipH', 'picFlipV', 'picCrop', 'picReplace', 'picExtract']);
 ribbonAdd('export', 'Export', ['picExportAll']);
-menuAdd('File', ['picExportAll']);
+// Next to the other exports, so Close (Cmd+W) stays last in File.
+{ const fm = MENUS.find(([t]) => t === 'File'), i = fm ? fm[1].indexOf('exportText') : -1; if (i >= 0) { if (!fm[1].includes('picExportAll')) fm[1].splice(i + 1, 0, 'picExportAll'); } else menuAdd('File', ['picExportAll']); }
 
 // For tests: each picture painted on a page, with its matrix and the box of the clip in force when it is painted.
 TEST_HOOKS.picOps = async (n) => {

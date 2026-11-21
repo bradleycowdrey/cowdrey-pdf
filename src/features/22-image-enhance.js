@@ -112,6 +112,7 @@ addStyle(`
 .ie-panel .ie-row { display: grid; grid-template-columns: 92px 1fr 38px; align-items: center; gap: 6px; margin: 6px 0; }
 .ie-panel .ie-row input[type="range"] { width: 100%; accent-color: var(--accent); }
 .ie-panel .ie-row output { font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-2); font-size: 12px; }
+.ie-panel .ie-row[hidden] { display: none; }
 .ie-panel .ie-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
 .ie-panel .ie-check input { accent-color: var(--accent); margin: 0; }
 .ie-panel .ie-dpi { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
