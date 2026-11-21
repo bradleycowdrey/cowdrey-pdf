@@ -118,6 +118,38 @@ function ocrMeanConfidence(data) {
   }
   return { score: n ? sum / n : 0, words };
 }
+// The Android app: its web view may not let a worker fetch the app's own files (they come from the app itself, not a
+// server). Then the page fetches the engine instead and hands the worker blob addresses, and English is put where
+// tesseract.js looks first (as a downloaded language is). Null when the worker can fetch them itself.
+let ocrBlobPaths = null;
+async function ocrWorkerFetches(url) {
+  try {
+    const src = 'onmessage=async(e)=>{try{const r=await fetch(e.data);postMessage(r.ok)}catch(_){postMessage(false)}}';
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    return await new Promise((res) => {
+      const t = setTimeout(() => { w.terminate(); res(false); }, 8000);
+      w.onmessage = (e) => { clearTimeout(t); w.terminate(); res(!!e.data); };
+      w.onerror = () => { clearTimeout(t); w.terminate(); res(false); };
+      w.postMessage(url);
+    });
+  } catch { return false; }
+}
+async function ocrAndroidPaths() {
+  if (!ANDROID_APP || !/^http/.test(OCR_PATHS.workerPath)) return null;
+  if (ocrBlobPaths) return ocrBlobPaths;
+  if (await ocrWorkerFetches(OCR_PATHS.workerPath)) { console.info('OCR: the worker loads the engine itself'); return null; }
+  console.info('OCR: the engine is handed to the worker as blob addresses');
+  const simd = WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+  const blob = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(`Could not get ${u}`); return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: 'text/javascript' })); };
+  if (!(await ocrCached('eng'))) {
+    const r = await fetch(`${OCR_PATHS.langPath('eng')}/eng.traineddata.gz`);
+    if (r.ok) await ocrCacheWrite('eng', new Uint8Array(await r.arrayBuffer()));
+  }
+  // (tesseract.js takes a corePath ending in "js" as the file itself)
+  ocrBlobPaths = { workerPath: await blob(OCR_PATHS.workerPath), corePath: (await blob(`${OCR_PATHS.corePath}/tesseract-core-${simd ? 'simd-' : ''}lstm.wasm.js`)) + '#core.js' };
+  return ocrBlobPaths;
+}
+TEST_HOOKS.ocrAndroidPaths = async () => { ocrBlobPaths = null; return !!(await ocrAndroidPaths()); };
 function ocrTesseract() {
   let worker = null, listen = null, ended = false;
   // The worker, started with the languages in `langs` (plain codes), and those in `held` (data) written into it.
@@ -128,7 +160,8 @@ function ocrTesseract() {
     let fail; const failed = new Promise((_, rej) => { fail = rej; });
     failed.catch(() => {});
     const errorHandler = (e) => fail(new Error(String(e)));
-    worker = await Promise.race([failed, window.Tesseract.createWorker(langs, 1, { workerPath: OCR_PATHS.workerPath, corePath: OCR_PATHS.corePath, langPath: OCR_PATHS.langPath('eng'), workerBlobURL: true, logger, errorHandler })]);
+    const own = await ocrAndroidPaths();
+    worker = await Promise.race([failed, window.Tesseract.createWorker(langs, 1, { workerPath: own ? own.workerPath : OCR_PATHS.workerPath, corePath: own ? own.corePath : OCR_PATHS.corePath, langPath: OCR_PATHS.langPath('eng'), workerBlobURL: true, logger, errorHandler })]);
     if (ended) { try { await worker.terminate(); } catch {} worker = null; throw new Error('stopped'); } // (cancelled while starting)
     if (held.length) {
       // Data that could not be kept is written straight into the worker's files; the worker keeps `langs` as its list

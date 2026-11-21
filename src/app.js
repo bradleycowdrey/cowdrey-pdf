@@ -18,6 +18,47 @@ const MAC_APP = NATIVE && !MOBILE_APP ? NATIVE : null;
 // The Mac App Store build (its Rust side sets this flag before the page loads): the App Store updates it, so it has no
 // Check for updates and never offers a download.
 const APP_STORE_BUILD = !!MAC_APP && window.__COWDREY_APP_STORE__ === true;
+// The Android app's own native features (desktop/src-tauri/plugins/sharekit/android/.../AndroidPdf.kt).
+const androidCall = (method, args = {}) => NATIVE.core.invoke('plugin:sharekit|native', { method, args });
+// Read aloud in the Android app: its web view has no working speech, so speechSynthesis is Android's text-to-speech.
+// Only what the Read aloud bar uses: speak (one sentence at a time), cancel, speaking/pending and the utterance's
+// start, end and error. The command is hidden when the phone has no speech engine (see the end of this file).
+if (ANDROID_APP) (() => {
+  let queue = [], gen = 0;
+  const synth = {
+    speaking: false, pending: false, paused: false, onvoiceschanged: null,
+    getVoices: () => [], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
+    speak(u) { queue.push(u); synth.pending = true; pump(); },
+    cancel() { queue = []; gen++; synth.pending = false; if (synth.speaking) androidCall('stopSpeaking').catch(() => {}); synth.speaking = false; },
+  };
+  function pump() {
+    if (synth.speaking || !queue.length) { synth.pending = queue.length > 0; return; }
+    const u = queue.shift(), g = gen; synth.speaking = true; synth.pending = queue.length > 0;
+    setTimeout(() => { if (g === gen && u.onstart) u.onstart({ utterance: u }); }, 0);
+    androidCall('speak', { text: u.text, rate: u.rate || 1, lang: u.lang || '' }).then((r) => {
+      if (g !== gen) return; synth.speaking = false;
+      if (r && r.error) { if (u.onerror) u.onerror({ error: r.error, utterance: u }); } else if (!(r && r.stopped) && u.onend) u.onend({ utterance: u });
+      pump();
+    }, () => { if (g !== gen) return; synth.speaking = false; if (u.onerror) u.onerror({ error: 'synthesis-unavailable', utterance: u }); pump(); });
+  }
+  class Utterance { constructor(text) { Object.assign(this, { text: String(text || ''), rate: 1, pitch: 1, volume: 1, lang: '', voice: null, onstart: null, onend: null, onerror: null, onboundary: null }); } }
+  try { Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true }); Object.defineProperty(window, 'SpeechSynthesisUtterance', { value: Utterance, configurable: true }); } catch {}
+})();
+// File pickers in the Android app: Android's picker filters by the type the file's app reports, and many report
+// signing IDs (.p12, .pfx), form data (.xfdf, .fdf) and actions (.json) as plain data, so those files would be greyed
+// out. A picker for anything but PDFs and pictures shows every file; the feature checks what it was given.
+const ANDROID_ACCEPT_OK = /^(application\/pdf|\.pdf|image\/[\w.+*-]+|\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|svg)|video\/[\w.+*-]+|audio\/[\w.+*-]+)$/i;
+function androidAccept(input) {
+  if (!(input instanceof HTMLInputElement) || input.type !== 'file' || !input.accept) return;
+  const parts = input.accept.split(',').map((x) => x.trim()).filter(Boolean);
+  if (parts.some((x) => !ANDROID_ACCEPT_OK.test(x)) && !parts.includes('*/*')) input.accept = [...parts, '*/*'].join(',');
+}
+if (ANDROID_APP) {
+  const click = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () { androidAccept(this); return click.call(this); };
+  if (HTMLInputElement.prototype.showPicker) { const sp = HTMLInputElement.prototype.showPicker; HTMLInputElement.prototype.showPicker = function () { androidAccept(this); return sp.call(this); }; }
+  document.addEventListener('click', (e) => androidAccept(e.target), true);
+}
 const b64ToBytes = (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
 const bytesToB64 = (u) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 const $ = (s, r = document) => r.querySelector(s);
@@ -236,7 +277,7 @@ document.fonts && document.fonts.ready.then(() => fitTitle());
 function setSaved(saved, opened) {
   if (doc) doc.dirty = !saved;
   const kept = opened && doc && Object.values(doc.marks).some((l) => l && l.length);
-  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Recent' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
+  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Recent' : saved ? `${ic('check')} Saved` : (doc.path || doc.saUri ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -3212,15 +3253,49 @@ function shareAnchor() {
   const b = $('#saveBtn'); const r = b ? b.getBoundingClientRect() : { left: innerWidth / 2, bottom: 0, width: 0 };
   return { x: r.left + r.width / 2, y: r.bottom, preferredEdge: 'bottom' };
 }
+// Writes a file into the app's temporary folder (the share sheet, Android's save dialog and print read it there) and
+// returns its path. Android gets it in parts of 4 MB, so a large PDF is never one huge message.
+async function writeOutgoing(data, name) {
+  const bytes = toBytes(data), PART = ANDROID_APP ? 4 << 20 : Infinity;
+  let path = '';
+  for (let at = 0; at === 0 || at < bytes.length; at += PART) {
+    path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(bytes.subarray(at, at + PART)), append: at > 0 });
+    if (!isFinite(PART)) break;
+  }
+  return path;
+}
+// Android's save dialog: the person picks where (Downloads, Drive, a folder) and the name. { saved, uri, name };
+// saved is false when they cancelled.
+async function androidSaveAs(data, name, type) {
+  name = safeName(name);
+  const path = await writeOutgoing(data, name);
+  const r = await androidCall('saveAs', { path, name, mimeType: type || 'application/octet-stream' });
+  return r && r.saved ? r : { saved: false };
+}
+// Several new files at once (Split into files): one folder for all of them in the Android app, one save each elsewhere.
+// files: [{ data, name, type }]. Returns how many were saved.
+async function saveFiles(files) {
+  if (ANDROID_APP && files.length > 1) {
+    const list = [];
+    for (const f of files) list.push({ path: await writeOutgoing(f.data, safeName(f.name)), name: safeName(f.name), mimeType: f.type || 'application/octet-stream' });
+    const r = await androidCall('saveToFolder', { files: list });
+    if (!r || !r.saved) return 0;
+    toast(`Saved ${r.names.length} files in ${r.folder}`);
+    return r.names.length;
+  }
+  let n = 0;
+  for (const f of files) { if (!(await saveFile(f.data, f.name, f.type))) break; n++; }
+  return n;
+}
 // The share sheet (iPhone, iPad, Android) or share menu (Mac): Save to Files, Drive, Mail, AirDrop, Messages, Print.
 async function shareFile(data, name, type) {
   name = safeName(name);
-  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(toBytes(data)) });
+  const path = await writeOutgoing(data, name);
   const url = MAC_APP ? path : 'file://' + (ANDROID_APP ? path : encodeURI(path));
   await NATIVE.core.invoke('plugin:sharekit|share_file', { url, mimeType: type, title: name, ...(MAC_APP ? { position: shareAnchor() } : {}) });
 }
-// Saves a new file (an export, extracted pages, a copy): a save dialog on the Mac, the share sheet on phones,
-// a download on the web. Returns the Mac path, true, or false when cancelled.
+// Saves a new file (an export, extracted pages, a copy): a save dialog on the Mac and Android, the share sheet on the
+// iPhone and iPad, a download on the web. Returns the Mac path, true, or false when cancelled.
 async function saveFile(data, name, type) {
   const ext = (name.match(/\.([a-z0-9]+)$/i) || [, 'pdf'])[1];
   if (MAC_APP) {
@@ -3229,6 +3304,12 @@ async function saveFile(data, name, type) {
     await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(toBytes(data)) });
     toast(`Saved ${target.split('/').pop()}`);
     return target;
+  }
+  if (ANDROID_APP) {
+    const r = await androidSaveAs(data, name, type);
+    if (!r.saved) return false;
+    toast(`Saved ${r.name || safeName(name)}`);
+    return true;
   }
   if (NATIVE) { await shareFile(data, name, type); return true; }
   download(toBytes(data), name, type);
@@ -3255,7 +3336,20 @@ async function nativeSave(bytes, copy) {
     toast(`Saved ${target.split('/').pop()}`);
     return true;
   }
-  // iPhone, iPad and Android: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
+  // Android: the save dialog, then saving again goes to the same file (until it can't be written any more).
+  if (ANDROID_APP) {
+    let r = null;
+    if (!copy && doc.saUri) {
+      try { r = await androidCall('writeTo', { uri: doc.saUri, path: await writeOutgoing(bytes, name) }); }
+      catch (e) { console.warn(e); r = null; doc.saUri = null; }
+    }
+    if (!r) r = await androidSaveAs(bytes, name, 'application/pdf');
+    if (!r || !r.saved) return false;
+    if (!copy) { doc.saUri = r.uri; if (r.name) { doc.name = r.name.replace(/\.pdf$/i, ''); setTitle(); } persist(); }
+    toast(`Saved ${r.name || safeName(name)}`);
+    return true;
+  }
+  // iPhone and iPad: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
   await shareFile(bytes, name, 'application/pdf');
   return true;
 }
@@ -3326,6 +3420,15 @@ async function exportText() {
   catch (e) { console.error(e); toast(`Could not export the text: ${e.message || e}`); }
 }
 async function printDoc() {
+  // Android prints the PDF itself, sharp at the printer's resolution, with nothing to draw first.
+  if (ANDROID_APP) {
+    try {
+      const bytes = await buildPdf(); if (!bytes) return;
+      const name = safeName(doc.name + '.pdf');
+      await androidCall('printPdf', { path: await writeOutgoing(bytes, name), name, pages: doc.pages.length });
+    } catch (e) { if (!e || e.name !== 'FontsError') toast(`Could not print: ${e.message || e}`); }
+    return;
+  }
   keepPages = true; // every page stays drawn until printing is done
   for (const v of views) await renderView(v);
   try {
@@ -3745,7 +3848,7 @@ async function persistNow() {
   if (!doc) return;
   doc.updated = Date.now();
   // Passwords are never written to this device: a protected PDF asks for its password again when reopened.
-  const rec = { id: doc.id, name: doc.name, path: doc.path || null, mtime: doc.mtime || 0, sources: doc.sources, pages: doc.pages, marks: doc.marks, updated: doc.updated };
+  const rec = { id: doc.id, name: doc.name, path: doc.path || null, saUri: doc.saUri || null, mtime: doc.mtime || 0, sources: doc.sources, pages: doc.pages, marks: doc.marks, updated: doc.updated };
   try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
   if (S.side === 'docs') renderDocs();
 }
@@ -3799,7 +3902,7 @@ async function openStored(id) {
   // The file it came from is linked again only if it still exists; Save checks it hasn't changed since.
   let path = rec.path || null;
   if (path && MAC_APP && !(await fileTime(path))) path = null;
-  return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0 });
+  return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0, saUri: ANDROID_APP ? rec.saUri || null : null });
 }
 
 /* ---------------- the sample PDF ----------------
@@ -4025,7 +4128,7 @@ function shortcutsDialog() {
 cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
 cmd('share', { label: 'Share…', icon: 'share', enabled: has, get hidden() { return !NATIVE && !webCanSharePdf(); }, run: sharePdf });
 cmd('shareApp', { label: 'Share Cowdrey.PDF…', icon: 'heart', run: () => openShareApp() });
-cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP || APP_STORE_BUILD, run: () => checkForUpdates(true) });
+cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !(MAC_APP || ANDROID_APP) || APP_STORE_BUILD, run: () => checkForUpdates(true) });
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
@@ -4780,6 +4883,8 @@ function applyTheme() {
   $('#themeBtn').title = { system: 'Theme: match system', light: 'Theme: light', dark: 'Theme: dark' }[S.theme];
   $('#themeBtn').setAttribute('aria-label', $('#themeBtn').title); // its name says the theme now
   icons();
+  // Android: light status-bar icons on the dark theme, dark ones on the light theme.
+  if (ANDROID_APP) androidCall('systemBars', { dark: S.theme === 'dark' || (S.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches) }).catch(() => {});
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
 window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.handle) { e.preventDefault(); e.returnValue = ''; } });
@@ -4792,10 +4897,14 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
 async function takeOpened() {
   let files = [], opened = 0;
   try { files = await NATIVE.core.invoke('take_opened_files'); } catch {}
+  if (ANDROID_APP) {
+    try { const r = await androidCall('takeSharedFiles'); for (const x of (r && r.files) || []) files.push({ name: x.name, path: x.uri, content: '' }); } catch {}
+  }
   for (const f of files || []) {
+    if (f.error) { toast(f.error === 'link' ? 'Cowdrey.PDF can only open PDF files on this device. Download the PDF first, then open it.' : `Could not open ${f.name || 'that file'}. Open it from Files or with Open instead.`); continue; }
     try {
       if (f.content) { if (await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null, MAC_APP ? await fileTime(f.path) : 0)) opened++; }
-      else if (f.path.includes('://') && NATIVE.fs) { if (await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), await contentName(f.path))) opened++; }
+      else if (f.path.includes('://') && NATIVE.fs) { if (await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), f.name || await contentName(f.path))) opened++; }
     } catch (e) { toast(`Could not open that file: ${e}`); }
   }
   return opened;
@@ -4813,6 +4922,7 @@ const RELEASES_PAGE = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/la
 const RELEASES_API = 'https://api.github.com/repos/bradleycowdrey/cowdrey-pdf/releases/latest';
 const isNewer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
 async function checkForUpdates(manual) {
+  if (ANDROID_APP) return androidUpdates(manual);
   if (!MAC_APP || APP_STORE_BUILD) return;
   if (manual) toast('Checking for updates…');
   if (MAC_APP.updater) {
@@ -4846,6 +4956,83 @@ async function checkForUpdates(manual) {
   const a = await dialog(`Cowdrey.PDF ${latest} is available`, `<p>You have version ${esc(VERSION)}. Download the new version, open it, and drag Cowdrey.PDF into Applications to replace this one. Your documents are kept.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Download', value: 'go', primary: true }]);
   if (a === 'skip') store.set('skipVersion', latest);
   if (a === 'go') { openExternal(file ? file.browser_download_url : (rel.html_url || RELEASES_PAGE)); toast('Downloading in your browser'); }
+}
+// The Android app installed from the APK on GitHub: a newer release with an APK is offered as a download.
+async function androidUpdates(manual) {
+  let info = null; try { info = await androidCall('appInfo'); } catch {}
+  if (info && info.installer === 'com.android.vending') { if (manual) toast('Google Play keeps Cowdrey.PDF up to date.'); return; }
+  if (manual) toast('Checking for updates…');
+  let rel;
+  try { const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }); if (!r.ok) throw new Error(`GitHub answered ${r.status}`); rel = await r.json(); }
+  catch (e) { if (manual) toast('Could not check for updates. Check your internet connection.'); return; }
+  store.set('updateChecked', Date.now());
+  const latest = String(rel.tag_name || '').replace(/^v/i, '');
+  const apk = (rel.assets || []).find((x) => /\.apk$/i.test(x.name));
+  if (!latest || !apk || !isNewer(latest, VERSION)) { if (manual) toast(`You have the latest version (${VERSION}).`); return; }
+  if (!manual && store.get('skipVersion', '') === latest) return;
+  const a = await dialog(`Cowdrey.PDF ${latest} is available`, `<p>You have version ${esc(VERSION)}. Download the new version and open it to install it. Your documents are kept.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Download', value: 'go', primary: true }]);
+  if (a === 'skip') store.set('skipVersion', latest);
+  if (a === 'go') openExternal(apk.browser_download_url);
+}
+/* ---------------- the Android app ---------------- */
+// Long-press and drag on touch screens, for the lists reordered by dragging (page thumbnails, Organize pages,
+// bookmarks, tab order, reading order): Android's web view doesn't drag with a finger, so the same drag events are
+// sent here. A finger that moves before the long press scrolls as usual.
+function touchDrag() {
+  let timer = 0, src = null, dt = null, start = null, over = null, active = false;
+  const fire = (el, type, t) => { try { el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: t.clientX, clientY: t.clientY, dataTransfer: dt })); } catch {} };
+  const reset = () => { clearTimeout(timer); if (src) src.classList.remove('touch-drag'); src = null; over = null; active = false; };
+  document.addEventListener('touchstart', (e) => {
+    reset();
+    const el = e.touches.length === 1 && e.target.closest && e.target.closest('[draggable="true"]'); if (!el) return;
+    const t = e.touches[0]; start = { x: t.clientX, y: t.clientY }; src = el;
+    timer = setTimeout(() => { if (!src) return; active = true; dt = new DataTransfer(); src.classList.add('touch-drag'); fire(src, 'dragstart', start); if (navigator.vibrate) try { navigator.vibrate(12); } catch {} }, 450);
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!src) return; const t = e.touches[0];
+    if (!active) { if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) reset(); return; }
+    e.preventDefault();
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    if (el !== over) { if (over) fire(over, 'dragleave', t); over = el; if (el) fire(el, 'dragenter', t); }
+    if (el) fire(el, 'dragover', t);
+    // near the top or bottom of the list, it scrolls
+    let sc = src.parentElement; while (sc && sc !== document.body && !(sc.scrollHeight > sc.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement;
+    if (sc && sc !== document.body) { const r = sc.getBoundingClientRect(); if (t.clientY < r.top + 40) sc.scrollTop -= 12; else if (t.clientY > r.bottom - 40) sc.scrollTop += 12; }
+  }, { capture: true, passive: false });
+  const end = (e, cancelled) => {
+    if (active && src) {
+      const t = e.changedTouches[0], el = document.elementFromPoint(t.clientX, t.clientY);
+      if (el && !cancelled) fire(el, 'drop', t);
+      fire(src, 'dragend', t);
+      const stop = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+      document.addEventListener('click', stop, { capture: true, once: true }); setTimeout(() => document.removeEventListener('click', stop, true), 400);
+    }
+    reset();
+  };
+  document.addEventListener('touchend', (e) => end(e, false), true);
+  document.addEventListener('touchcancel', (e) => end(e, true), true);
+  document.addEventListener('contextmenu', (e) => { if (src) e.preventDefault(); }, true);
+  // If the web view starts a drag of its own, it takes over.
+  document.addEventListener('dragstart', (e) => { if (e.isTrusted && src) { clearTimeout(timer); if (src) src.classList.remove('touch-drag'); src = null; active = false; } }, true);
+}
+TEST_HOOKS.touchDrag = touchDrag;
+function androidStart() {
+  // The system bars and the keyboard: the web view doesn't say how tall the navigation bar is, and doesn't move a
+  // field above the keyboard, so the app tells the page (window.__cowdreyInsets) and the field is scrolled into view.
+  const root = document.documentElement;
+  window.__cowdreyInsets = (o) => {
+    if (!o) return;
+    root.style.setProperty('--sab', `max(env(safe-area-inset-bottom, 0px), ${+o.bottom || 0}px)`);
+    root.dataset.keyboard = o.keyboard > 0 ? 'up' : '';
+    if (o.keyboard > 0) setTimeout(() => { const a = document.activeElement; if (a && a !== document.body && (/INPUT|TEXTAREA|SELECT/.test(a.tagName) || a.isContentEditable)) a.scrollIntoView({ block: 'center' }); }, 150);
+  };
+  androidCall('insets').then(window.__cowdreyInsets, () => {});
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
+  // PDFs shared several at a time (Files, Gmail): Android tells the page, which opens them.
+  window.__cowdreyShared = () => serial(takeOpened);
+  touchDrag();
+  // Read aloud needs a speech engine on the phone: without one, the command is not offered.
+  setTimeout(() => androidCall('ttsAvailable').then((r) => { if (r && !r.available && C.crdReadAloud) { C.crdReadAloud.hidden = true; renderRibbon(); } }, () => {}), 4000);
 }
 // Quitting with changes not yet saved to the file they came from: ask first (the app waits for the answer).
 let quitAsked = false;
@@ -4940,6 +5127,7 @@ serial(async () => {
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
   sideNoDoc();
 });
-if (MAC_APP && !APP_STORE_BUILD && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
+if ((MAC_APP || ANDROID_APP) && !APP_STORE_BUILD && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
+if (ANDROID_APP) androidStart();
 // For tests and automation
 window.__cowdreyPdf = { ...TEST_HOOKS, get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; }, contentMap: (n) => contentMap(views[n].page), tokenize: (t) => tokenizeContent(t).length };

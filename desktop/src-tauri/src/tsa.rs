@@ -11,7 +11,6 @@ pub async fn tsa_post(url: String, body: String) -> Result<String, String> {
     post(url, body).await
 }
 
-#[cfg(not(target_os = "android"))]
 async fn post(url: String, body: String) -> Result<String, String> {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD;
@@ -27,7 +26,7 @@ async fn post(url: String, body: String) -> Result<String, String> {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();
     }
-    let client = reqwest::Client::builder()
+    let client = roots(reqwest::Client::builder())
         .timeout(std::time::Duration::from_secs(30))
         .user_agent(concat!("Cowdrey.PDF/", env!("CARGO_PKG_VERSION")))
         .build()
@@ -50,8 +49,29 @@ async fn post(url: String, body: String) -> Result<String, String> {
     Ok(b64.encode(&answer))
 }
 
-// Android: its web view and this app have no HTTP client set up for this yet; the page says so.
+/// The Mac and iPhone use the system's own certificate check (rustls-platform-verifier).
+#[cfg(not(target_os = "android"))]
+fn roots(b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    b
+}
+
+/// Android: the certificate authorities the phone trusts, read from its certificate store (each file one PEM
+/// certificate; the updatable store in the Conscrypt module first, from Android 14). Only those are trusted.
 #[cfg(target_os = "android")]
-async fn post(_url: String, _body: String) -> Result<String, String> {
-    Err("Timestamps are not available in the Android app yet".into())
+fn roots(b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    let mut certs = Vec::new();
+    for dir in ["/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"] {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for e in entries.flatten() {
+            if let Ok(pem) = std::fs::read(e.path()) {
+                if let Ok(c) = reqwest::Certificate::from_pem(&pem) {
+                    certs.push(c);
+                }
+            }
+        }
+        if !certs.is_empty() {
+            break;
+        }
+    }
+    b.tls_certs_only(certs)
 }

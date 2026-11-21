@@ -54,6 +54,9 @@ const NATIVE_METHODS: &[&str] = &[
     "shareLink", "printPage", "exportPdf", "displayName",
     "pickFiles", "saveAsFile", "readFile", "writeFile",
     "pickFolder", "listFolder", "readInFolder", "writeInFolder", "deleteInFolder",
+    // Cowdrey.PDF on Android (android/src/main/java/AndroidPdf.kt)
+    "saveAs", "writeTo", "saveToFolder", "printPdf", "speak", "stopSpeaking", "ttsAvailable",
+    "systemBars", "insets", "takeSharedFiles", "appInfo",
 ];
 
 #[command]

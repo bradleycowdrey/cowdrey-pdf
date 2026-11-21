@@ -1475,7 +1475,7 @@ async function sgSignWith({ id, place, box, look, o }) {
   const path = typeof where === 'string' ? where : undefined;
   await serial(async () => openBytes(signed, path ? path.split('/').pop() : name, path, path ? await fileTime(path) : 0));
   window.__lastSignedShown = signed.length;
-  if (!MAC_APP) toast('Signed. The signed PDF is in your downloads.');
+  if (!MAC_APP) toast(NATIVE ? 'Signed.' : 'Signed. The signed PDF is in your downloads.');
   return true;
 }
 

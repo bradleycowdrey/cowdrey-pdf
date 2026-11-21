@@ -58,37 +58,23 @@ export const back = () => sh('input keyevent KEYCODE_BACK');
 export const pid = () => sh(`pidof ${PKG}`).trim();
 export function component() { return (sh(`cmd package resolve-activity --brief ${PKG}`).trim().split('\n').pop() || '').trim(); }
 
-let browser = null;
+// Playwright's Android support finds the app's web view by its devtools socket (webview_devtools_remote_<pid>) and
+// connects to it as Chrome on Android; no driver app is installed (only the web view is driven this way).
+let device = null;
 export async function connect(timeout = 60000) {
   const end = Date.now() + timeout; let p = '';
   while (Date.now() < end && !(p = pid())) await sleep(1000);
   if (!p) throw new Error('the app is not running');
-  let sock = '';
-  while (Date.now() < end) {
-    const m = sh('cat /proc/net/unix').match(new RegExp(`@(webview_devtools_remote_${p})\\b`));
-    if (m) { sock = m[1]; break; }
-    await sleep(1000);
-  }
-  if (!sock) throw new Error('no devtools socket for the web view (is this the debug build?)');
-  adb('forward', '--remove', 'tcp:9333');
-  adb('forward', 'tcp:9333', `localabstract:${sock}`);
-  if (browser) { try { await browser.close(); } catch {} browser = null; }
-  let lastErr;
-  while (Date.now() < end) {
-    try { browser = await pw.chromium.connectOverCDP('http://127.0.0.1:9333', { timeout: 20000 }); break; } catch (e) { lastErr = e; await sleep(2000); }
-  }
-  if (!browser) throw lastErr || new Error('could not connect');
-  let page = null;
-  while (Date.now() < end && !page) {
-    for (const c of browser.contexts()) for (const pg of c.pages()) if (/tauri\.localhost|^tauri:/.test(pg.url())) page = pg;
-    if (!page) await sleep(1000);
-  }
-  if (!page) throw new Error('the app page was not found: ' + browser.contexts().flatMap((c) => c.pages().map((x) => x.url())).join(', '));
+  if (!device) [device] = await pw._android.devices({ omitDriverInstall: true });
+  if (!device) throw new Error('no device');
+  const wv = await device.webView({ pkg: PKG, socketName: `webview_devtools_remote_${p}` }, { timeout: Math.max(5000, end - Date.now()) });
+  const page = await wv.page();
   page.errors = [];
   page.on('pageerror', (e) => { page.errors.push(e.message); log('  [page error]', e.message); });
-  page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' || m.type() === 'warning' || /fake worker/i.test(t)) log(`  [console.${m.type()}]`, t.slice(0, 400)); if (m.type() === 'error') page.errors.push(t); });
+  page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' || m.type() === 'warning' || /fake worker|OCR:/i.test(t)) log(`  [console.${m.type()}]`, t.slice(0, 400)); if (m.type() === 'error') page.errors.push(t); });
   await page.waitForFunction(() => window.__cowdreyPdf, null, { timeout: 30000 });
   page.setDefaultTimeout(30000);
+  log('  connected to the web view of', PKG, 'pid', p, page.url());
   return page;
 }
 

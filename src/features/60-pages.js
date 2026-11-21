@@ -208,6 +208,13 @@ async function pg60Split() {
   if (!parts.length) { toast('No pages in those ranges'); return; }
   let saved = 0;
   try {
+    // The Android app saves all the parts into one folder the person picks (saveFiles says where).
+    if (ANDROID_APP && parts.length > 1) {
+      const files = [];
+      for (let k = 0; k < parts.length; k++) { const bytes = await buildPdf(parts[k]); if (!bytes) return; files.push({ data: bytes, name: `${doc.name} (part ${k + 1}).pdf`, type: 'application/pdf' }); }
+      await saveFiles(files);
+      return;
+    }
     for (let k = 0; k < parts.length; k++) {
       const bytes = await buildPdf(parts[k]);
       if (!bytes) return;
