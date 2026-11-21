@@ -5,7 +5,7 @@
    saving the widget is rewritten in place with pdf-lib: /Rect, /MK, /BS, /DA, /Q, /Ff, /MaxLen, /Opt, /TU, /DV, /V,
    /AA and its look (/AP). A widget of a field with several (/Kids) moves on its own.
      ffx  { ref (pdf.js annotation id, "12R"), name (the field's name in the PDF), kind, x1, y1, x2, y2, rot, F, orig,
-            origVal, val, and the settings below }
+            origVal, val, daFont (the font its /DA names), ownFont (a font of the PDF's own), and the settings below }
    Settings, on new fields ('ff') and proxies alike:
      font Helv | TiRo | Cour, size, color, bc, bg (hex, '' none), bs S|D|B|I|U, bw, q 0|1|2, multi, max, comb, scroll,
      pw, nospell, opts, edit, sort, multisel, exp, style (check, circle, cross, diamond, square, star), dv,
@@ -22,7 +22,6 @@
    AFTime_*, AFSpecial_*, AFRange_Validate, AFSimple_Calculate and simplified field notation) with its own small
    evaluator: no script from the PDF is ever run here. */
 const FFD_FONTS = [['Helv', 'Helvetica'], ['TiRo', 'Times'], ['Cour', 'Courier']];
-const FFD_STD = { Helv: 'Helvetica', TiRo: 'TimesRoman', Cour: 'Courier' };
 const FFD_BASE = { Helv: 'Helvetica', TiRo: 'Times-Roman', Cour: 'Courier' };
 // Check box and radio button styles: the ZapfDingbats character other apps use (/MK /CA), and how it looks here
 const FFD_STYLES = { check: ['4', 'Check'], circle: ['l', 'Circle'], cross: ['8', 'Cross'], diamond: ['u', 'Diamond'], square: ['n', 'Square'], star: ['H', 'Star'] };
@@ -63,8 +62,52 @@ async function ffdWidgets() {
   ffdWidgetCache = { doc, n: pdfDocs.size, list };
   return list;
 }
-FEATURE.onDocShown.push(() => { ffdWidgetCache = null; ffdSel = new Set(); ffdWidgets().catch(() => {}); });
+FEATURE.onDocShown.push(() => { ffdWidgetCache = null; ffdSel = new Set(); ffdWidgets().then(ffdReadInfo).catch(() => {}); });
 const ffdWidgetsNow = () => (ffdWidgetCache && ffdWidgetCache.doc === doc ? ffdWidgetCache.list : []);
+/* ---- what pdf.js does not say about a widget, read from the PDF itself (pdf-lib), for sources with signature
+   fields, check boxes or radio buttons: whether its signature field is signed (/V), its style (/MK /CA) and the
+   font its field settings (/DA) name ---- */
+const ffdInfoCache = new WeakMap(); // source bytes: a promise of Map(annotation id ("12R") → { signed, ca, base })
+const ffdInfoDone = new WeakMap();  // source bytes: that Map, once read
+const ffdCaStyle = Object.fromEntries(Object.entries(FFD_STYLES).map(([k, [ch]]) => [ch, k]));
+function ffdSrcInfo(src) {
+  const bytes = doc && doc.sources[src]; if (!bytes) return Promise.resolve(new Map());
+  let pr = ffdInfoCache.get(bytes);
+  if (!pr) {
+    pr = (async () => {
+      const map = new Map();
+      try {
+        const L = await loadPdfLib(), { PDFName, PDFDict } = L, N = (k) => PDFName.of(k);
+        const d = await L.PDFDocument.load(bytes, bytes.password ? { password: bytes.password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false });
+        const af = d.catalog.lookup(N('AcroForm')), dr = af instanceof PDFDict ? af.lookup(N('DR')) : null, drf = dr instanceof PDFDict ? dr.lookup(N('Font')) : null;
+        const str = (x) => (x && x.decodeText ? x.decodeText() : null);
+        for (const [ref, o] of d.context.enumerateIndirectObjects()) {
+          if (!(o instanceof PDFDict) || String(o.get(N('Subtype'))) !== '/Widget') continue;
+          let ft = null, v = null, da = str(o.lookup(N('DA'))), x = o;
+          for (let n = 0; x instanceof PDFDict && n < 32; n++) { ft ??= x.get(N('FT')) || null; if (v == null && x.has(N('V'))) v = x.lookup(N('V')); da ??= str(x.lookup(N('DA'))); x = x.lookup(N('Parent')); }
+          if (da == null && af instanceof PDFDict) da = str(af.lookup(N('DA')));
+          const fn = da && /\/([^\s/]+)\s+[-\d.]+\s+Tf/.exec(da), fd = fn && drf instanceof PDFDict ? drf.lookup(N(fn[1])) : null;
+          const base = fd instanceof PDFDict && fd.get(N('BaseFont')) ? String(fd.get(N('BaseFont'))).slice(1).replace(/^[A-Z]{6}\+/, '') : null;
+          const mk = o.lookup(N('MK')), ca = mk instanceof PDFDict ? str(mk.lookup(N('CA'))) : null;
+          map.set(`${ref.objectNumber}R${ref.generationNumber || ''}`, { signed: String(ft) === '/Sig' && v instanceof PDFDict, ca, base });
+        }
+      } catch (e) { console.warn('form fields', e); }
+      ffdInfoDone.set(bytes, map);
+      return map;
+    })();
+    ffdInfoCache.set(bytes, pr);
+  }
+  return pr;
+}
+// A font of the PDF's own (not Helvetica, Times or Courier) that a widget's field settings name
+const ffdOwnOf = (info) => (info && info.base && !/^(Helvetica|Times|Courier)/.test(info.base) ? info.base : '');
+// What is known of a widget now: null while its source is still being read
+const ffdInfoNow = (src, id) => { const b = doc && doc.sources[src], m = b && ffdInfoDone.get(b); return m ? m.get(id) || {} : null; };
+// Sources with signature fields, check boxes or radio buttons are read as soon as the document shows
+function ffdReadInfo(list) {
+  const srcs = new Set(list.filter((w) => w.a.fieldType === 'Sig' || w.a.checkBox || w.a.radioButton).map((w) => w.src));
+  for (const src of srcs) ffdSrcInfo(src).then(() => views.forEach((v) => { if (v.rendered && v.entry.src === src && v.el.isConnected) ffdOverlay(v); }));
+}
 
 /* ---- formats, validation and calculations: the standard functions, read and written ---- */
 const ffdStr = (s) => JSON.stringify(String(s ?? ''));
@@ -107,7 +150,8 @@ function ffdParseCalc(js) {
   const s = String(js || ''); let r;
   if (!s.trim()) return { t: 'none' };
   if ((r = /\/\*\*\s*BVCALC\s+([\s\S]*?)\s+EVCALC\s*\*\*\//.exec(s))) return { t: 'sfn', sfn: r[1].trim() };
-  if ((r = /AFSimple_Calculate\(\s*["'](\w+)["']\s*,\s*(?:new\s+Array\s*\(([^)]*)\)|\[([^\]]*)\])\s*\)/.exec(s))) return { t: 'simple', op: r[1].toUpperCase(), fields: ffdStrs(r[2] ?? r[3]) };
+  // the fields as an array, or as one string of names with commas between ("A, B"), as other apps also write it
+  if ((r = /AFSimple_Calculate\(\s*["'](\w+)["']\s*,\s*(?:new\s+Array\s*\(([^)]*)\)|\[([^\]]*)\]|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'))\s*\)/.exec(s))) return { t: 'simple', op: r[1].toUpperCase(), fields: r[4] != null ? String(ffdStrs(r[4])[0] ?? '').split(',').map((x) => x.trim()).filter(Boolean) : ffdStrs(r[2] ?? r[3]) };
   return { t: 'custom', js: s };
 }
 function ffdCalcJs(cl) {
@@ -218,6 +262,7 @@ function ffdPdfjsValue(pd, a) {
   const x = v !== undefined ? v : a.fieldValue;
   return Array.isArray(x) ? (x.length > 1 ? x : x[0] ?? '') : x ?? '';
 }
+const ffdShownVals = new WeakMap(); // a control of the PDF's own: { value, shown } as last set here
 function ffdFields() {
   const out = new Map(), get = (n) => out.get(n) || out.set(n, { name: n, parts: [] }).get(n);
   const proxied = new Set(ffdFieldMarks().filter((m) => m.type === 'ffx').map((m) => m.ref)), gone = new Set();
@@ -259,7 +304,12 @@ function ffdFields() {
         for (const el of $$(`.annotationLayer [data-element-id="${CSS.escape(a.id)}"]`)) {
           if (el.type === 'checkbox' || el.type === 'radio') el.checked = a.checkBox ? v === (a.exportValue || 'Yes') : v === a.buttonValue;
           else if (el.tagName === 'SELECT') { for (const o of el.options) o.selected = Array.isArray(v) ? v.includes(o.value) : o.value === v; }
-          else if (document.activeElement !== el) el.value = fmt != null ? fmt : v;
+          else {
+            // the value as typed while the control has the focus (Tab into a total), formatted once it loses it
+            const shown = fmt != null ? fmt : v;
+            ffdShownVals.set(el, { value: v, shown });
+            el.value = document.activeElement === el ? v : shown;
+          }
         }
       }
     };
@@ -321,15 +371,24 @@ viewer.addEventListener('focusin', (e) => {
   const st = w.pd.annotationStorage.getValue(w.a.id, {}); if (st.formattedValue != null && st.value != null && el.value === st.formattedValue) el.value = st.value;
 }, true);
 
+// …and the formatted value when it loses the focus (pdf.js would show the look it was drawn with), unless it was typed in
+viewer.addEventListener('focusout', (e) => {
+  const el = e.target, rec = ffdShownVals.get(el); if (!rec || !doc) return;
+  const w = ffdWidgetsNow().find((x) => x.a.id === el.dataset.elementId); if (!w) return;
+  const st = w.pd.annotationStorage.getValue(w.a.id, {});
+  if (String(st.value ?? '') === String(rec.value)) el.value = rec.shown;
+}, true);
+
 /* ---- proxies: a field from the PDF, ready to change ---- */
 function ffdProxyOf(entry, a) {
   const kind = ffdKindOf(a), pd = pdfDocs.get(entry.src), st = pd.annotationStorage.getValue(a.id, {});
   const da = a.defaultAppearanceData || {}, [x1, y1, x2, y2] = a.rect, ff = a.fieldFlags | 0;
   const acts = a.actions, js = (k) => ((acts && (acts.get ? acts.get(k) : acts[k])) || []).join('\n');
+  const info = ffdInfoNow(entry.src, a.id) || {};
   const m = {
     id: uid(), type: 'ffx', ref: a.id, name: a.fieldName, kind, x1: Math.min(x1, x2), y1: Math.min(y1, y2), x2: Math.max(x1, x2), y2: Math.max(y1, y2), rot: ((a.rotation || 0) % 360 + 360) % 360,
     F: a.annotationFlags | 0, tip: a.alternativeText || '', req: !!a.required, ro: !!a.readOnly,
-    size: da.fontSize || 0, font: ffdFontKey(da.fontName), color: ffdHex(da.fontColor) || '#000000',
+    size: da.fontSize || 0, font: ffdFontKey(info.base || da.fontName), daFont: da.fontName || '', ownFont: ffdOwnOf(info), color: ffdHex(da.fontColor) || '#000000',
     bc: a.borderColor ? ffdHex(a.borderColor) : '', bg: a.backgroundColor ? ffdHex(a.backgroundColor) : '',
     bs: (a.borderStyle && FFD_PDFJS_BORDER[a.borderStyle.style]) || 'S', bw: a.borderStyle ? a.borderStyle.width : 1, q: a.textAlignment || 0,
   };
@@ -341,8 +400,8 @@ function ffdProxyOf(entry, a) {
     Object.assign(m, { opts, val: o ? o.displayValue ?? o.exportValue : v ?? '', edit: !!(ff & (1 << 18)), sort: !!(ff & (1 << 19)), multisel: !!(ff & (1 << 21)), nospell: !!(ff & (1 << 22)) });
     const ex = (a.options || []).map((x) => x.exportValue); if (ex.some((x, k) => x !== opts[k])) m.optx = ex;
   }
-  if (kind === 'check') Object.assign(m, { exp: a.exportValue || 'Yes', val: st.value !== undefined ? !!st.value : !!a.fieldValue && a.fieldValue !== 'Off' && a.fieldValue === a.exportValue, style: 'check' });
-  if (kind === 'radio') Object.assign(m, { exp: a.buttonValue, val: st.value !== undefined ? !!st.value : a.fieldValue === a.buttonValue, style: 'circle' });
+  if (kind === 'check') Object.assign(m, { exp: a.exportValue || 'Yes', val: st.value !== undefined ? !!st.value : !!a.fieldValue && a.fieldValue !== 'Off' && a.fieldValue === a.exportValue, style: ffdCaStyle[info.ca] || 'check' });
+  if (kind === 'radio') Object.assign(m, { exp: a.buttonValue, val: st.value !== undefined ? !!st.value : a.fieldValue === a.buttonValue, style: ffdCaStyle[info.ca] || 'circle' });
   if (kind === 'button') { m.label = a.buttonValue || ''; }
   if (kind === 'text' || kind === 'combo') { m.af = ffdParseFormat(js('Format'), js('Keystroke')); m.vl = ffdParseValidate(js('Validate')); m.cl = ffdParseCalc(js('Calculate')); }
   m.mu = a.resetForm ? { t: 'reset' } : a.url || a.unsafeUrl ? (/^mailto:/i.test(a.url || a.unsafeUrl) ? { t: 'url', url: a.url || a.unsafeUrl } : { t: 'url', url: a.url || a.unsafeUrl }) : a.action === 'Print' ? { t: 'print' } : { t: 'none' };
@@ -373,13 +432,27 @@ async function ffdWidgetsOfField(name) {
 // pdf.js's own controls for widgets that have proxies are hidden; signature fields and buttons are drawn on the page
 // itself, so pdf.js is told not to draw them ("noView") and the page is drawn again.
 const ffdRerenderSoon = new Map();
+// "noView" is for the screen only. pdf.js would write it into the saved file and rewrite the widget with it, and a
+// signature field's value (its signature, /V) would be lost: it is left out of what pdf.js saves.
+const ffdNoView = new WeakMap(); // pdf.js document: ids of the widgets told not to draw
+function ffdGuardSave(pd) {
+  if (ffdNoView.has(pd)) return ffdNoView.get(pd);
+  const ids = new Set(); ffdNoView.set(pd, ids);
+  const save = pd.saveDocument.bind(pd);
+  pd.saveDocument = async (...args) => {
+    const st = pd.annotationStorage, held = [];
+    for (const id of ids) { const cur = st.getValue(id, null); if (cur && cur.noView) { held.push([id, cur]); const rest = { ...cur }; delete rest.noView; st.remove(id); if (Object.keys(rest).length) st.setValue(id, rest); } }
+    try { return await save(...args); } finally { for (const [id, cur] of held) st.setValue(id, cur); }
+  };
+  return ids;
+}
 function ffdSync(v, proxied) {
   for (const sec of v.el.querySelectorAll('.annotationLayer [data-annotation-id]')) sec.classList.toggle('ffd-hidden', proxied.has(sec.dataset.annotationId));
   const st = pdfDocs.get(v.entry.src).annotationStorage; let again = false;
   for (const a of v.ffWidgets || []) {
     if (!(a.fieldType === 'Sig' || a.pushButton)) continue;
     const want = proxied.has(a.id), now = st.getValue(a.id, {}).noView;
-    if (want && !now) { st.setValue(a.id, { noView: true }); again = true; }
+    if (want && !now) { ffdGuardSave(pdfDocs.get(v.entry.src)).add(a.id); st.setValue(a.id, { noView: true }); again = true; }
     else if (!want && now) { const cur = st.getValue(a.id, {}); if (Object.keys(cur).length === 1) st.remove(a.id); else st.setValue(a.id, { noView: false }); again = true; }
   }
   ffdPanelSoon();
@@ -547,7 +620,7 @@ function ffdFreshName(name) { const used = ffNames(); let n = 2; const base = St
 // A new field with the settings of this one (a field from the PDF gives its settings to a new field)
 function ffdAsNew(m) {
   const o = JSON.parse(JSON.stringify(m)); o.id = uid(); o.type = 'ff';
-  for (const k of ['ref', 'orig', 'origVal', 'F', 'optx', 'cp', 'cpOf']) delete o[k];
+  for (const k of ['ref', 'orig', 'origVal', 'F', 'optx', 'cp', 'cpOf', 'daFont', 'ownFont']) delete o[k];
   if (m.type === 'ffx') { const md = ffModOf(m.name) || {}; o.name = ffShown(m.name); o.tip = md.tip ?? m.tip; o.req = md.req ?? m.req; o.ro = md.ro ?? m.ro; }
   o.val ??= m.kind === 'check' || m.kind === 'radio' ? false : '';
   return o;
@@ -686,6 +759,7 @@ function ffdPropsHtml(t, gen) {
   look += ffSel('ffdBs', 'Border style', FFD_BORDERS, t.bs || 'S') + ffSel('ffdBw', 'Border width', [[0, 'None'], [1, 'Thin'], [2, 'Medium'], [3, 'Thick'], ...([0, 1, 2, 3].includes(t.bw ?? 1) ? [] : [[t.bw, ffdNum(t.bw) + ' pt']])], t.bw ?? 1);
   if (['text', 'date', 'combo', 'list'].includes(k)) look += ffSel('ffdQ', 'Alignment', [[0, 'Left'], [1, 'Centre'], [2, 'Right']], t.q || 0);
   if (k === 'check' || k === 'radio') look += ffSel('ffdStyle', k === 'check' ? 'Check box style' : 'Button style', Object.entries(FFD_STYLES).map(([kk, [, l]]) => [kk, l]), t.style || (k === 'check' ? 'check' : 'circle'));
+  if (isX && t.ownFont && k !== 'check' && k !== 'radio' && k !== 'sig') look += `<p class="ffd-note ff-wide">It uses a font of this PDF (${esc(t.ownFont)}). That font stays unless you pick another.</p>`;
   if (['text', 'date', 'combo', 'list'].includes(k) && typeof fontsEmbed !== 'function') look += '<p class="ffd-note ff-wide">These fonts show Western European letters. Other letters may not show in the saved field.</p>';
   // Options
   let opt = '';
@@ -801,6 +875,7 @@ async function ffdProps(m, name) {
   if (m) t = JSON.parse(JSON.stringify(m));
   else { widgets = await ffdWidgetsOfField(name); if (!widgets.length) return; t = ffdProxyOf(widgets[0].entry, widgets[0].a); }
   const isX = t.type === 'ffx', md = isX ? ffModOf(t.name) || {} : {};
+  if (isX && !t.ownFont) { const e = m ? ffdEntryOf(m) : widgets[0].entry; if (e) t.ownFont = ffdOwnOf((await ffdSrcInfo(e.src)).get(t.ref)); }
   const gen = { name: isX ? ffShown(t.name) : t.name, tip: isX ? md.tip ?? t.tip : t.tip, req: isX ? md.req ?? t.req : t.req, ro: isX ? md.ro ?? t.ro : t.ro };
   const K = FF_KINDS[t.kind] || FF_KINDS.text;
   const a = await dialog(`${K.label} properties`, `<div class="ffd-props">${ffdPropsHtml(t, gen)}</div>`, [{ label: 'Delete field', value: 'delete', danger: true }, { label: 'Cancel' }, { label: 'Save', value: 'save', primary: true }], ffdPropsSetup);
@@ -815,7 +890,15 @@ async function ffdProps(m, name) {
   const newKind = $('#ffdKind', dlg) ? $('#ffdKind', dlg).value : t.kind;
   const was = ffdOrigOf(t) + JSON.stringify(t.val ?? null);
   ffdRead(dlg, t);
-  let nm = ffClean($('#ffName', dlg).value) || gen.name;
+  // A field from the PDF with a dotted name ("Addr.City") is a field in a parent: the part after the last dot is its
+  // own name, and only that part can change (a name left as it was stays exactly as it was).
+  const typed = $('#ffName', dlg).value.trim();
+  let nm;
+  if (isX) {
+    const dot = gen.name.lastIndexOf('.'), pre = dot >= 0 ? gen.name.slice(0, dot + 1) : '';
+    const own = !typed || typed === gen.name ? null : typed.startsWith(pre) ? typed.slice(pre.length) : typed.slice(typed.lastIndexOf('.') + 1);
+    nm = own == null ? gen.name : pre + (ffClean(own) || gen.name.slice(pre.length));
+  } else nm = ffClean(typed) || gen.name;
   const tip = $('#ffTip', dlg).value.trim(), req = $('#ffReq', dlg).checked, ro = $('#ffRo', dlg).checked;
   const before = snapshot();
   if (isX) {
@@ -878,7 +961,10 @@ async function ffdRetype(t, kind, before) {
 async function ffdSignField(m, v, a) {
   const entry = m ? ffdEntryOf(m) : v && v.entry; if (!entry) return;
   const rect = m ? ffBox(m) : [Math.min(a.rect[0], a.rect[2]), Math.min(a.rect[1], a.rect[3]), Math.max(a.rect[0], a.rect[2]), Math.max(a.rect[1], a.rect[3])];
-  const field = { name: m ? ffdNameOf(m) : ffShown(a.fieldName), rect, page: doc.pages.indexOf(entry), ref: m ? m.ref || null : a.id, markId: m ? m.id : null, kind: 'sig' };
+  const ref = m ? m.ref || null : a.id;
+  // a field signed already (a digital signature in /V) is left as it is
+  if (ref && (await ffdSrcInfo(entry.src)).get(ref)?.signed) { toast('This field is signed already.'); return; }
+  const field = { name: m ? ffdNameOf(m) : ffShown(a.fieldName), rect, page: doc.pages.indexOf(entry), ref, markId: m ? m.id : null, kind: 'sig' };
   const picture = () => ffdSigPicture(m, entry, a);
   if (typeof FEATURE.onSigField === 'function') {
     const r = await FEATURE.onSigField({ entry, field, picture });
@@ -927,6 +1013,10 @@ function ffdOverlay(v) {
   if (!ffDesign()) {
     for (const a of v.ffWidgets || []) {
       if (a.fieldType !== 'Sig' || gone.has(a.id) || proxied.has(a.id) || (ffModOf(a.fieldName) || {}).del) continue;
+      // only an empty signature field can be clicked (not one signed already): known once the PDF has been read
+      const info = ffdInfoNow(v.entry.src, a.id);
+      if (!info) { ffdSrcInfo(v.entry.src).then(() => { if (v.el.isConnected) ffdOverlay(v); }); continue; }
+      if (info.signed) continue;
       const [x, y, w, h] = box(a.rect), r = svgEl('rect', { class: 'ffd-sighit', x, y, width: w, height: h, rx: 2 });
       r.dataset.ref = a.id; const t = svgEl('title', {}); t.textContent = `Sign ${ffShown(a.fieldName)}`; r.appendChild(t);
       s.appendChild(r);
@@ -1137,7 +1227,8 @@ function ffdResources(L, out) {
   let fonts = dr.lookup(PDFName.of('Font')); if (!(fonts instanceof PDFDict)) { fonts = c.obj({}); dr.set(PDFName.of('Font'), fonts); }
   for (const [k, base] of [...Object.entries(FFD_BASE), ['ZaDb', 'ZapfDingbats']]) if (!fonts.get(PDFName.of(k))) fonts.set(PDFName.of(k), c.register(c.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: base, ...(k === 'ZaDb' ? {} : { Encoding: 'WinAnsiEncoding' }) })));
 }
-const ffdDA = (m) => { const [r, g, b] = ffdRgb(m.color || '#000000'); return `/${FFD_BASE[m.font] ? m.font : 'Helv'} ${ffdNum(m.size || 0)} Tf ${r === g && g === b ? `${ffdNum(r)} g` : `${ffdNum(r)} ${ffdNum(g)} ${ffdNum(b)} rg`}`; };
+// (a field from the PDF whose font was not changed keeps the font its settings name, such as one the PDF has)
+const ffdDA = (m) => { const [r, g, b] = ffdRgb(m.color || '#000000'); return `/${m.ownFont && m.daFont && /^[^\s/()<>[\]{}%]+$/.test(m.daFont) && !ffdFontChanged(m) ? m.daFont : FFD_BASE[m.font] ? m.font : 'Helv'} ${ffdNum(m.size || 0)} Tf ${r === g && g === b ? `${ffdNum(r)} g` : `${ffdNum(r)} ${ffdNum(g)} ${ffdNum(b)} rg`}`; };
 function ffdAction(L, out, mu, pages) {
   const { PDFString, PDFHexString, PDFName } = L, c = out.context;
   if (!mu || mu.t === 'none') return null;
@@ -1221,6 +1312,8 @@ async function ffdSaveExisting(L, out, form, list, pages, entries, ctx) {
     const g = groups.get(key) || groups.set(key, { fld, items: [] }).get(key); g.items.push({ m, w });
   }
   for (const { fld, items } of groups.values()) {
+    // the field settings (/DA) as they were: put back when the font, size and colour were not changed
+    const daOf = (d) => d.get(N('DA')) || null, da = { fd: daOf(fld.dict), wd: new Map(items.map(({ w }) => [w.dict, daOf(w.dict)])) };
     for (const { m, w } of items) {
       let was = {}; try { const a = JSON.parse(m.orig); ffdKeys.forEach((k, n) => { was[k] = a[n]; }); } catch { was = {}; }
       try { ffdWrite(L, out, fld.dict, w.dict, m, was, pages); } catch (e) { console.warn('form field', m.name, e); }
@@ -1237,7 +1330,8 @@ async function ffdSaveExisting(L, out, form, list, pages, entries, ctx) {
       } else if (items.some((x) => JSON.stringify(x.m.val ?? null) !== x.m.origVal)) ffdWriteValue(L, out, fld.dict, items.map((x) => x.w.dict), m0);
     } catch (e) { console.warn('form value', m0.name, e); }
     if (fld.ref) { try { form.markFieldAsDirty(fld.ref); } catch {} }
-    for (const { m, w } of items) ctx.ffdLooks.push({ m, wd: w.dict, fref: fld.ref });
+    const signed = fld.dict.lookup(N('V')) instanceof L.PDFDict && String(fld.dict.get(N('FT'))) === '/Sig';
+    for (const { m, w } of items) ctx.ffdLooks.push({ m, wd: w.dict, fref: fld.ref, da: { fd: da.fd, wd: da.wd.get(w.dict) }, signed });
   }
 }
 // The settings of a field made here, once pdf-lib has made it
@@ -1250,21 +1344,51 @@ async function ffdApplyNew(L, out, form, m, f, ref, ctx) {
 }
 // Fields in Times or Courier, and text other than Western European, are drawn with their own font
 async function ffdBeforeLooks(L, out, form, ctx) {
-  const done = new Set(), fonts = {};
-  for (const { m, fref } of ctx.ffdLooks || []) {
+  const done = new Set(), fonts = {}, std = (base) => fonts[base] || (fonts[base] = out.embedFont(base));
+  for (const { m, fref, isNew } of ctx.ffdLooks || []) {
     if (!fref || done.has(fref.tag) || !['text', 'date', 'combo', 'list', 'button'].includes(m.kind)) continue; done.add(fref.tag);
     const f = form.getFields().find((x) => x.ref === fref || (x.ref && x.ref.tag === fref.tag)); if (!f || !f.updateAppearances) continue;
-    const text = [m.val, ...(m.opts || []), m.label].filter(Boolean).join(' ');
+    const text = [m.val, ...(m.opts || []), m.label].filter(Boolean).join(' '), wide = /[^\x20-\x7E\xA0-\xFF–—‘’“”•…€]/.test(text);
     let font = null;
-    if (/[^\x20-\x7E\xA0-\xFF–—‘’“”•…€]/.test(text) && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, text, { family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
-    if (!font && m.font && m.font !== 'Helv') font = fonts[m.font] || (fonts[m.font] = await out.embedFont(L.StandardFonts[FFD_STD[m.font]]));
+    if (!isNew && !ffdFontChanged(m)) {
+      // A field from the PDF moved, resized or given other settings, its font left as it was: drawn again in that font
+      // when it is one every app has (Helvetica, Times, Courier) and the text fits it. Otherwise (a font of the PDF's
+      // own, or letters those fonts lack) its look stays as it was and other apps draw it again (/NeedAppearances).
+      const base = ffdOwnFont(L, out, f);
+      if (base && !wide) { if (base !== 'Helvetica') font = await std(base); else continue; }
+      else { try { form.markFieldAsClean(f.ref); } catch {} ffdNeedLooks(L, out); continue; }
+    } else {
+      if (wide && typeof fontsEmbed === 'function') { try { font = await fontsEmbed(out, text, { family: m.font === 'TiRo' ? 'serif' : m.font === 'Cour' ? 'mono' : 'sans' }); } catch (e) { console.warn('fonts', e); } }
+      if (!font && wide && !isNew) { try { form.markFieldAsClean(f.ref); } catch {} ffdLookFailed(L, out, f); continue; } // its old look, not question marks
+      if (!font && m.font && m.font !== 'Helv') font = await std(FFD_BASE[m.font]);
+    }
     if (!font) continue;
     try { f.updateAppearances(font); } catch (e) { console.warn('field look', m.name, e); ffdLookFailed(L, out, f); }
   }
 }
+// Whether the field's font, size or text colour was changed here
+const ffdChanged = (m, keys) => { let a = null; try { a = JSON.parse(m.orig); } catch {} return !Array.isArray(a) || keys.some((k) => JSON.stringify(m[k] ?? null) !== JSON.stringify(a[ffdKeys.indexOf(k)] ?? null)); };
+const ffdLookChanged = (m) => ffdChanged(m, ['font', 'size', 'color']);
+// Whether the font was changed here (a new field's is its own)
+function ffdFontChanged(m) { return m.type !== 'ffx' || ffdChanged(m, ['font']); }
+// The standard font (Helvetica, Times-Roman, Courier…) a field's settings (/DA) name, or null for any other font
+function ffdOwnFont(L, out, f) {
+  const { PDFName, PDFDict } = L, N = (k) => PDFName.of(k);
+  let da = null; try { da = f.acroField.getDefaultAppearance(); } catch {}
+  if (!da) { const x = out.catalog.getOrCreateAcroForm().dict.lookup(N('DA')); da = x && x.decodeText ? x.decodeText() : ''; }
+  const name = (/\/([^\s/]+)\s+[-\d.]+\s+Tf/.exec(da || '') || [])[1]; if (!name) return 'Helvetica';
+  const dr = out.catalog.getOrCreateAcroForm().dict.lookup(N('DR')), fonts = dr instanceof PDFDict ? dr.lookup(N('Font')) : null, fd = fonts instanceof PDFDict ? fonts.lookup(N(name)) : null;
+  const stdOk = (b) => Object.values(L.StandardFonts).includes(b) && b !== 'Symbol' && b !== 'ZapfDingbats';
+  if (!(fd instanceof PDFDict)) return FFD_BASE[name] || (stdOk(name) ? name : null);
+  const fdesc = fd.lookup(N('FontDescriptor')), embedded = fdesc instanceof PDFDict && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => fdesc.get(N(k)));
+  const base = fd.get(N('BaseFont')) ? String(fd.get(N('BaseFont'))).slice(1) : '';
+  return String(fd.get(N('Subtype'))) === '/Type1' && !embedded && stdOk(base) ? base : null;
+}
+// Other apps draw the form's fields again themselves
+function ffdNeedLooks(L, out) { try { out.catalog.getOrCreateAcroForm().dict.set(L.PDFName.of('NeedAppearances'), L.PDFBool.True); } catch {} }
 // A field whose look could not be made: other apps make it themselves
 function ffdLookFailed(L, out) {
-  try { out.catalog.getOrCreateAcroForm().dict.set(L.PDFName.of('NeedAppearances'), L.PDFBool.True); } catch {}
+  ffdNeedLooks(L, out);
   if (!ffdLookFailed.told) { ffdLookFailed.told = true; setTimeout(() => { ffdLookFailed.told = false; toast('Some fields have letters these fonts cannot show. Other apps draw them in their own font.'); }, 0); }
 }
 // A look drawn by hand: a stream of operators in a box W × H
@@ -1274,12 +1398,17 @@ const ffdCol = (hex, op) => { const [r, g, b] = ffdRgb(hex); return `${ffdNum(r)
 async function ffdAfterLooks(L, out, form, pages, entries, ctx) {
   const { PDFName, PDFDict, PDFArray, PDFRef } = L, c = out.context, N = (k) => PDFName.of(k);
   let zadb = null, fontsUsed = false;
-  for (const { m, wd, fref } of ctx.ffdLooks || []) {
+  for (const { m, wd, fref, isNew, da: was, signed } of ctx.ffdLooks || []) {
     // pdf-lib names its own font in /DA when it draws a look: name the form's font again, so other apps that draw
-    // the field themselves use the font and size chosen
+    // the field themselves use the font and size chosen (or the field's own settings, when they were not changed)
     try {
-      const fd = fref ? c.lookup(fref) : null, da = m.kind === 'check' || m.kind === 'radio' ? ffdDA({ ...m, font: 'ZaDb', size: 0 }).replace('/Helv', '/ZaDb') : ffdDA(m);
-      if (m.kind !== 'sig') { for (const d of [fd, wd]) if (d instanceof PDFDict && d.get(N('DA'))) d.set(N('DA'), L.PDFString.of(da)); if (fd instanceof PDFDict && !fd.get(N('DA'))) fd.set(N('DA'), L.PDFString.of(da)); fontsUsed = true; }
+      const fd = fref ? c.lookup(fref) : null;
+      if (m.kind === 'sig') { /* no text */ } else if (!isNew && was && !ffdLookChanged(m)) {
+        for (const [d, x] of fd === wd ? [[fd, was.fd]] : [[fd, was.fd], [wd, was.wd]]) if (d instanceof PDFDict) { if (x) d.set(N('DA'), x); else d.delete(N('DA')); }
+      } else {
+        const da = m.kind === 'check' || m.kind === 'radio' ? ffdDA({ ...m, font: 'ZaDb', size: 0 }).replace('/Helv', '/ZaDb') : ffdDA(m);
+        for (const d of [fd, wd]) if (d instanceof PDFDict && d.get(N('DA'))) d.set(N('DA'), L.PDFString.of(da)); if (fd instanceof PDFDict && !fd.get(N('DA'))) fd.set(N('DA'), L.PDFString.of(da)); fontsUsed = true;
+      }
     } catch (e) { console.warn('field DA', m.name, e); }
     try {
       // check box and radio button styles other than the usual tick and dot: the ZapfDingbats character
@@ -1300,7 +1429,7 @@ async function ffdAfterLooks(L, out, form, pages, entries, ctx) {
         let mk = wd.lookup(N('MK')); if (!(mk instanceof PDFDict)) { mk = c.obj({}); wd.set(N('MK'), mk); } mk.set(N('CA'), L.PDFString.of(ch));
       }
       // a signature field's picture: its look (/AP /N), the field still unsigned
-      if (m.kind === 'sig' && m.pic) {
+      if (m.kind === 'sig' && m.pic && !signed) { // (never over a digital signature)
         const [W, H] = ffdWH(L, wd), im = await out.embedPng(m.pic.data), s = Math.min(W / m.pic.w, H / m.pic.h) * .94, w = m.pic.w * s, h = m.pic.h * s;
         const res = c.obj({ XObject: { Im0: im.ref } });
         wd.set(N('AP'), c.obj({ N: ffdStream(L, out, `q ${ffdNum(w)} 0 0 ${ffdNum(h)} ${ffdNum((W - w) / 2)} ${ffdNum((H - h) / 2)} cm /Im0 Do Q`, W, H, res) }));

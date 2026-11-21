@@ -774,7 +774,12 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => {
     const f = form.getFields().find((x) => x.getName() === md.name); if (!f) continue;
     try {
       if (md.del) { form.removeField(f); continue; }
-      if (md.newName && md.newName !== md.name) f.acroField.dict.set(PDFName.of('T'), PDFHexString.fromText(md.newName));
+      if (md.newName && md.newName !== md.name) {
+        // /T is the field's own part of its name: a field in a parent ("Addr.City") keeps its parent
+        let pre = ''; try { const par = f.acroField.getParent(); if (par) pre = par.getFullyQualifiedName() + '.'; } catch {}
+        const own = pre && md.newName.startsWith(pre) ? md.newName.slice(pre.length) : md.newName;
+        if (own) f.acroField.dict.set(PDFName.of('T'), PDFHexString.fromText(own));
+      }
       if (md.tip != null) { if (md.tip) f.acroField.dict.set(PDFName.of('TU'), PDFHexString.fromText(md.tip)); else f.acroField.dict.delete(PDFName.of('TU')); }
       if (md.req != null) md.req ? f.enableRequired() : f.disableRequired();
       if (md.ro != null) md.ro ? f.enableReadOnly() : f.disableReadOnly();
