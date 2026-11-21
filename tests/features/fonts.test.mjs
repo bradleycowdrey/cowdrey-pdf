@@ -288,6 +288,107 @@ export default async (h) => {
     p.errors.length = 0; await p.ctx.close();
   });
 
+  await test('fonts: a line in a form drawn by another form is edited: the form\'s other lines stay, the old words go', async () => {
+    const file = await fileOf(async (pdf) => {
+      const inner = await L.PDFDocument.create(), ip = inner.addPage([300, 300]), font = await inner.embedFont(L.StandardFonts.Helvetica);
+      ip.drawText('Nested secret word', { x: 20, y: 250, size: 18, font });
+      ip.drawText('Other nested line', { x: 20, y: 200, size: 18, font });
+      const mid = await L.PDFDocument.create(), mp = mid.addPage([350, 350]);
+      mp.drawPage(await mid.embedPage((await L.PDFDocument.load(await inner.save())).getPage(0)), { x: 10, y: 10 });
+      const emb = await pdf.embedPage((await L.PDFDocument.load(await mid.save())).getPage(0));
+      pdf.addPage([400, 400]).drawPage(emb, { x: 20, y: 20 });
+      pdf.addPage([400, 400]).drawPage(emb, { x: 20, y: 20 }); // the same forms on another page, not edited
+    });
+    const p = await open(); await openPdf(p, file, 'Nested.pdf');
+    await editLine(p, 'Nested secret', 'Changed text here');
+    const out = await savedOf(p), pages = await read(out);
+    eq(lineAt(pages, 0, 280), 'Changed text here', 'the new text');
+    eq(lineAt(pages, 0, 230), 'Other nested line', 'the nested form\'s other line stays');
+    ok(!pages[0].some((i) => /Nested secret/.test(i.s)), 'old words not on the page: ' + JSON.stringify(pages[0].map((i) => i.s)));
+    eq(pages[1].map((i) => i.s).filter(Boolean), ['Nested secret word', 'Other nested line'], 'the other page is as it was');
+    // each form names what it draws in its own resources (the copies too)
+    const d = await L.PDFDocument.load(out), N = (k) => L.PDFName.of(k);
+    const check = (res, depth) => {
+      const xo = res && res.lookup(N('XObject')); if (!(xo instanceof L.PDFDict) || depth > 4) return;
+      for (const [, r] of xo.entries()) {
+        const f = d.context.lookup(r); if (!f || !f.dict) continue;
+        const R = f.dict.lookup(N('Resources')), X = R && R.lookup(N('XObject')), names = X instanceof L.PDFDict ? X.keys().map((k) => k.asString()) : [];
+        const used = Buffer.from(L.decodePDFRawStream(f).decode()).toString('latin1').match(/\/[^\s/]+(?=\s+Do\b)/g) || [];
+        for (const u of used) ok(names.includes(u), `${u} is in the form's resources: ${JSON.stringify(names)}`);
+        check(R, depth + 1);
+      }
+    };
+    check(d.getPage(0).node.Resources(), 0); check(d.getPage(1).node.Resources(), 0);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('fonts: a partial TJ edit changed in place: the text after it on the line moves by the new width only', async () => {
+    const file = await fileOf(async (pdf) => {
+      const pg = pdf.addPage([500, 300]), f = await pdf.embedFont(L.StandardFonts.Helvetica), fb = await pdf.embedFont(L.StandardFonts.HelveticaBold);
+      const k = pg.node.newFontDictionary('F1', f.ref), kb = pg.node.newFontDictionary('F2', fb.ref);
+      pg.node.set(L.PDFName.of('Contents'), pdf.context.register(pdf.context.flateStream(`BT ${k} 18 Tf 40 200 Td [(Wa) -35 (ter V) 20 (alley T) -15 (oday)] TJ ${kb} 18 Tf ( tail bold) Tj ET`)));
+    });
+    for (const typed of ['Water Valley Tonight here', 'Water Valley Сегодня']) {
+      const p = await open(); await openPdf(p, file, 'Tail.pdf');
+      await editLine(p, 'Water', typed);
+      const out = await savedOf(p);
+      const d = await pdfjs.getDocument({ data: new Uint8Array(out), verbosity: 0, isEvalSupported: false }).promise;
+      const tc = (await (await d.getPage(1)).getTextContent()).items.filter((i) => i.str && i.str.trim()); await d.loadingTask.destroy();
+      const tail = tc.find((i) => i.str === 'tail bold'), ends = tc.filter((i) => i !== tail).reduce((m, i) => Math.max(m, i.transform[4] + i.width), 0);
+      ok(tail, 'the tail is there: ' + JSON.stringify(tc.map((i) => i.str)));
+      ok(Math.abs(tail.transform[4] - ends - 5) < 1.5, `${typed}: tail at ${tail.transform[4].toFixed(1)}, right after the line (it ends at ${ends.toFixed(1)}; the gap was 5)`);
+      eq(lineAt(await read(out), 0, 200), typed + ' tail bold', 'read back');
+      eq(p.errors, []); await p.ctx.close();
+    }
+  });
+
+  await test('fonts: saying Not now to a font download: the next save asks again and saves with the font', async () => {
+    const p = await open(); const hits = await stubCjk(p);
+    await openPdf(p, CHROME, 'Chrome.pdf');
+    await editLine(p, 'Revenue grew', 'Revenue 機密');
+    await p.waitForSelector('#dialog[open]', { timeout: 5000 });
+    ok(/Chinese letters need a font download/.test(await p.textContent('#dialog')), 'asked');
+    await p.click('#dialog button:has-text("Not now")'); await p.waitForTimeout(200);
+    // a save asks again (once); no again: it is not saved, and says why
+    let save = p.evaluate(() => window.__cowdreyPdf.run('save'));
+    await p.waitForSelector('#dialog[open]', { timeout: 5000 });
+    await p.click('#dialog button:has-text("Not now")'); await save;
+    await p.waitForSelector('.toast:has-text("need the font download")', { timeout: 3000 });
+    ok(!(await p.$('#dialog[open]')), 'asked once in that save');
+    eq(hits(), 0, 'nothing downloaded');
+    // and the next save asks again: yes downloads it and saves
+    save = p.evaluate(async () => { try { return !!(await window.__cowdreyPdf.buildPdf()); } catch (e) { return e.message; } });
+    await p.waitForSelector('#dialog[open]', { timeout: 5000 });
+    await p.click('#dialog button:has-text("Download")');
+    eq(await save, true, 'saved');
+    ok(hits() >= 1, 'downloaded');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('fonts: a letter no font has (an emoji) is left out of the drawing, not written as an empty box', async () => {
+    const p = await open(); await openPdf(p, CHROME, 'Chrome.pdf');
+    const typed = 'Great 👍 party 🎉 done';
+    await editLine(p, 'Revenue grew', typed);
+    const out = await savedOf(p), pages = await read(out);
+    const y = pages[0].find((i) => i.s.includes('Great')).y, line = lineAt(pages, 0, y);
+    ok(!line.includes('\u0000'), 'no U+0000 read back: ' + JSON.stringify(line));
+    ok(line.includes('👍') && /party/.test(line) && /done/.test(line), 'the rest is there: ' + line);
+    const hex = Buffer.from('﻿' + typed, 'utf16le').swap16().toString('hex').toUpperCase();
+    ok((await pageContent(out)).toUpperCase().includes(`/ACTUALTEXT <${hex}>`), 'the whole line in ActualText');
+    if (hasPdftotext) ok(pdftotext(out).includes('🎉'), 'pdftotext reads it from ActualText');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('fonts: a byte order mark in pasted text is not right-to-left; the line saves without it', async () => {
+    const p = await open(); await openPdf(p, CHROME, 'Chrome.pdf');
+    await editLine(p, 'Revenue grew', 'Revenue grew﻿ fast');
+    const out = await savedOf(p), pages = await read(out);
+    const y = pages[0].find((i) => i.s.includes('Revenue')).y, line = lineAt(pages, 0, y);
+    eq(line.replace(/﻿/g, ''), 'Revenue grew fast');
+    ok(!line.includes('\u0000'), 'no empty letter');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('fonts: the font service picks a face that has the letters', async () => {
     const p = await open();
     const pick = (t, s) => p.evaluate(([t, s]) => window.__cowdreyPdf.fontsFor(t, s), [t, s]);

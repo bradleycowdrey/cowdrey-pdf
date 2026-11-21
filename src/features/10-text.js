@@ -88,7 +88,7 @@ let txtScratch = null;
 async function txtExtraFonts(text, style) {
   if (!/[^\x00-\xFF]/.test(text)) return [];
   const L = await loadPdfLib(); txtScratch ||= await L.PDFDocument.create();
-  try { return [...new Set((await fontsRuns(txtScratch, text, style)).map((r) => r.font))]; } catch { return []; }
+  try { return [...new Set((await fontsRuns(txtScratch, text, { ...style, measure: true })).map((r) => r.font))]; } catch { return []; }
 }
 // Lines joined into a paragraph: a line ending in a hyphen runs straight on.
 const txtJoin = (strs) => strs.reduce((a, s, k) => (k === 0 ? s : /-$/.test(a) ? a + s : a + ' ' + s), '');

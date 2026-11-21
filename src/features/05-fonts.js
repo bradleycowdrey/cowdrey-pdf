@@ -41,7 +41,8 @@ const FONTS_MORE = {
 };
 const fontsMoreUrl = (k) => (fontsUrlOver[k] || FONTS_CDN + FONTS_MORE[k].path);
 const fontsUrlOver = {}; // tests point a download at a local file
-const FONTS_RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]|\p{Script=Arabic}|\p{Script=Hebrew}|\p{Script=Syriac}|\p{Script=Thaana}|\p{Script=Nko}/u;
+// (U+FEFF, the byte order mark often in pasted text, is not right-to-left)
+const FONTS_RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFE]|\p{Script=Arabic}|\p{Script=Hebrew}|\p{Script=Syriac}|\p{Script=Thaana}|\p{Script=Nko}/u;
 const fontsHan = /[\p{Script=Han}　-〿㈀-㏿！-｠]/u, fontsKana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u, fontsHangul = /\p{Script=Hangul}/u;
 // The on-demand fonts a letter could come from, the likeliest first.
 function fontsMoreFor(ch, text = '') {
@@ -57,7 +58,7 @@ function fontsMoreFor(ch, text = '') {
   }
   return [];
 }
-class FontsError extends Error {}
+class FontsError extends Error { constructor(m) { super(m); this.name = 'FontsError'; } }
 const fontsRtl = (text) => FONTS_RTL.test(String(text || ''));
 const FONTS_RTL_MSG = 'Right-to-left text (Arabic, Hebrew) can’t be saved in the PDF yet. Remove it to save.';
 
@@ -100,7 +101,10 @@ function fontsKit() {
 }
 const fontsFiles = new Map(); // face key -> Promise<Uint8Array>
 const fontsHave = new Set(); // on-demand fonts here (fetched, or kept in this browser)
-const fontsNo = new Set(); // on-demand fonts the person said no to, this session
+// On-demand fonts the person said no to: not asked again on their own this session (fontsNo), nor again in the same
+// save (fontsNoSave, emptied when a save starts), so the next save asks again.
+const fontsNo = new Set(), fontsNoSave = new Set();
+function fontsSaveStarts() { fontsNoSave.clear(); }
 const fontsFaceKey = (family, { bold, italic } = {}) => {
   if (FONTS_MORE[family] || family === 'symbols' || family === 'symbols2') return family;
   const fam = ['sans', 'serif', 'mono'].includes(family) ? family : 'sans';
@@ -113,10 +117,11 @@ async function fontsFetch(url) {
 }
 // The font file for a family and style (see the top). An on-demand font is read from this browser, or downloaded
 // after asking (null when the person says no).
-function fontsBytes(family, style = {}) {
+// auto: asked on its own (not for a save), so not again once the person said no.
+function fontsBytes(family, style = {}, auto = false) {
   const k = fontsFaceKey(family, style);
   if (!fontsFiles.has(k)) {
-    const p = FONTS_MORE[k] ? fontsMoreBytes(k) : fontsFetch(FONTS_FACES[k]);
+    const p = FONTS_MORE[k] ? fontsMoreBytes(k, true, auto) : fontsFetch(FONTS_FACES[k]);
     fontsFiles.set(k, p);
     p.then((b) => { if (!b) fontsFiles.delete(k); }, () => fontsFiles.delete(k));
   }
@@ -135,15 +140,15 @@ async function fontsDbDo(mode, fn) {
   const d = await fontsDb();
   return new Promise((res, rej) => { const tx = d.transaction('fonts', mode), q = fn(tx.objectStore('fonts')); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); });
 }
-async function fontsMoreBytes(k, ask = true) {
+async function fontsMoreBytes(k, ask = true, auto = false) {
   let b = null;
   try { const rec = await fontsDbDo('readonly', (s) => s.get(k)); if (rec && rec.url === fontsMoreUrl(k) && rec.bytes) b = new Uint8Array(rec.bytes); } catch {}
   if (b) { fontsHave.add(k); return b; }
-  if (!ask || fontsNo.has(k)) return null;
+  if (!ask || fontsNoSave.has(k) || (auto && fontsNo.has(k))) return null;
   const F = FONTS_MORE[k], size = F.mb >= 1 ? `${Math.round(F.mb)} MB` : `${Math.max(1, Math.round(F.mb * 1000))} KB`;
   const a = await dialog(`${F.name} letters need a font`, `<p>${F.name} letters need a font download (${size}). Download once?</p><p class="fonts-note">It is kept on this device for next time. Only the font is downloaded; your PDF stays here.</p>`,
     [{ label: 'Not now' }, { label: 'Download', value: 'yes', primary: true }]);
-  if (a !== 'yes') { fontsNo.add(k); return null; }
+  if (a !== 'yes') { fontsNo.add(k); fontsNoSave.add(k); return null; }
   toast(`Downloading the ${F.name} font…`);
   try { b = await fontsFetch(fontsMoreUrl(k)); }
   catch (e) { toast(`The ${F.name} font could not be downloaded. Check the connection and try again.`); throw e; }
@@ -222,12 +227,15 @@ async function fontsEmbed(out, { family = 'sans', bold = false, italic = false, 
 }
 // A text in runs of one font each: [{ text, font, std }]. Words stay in one font where one has all their letters
 // (a word split between fonts is found and copied in pieces by some readers); spaces go with the run before them.
-// style: { family, bold, italic, std? } (std: a standard pdf-lib font, kept for what it can write).
+// style: { family, bold, italic, std?, measure? } (std: a standard pdf-lib font, kept for what it can write;
+// measure: only measuring, so nothing is said about letters left out).
 async function fontsRuns(out, text, style = {}) {
   text = String(text || '');
   if (fontsRtl(text)) throw new FontsError(FONTS_RTL_MSG);
   await fontsKnown;
+  text = text.replace(/\uFEFF/g, ''); // a byte order mark from pasted text: nothing to draw
   const runs = [], chain = fontsChain(text, style);
+  let lost = false;
   const pick = async (s) => {
     if (style.std && fontsCovers(style.std, s)) return 'std';
     for (const k of chain) { const f = await fontsFace(k); if (f && fontsCovers(f, s)) return k; }
@@ -239,17 +247,26 @@ async function fontsRuns(out, text, style = {}) {
     const k = await pick(tok);
     if (k) { push(k, tok); continue; }
     // No one font has the whole word: each letter in the first that has it. A letter only a font that was not
-    // downloaded has stops the save (it would be an empty box); one no font has (an emoji) keeps the family's font,
-    // which still reads back as the letter.
+    // downloaded has stops the save (it would be an empty box). One no font has (most emoji) is left out of the
+    // drawing (it would be an empty box, read back as nothing useful); runs.lost says so, and Edit PDF keeps it in
+    // the line's ActualText, which some readers copy.
     for (const ch of tok) {
       const k1 = await pick(ch);
-      if (!k1) { const want = fontsMoreFor(ch, text)[0]; if (want) throw new FontsError(`${FONTS_MORE[want].name} letters need the font download to be saved.`); }
-      push(k1 || chain[0], ch);
+      if (!k1) {
+        const want = fontsMoreFor(ch, text)[0]; if (want) throw new FontsError(`${FONTS_MORE[want].name} letters need the font download to be saved.`);
+        if (!/[\u200B-\u200D\u2060\uFE00-\uFE0F\uFEFF]/.test(ch)) lost = true;
+        continue;
+      }
+      push(k1, ch);
     }
   }
   for (const r of runs) { r.std = r.key === 'std'; r.font = r.std ? style.std : await fontsEmbedKey(out, r.key); }
+  if (lost) { runs.lost = true; if (!style.measure) fontsSayLost(); }
   return runs;
 }
+// Said once in a while (a save may write many lines).
+let fontsLostAt = 0;
+function fontsSayLost() { if (Date.now() - fontsLostAt > 5000) toast('Some letters (like emoji) have no font here and were left out of the PDF.'); fontsLostAt = Date.now(); }
 // The width of runs at a size, in points (with character spacing tc, as text is drawn).
 const fontsWidth = (runs, size, tc = 0) => runs.reduce((w, r) => w + r.font.widthOfTextAtSize(r.text, size) + [...r.text].length * tc, 0);
 // The page's resource name for a font (one per font and page, however often it is used).
@@ -286,13 +303,13 @@ function fontsStyleOf(L, out, fontDict, name = '') {
   return { family, bold, italic };
 }
 // Before saving: the fonts a text will need are here (downloaded after asking, if need be). Says why not when they aren't.
-async function fontsEnsure(text) {
+async function fontsEnsure(text, auto = false) {
   text = String(text || '');
   if (fontsRtl(text)) { toast(FONTS_RTL_MSG); return false; }
   await fontsKnown;
   const need = new Set();
   for (const ch of text) { const ks = fontsMoreFor(ch, text); if (ks.length && !ks.some((k) => fontsHave.has(k))) need.add(ks[0]); }
-  for (const k of need) { try { if (!(await fontsBytes(k))) return false; } catch { return false; } }
+  for (const k of need) { try { if (!(await fontsBytes(k, {}, auto))) return false; } catch { return false; } }
   return true;
 }
 // Typing letters an on-demand font has asks for it once the editor closes (not while typing); right-to-left text
@@ -302,10 +319,10 @@ document.addEventListener('focusout', (e) => {
   if (!el || !el.matches || !el.matches('.line-editor, .txt-editor')) return;
   const text = el.matches('.txt-editor') ? el.value : el.textContent;
   if (!text || !/[^\x00-ɏ\s]/.test(text)) return;
-  setTimeout(() => { fontsEnsure(text).catch(() => {}); }, 0);
+  setTimeout(() => { fontsEnsure(text, true).catch(() => {}); }, 0);
 }, true);
 addStyle('.fonts-note { font-size: 12px; color: var(--ink-3); }');
-TEST_HOOKS.fontsUrl = (k, url) => { if (url) fontsUrlOver[k] = url; else delete fontsUrlOver[k]; fontsFiles.delete(k); fontsFaces.delete(k); fontsHave.delete(k); fontsNo.delete(k); fontsKnown = fontsReadKept(); return fontsKnown; };
+TEST_HOOKS.fontsUrl = (k, url) => { if (url) fontsUrlOver[k] = url; else delete fontsUrlOver[k]; fontsFiles.delete(k); fontsFaces.delete(k); fontsHave.delete(k); fontsNo.delete(k); fontsNoSave.delete(k); fontsKnown = fontsReadKept(); return fontsKnown; };
 TEST_HOOKS.fontsFor = async (text, style) => (await fontsFor(text, style)).key;
 TEST_HOOKS.fontsBytes = async (family, style) => { const b = await fontsBytes(family, style); return b ? b.length : 0; };
 TEST_HOOKS.fontsHave = () => [...fontsHave];
