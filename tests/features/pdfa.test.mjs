@@ -406,6 +406,69 @@ export default async (h) => {
     await p.ctx.close();
   });
 
+  await test('PDF/A: a PDF/A file keeps its claim when only its properties change, and loses it when pages from another PDF are added', async () => {
+    const p = await open(); await openPdf(p, path.join(root, 'tests/fixtures/tricky.pdf'), 'Tricky.pdf');
+    const r = await savePdfa(p, '2b');
+    await reopen(p, r.bytes);
+    await run(p, 'docProps'); await p.waitForSelector('#dialog[open] .di');
+    await p.fill('#dialog [data-di="title"]', 'Still archival'); await answer(p, 'Done'); await p.waitForTimeout(200);
+    const kept = await savedOf(p), dk = await L.PDFDocument.load(kept, { updateMetadata: false });
+    ok(/<pdfaid:part>2<\/pdfaid:part>/.test(xmpOf(dk).text) && xmpOf(dk).text.includes('Still archival'), 'claim kept with a new title');
+    const n0 = await p.evaluate(() => window.__cowdreyPdf.doc.pages.length);
+    await p.setInputFiles('#mergeInput', path.join(root, 'tests/fixtures/sample.pdf'));
+    await p.waitForFunction((n) => window.__cowdreyPdf.doc.pages.length > n, n0, { timeout: 15000 }); await p.waitForTimeout(300);
+    const merged = await savedOf(p), dm = await L.PDFDocument.load(merged, { updateMetadata: false }), xm = xmpOf(dm);
+    ok(xm && !/pdfaid/.test(xm.text) && xm.text.includes('Still archival'), 'XMP kept, claim dropped: ' + (xm ? xm.text.slice(0, 600) : 'none'));
+    // and moving a page of the PDF/A file alone drops it too
+    await reopen(p, r.bytes);
+    if (await p.evaluate(() => window.__cowdreyPdf.doc.pages.length) > 1) {
+      await p.evaluate(() => { const d = window.__cowdreyPdf.doc; d.pages.push(d.pages.shift()); });
+      ok(!/pdfaid/.test(xmpOf(await L.PDFDocument.load(await savedOf(p), { updateMetadata: false })).text), 'moved pages: claim dropped');
+    }
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('PDF/A: a PDF/A file can be saved with a password (the claim is dropped first)', async () => {
+    const C = require(path.join(root, 'desktop/node_modules/@cantoo/pdf-lib'));
+    const p = await open(); await openPdf(p);
+    const r = await savePdfa(p, '2b');
+    await reopen(p, r.bytes);
+    await run(p, 'protPassword'); await p.waitForSelector('#dialog[open] input[name=open]');
+    await p.fill('#dialog input[name=open]', 'heron'); await p.fill('#dialog input[name=open2]', 'heron'); await answer(p, 'Set password'); await p.waitForTimeout(200);
+    const out = await savedOf(p);
+    await C.PDFDocument.load(out).then(() => { throw new Error('opened without a password'); }, () => {});
+    const d = await C.PDFDocument.load(out, { password: 'heron', updateMetadata: false });
+    const ms = d.catalog.lookup(C.PDFName.of('Metadata')), x = ms ? Buffer.from(ms instanceof C.PDFRawStream ? C.decodePDFRawStream(ms).decode() : ms.getContents()).toString('utf8') : '';
+    ok(x && !/pdfaid/.test(x) && /<xmpMM:DocumentID>uuid:/.test(x) && x.includes('<pdf:Producer>Cowdrey.PDF'), 'XMP kept without the claim: ' + x.slice(0, 400));
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Document properties: Custom tab changes keep Info keys it does not show; several XMP authors stay several', async () => {
+    const d0 = await L.PDFDocument.load(fs.readFileSync(path.join(root, 'tests/fixtures/sample.pdf')), { updateMetadata: false });
+    const info = d0.getInfoDict(); info.set(N('Dept'), PDFHexString.fromText('Ops')); info.set(N('Weird'), N('NameValue'));
+    d0.setAuthor('First; Second'); d0.setKeywords(['old']);
+    const xml = `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator><rdf:Seq><rdf:li>First</rdf:li><rdf:li>Second</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
+    d0.catalog.set(N('Metadata'), d0.context.register(d0.context.stream(Buffer.from(xml, 'utf8'), { Type: 'Metadata', Subtype: 'XML' })));
+    const src = Buffer.from(await d0.save());
+    const p = await open(); await reopen(p, src);
+    await run(p, 'docProps'); await p.waitForSelector('#dialog[open] .di');
+    await p.fill('#dialog [data-di="keywords"]', 'new; words');
+    await p.click('#dialog [data-di-tab="custom"]');
+    eq(await p.$$eval('#dialog .di-crow [data-ck]', (r) => r.map((x) => x.value)), ['Dept'], 'only the text key is listed');
+    await p.click('#dialog .di-crow [data-cdel]');
+    await answer(p, 'Done'); await p.waitForTimeout(200);
+    const out = await savedOf(p), d = await L.PDFDocument.load(out, { updateMetadata: false }), di = d.getInfoDict();
+    eq([di.get(N('Dept')), nameOf(di.get(N('Weird')))], [undefined, 'NameValue'], 'Dept deleted, Weird kept');
+    const x = xmpOf(d).text;
+    ok(x.includes('<dc:creator><rdf:Seq><rdf:li>First</rdf:li><rdf:li>Second</rdf:li></rdf:Seq></dc:creator>') && x.includes('<pdf:Keywords>new; words</pdf:Keywords>'), x.slice(0, 800));
+    // an edited author replaces the list
+    await reopen(p, out);
+    await run(p, 'docProps'); await p.waitForSelector('#dialog[open] .di');
+    await p.fill('#dialog [data-di="author"]', 'Third'); await answer(p, 'Done'); await p.waitForTimeout(200);
+    ok(xmpOf(await L.PDFDocument.load(await savedOf(p), { updateMetadata: false })).text.includes('<dc:creator><rdf:Seq><rdf:li>Third</rdf:li></rdf:Seq></dc:creator>'), 'edited author');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('PDF/A: veraPDF (when installed: $VERAPDF names its jar or script) finds the output compliant', async () => {
     const jar = process.env.VERAPDF, file = path.join(tmp, 'pdfa-2b.pdf');
     if (!jar || !fs.existsSync(jar) || !fs.existsSync(file)) { console.log('      (veraPDF not installed: set VERAPDF to its jar to run it; skipped)'); return; }

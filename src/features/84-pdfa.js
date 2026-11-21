@@ -134,10 +134,14 @@ function pdfaWriteXmp(L, out, extra = {}) {
   const title = t('Title'), author = t('Author'), subject = t('Subject'), keywords = t('Keywords'), creator = t('Creator'), producer = t('Producer');
   const created = date('CreationDate'), modified = date('ModDate'), trapped = t('Trapped'), lang = pdfaText(L, out.catalog, 'Lang');
   const docId = /^(uuid:|xmp\.did:)/.test(old.props['xmpMM:DocumentID'] || '') ? old.props['xmpMM:DocumentID'] : 'uuid:' + pdfaUuid();
+  // Several authors in the packet stay several while Info's Author is still their joined list (not in a PDF/A file,
+  // where dc:creator must be the Author text as one entry).
+  const oldAuthors = old.props['dc:creator#list'] || [], claimsA = !!(extra.strict || extra.pdfa || (extra.keepClaims && old.props['pdfaid:part']));
+  const authors = author == null ? [] : !claimsA && oldAuthors.length > 1 && [';', '; ', ',', ', '].some((j) => oldAuthors.join(j).trim() === author.trim()) ? oldAuthors : [author];
   const el = (name, v) => (v == null || v === '' ? '' : `<${name}>${pdfaXml(v)}</${name}>`);
   const alt = (name, v) => (v == null ? '' : `<${name}><rdf:Alt><rdf:li xml:lang="x-default">${pdfaXml(v)}</rdf:li></rdf:Alt></${name}>`);
   const blocks = [];
-  blocks.push(`<rdf:Description rdf:about="" xmlns:dc="${PDFA_NS.dc}">${el('dc:format', 'application/pdf')}${alt('dc:title', title)}${author != null ? `<dc:creator><rdf:Seq><rdf:li>${pdfaXml(author)}</rdf:li></rdf:Seq></dc:creator>` : ''}${alt('dc:description', subject)}${lang ? `<dc:language><rdf:Bag><rdf:li>${pdfaXml(lang)}</rdf:li></rdf:Bag></dc:language>` : ''}</rdf:Description>`);
+  blocks.push(`<rdf:Description rdf:about="" xmlns:dc="${PDFA_NS.dc}">${el('dc:format', 'application/pdf')}${alt('dc:title', title)}${author != null ? `<dc:creator><rdf:Seq>${authors.map((a) => `<rdf:li>${pdfaXml(a)}</rdf:li>`).join('')}</rdf:Seq></dc:creator>` : ''}${alt('dc:description', subject)}${lang ? `<dc:language><rdf:Bag><rdf:li>${pdfaXml(lang)}</rdf:li></rdf:Bag></dc:language>` : ''}</rdf:Description>`);
   blocks.push(`<rdf:Description rdf:about="" xmlns:xmp="${PDFA_NS.xmp}">${el('xmp:CreatorTool', creator)}${el('xmp:CreateDate', created)}${el('xmp:ModifyDate', modified)}${el('xmp:MetadataDate', modified || pdfaIso(new Date()))}</rdf:Description>`);
   blocks.push(`<rdf:Description rdf:about="" xmlns:pdf="${PDFA_NS.pdf}">${el('pdf:Producer', producer)}${keywords != null ? `<pdf:Keywords>${pdfaXml(keywords)}</pdf:Keywords>` : ''}${/^(True|False|Unknown)$/.test(trapped || '') ? el('pdf:Trapped', trapped) : ''}</rdf:Description>`);
   blocks.push(`<rdf:Description rdf:about="" xmlns:xmpMM="${PDFA_NS.xmpMM}">${el('xmpMM:DocumentID', docId)}${el('xmpMM:InstanceID', 'uuid:' + pdfaUuid())}</rdf:Description>`);

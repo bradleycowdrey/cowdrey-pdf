@@ -142,8 +142,16 @@ const diExtra = (info, meta) => {
   const created = m.created != null ? (m.created ? new Date(m.created) : null) : diDateObj(info.CreationDate);
   return { creator: m.creator != null ? m.creator : String(info.Creator ?? ''), lang: m.lang != null ? m.lang : meta.lang || '', created: diLocal(created), modified: m.modified ? diLocal(new Date(m.modified)) : '', custom: m.custom || meta.custom || {}, view };
 };
-// Does the document change what the pages show (so a PDF/A claim the file had may no longer hold)?
-const diContentChanged = () => Object.entries(doc.marks).some(([k, v]) => (k === '__doc' ? v.some((x) => !/^(docinfo|protsec)$/.test(x.type)) : Array.isArray(v) && v.length > 0));
+// Does the document change what the pages show (so a PDF/A claim the file had may no longer hold)? Marks on pages,
+// document-wide changes other than these properties, and pages added, moved, deleted or copied in from another file
+// all count. Turning a page only changes its /Rotate, which keeps the claim.
+const diContentChanged = (entries = doc.pages) => {
+  if (Object.entries(doc.marks).some(([k, v]) => (k === '__doc' ? v.some((x) => !/^(docinfo|protsec)$/.test(x.type)) : Array.isArray(v) && v.length > 0))) return true;
+  if (!entries.length) return false;
+  const s0 = entries[0].src; let count = 0;
+  try { count = pdfDocs.get(s0).numPages; } catch { return true; }
+  return entries.length !== count || entries.some((e, n) => e.src !== s0 || e.i !== n);
+};
 
 async function diShow() {
   if (!has()) return;
@@ -275,8 +283,22 @@ function diSet(vals, info, meta = { custom: {}, view: {}, lang: '' }) {
 
 // Saving: the fields above, into the Info dictionary and the catalog. When the pages were copied into a new PDF, the
 // opened file's Info is carried over (with its creator, creation date and own keys); changes made here replace it.
-FEATURE.saveDoc.push(async ({ L, out, pages }) => {
+FEATURE.saveDoc.push(async ({ L, out, pages, entries }) => {
   const { PDFName, PDFHexString, PDFString, PDFDict, PDFBool } = L, N = PDFName.of;
+  // PDF/A forbids encryption (and pdf-lib refuses to encrypt a file that claims it): when the saved file gets a
+  // password, its PDF/A claim is dropped from the XMP first (a PDF/UA claim may stay). This hook runs before
+  // Protect's, and the core encrypts after every hook, so each of them goes through here.
+  if (out.encrypt && !out.__diEncrypt) {
+    const encrypt = out.encrypt.bind(out); out.__diEncrypt = true;
+    out.encrypt = (...a) => {
+      let xml = '', x = {}; try { xml = pdfaXmpOf(L, out); x = pdfaReadXmp(xml).props; } catch {}
+      if (x['pdfaid:part'] || /pdfaid|www\.aiim\.org\/pdfa\/ns\/id/.test(xml)) {
+        out.__diNoPdfa = true; out.__diPdfua = x['pdfuaid:part'] ? { part: x['pdfuaid:part'] } : null;
+        try { pdfaWriteXmp(L, out, { keepClaims: false, pdfua: out.__diPdfua }); } catch (e) { console.warn('Could not write the XMP metadata', e); }
+      }
+      return encrypt(...a);
+    };
+  }
   const m = diMark(), src = doc.pages.length ? doc.pages[0].src : 0, info = await diInfo(src), meta = await diMeta(src);
   const setters = { title: 'setTitle', author: 'setAuthor', subject: 'setSubject', keywords: 'setKeywords' }, dict = out.getInfoDict();
   for (const [f] of DI_FIELDS) {
@@ -291,7 +313,9 @@ FEATURE.saveDoc.push(async ({ L, out, pages }) => {
   else if (info.CreationDate) { const d = diDateObj(info.CreationDate); if (d) out.setCreationDate(d); }
   // the Info dictionary's own keys
   const custom = m && m.custom ? m.custom : meta.custom || {};
-  if (m && m.custom) for (const k of dict.keys()) { const name = k.decodeText(); if (!DI_STD_KEYS.has(name) && !DI_HIDDEN_KEYS.has(name) && !(name in custom)) dict.delete(k); }
+  // Only keys the Custom tab showed (text values) can have been deleted or renamed there; others are kept.
+  const shown = meta.custom || {};
+  if (m && m.custom) for (const k of dict.keys()) { const name = k.decodeText(); if (name in shown && !(name in custom)) dict.delete(k); }
   for (const [k, v] of Object.entries(custom)) if ((m && m.custom) || !dict.get(N(k))) dict.set(N(k), PDFHexString.fromText(v));
   // language and initial view
   const lang = m && m.lang != null ? m.lang : meta.lang;
@@ -316,11 +340,11 @@ FEATURE.saveDoc.push(async ({ L, out, pages }) => {
   const cleaning = docMarks().some((x) => x.type === 'protclean' && x.metadata);
   if (!cleaning && (hadXmp || m) && !out.__diXmp) {
     out.__diXmp = true;
-    const save = out.save.bind(out), keepClaims = !diContentChanged();
+    const save = out.save.bind(out), keepClaims = !diContentChanged(entries || doc.pages);
     out.save = async (...a) => {
       const mm = diMark();
       if (mm && mm.modified) out.setModificationDate(new Date(mm.modified));
-      if (!hadXmp || out.catalog.get(N('Metadata'))) { try { pdfaWriteXmp(L, out, { keepClaims }); } catch (e) { console.warn('Could not write the XMP metadata', e); } }
+      if (!hadXmp || out.catalog.get(N('Metadata'))) { try { pdfaWriteXmp(L, out, out.__diNoPdfa ? { keepClaims: false, pdfua: keepClaims ? out.__diPdfua : null } : { keepClaims }); } catch (e) { console.warn('Could not write the XMP metadata', e); } }
       return save(...a);
     };
   }
