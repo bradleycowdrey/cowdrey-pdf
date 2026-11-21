@@ -232,7 +232,9 @@ Object.assign(BATCH_STEPS, {
     },
   },
 });
-const batchStepOk = (id) => { const s = BATCH_STEPS[id]; return !!s && (!s.available || s.available()); };
+// A step by its id: only the registry's own entries (an imported id such as 'constructor' finds nothing).
+const batchStep = (id) => (typeof id === 'string' && Object.prototype.hasOwnProperty.call(BATCH_STEPS, id) ? BATCH_STEPS[id] : null);
+const batchStepOk = (id) => { const s = batchStep(id); return !!s && (!s.available || s.available()); };
 
 /* ----- saved actions ----- */
 const BATCH_PRESETS = [
@@ -242,7 +244,9 @@ const BATCH_PRESETS = [
   { id: 'preset-smaller', preset: true, name: 'Make smaller', steps: [{ id: 'optimize', opts: { preset: 'smaller', gray: false, cmyk: false } }] },
 ];
 const batchSaved = () => { const l = store.get('actions', []); return Array.isArray(l) ? l.filter((a) => a && a.id && Array.isArray(a.steps)) : []; };
-const batchAll = () => [...BATCH_PRESETS, ...batchSaved()];
+// Built-in actions whose steps this version doesn't have are not listed.
+const batchPresets = () => BATCH_PRESETS.filter((a) => a.steps.every((s) => batchStepOk(s.id)));
+const batchAll = () => [...batchPresets(), ...batchSaved()];
 function batchKeep(action) {
   const list = batchSaved(), clean = { id: action.id && !action.preset ? action.id : uid(), name: String(action.name || 'Action').trim() || 'Action', steps: action.steps.map((s) => ({ id: s.id, opts: s.opts || {} })) };
   const k = list.findIndex((a) => a.id === clean.id);
@@ -259,7 +263,7 @@ function batchImportJson(text) {
   const steps = o.steps.filter((s) => s && typeof s.id === 'string').map((s) => ({ id: s.id, opts: s.opts && typeof s.opts === 'object' ? s.opts : {} }));
   return { name: String(o.name || 'Imported action').slice(0, 120), steps };
 }
-const batchStepSummary = (s) => { const d = BATCH_STEPS[s.id]; if (!d) return 'Not in this version'; const o = { ...d.defaults(), ...s.opts }; try { return d.summary ? d.summary(o) : ''; } catch { return ''; } };
+const batchStepSummary = (s) => { const d = batchStep(s.id); if (!d) return 'Not in this version'; const o = { ...d.defaults(), ...s.opts }; try { return d.summary ? d.summary(o) : ''; } catch { return ''; } };
 
 /* ----- running ----- */
 let batchBusy = false;
@@ -300,18 +304,26 @@ async function batchOpenInput(input) {
   catch (e) { throw new Error(e && e.name === 'PasswordException' ? 'It needs a password to open. Remove the password first.' : 'It may not be a PDF'); }
   return { bytes, pd };
 }
-const batchUnique = (used, name) => { let n = name, k = 2; const dot = name.lastIndexOf('.'); while (used.has(n.toLowerCase())) n = `${name.slice(0, dot)} (${k++})${name.slice(dot)}`; used.add(n.toLowerCase()); return n; };
+// A name not used yet in this run, and (for a folder) not already a file there: nothing is ever replaced.
+async function batchUnique(used, name, exists) {
+  const dot = name.lastIndexOf('.') > 0 ? name.lastIndexOf('.') : name.length;
+  for (let k = 1; ; k++) {
+    const n = k === 1 ? name : `${name.slice(0, dot)} (${k})${name.slice(dot)}`;
+    if (k < 10000 && (used.has(n.toLowerCase()) || (exists && (await exists(n))))) continue;
+    used.add(n.toLowerCase()); return n;
+  }
+}
 // Runs an action on inputs ([{ name, path?, read() }]). out: { kind: 'zip' | 'folder' | 'next', write?(name, data, input) }.
 // progress: { cancelled, file(i, status, note) }. Returns { results, files, csv, cancelled }.
 async function batchRun(action, inputs, { out = { kind: 'zip' }, progress = null, secrets = {} } = {}) {
-  const steps = action.steps.map((s) => ({ ...s, def: BATCH_STEPS[s.id] }));
+  const steps = action.steps.map((s) => ({ ...s, def: batchStep(s.id) }));
   const counter = {}, results = [], files = [], used = new Set();
   const kept = batchEnter();
   let cancelled = false;
   try {
     for (let i = 0; i < inputs.length; i++) {
-      if (progress && progress.cancelled) { cancelled = true; for (let j = i; j < inputs.length; j++) { results.push({ name: inputs[j].name, status: 'cancelled' }); progress.file(j, 'cancelled'); } break; }
-      const input = inputs[i], base = batchBase(input.name), row = { name: input.name, status: 'done', notes: [] };
+      if (progress && progress.cancelled) { cancelled = true; for (let j = i; j < inputs.length; j++) { results.push({ name: inputs[j].rel || inputs[j].name, status: 'cancelled' }); progress.file(j, 'cancelled'); } break; }
+      const input = inputs[i], base = batchBase(input.name), row = { name: input.rel || input.name, status: 'done', notes: [] };
       results.push(row);
       if (progress) progress.file(i, 'running');
       const ctx = { file: { name: input.name, base }, index: i, total: inputs.length, counter, secrets, post: [], extra: [], after: [], cleanup: [], skipPdf: false, log: (t) => row.notes.push(t) };
@@ -333,7 +345,7 @@ async function batchRun(action, inputs, { out = { kind: 'zip' }, progress = null
         const outName = out.kind === 'next' ? `${base}${out.suffix || ' (processed)'}.pdf` : `${base}.pdf`;
         const write = [...(ctx.skipPdf ? [] : [{ name: outName, data: outBytes }]), ...ctx.extra];
         for (const f of write) {
-          f.name = out.kind === 'zip' ? batchUnique(used, safeName(f.name)) : safeName(f.name);
+          f.name = out.kind === 'next' ? safeName(f.name) : await batchUnique(used, safeName(f.name), out.kind === 'folder' ? out.exists : null);
           if (out.write) await out.write(f.name, f.data, input); else files.push(f);
         }
         row.out = write.map((f) => f.name); row.pages = doc.pages.length; row.size = outBytes.length;
@@ -361,7 +373,7 @@ function batchCsv(results) {
 /* ----- choosing files and where they go ----- */
 const BATCH_CAN_FOLDER_WEB = typeof window.showDirectoryPicker === 'function';
 const batchInputFromFile = (f, rel) => ({ name: f.name, rel: rel || f.name, size: f.size, read: async () => new Uint8Array(await f.arrayBuffer()) });
-const batchInputFromPath = (path, viaFolder) => ({ name: path.split('/').pop(), path, viaFolder: !!viaFolder, read: async () => b64ToBytes((await MAC_APP.core.invoke('read_text_file', { path })).content) });
+const batchInputFromPath = (path, viaFolder, rel) => ({ name: path.split('/').pop(), path, rel: rel || undefined, viaFolder: !!viaFolder, read: async () => b64ToBytes((await MAC_APP.core.invoke('read_text_file', { path })).content) });
 async function batchPickFiles() {
   if (MAC_APP) {
     const picked = await MAC_APP.dialog.open({ multiple: true, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
@@ -385,7 +397,7 @@ async function batchPickFolder() {
     const dir = await MAC_APP.dialog.open({ directory: true });
     const path = typeof dir === 'string' ? dir : dir && dir.path; if (!path) return [];
     const l = await MAC_APP.core.invoke('list_folder', { dir: path });
-    return l.files.map((f) => batchInputFromPath(path.replace(/\/$/, '') + '/' + f.path, true)).sort((a, b) => a.path.localeCompare(b.path));
+    return l.files.map((f) => batchInputFromPath(path.replace(/\/$/, '') + '/' + f.path, true, f.path)).sort((a, b) => a.path.localeCompare(b.path));
   }
   if (!BATCH_CAN_FOLDER_WEB) return [];
   let dh; try { dh = await window.showDirectoryPicker({ mode: 'read' }); } catch { return []; }
@@ -403,11 +415,15 @@ async function batchPickFolder() {
 async function batchPickOutFolder() {
   if (MAC_APP) {
     const dir = await MAC_APP.dialog.open({ directory: true }); const path = typeof dir === 'string' ? dir : dir && dir.path;
-    return path ? { kind: 'folder', label: path.split('/').pop(), write: (name, data) => MAC_APP.core.invoke('write_binary_file', { path: path.replace(/\/$/, '') + '/' + name, base64: bytesToB64(data) }) } : null;
+    if (!path) return null;
+    const at = (name) => path.replace(/\/$/, '') + '/' + name;
+    const exists = async (name) => { try { return (await MAC_APP.core.invoke('file_modified', { path: at(name) })) > 0; } catch { return false; } };
+    return { kind: 'folder', label: path.split('/').pop(), exists, write: (name, data) => MAC_APP.core.invoke('write_binary_file', { path: at(name), base64: bytesToB64(data) }) };
   }
   if (!BATCH_CAN_FOLDER_WEB) return null;
   let dh; try { dh = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch { return null; }
-  return { kind: 'folder', label: dh.name, write: async (name, data) => { const fh = await dh.getFileHandle(name, { create: true }); const w = await fh.createWritable(); await w.write(data); await w.close(); } };
+  const exists = async (name) => { try { await dh.getFileHandle(name); return true; } catch { return false; } };
+  return { kind: 'folder', label: dh.name, exists, write: async (name, data) => { const fh = await dh.getFileHandle(name, { create: true }); const w = await fh.createWritable(); await w.write(data); await w.close(); } };
 }
 // Next to the originals: the Mac app, when it may write there (always outside the App Store; there, for files that came
 // from a chosen folder).
@@ -417,7 +433,7 @@ const batchCanNext = (inputs) => !!MAC_APP && inputs.length > 0 && inputs.every(
 // A dialog whose own buttons (in the body) choose: `pick(value)` closes it with that value.
 function batchAsk(title, body, actions, setup) {
   return dialog(title, body, [...actions, { label: 'pick', value: '__pick' }], (dlg) => {
-    const hidden = $(`.dlg-foot [data-a="${actions.length}"]`, dlg); hidden.hidden = true; hidden.tabIndex = -1;
+    const hidden = $(`.dlg-foot [data-a="${actions.length}"]`, dlg); hidden.hidden = true; hidden.style.display = 'none'; hidden.tabIndex = -1; hidden.setAttribute('aria-hidden', 'true');
     let picked = null;
     const pick = (v) => { picked = v; hidden.click(); };
     dlg.__batchPicked = () => picked;
@@ -428,7 +444,7 @@ async function batchDialog() {
   if (batchBusy) return;
   for (;;) {
     const all = batchAll();
-    const row = (a) => `<li class="batch-act" data-id="${esc(a.id)}"><div class="batch-what"><strong>${esc(a.name)}</strong><span>${esc(a.steps.map((s) => (BATCH_STEPS[s.id] ? BATCH_STEPS[s.id].label : s.id)).join(' → '))}</span></div>
+    const row = (a) => `<li class="batch-act" data-id="${esc(a.id)}"><div class="batch-what"><strong>${esc(a.name)}</strong><span>${esc(a.steps.map((s) => (batchStep(s.id) ? batchStep(s.id).label : s.id)).join(' → '))}</span></div>
       <button type="button" class="btn primary" data-do="run">Run on files…</button><button type="button" class="btn" data-do="edit">${a.preset ? 'Copy and edit' : 'Edit'}</button>
       <button type="button" class="btn" data-do="export" aria-label="Export ${esc(a.name)}">Export</button>${a.preset ? '' : `<button type="button" class="icon-btn" data-do="delete" aria-label="Delete ${esc(a.name)}">${ic('trash-2')}</button>`}</li>`;
     const v = await batchAsk('Actions', `<p>An action is a list of steps that runs on many PDFs at once, on this device.</p><ul class="batch-acts">${all.map(row).join('')}</ul>`,
@@ -458,7 +474,7 @@ function batchImportAsk() {
 }
 // The step editor: name, ordered steps with their options; add, remove, move up and down.
 async function batchEdit(action) {
-  const work = { name: action.name, id: action.id, steps: action.steps.map((s) => ({ id: s.id, opts: { ...(BATCH_STEPS[s.id] ? BATCH_STEPS[s.id].defaults() : {}), ...s.opts }, key: uid() })) };
+  const work = { name: action.name, id: action.id, steps: action.steps.map((s) => ({ id: s.id, opts: { ...(batchStep(s.id) ? batchStep(s.id).defaults() : {}), ...s.opts }, key: uid() })) };
   const addable = Object.entries(BATCH_STEPS).filter(([id]) => batchStepOk(id));
   const r = await dialog(action.id ? 'Edit action' : 'New action', `<div class="batch-ed">
       <label class="field"><span>Name</span><input type="text" id="batchName" value="${esc(work.name)}" autocomplete="off"></label>
@@ -467,9 +483,9 @@ async function batchEdit(action) {
     </div>`, [{ label: 'Cancel' }, { label: 'Save', value: 'save', primary: true }], (dlg) => {
     dlg.classList.add('batch-dlg'); dlg.addEventListener('close', () => dlg.classList.remove('batch-dlg'), { once: true });
     const list = $('#batchSteps', dlg);
-    const sync = () => { for (const li of $$('.batch-step', list)) { const s = work.steps.find((x) => x.key === li.dataset.key); const d = BATCH_STEPS[s.id]; if (d) s.opts = batchReadForm(li, d.defaults()); } work.name = $('#batchName', dlg).value; };
+    const sync = () => { for (const li of $$('.batch-step', list)) { const s = work.steps.find((x) => x.key === li.dataset.key); const d = batchStep(s.id); if (d) s.opts = batchReadForm(li, d.defaults()); } work.name = $('#batchName', dlg).value; };
     const draw = () => {
-      list.innerHTML = work.steps.length ? work.steps.map((s, k) => { const d = BATCH_STEPS[s.id]; return `<li class="batch-step" data-key="${s.key}"><div class="batch-step-h"><span class="batch-n">${k + 1}</span><strong>${esc(d ? d.label : s.id)}</strong>
+      list.innerHTML = work.steps.length ? work.steps.map((s, k) => { const d = batchStep(s.id); return `<li class="batch-step" data-key="${s.key}"><div class="batch-step-h"><span class="batch-n">${k + 1}</span><strong>${esc(d ? d.label : s.id)}</strong>
         <button type="button" class="icon-btn" data-mv="-1" aria-label="Move up"${k ? '' : ' disabled'}>${ic('arrow-up')}</button><button type="button" class="icon-btn" data-mv="1" aria-label="Move down"${k < work.steps.length - 1 ? '' : ' disabled'}>${ic('arrow-down')}</button><button type="button" class="icon-btn" data-rm aria-label="Remove step">${ic('x')}</button></div>
         <div class="batch-opts">${d ? d.options(s.opts) : bf.note('This step is not in this version of Cowdrey.PDF. It is kept, but files fail when it runs.')}</div></li>`; }).join('') : '<li class="batch-empty">No steps yet. Add one below.</li>';
       icons();
@@ -481,7 +497,7 @@ async function batchEdit(action) {
       else if (b.dataset.mv) { const t = k + +b.dataset.mv; if (t >= 0 && t < work.steps.length) { const [s] = work.steps.splice(k, 1); work.steps.splice(t, 0, s); } }
       draw();
     });
-    $('#batchAddBtn', dlg).addEventListener('click', () => { sync(); const id = $('#batchAddSel', dlg).value; work.steps.push({ id, opts: BATCH_STEPS[id].defaults(), key: uid() }); draw(); });
+    $('#batchAddBtn', dlg).addEventListener('click', () => { sync(); const id = $('#batchAddSel', dlg).value; work.steps.push({ id, opts: batchStep(id).defaults(), key: uid() }); draw(); });
     dlg.__batchSync = sync;
     draw();
   });
@@ -495,8 +511,8 @@ async function batchRunDialog(action) {
   let inputs = [], outFolder = null;
   const unknown = action.steps.filter((s) => !batchStepOk(s.id));
   const r = await dialog(`Run “${action.name}”`, `<div class="batch-run">
-      ${unknown.length ? `<p class="prot-err">${esc(unknown.map((s) => (BATCH_STEPS[s.id] ? BATCH_STEPS[s.id].label : s.id)).join(', '))}: not in this version. Every file would fail.</p>` : ''}
-      <p class="batch-steps-line">${action.steps.map((s, k) => `${k + 1}. ${esc(BATCH_STEPS[s.id] ? BATCH_STEPS[s.id].label : s.id)} <span>${esc(batchStepSummary(s))}</span>`).join('<br>')}</p>
+      ${unknown.length ? `<p class="prot-err">${esc(unknown.map((s) => (batchStep(s.id) ? batchStep(s.id).label : s.id)).join(', '))}: not in this version. Every file would fail.</p>` : ''}
+      <p class="batch-steps-line">${action.steps.map((s, k) => `${k + 1}. ${esc(batchStep(s.id) ? batchStep(s.id).label : s.id)} <span>${esc(batchStepSummary(s))}</span>`).join('<br>')}</p>
       <div class="batch-pick"><button type="button" class="btn" id="batchFiles">${ic('files')} Choose PDFs…</button>${MAC_APP || BATCH_CAN_FOLDER_WEB ? `<button type="button" class="btn" id="batchFolder">${ic('folder-open')} Choose a folder…</button>` : ''}</div>
       <ul class="batch-files" id="batchFileList"><li class="batch-empty">No files chosen yet.</li></ul>
       <fieldset class="batch-outs"><legend>Save the results</legend>
@@ -536,7 +552,7 @@ async function batchRunDialog(action) {
 async function batchStart(action, inputs, out) {
   if (batchBusy) return null;
   const secrets = {}, run = { secrets };
-  for (const s of action.steps) { const d = BATCH_STEPS[s.id]; if (d && d.prepare && !(await d.prepare({ ...d.defaults(), ...s.opts }, run))) return null; }
+  for (const s of action.steps) { const d = batchStep(s.id); if (d && d.prepare && !(await d.prepare({ ...d.defaults(), ...s.opts }, run))) return null; }
   batchBusy = true;
   let dlg, finished = false, result = null, ready;
   const shown = new Promise((r) => { ready = r; });
@@ -593,7 +609,7 @@ TEST_HOOKS.batchRun = async (action, list, o = {}) => {
 TEST_HOOKS.batchExportJson = batchExportJson;
 TEST_HOOKS.batchImportJson = batchImportJson;
 TEST_HOOKS.batchSteps = () => Object.keys(BATCH_STEPS).filter(batchStepOk);
-TEST_HOOKS.batchPresets = () => BATCH_PRESETS.map((a) => a.name);
+TEST_HOOKS.batchPresets = () => batchPresets().map((a) => a.name);
 TEST_HOOKS.batchSaved = batchSaved;
 TEST_HOOKS.batchKeep = batchKeep;
 addStyle(`

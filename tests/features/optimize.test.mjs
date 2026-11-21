@@ -323,4 +323,52 @@ export default async (h) => {
     ok(Math.abs(im[0].W - 300) <= 2, 'RGB at ~150 ppi: ' + im[0].W);
     eq(p.errors, []); await p.ctx.close();
   });
+
+  // A PDF that runs JavaScript when it opens (and is already compact: nothing else to gain).
+  async function jsPdf() {
+    const d = await C.PDFDocument.create(), pg = d.addPage([300, 300]), f = await d.embedFont(C.StandardFonts.Helvetica);
+    pg.drawText('Script', { x: 40, y: 200, size: 18, font: f });
+    d.catalog.set(N('OpenAction'), d.context.obj({ S: 'JavaScript', JS: C.PDFString.of('app.alert("hi")') }));
+    return Buffer.from(await d.save({ useObjectStreams: false }));
+  }
+  const hasJs = (d) => d.catalog.has(N('OpenAction')) || d.context.enumerateIndirectObjects().some(([, o]) => o instanceof C.PDFDict && String(o.lookup(N('S'))) === '/JavaScript');
+
+  await test('optimize: Remove JavaScript is done even when the PDF is already compact (optimizeBytes and the dialog)', async () => {
+    const p = await open(), src = await jsPdf();
+    ok(hasJs(await C.PDFDocument.load(src)), 'the test PDF has a script');
+    const r = await run(p, src, { preset: 'lossless', clean: { javascript: true } });
+    eq(r.same, false, 'not kept as it was');
+    ok(!hasJs(await C.PDFDocument.load(r.bytes)), 'no script left');
+    const plain = await run(p, src, { preset: 'lossless' });
+    ok(hasJs(await C.PDFDocument.load(plain.bytes)), 'without the tick the script stays');
+    // the dialog: Lossless only, Remove JavaScript ticked, then save
+    await p.evaluate((b64) => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return window.__cowdreyPdf.openBytes(u, 'Script.pdf'); }, src.toString('base64'));
+    await p.waitForFunction(() => window.__cowdreyPdf.doc && document.querySelector('.page canvas.pdf'), null, { timeout: 15000 });
+    await p.evaluate(() => window.__cowdreyPdf.run('optimize'));
+    await p.waitForFunction(() => /Now /.test((document.querySelector('#optSize') || {}).textContent || ''), null, { timeout: 30000 });
+    await p.check('#dialog [name="optPreset"][value="lossless"]');
+    await p.click('#dialog .opt-adv summary'); await p.check('#dialog [name="cl_javascript"]');
+    await p.waitForFunction(() => /clean-up you chose|Optimized:/.test(document.querySelector('#optSize').textContent), null, { timeout: 30000 });
+    await answer(p, 'Optimize'); await p.waitForTimeout(200);
+    const out = Buffer.from(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.buildPdf())));
+    ok(!hasJs(await C.PDFDocument.load(out)), 'the saved PDF has no script');
+    const last = await p.evaluate(() => window.__cowdreyPdf.optLast());
+    ok(last && !last.same, JSON.stringify(last));
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('optimize: Remove unused resources keeps the form’s default font (AcroForm /DR) that a field’s /DA names', async () => {
+    const p = await open();
+    const d = await C.PDFDocument.create(), pg = d.addPage([300, 300]), ctx = d.context;
+    const fonts = ctx.register(ctx.obj({ Helv: ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' })) }));
+    const ap = ctx.register(ctx.stream('/Tx BMC EMC', { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 20], Resources: { Font: fonts } }));
+    const w = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: C.PDFString.of('Name'), Rect: [40, 200, 240, 220], DA: C.PDFString.of('/Helv 12 Tf 0 g'), F: 4, P: pg.ref, AP: { N: ap } }));
+    pg.node.set(N('Annots'), ctx.obj([w]));
+    d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [w], DR: { Font: fonts }, DA: C.PDFString.of('/Helv 0 Tf 0 g') }));
+    const r = await run(p, Buffer.from(await d.save({ useObjectStreams: false })), { preset: 'lossless' });
+    eq(r.stats && r.stats.unused, 0, 'nothing removed');
+    const o = await C.PDFDocument.load(r.bytes), dr = o.catalog.lookup(N('AcroForm')).lookup(N('DR')).lookup(N('Font'));
+    ok(dr.has(N('Helv')), 'Helv is still in DR');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };

@@ -11,7 +11,8 @@
    - clean-up: editing data (PieceInfo), page thumbnails, resources no content uses; and if asked, XMP metadata,
      JavaScript and the tags (structure tree).
    Font subsetting is later work: only identical font files are merged here.
-   The file is never made bigger: when nothing gains, the PDF is kept as it was (and you're told).
+   The file is never made bigger: when nothing gains, the PDF is kept as it was (and you're told). The privacy
+   clean-up (XMP metadata, JavaScript, tags) is done whatever the size gain.
    docMarks(): { id, type: 'optimize', opts } — applied when the PDF is saved (see the saveDoc hook below).
    optimizeBytes(bytes, opts) does the same to the bytes of a PDF (the batch step uses it). */
 const OPT_FFLATE = 'https://cdn.jsdelivr.net/npm/fflate@0.8.3/esm/browser.js';
@@ -653,6 +654,15 @@ function optUnused(L, out, J, stats) {
     let s = kindUse.get(sub); if (!s) kindUse.set(sub, s = new Set()); for (const n of names) s.add(n);
   }
   for (const res of unsafe) for (const k of OPT_RES_KINDS) { const sub = ctx.lookup(res.get(N(k))); if (sub instanceof L.PDFDict) kindBad.add(sub); }
+  // The form's default resources (AcroForm /DR) stay whole: a field's /DA names its font there, and viewers that
+  // draw a field again when it is filled look the font up in it (and in dicts that share it).
+  const acro = out.catalog.lookup(N('AcroForm')), dr = acro instanceof L.PDFDict ? acro.lookup(N('DR')) : null;
+  if (dr instanceof L.PDFDict) for (const k of OPT_RES_KINDS) { const sub = dr.lookup(N(k)); if (sub instanceof L.PDFDict) kindBad.add(sub); }
+  // and a font a /DA names is kept wherever it is
+  for (const [, o] of [[null, acro], ...ctx.enumerateIndirectObjects()]) {
+    const d = o instanceof L.PDFDict ? o : null, da = d && d.lookup(N('DA'));
+    if (da && da.decodeText) { try { for (const m of da.decodeText().matchAll(/\/([^\s\/\[\]<>(){}%]+)\s+[-+.\d]+\s+Tf/g)) orphan.add(optName(m[1])); } catch {} }
+  }
   for (const [sub, names] of kindUse) {
     if (kindBad.has(sub)) continue;
     for (const key of sub.keys()) {
@@ -662,13 +672,9 @@ function optUnused(L, out, J, stats) {
     }
   }
 }
-function optCleanUp(L, out, J, opts, stats) {
-  const N = L.PDFName.of, ctx = out.context, cat = out.catalog, c = opts.clean || {};
-  if (c.editData !== false) {
-    J.del(cat, N('PieceInfo'));
-    for (const p of out.getPages()) { J.del(p.node, N('PieceInfo')); if (p.node.has(N('Thumb'))) { J.del(p.node, N('Thumb')); stats.thumbs++; } }
-    for (const [, o] of ctx.enumerateIndirectObjects()) if (o instanceof L.PDFStream && String(o.dict.lookup(N('Subtype'))) === '/Form') J.del(o.dict, N('PieceInfo'));
-  }
+// The clean-up asked for for privacy or safety (XMP metadata, JavaScript, tags): always done, whatever the size gain.
+function optPrivacy(L, out, J, opts) {
+  const N = L.PDFName.of, ctx = out.context, cat = out.catalog, c = (opts && opts.clean) || {};
   if (c.metadata) {
     J.del(cat, N('Metadata'));
     for (const [, o] of ctx.enumerateIndirectObjects()) { const d = o instanceof L.PDFDict ? o : o instanceof L.PDFStream ? o.dict : null; if (d && d !== cat) J.del(d, N('Metadata')); }
@@ -686,6 +692,23 @@ function optCleanUp(L, out, J, opts, stats) {
     J.del(cat, N('StructTreeRoot')); J.del(cat, N('MarkInfo'));
     for (const [, o] of ctx.enumerateIndirectObjects()) { const d = o instanceof L.PDFDict ? o : o instanceof L.PDFStream ? o.dict : null; if (d) { J.del(d, N('StructParents')); J.del(d, N('StructParent')); } }
   }
+}
+// Does that clean-up now, outside any journal (so it is never undone), and drops the objects it left unused (the
+// removed scripts must not stay in the file). The number of changes it made.
+function optRequired(L, out, opts) {
+  const J = optJournal(L, out.context);
+  optPrivacy(L, out, J, opts);
+  if (J.size) optCollect(L, out, J);
+  return J.size;
+}
+function optCleanUp(L, out, J, opts, stats) {
+  const N = L.PDFName.of, ctx = out.context, cat = out.catalog, c = opts.clean || {};
+  if (c.editData !== false) {
+    J.del(cat, N('PieceInfo'));
+    for (const p of out.getPages()) { J.del(p.node, N('PieceInfo')); if (p.node.has(N('Thumb'))) { J.del(p.node, N('Thumb')); stats.thumbs++; } }
+    for (const [, o] of ctx.enumerateIndirectObjects()) if (o instanceof L.PDFStream && String(o.dict.lookup(N('Subtype'))) === '/Form') J.del(o.dict, N('PieceInfo'));
+  }
+  optPrivacy(L, out, J, opts);
   if (c.unused !== false) optUnused(L, out, J, stats);
 }
 
@@ -751,8 +774,15 @@ async function optimizeBytes(bytes, opts = {}) {
   try { out = await L.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false }); } catch (e) { return keep('unreadable'); }
   if (out.isEncrypted) return keep('protected');
   if (optSigned(L, out) && !opts.allowSigned) return keep('signed');
+  opts = opts && opts.color ? opts : optOptions(opts && opts.preset, opts);
+  // Clean-up asked for for privacy is kept even when the file gains nothing in size.
+  const cleaned = optRequired(L, out, opts) ? await out.save({ useObjectStreams: true }) : null;
   const J = await optimizeDoc(L, out, opts);
   const res = await out.save({ useObjectStreams: true });
+  if (cleaned) {
+    const best = optGains(cleaned.length, res.length) ? res : cleaned;
+    return { bytes: best, before, after: best.length, same: false, cleaned: true, stats: J.stats };
+  }
   if (!optGains(before, res.length)) return keep('compact', J.stats);
   return { bytes: res, before, after: res.length, same: false, stats: J.stats };
 }
@@ -802,20 +832,27 @@ FEATURE.saveDoc.push(async ({ L, out }) => {
   out.save = async (o = {}) => {
     const so = { useObjectStreams: true, ...o };
     // Sized unencrypted (saving encrypts the streams in place); the smaller is then saved, encrypted if it should be.
-    const sec = out.context.security; let plain, packed, J = null;
+    const sec = out.context.security; let plain, packed, J = null, cleaned = 0, before;
     out.context.security = undefined;
     try {
-      plain = await save(so);
+      plain = await save(so); before = plain.length;
+      // Clean-up asked for for privacy (JavaScript, XMP metadata, tags) is never undone, whatever the size.
+      cleaned = optRequired(L, out, opts);
+      if (cleaned) plain = await save(so);
       J = await optimizeDoc(L, out, opts);
       packed = await save(so);
       if (!optGains(plain.length, packed.length)) { J.undo(); packed = null; }
-    } catch (e) { console.warn('optimize: kept the PDF as it was', e); if (J) J.undo(); packed = null; }
+    } catch (e) { console.warn('optimize: kept the PDF as it was', e); if (J) J.undo(); packed = null; if (!plain) throw e; }
     finally { out.context.security = sec; }
     let res = sec ? await save(so) : packed || plain;
-    if (only && res.length >= only.length) res = new Uint8Array(only);
-    const same = !packed || (only && res.length >= only.length);
-    optLast = { before: only ? only.length : plain.length, after: res.length, same, stats: J && J.stats };
-    if (same && !optMeasuring && !optQuiet) toast('This PDF is already compact, so it was saved as it was');
+    const keepOrig = only && !cleaned && res.length >= only.length;
+    if (keepOrig) res = new Uint8Array(only);
+    const same = !cleaned && (!packed || keepOrig);
+    optLast = { before: only ? only.length : before, after: res.length, same, cleaned: !!cleaned, stats: J && J.stats };
+    if (!optMeasuring && !optQuiet) {
+      if (same) toast('This PDF is already compact, so it was saved as it was');
+      else if (cleaned && !packed) toast('This PDF is already compact. The clean-up you chose was done');
+    }
     return res;
   };
 });
@@ -900,6 +937,7 @@ async function optDialog() {
           out.classList.toggle('none', res.same || pc < 2);
           out.textContent = res.reason === 'protected' ? `Now ${optSize(res.before)}. Protected PDFs are optimized when they are saved.`
             : res.reason === 'signed' ? 'This PDF is signed: optimizing it would break the signature, so it is kept as it is.'
+            : res.cleaned && !optGains(res.before, res.after) ? `Now ${optSize(res.before)}. This PDF is already compact, but the clean-up you chose will be done.`
             : res.same ? `Now ${optSize(res.before)}. This PDF is already compact: optimizing would not make it smaller, and it is never made bigger.`
             : `Now ${optSize(res.before)}. Optimized: ${optSize(res.after)} (${pc}% smaller).`;
         } catch (e) { console.warn(e); if (n === ask) out.textContent = 'The size can’t be worked out.'; }

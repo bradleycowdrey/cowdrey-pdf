@@ -127,7 +127,11 @@ export default async (h) => {
     ok((await p.evaluate(() => window.__cowdreyPdf.menus().find(([t]) => t === 'File')[1])).includes('batch'), 'in the File menu');
     await p.click('#ribbonBody [data-cmd="batch"]'); await p.waitForSelector('#dialog[open] .batch-acts');
     const names = await p.$$eval('#dialog .batch-act strong', (s) => s.map((x) => x.textContent));
-    for (const n of ['Bates number a set of PDFs', 'Make searchable (OCR)', 'Prepare for archive (PDF/A)', 'Make smaller']) ok(names.includes(n), n);
+    for (const n of ['Bates number a set of PDFs', 'Make smaller']) ok(names.includes(n), n);
+    // built-in actions are listed only when this version has their steps
+    const avail = await p.evaluate(() => window.__cowdreyPdf.batchSteps());
+    eq(names.includes('Prepare for archive (PDF/A)'), avail.includes('pdfa'), 'PDF/A only with its step');
+    eq(names.includes('Make searchable (OCR)'), avail.includes('ocr'), 'OCR only with its step');
     await answer(p, 'New action'); await p.waitForSelector('#dialog[open] #batchSteps');
     await p.fill('#batchName', 'Stamp and turn');
     await p.selectOption('#batchAddSel', 'bates'); await p.click('#batchAddBtn');
@@ -225,6 +229,64 @@ export default async (h) => {
     const written = await p.evaluate(() => window.__calls.filter((c) => c[0] === 'write_binary_file').map((c) => c[1]));
     eq(written, ['/Users/me/Case/Alpha reviewed.pdf', '/Users/me/Case/Bravo reviewed.pdf', '/Users/me/Case/Charlie reviewed.pdf']);
     await answer(p, 'Done');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('actions in a folder: files with the same name (from subfolders) and files already there are never replaced', async () => {
+    const fl = await files();
+    const init = [([A, B, C2]) => {
+      const file = (name, b64) => { const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new File([u], name, { type: 'application/pdf' }); };
+      const fileH = (name, b64) => ({ kind: 'file', name, getFile: async () => file(name, b64) });
+      const dirH = (name, entries) => ({ kind: 'directory', name, async *entries() { for (const e of entries) yield [e.name, e]; } });
+      window.__writes = []; window.__have = new Set(['Other.pdf']); // a file already in the output folder
+      window.showDirectoryPicker = async (o) => {
+        if (o && o.mode === 'readwrite') return { kind: 'directory', name: 'Out', getFileHandle: async (n, opt) => {
+          if (!window.__have.has(n) && !(opt && opt.create)) throw new DOMException('not found', 'NotFoundError');
+          return { createWritable: async () => ({ write: async () => {}, close: async () => { window.__have.add(n); window.__writes.push(n); } }) };
+        } };
+        return dirH('Cases', [dirH('Smith', [fileH('Contract.pdf', A)]), dirH('Jones', [fileH('Contract.pdf', B)]), fileH('Other.pdf', C2)]);
+      };
+    }, fl.map((f) => f.b64)];
+    const p = await open({ init });
+    await p.evaluate(() => window.__cowdreyPdf.run('batch')); await p.waitForSelector('#dialog[open] .batch-acts');
+    await p.click('#dialog .batch-act[data-id="preset-bates"] [data-do="run"]'); await p.waitForSelector('#dialog[open] #batchFolder');
+    await p.click('#batchFolder');
+    await p.waitForFunction(() => document.querySelectorAll('#batchFileList li:not(.batch-empty)').length === 3);
+    await p.check('#dialog [name="batchOut"][value="folder"]');
+    await p.waitForFunction(() => document.querySelector('#batchOutLabel').textContent === 'Out');
+    await answer(p, 'Run on 3 files');
+    await p.waitForFunction(() => /3 files done/.test((document.querySelector('#dialog .batch-head') || {}).textContent || ''), null, { timeout: 30000 });
+    const writes = await p.evaluate(() => window.__writes);
+    eq(writes.length, 3, 'three files written'); eq(new Set(writes.map((x) => x.toLowerCase())).size, 3, 'each under its own name: ' + writes);
+    ok(!writes.includes('Other.pdf'), 'the file already there is kept');
+    const res = await p.evaluate(() => window.__batchLast.results.map((r) => [r.name, r.out[0]]));
+    eq(res.map((r) => r[0]), ['Jones/Contract.pdf', 'Other.pdf', 'Smith/Contract.pdf'], 'the log names each file by its folder');
+    eq(res.map((r) => r[1]), writes, 'the log says where each went');
+    await answer(p, 'Done');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('actions: the list dialog shows only its own buttons, and they fit on a phone', async () => {
+    const p = await open({ width: 390, height: 800, touch: true });
+    await p.evaluate(() => window.__cowdreyPdf.run('batch')); await p.waitForSelector('#dialog[open] .batch-acts');
+    const btns = await p.$$eval('#dialog .dlg-foot button', (l) => l.filter((b) => getComputedStyle(b).display !== 'none').map((b) => { const r = b.getBoundingClientRect(); return [b.textContent.trim(), r.left, r.right]; }));
+    eq(btns.map((b) => b[0]), ['Import…', 'New action', 'Close']);
+    for (const [label, l, r] of btns) ok(l >= 0 && r <= 390, `${label} on screen: ${l}–${r}`);
+    await answer(p, 'Close');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('actions: an imported step named like a property of every object (constructor, toString, __proto__) is unknown, not run', async () => {
+    const p = await open();
+    const a = await p.evaluate(() => { const H = window.__cowdreyPdf; return H.batchKeep(H.batchImportJson('{"cowdreyPdfAction":1,"name":"Odd","steps":[{"id":"constructor","opts":{}},{"id":"toString","opts":{}},{"id":"__proto__","opts":{}}]}')); });
+    eq(await p.evaluate(() => ['constructor', 'toString', '__proto__', 'hasOwnProperty'].filter((x) => window.__cowdreyPdf.batchSteps().includes(x))), []);
+    await p.evaluate(() => window.__cowdreyPdf.run('batch')); await p.waitForSelector('#dialog[open] .batch-acts');
+    await p.click('#dialog .batch-act:has(strong:text-is("Odd")) [data-do="run"]'); await p.waitForSelector('#dialog[open] #batchFileList');
+    ok(/not in this version/.test(await p.textContent('#dialog .prot-err')), 'it says the steps are not in this version');
+    await answer(p, 'Cancel');
+    const r = await p.evaluate(([x, l]) => window.__cowdreyPdf.batchRun(x, l), [a, (await files()).slice(0, 1)]);
+    eq(r.results.map((x) => x.status), ['failed']);
+    ok(/not in this version/.test(r.results[0].error), r.results[0].error);
     eq(p.errors, []); await p.ctx.close();
   });
 };
