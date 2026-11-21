@@ -201,6 +201,69 @@ export default async (h) => {
     ok((await p.textContent('.sg-bar')).includes('changed after signing'), 'the bar says so');
     eq(p.errors, []); await p.ctx.close();
   });
+  // Appends an incremental update by hand: `objs` ([[num, body]]) and a cross-reference section that lists them.
+  // how: 'stream' (one xref stream), 'chain' (an xref stream that lists them, then one that lists only itself and
+  // points back at it: only the second is at startxref), 'hybrid' (a classic table with /XRefStm pointing at a stream
+  // that lists them) or 'hidden' (written but not listed anywhere).
+  function appendRaw(buf, objs, how = 'stream') {
+    const s = buf.toString('latin1'), last = +/startxref\s+(\d+)\s*%%EOF\s*$/.exec(s)[1];
+    const size = Math.max(...[...s.matchAll(/\/Size (\d+)/g)].map((m) => +m[1]));
+    const root = [...s.matchAll(/\/Root (\d+ \d+ R)/g)].pop()[1];
+    const parts = [buf]; let pos = buf.length; const offs = {};
+    for (const [n, body] of objs) { offs[n] = pos; const chunk = Buffer.from(`${n} 0 obj\n${body}\nendobj\n`, 'latin1'); parts.push(chunk); pos += chunk.length; }
+    const xs = (num, list, prev) => { // an xref stream at pos listing `list` and itself
+      offs[num] = pos; const nums = [...list, num].sort((a, b) => a - b);
+      const rows = Buffer.concat(nums.map((n) => { const r = Buffer.alloc(7); r[0] = 1; r.writeUInt32BE(offs[n], 1); return r; }));
+      const at = pos, chunk = Buffer.concat([Buffer.from(`${num} 0 obj\n<< /Type /XRef /Size ${size + 3} /W [1 4 2] /Index [${nums.map((n) => n + ' 1').join(' ')}] /Root ${root} /Prev ${prev} /Length ${rows.length} >>\nstream\n`), rows, Buffer.from('\nendstream\nendobj\n')]);
+      parts.push(chunk); pos += chunk.length; return at;
+    };
+    const listed = how === 'hidden' ? [] : objs.map(([n]) => n);
+    let start;
+    if (how === 'chain') { const a = xs(size, listed, last); start = xs(size + 1, [], a); }
+    else if (how === 'hybrid') { const a = xs(size, listed, last); start = pos; parts.push(Buffer.from(`xref\n0 1\n0000000000 65535 f\r\ntrailer\n<< /Size ${size + 1} /Root ${root} /Prev ${last} /XRefStm ${a} >>\n`)); }
+    else start = xs(size, listed, last);
+    parts.push(Buffer.from(`startxref\n${start}\n%%EOF\n`));
+    return Buffer.concat(parts);
+  }
+  await test('certificate signing: page changes hidden from the check are caught (more xref sections, /XRefStm, disguised objects, an edited signature)', async () => {
+    ok(signedA, 'signed file from the tests before');
+    const p = await open();
+    const d = await L.PDFDocument.load(signedA, { updateMetadata: false }), pg = d.getPage(0).node;
+    const cref = pg.get(L.PDFName.of('Contents')), contentNum = (cref instanceof L.PDFRef ? cref : d.context.lookup(cref).get(0)).objectNumber;
+    const fonts = d.context.lookup(pg.Resources().get(L.PDFName.of('Font'))), fontRef = fonts.values().find((v) => v instanceof L.PDFRef);
+    const ser = (o) => { const u = new Uint8Array(o.sizeInBytes()); o.copyBytesInto(u, 0); return Buffer.from(u).toString('latin1'); };
+    const draw = 'BT /Helvetica 28 Tf 72 500 Td (PAY EVE 1,000,000) Tj ET';
+    const content = (dict = '') => `<< ${dict}/Length ${draw.length} >>\nstream\n${draw}\nendstream`;
+    const verify = (buf) => p.evaluate(async (b) => window.__cowdreyPdf.sgVerify(b), Array.from(buf));
+    const pageText = (buf) => p.evaluate(async (b) => { const x = await pdfjsLib.getDocument({ data: new Uint8Array(b) }).promise; return (await (await x.getPage(1)).getTextContent()).items.map((i) => i.str).join(' '); }, Array.from(buf));
+    const st = signedA.toString('latin1'), m = /(\d+) 0 obj\n(<< \/Type \/Sig [\s\S]*?)\nendobj/.exec(st);
+    ok(m && m.index < ranges(signedA)[0][1], 'the signature dictionary');
+    const cases = {
+      'a second xref section behind the last one': appendRaw(signedA, [[contentNum, content()]], 'chain'),
+      'a hybrid table whose /XRefStm lists the change': appendRaw(signedA, [[contentNum, content()]], 'hybrid'),
+      'page content typed as a signature': appendRaw(signedA, [[contentNum, content('/Type /Sig ')]]),
+      'page content typed as metadata': appendRaw(signedA, [[contentNum, content('/Type /Metadata ')]]),
+      'page content typed as an xref stream': appendRaw(signedA, [[contentNum, content('/Type /X#52ef ')]]),
+      'a font that gains /Fields': appendRaw(signedA, [[fontRef.objectNumber, ser(d.context.lookup(fontRef)).replace(/>>\s*$/, '/Fields [] >>').replace(/\/BaseFont \/[A-Za-z-]+/, '/BaseFont /Courier')]]),
+      'page content written but not listed': appendRaw(signedA, [[contentNum, content()]], 'hidden'),
+      'the signature dictionary edited': appendRaw(signedA, [[+m[1], m[2].replace(/\/M \([^)]*\)/, "/M (D:20200101120000+00'00')").replace(/\/Reason <[0-9A-F]+>/, '/Reason (I reject this document)')]]),
+    };
+    for (const [what, buf] of Object.entries(cases)) {
+      const [v] = await verify(buf);
+      eq([what, v.status, v.changes && v.changes.other, v.changes && v.changes.sign], [what, 'changed', true, false]);
+    }
+    await openBuf(p, cases['a second xref section behind the last one']); // (loads pdf.js)
+    eq((await sigs(p))[0].status, 'changed');
+    ok((await pageText(cases['a second xref section behind the last one'])).includes('PAY EVE'), 'pdf.js shows the change the check caught');
+    // the panel shows the details as signed, not as edited later
+    await openBuf(p, cases['the signature dictionary edited']);
+    const [x] = await sigs(p);
+    eq([x.status, x.reason], ['changed', 'Approved']);
+    ok(Math.abs(new Date(x.when) - Date.now()) < 3600e3, x.when);
+    // still fine: an update that only adds a comment, or a new signature
+    eq((await verify(await appendComment(signedA)))[0].changes, { comments: true, form: false, sign: false, other: false });
+    eq(p.errors, []); await p.ctx.close();
+  });
   await test('certificate signing: a second signer signs the signed file as it is; both signatures stay valid', async () => {
     const p = await open(); await openBuf(p, signedA, 'Quarterly report (signed).pdf');
     await importId(p, RSA2_P12, 'second');

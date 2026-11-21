@@ -121,17 +121,18 @@ function sgParse(s, i) {
   const DELIM = /[\s()<>\[\]{}\/%]/;
   const ws = () => { for (;;) { while (i < s.length && /[\x00\t\n\f\r ]/.test(s[i])) i++; if (s[i] === '%') { while (i < s.length && s[i] !== '\n' && s[i] !== '\r') i++; } else return; } };
   const token = () => { const j = i; while (i < s.length && !DELIM.test(s[i])) i++; return s.slice(j, i); };
+  const name = () => token().replace(/#([0-9a-fA-F]{2})/g, (w, h) => String.fromCharCode(parseInt(h, 16))); // /T#79pe is /Type
   const value = (depth) => {
     if (depth > 60) throw new Error('Nested too deeply');
     ws(); const c = s[i];
     if (c === '<' && s[i + 1] === '<') {
       i += 2; const d = {};
-      for (;;) { ws(); if (s[i] === '>' && s[i + 1] === '>') { i += 2; return d; } if (s[i] !== '/') throw new Error('Bad dictionary at ' + i); i++; const k = token(); d[k] = value(depth + 1); }
+      for (;;) { ws(); if (s[i] === '>' && s[i + 1] === '>') { i += 2; return d; } if (s[i] !== '/') throw new Error('Bad dictionary at ' + i); i++; const k = name(); d[k] = value(depth + 1); }
     }
     if (c === '<') { const j = s.indexOf('>', i); if (j < 0) throw new Error('Bad hex string'); const h = s.slice(i + 1, j); i = j + 1; return { hex: h.replace(/\s+/g, '') }; }
     if (c === '[') { i++; const a = []; for (;;) { ws(); if (s[i] === ']') { i++; return a; } if (i >= s.length) throw new Error('Bad array'); a.push(value(depth + 1)); } }
     if (c === '(') { let d = 0; const j = i; for (; i < s.length; i++) { if (s[i] === '\\') { i++; continue; } if (s[i] === '(') d++; else if (s[i] === ')' && --d === 0) { i++; break; } } return { str: s.slice(j + 1, i - 1) }; }
-    if (c === '/') { i++; return '/' + token(); }
+    if (c === '/') { i++; return '/' + name(); }
     const t = token(); if (!t) throw new Error('Bad object at ' + i);
     if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(t)) {
       if (/^\d+$/.test(t)) { const m = /^\s+(\d+)\s+R(?=[\s()<>\[\]{}\/%]|$)/.exec(s.slice(i, i + 32)); if (m) { i += m[0].length; return { ref: [+t, +m[1]] }; } }
@@ -171,7 +172,8 @@ function sgUnpredict(u, cols, colors = 1, bpc = 8) {
   }
   return out;
 }
-// The cross-reference section at `off`: { type: 'table'|'stream', trailer, entries: [[num, gen, inUse]] }
+// The cross-reference section at `off`: { type: 'table'|'stream', trailer, entries: [[num, gen, inUse, kind, a, b]] }
+// (kind 0 free, 1 at offset a, 2 in object stream a at index b)
 async function sgXrefAt(u, s, off) {
   let i = off; while (/\s/.test(s[i])) i++;
   if (s.startsWith('xref', i)) {
@@ -179,7 +181,7 @@ async function sgXrefAt(u, s, off) {
     const toks = s.slice(i + 4, t).trim().split(/\s+/).filter(Boolean), entries = [];
     for (let k = 0; k + 1 < toks.length;) {
       const start = +toks[k], count = +toks[k + 1]; k += 2;
-      for (let j = 0; j < count && k + 2 < toks.length + 1; j++, k += 3) entries.push([start + j, +toks[k + 1], toks[k + 2] === 'n']);
+      for (let j = 0; j < count && k + 2 < toks.length + 1; j++, k += 3) entries.push([start + j, +toks[k + 1], toks[k + 2] === 'n', toks[k + 2] === 'n' ? 1 : 0, +toks[k]]);
     }
     const [trailer] = sgParse(s, t + 7);
     return { type: 'table', trailer, entries, at: i };
@@ -197,8 +199,8 @@ async function sgXrefAt(u, s, off) {
   const W = d.W, idx = d.Index || [0, d.Size], entries = [], rec = W[0] + W[1] + W[2];
   const num = (p, n) => { let v = 0; for (let q = 0; q < n; q++) v = v * 256 + data[p + q]; return v; };
   for (let a = 0, p = 0; a < idx.length; a += 2) for (let n = 0; n < idx[a + 1] && p + rec <= data.length; n++, p += rec) {
-    const type = W[0] ? num(p, W[0]) : 1, f3 = num(p + W[0] + W[1], W[2]);
-    entries.push([idx[a] + n, type === 1 ? f3 : 0, type !== 0]);
+    const type = W[0] ? num(p, W[0]) : 1, f2 = num(p + W[0], W[1]), f3 = num(p + W[0] + W[1], W[2]);
+    entries.push([idx[a] + n, type === 1 ? f3 : 0, type !== 0, type, f2, f3]);
   }
   return { type: 'stream', trailer: d, entries, at: i, num: +h[1] };
 }
@@ -219,11 +221,103 @@ async function sgTrailerInfo(u, s) {
   }
   return { prev, type: x.type, size, root: x.trailer.Root || t.Root, info: x.trailer.Info || t.Info, id: x.trailer.ID || t.ID, encrypt: x.trailer.Encrypt || t.Encrypt };
 }
-// Where each revision ends (just after %%EOF and its end of line)
-function sgRevisionEnds(s) {
-  const ends = [], re = /%%EOF[ \t]*(\r\n|\r|\n)?/g; let m;
-  while ((m = re.exec(s))) ends.push(m.index + m[0].length);
-  return ends;
+
+// A parsed dictionary (not a reference, string or keyword)
+const sgIsDict = (v) => !!v && typeof v === 'object' && !Array.isArray(v) && !Array.isArray(v.ref) && !(Object.keys(v).length === 1 && (typeof v.hex === 'string' || typeof v.str === 'string' || typeof v.kw === 'string'));
+const sgRefNum = (x) => x && Array.isArray(x.ref) ? x.ref[0] : -1;
+// A parsed string as text: UTF-16BE with a byte order mark, UTF-8 with one, else PDFDocEncoding (as Latin-1)
+function sgPdfStr(v) {
+  let b;
+  if (v && typeof v.hex === 'string') b = sgUnhex(v.hex);
+  else if (v && typeof v.str === 'string') {
+    const t = v.str, o = [], E = { n: 10, r: 13, t: 9, b: 8, f: 12, '(': 40, ')': 41, '\\': 92 };
+    for (let i = 0; i < t.length; i++) {
+      let c = t[i];
+      if (c !== '\\') { if (c === '\r') { o.push(10); if (t[i + 1] === '\n') i++; } else o.push(t.charCodeAt(i) & 255); continue; }
+      c = t[++i];
+      if (c === undefined) break;
+      if (c in E) o.push(E[c]);
+      else if (/[0-7]/.test(c)) { let d = c; while (d.length < 3 && /[0-7]/.test(t[i + 1] || '')) d += t[++i]; o.push(parseInt(d, 8) & 255); }
+      else if (c === '\r') { if (t[i + 1] === '\n') i++; } else if (c !== '\n') o.push(t.charCodeAt(i) & 255);
+    }
+    b = new Uint8Array(o);
+  } else return null;
+  if (b[0] === 0xfe && b[1] === 0xff) { let r = ''; for (let i = 2; i + 1 < b.length; i += 2) r += String.fromCharCode((b[i] << 8) | b[i + 1]); return r; }
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return new TextDecoder().decode(b.subarray(3));
+  return sgLatin1(b);
+}
+// A stream's data with its filters undone (FlateDecode and PNG predictors only)
+async function sgDecode(d, data) {
+  const filters = [].concat(d.Filter || []), parms = [].concat(d.DecodeParms || [])[0] || {};
+  if (filters.length > 1 || (filters[0] && filters[0] !== '/FlateDecode')) throw new Error('Unsupported stream filter');
+  if (filters[0]) data = await sgInflate(data);
+  if (sgIsDict(parms) && parms.Predictor >= 10) data = sgUnpredict(data, parms.Columns || 1, parms.Colors || 1, parms.BitsPerComponent || 8);
+  return data;
+}
+// The object at `off` ("n g obj … endobj"): { num, gen, v, stream (its raw data, or null), at, endAt }, or null when
+// there is none. `len` resolves an indirect /Length.
+async function sgObjAt(u, s, off, len) {
+  const h = /^(\d+)[\x00\t\n\f\r ]+(\d+)[\x00\t\n\f\r ]+obj(?=[\s()<>\[\]{}\/%]|$)/.exec(s.slice(off, off + 48)); if (!h) return null;
+  const [v, j] = sgParse(s, off + h[0].length);
+  let stream = null, endAt = j;
+  const m = /^[\x00\t\n\f\r ]*stream(\r\n|\n|\r)?/.exec(s.slice(j, j + 64));
+  if (m && sgIsDict(v)) {
+    const k = j + m[0].length;
+    let n = Number.isInteger(v.Length) ? v.Length : Array.isArray(v.Length && v.Length.ref) && len ? await len(v.Length) : -1;
+    if (!(n >= 0) || !/^[\x00\t\n\f\r ]*endstream/.test(s.slice(k + n, k + n + 64))) { const e = s.indexOf('endstream', k); n = (e < 0 ? s.length : e) - k; }
+    stream = u.subarray(k, k + n); endAt = k + n;
+  }
+  const e = s.indexOf('endobj', endAt);
+  return { num: +h[1], gen: +h[2], v, stream, at: off, endAt: e < 0 ? endAt : e + 6 };
+}
+// One revision as a PDF reader sees it: the objects that its cross-reference sections point at, newest first; in a
+// hybrid file a table's /XRefStm comes before its /Prev (as in pdf.js). Offsets at or past `limit` are not part of it.
+// { map: num -> entry, trailer, get(num) -> object or null (throws when the entry points at no such object) }
+async function sgRevision(u, s, start, limit = u.length) {
+  const map = new Map(), queue = [start], seen = new Set(), trailer = {};
+  while (queue.length) {
+    const off = queue.shift(); if (seen.has(off)) continue;
+    if (seen.size > 500 || !(off >= 0 && off < limit)) throw new Error('Bad cross-reference chain');
+    seen.add(off);
+    const x = await sgXrefAt(u, s, off);
+    for (const e of x.entries) if (!map.has(e[0])) map.set(e[0], e);
+    for (const k of ['Root', 'Info', 'Encrypt', 'ID']) if (trailer[k] === undefined && x.trailer[k] !== undefined) trailer[k] = x.trailer[k];
+    if (x.type === 'table' && Number.isInteger(x.trailer.XRefStm)) queue.push(x.trailer.XRefStm);
+    if (Number.isInteger(x.trailer.Prev)) queue.push(x.trailer.Prev);
+  }
+  const cache = new Map(), stms = new Map();
+  const lenOf = async (r) => { const o = await get(sgRefNum(r)); return o && Number.isInteger(o.v) ? o.v : -1; };
+  const objStm = (n) => stms.get(n) || (stms.set(n, (async () => {
+    const e = map.get(n); if (!e || e[3] !== 1 || e[4] >= limit) throw new Error('No object stream ' + n);
+    const o = await sgObjAt(u, s, e[4], lenOf);
+    if (!o || o.num !== n || !o.stream || !sgIsDict(o.v) || o.v.Type !== '/ObjStm') throw new Error('Bad object stream ' + n);
+    return sgObjStmItems(o);
+  })()), stms.get(n));
+  function get(n) {
+    if (cache.has(n)) return cache.get(n);
+    const p = (async () => {
+      const e = map.get(n); if (!e || !e[2]) return null;
+      if (e[3] === 1) {
+        if (e[4] >= limit) return null;
+        const o = await sgObjAt(u, s, e[4], lenOf);
+        if (!o || o.num !== n) throw new Error('Object ' + n + ' is not where the cross-reference table says');
+        return o;
+      }
+      if (e[3] === 2) { const it = (await objStm(e[4]))[e[5]]; if (!it || it.num !== n) throw new Error('Object ' + n + ' is not in its object stream'); return it; }
+      throw new Error('Bad cross-reference entry for ' + n);
+    })();
+    cache.set(n, p); return p;
+  }
+  return { map, trailer, get };
+}
+// The objects inside an object stream: [{ num, v, stream: null }]
+async function sgObjStmItems(o) {
+  const t = sgLatin1(await sgDecode(o.v, o.stream)), first = o.v.First, count = o.v.N;
+  const head = t.slice(0, first).trim().split(/\s+/).map(Number), out = [];
+  for (let k = 0; k < count && 2 * k + 1 < head.length; k++) {
+    try { out.push({ num: head[2 * k], v: sgParse(t, first + head[2 * k + 1])[0], stream: null }); } catch { out.push(null); }
+  }
+  return out;
 }
 
 /* ---- the signing IDs and trusted certificates, kept in IndexedDB ---- */
@@ -736,10 +830,11 @@ async function sgVerifyAll(bytes, password) {
   if (!fields.length) return [];
   await sgLoadLibs();
   const trust = await sgTrustAll().catch(() => new Set());
-  const ends = sgRevisionEnds(s), out = [];
-  const certified = [];
+  // the file as a reader shows it now
+  let now = null; try { now = await sgRevision(bytes, s, sgStartXref(s)); } catch (e) { console.warn(e); }
+  const out = [];
   for (const f of fields) {
-    try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, ends, trust, certified)); }
+    try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, now, trust)); }
     catch (e) { console.warn(e); out.push({ field: f.name, page: f.widgets[0] ? f.widgets[0].page : -1, rect: f.widgets[0] && f.widgets[0].rect, status: 'invalid', name: 'Unknown', notes: ['This signature could not be read: ' + (e.message || e)] }); }
   }
   // in the order they were made
@@ -747,16 +842,10 @@ async function sgVerifyAll(bytes, password) {
   out.forEach((x, k) => { x.n = k + 1; });
   return out;
 }
-async function sgVerifyOne(L, pdf, bytes, s, f, ends, trust) {
+async function sgVerifyOne(L, pdf, bytes, s, f, now, trust) {
   const { PDFName, PDFArray, PDFRef } = L, N = (n) => PDFName.of(n), ctx = pdf.context, V = f.sig;
   const w = f.widgets.find((x) => x.page >= 0) || f.widgets[0] || {};
   const r = { field: f.name, page: w.page ?? -1, rect: w.rect, notes: [], name: 'Unknown', status: 'invalid' };
-  const txt = (k) => { const o = V.get(N(k)); try { return o && o.decodeText ? o.decodeText() : null; } catch { return null; } };
-  r.reason = txt('Reason'); r.location = txt('Location'); r.contact = txt('ContactInfo'); r.pdfName = txt('Name');
-  r.claimed = sgParsePdfDate(txt('M'));
-  r.subFilter = String(V.get(N('SubFilter')) || '').replace(/^\//, '');
-  const refArr = ctx.lookup(V.get(N('Reference')));
-  if (refArr instanceof PDFArray) for (const x of refArr.asArray()) { const d = ctx.lookup(x); if (d && String(d.get(N('TransformMethod'))) === '/DocMDP') { const p = ctx.lookup(d.get(N('TransformParams'))); const P = p && p.get(N('P')); r.certify = P && P.asNumber ? P.asNumber() : 2; } }
   const br = ctx.lookup(V.get(N('ByteRange')));
   const range = br instanceof PDFArray ? br.asArray().map((x) => { const v = ctx.lookup(x); return v && v.asNumber ? v.asNumber() : NaN; }) : [];
   const [a, b, c, d] = range;
@@ -765,6 +854,33 @@ async function sgVerifyOne(L, pdf, bytes, s, f, ends, trust) {
   }
   const end = c + d; r.end = end;
   if (!/%%EOF\s*$/.test(s.slice(Math.max(0, end - 40), end))) { r.notes.push('The signature does not cover a whole version of the file.'); }
+  // The signature's details (reason, date, certify) as signed: the dictionary in the signed revision that holds
+  // these /Contents, not whatever a later update says.
+  let rev = null; try { rev = await sgRevision(bytes, s, sgStartXref(s, end), end); } catch (e) { console.warn(e); }
+  let sv = null;
+  if (rev) {
+    let best = -1; for (const e of rev.map.values()) if (e[2] && e[3] === 1 && e[4] < b && e[4] > best) best = e[4];
+    try { const o = best >= 0 ? await sgObjAt(bytes, s, best) : null; if (o && sgIsDict(o.v) && o.endAt > c && rev.map.get(o.num)?.[4] === best) sv = o.v; } catch {}
+    if (!sv || !Array.isArray(sv.ByteRange) || sv.ByteRange.join(' ') !== range.join(' ') || !sv.Contents || typeof sv.Contents.hex !== 'string' || sv.Contents.hex !== s.slice(b + 1, c - 1).replace(/\s+/g, '')) {
+      r.notes.push('The signature’s details are not part of what it signed.'); return r;
+    }
+  } else {
+    // this version of the file could not be read: the details from the signature dictionary as it is now
+    sv = {}; for (const k of ['Reason', 'Location', 'ContactInfo', 'Name', 'M']) { const o = V.get(N(k)); if (o instanceof L.PDFHexString) sv[k] = { hex: o.asString() }; else if (o instanceof L.PDFString) sv[k] = { str: o.asString() }; }
+    sv.SubFilter = String(V.get(N('SubFilter')) || '');
+  }
+  const txt = (k) => sgPdfStr(sv[k]);
+  r.reason = txt('Reason'); r.location = txt('Location'); r.contact = txt('ContactInfo'); r.pdfName = txt('Name');
+  r.claimed = sgParsePdfDate(txt('M'));
+  r.subFilter = String(sv.SubFilter || '').replace(/^\//, '');
+  if (rev) {
+    const deref = async (x) => { if (sgRefNum(x) < 0) return x; try { const o = await rev.get(sgRefNum(x)); return o && o.v; } catch { return null; } };
+    const refs = await deref(sv.Reference);
+    for (const x of Array.isArray(refs) ? refs : []) {
+      const dd = await deref(x);
+      if (sgIsDict(dd) && dd.TransformMethod === '/DocMDP') { const p = await deref(dd.TransformParams); r.certify = sgIsDict(p) && Number.isInteger(p.P) ? p.P : 2; }
+    }
+  }
   const cmsBytes = sgUnhex(s.slice(b + 1, c - 1));
   const { sd, si } = await sgReadCms(cmsBytes);
   const content = sgCat([bytes.subarray(0, b), bytes.subarray(c, end)]);
@@ -818,8 +934,7 @@ async function sgVerifyOne(L, pdf, bytes, s, f, ends, trust) {
   r.when = r.ts && r.ts.ok ? r.ts.time : r.claimed;
   if (r.cert && r.when && (r.when < r.cert.notBefore || r.when > r.cert.notAfter)) { r.certExpired = true; r.notes.push('The certificate was not valid at the time of signing.'); }
   // changes after this signature
-  const later = ends.filter((e) => e > end + 2);
-  if (!/^\s*$/.test(s.slice(end))) r.changes = await sgLaterChanges(L, bytes, s, end, later, pdf);
+  if (!/^\s*$/.test(s.slice(end))) r.changes = await sgLaterChanges(bytes, s, end, rev, now);
   // the verdict
   if (!r.digestOk) { r.status = 'invalid'; r.notes.unshift('The file was changed in the part this signature covers.'); }
   else if (!r.sigOk) { r.status = 'invalid'; r.notes.unshift('The signature does not match the signer’s certificate' + (r.verifyError ? ` (${r.verifyError})` : '') + '.'); }
@@ -835,61 +950,143 @@ async function sgVerifyOne(L, pdf, bytes, s, f, ends, trust) {
   r.statusText ||= SG_STATUS[r.status][0];
   return r;
 }
-// What the updates after a signature changed: { comments, form, sign, other } (as far as can be told)
-async function sgLaterChanges(L, bytes, s, end, later, pdfNow) {
-  const { PDFDict, PDFArray, PDFRef, PDFName, PDFRawStream, PDFStream } = L, N = (n) => PDFName.of(n);
+// What the updates after a signature changed: { comments, form, sign, other }, as far as can be told. `old` is the
+// signed revision and `now` the whole file, both read the way a PDF reader reads them (sgRevision), so every object a
+// reader would show is looked at: those its cross-reference sections point at (following /Prev and /XRefStm), and
+// any other object written after the signature, in case a reader rebuilds the table by scanning the file.
+async function sgLaterChanges(u, s, end, old, now) {
   const out = { comments: false, form: false, sign: false, other: false };
-  let old;
-  try { old = await L.PDFDocument.load(bytes.subarray(0, end), { ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false }); }
-  catch { out.other = true; return out; }
-  if (!later.length) { out.other = true; return out; }
-  // what drew the pages when signed: their content streams and the resources they use
-  const drawn = new Set(), oc = old.context;
-  const reach = (o, depth) => {
-    if (depth > 6 || !o) return;
-    if (o instanceof PDFRef) { if (drawn.has(o.objectNumber)) return; drawn.add(o.objectNumber); o = oc.lookup(o); }
-    const dict = o instanceof PDFDict ? o : o && o.dict instanceof PDFDict ? o.dict : null;
-    if (o instanceof PDFArray) { for (const x of o.asArray()) reach(x, depth + 1); return; }
-    if (!dict) return;
-    for (const [k, v] of dict.entries()) { const key = k.asString(); if (key === '/Parent' || key === '/Annots' || key === '/P') continue; if (v instanceof PDFRef || v instanceof PDFDict || v instanceof PDFArray) reach(v, depth + 1); }
-  };
-  for (const p of old.getPages()) { reach(p.node.get(N('Contents')), 0); reach(p.node.get(N('Resources')), 0); }
-  const nowCtx = pdfNow.context, infoNum = nowCtx.trailerInfo.Info instanceof PDFRef ? nowCtx.trailerInfo.Info.objectNumber : -1;
-  const ser = (o) => o ? sgLatin1(sgObjBytes(o)) : '';
-  const typeOf = (d) => d ? String(d.get(N('Type')) || '') : '', subOf = (d) => d ? String(d.get(N('Subtype')) || '') : '';
-  const dictOf = (o) => o instanceof PDFDict ? o : o && o.dict instanceof PDFDict ? o.dict : null;
-  const ftOf = (d, ctx) => { for (let k = 0; d && k < 20; k++) { if (d.get(N('FT'))) return String(d.get(N('FT'))); d = ctx.lookup(d.get(N('Parent'))); d = d instanceof PDFDict ? d : null; } return ''; };
-  const isAnnot = (d) => d && (typeOf(d) === '/Annot' || SG_ANNOTS.has(subOf(d)) || subOf(d) === '/Widget');
-  const sameBut = (a, b, skip) => {
-    const keys = new Set([...a.entries(), ...b.entries()].map(([k]) => k.asString()));
-    for (const k of keys) { if (skip.includes(k)) continue; if (ser(a.get(N(k.slice(1)))) !== ser(b.get(N(k.slice(1))))) return false; }
-    return true;
-  };
-  const seen = new Set();
-  for (const e of later) {
-    let x;
-    try { x = await sgXrefAt(bytes, s, sgStartXref(s, e)); } catch { out.other = true; continue; }
-    for (const [num, gen, inUse] of x.entries) {
-      if (num === 0 || seen.has(num)) continue; seen.add(num);
-      if (x.type === 'stream' && num === x.num) continue;
-      const nw = inUse ? nowCtx.lookup(L.PDFRef.of(num, gen)) : null;
-      let ol = null; for (let g = gen; g >= 0 && !ol; g--) ol = oc.lookup(L.PDFRef.of(num, g));
-      if (!nw) { if (ol) { if (isAnnot(dictOf(ol))) out.comments = true; else out.other = true; } continue; }
-      if (ol && ser(ol) === ser(nw)) continue;
-      const d = dictOf(nw), t = typeOf(d), st = subOf(d), isStream = nw instanceof PDFRawStream || nw instanceof PDFStream;
-      if (t === '/Sig' || t === '/DocTimeStamp') { out.sign = true; continue; }
-      if (num === infoNum || t === '/XRef' || t === '/ObjStm' || t === '/Metadata') continue;
-      if (d && !isStream && (st === '/Widget' || d.get(N('FT')) || (d.get(N('T')) && (d.get(N('Kids')) || d.get(N('V')))))) { if (ftOf(d, nowCtx) === '/Sig') out.sign = true; else out.form = true; continue; }
-      if (d && !isStream && isAnnot(d)) { out.comments = true; continue; }
-      if (t === '/Catalog') { if (!(ol && dictOf(ol) && sameBut(dictOf(ol), d, ['/AcroForm', '/DSS', '/Perms']))) out.other = true; continue; }
-      if (t === '/Page') { if (!(ol && dictOf(ol) && sameBut(dictOf(ol), d, ['/Annots']))) out.other = true; continue; }
-      if (d && !isStream && d.get(N('Fields'))) continue; // the form's list of fields
-      if (!ol) { if (t === '/Page' || t === '/Pages') out.other = true; continue; } // new objects only matter where something old points at them
-      if (drawn.has(num)) { out.other = true; continue; }
-      if (nw instanceof PDFArray) { const all = nw.asArray().every((r) => { const o = nowCtx.lookup(r); return o instanceof PDFDict && (isAnnot(o) || o.get(N('FT')) || o.get(N('T'))); }); if (all) continue; out.other = true; continue; }
-      if (isStream && st === '/Form') { out.comments = true; continue; } // an annotation's appearance, redrawn
-      out.other = true;
+  if (!old || !now) { out.other = true; return out; }
+  const isDict = sgIsDict, ref = sgRefNum;
+  const getOld = async (n) => { try { return await old.get(n); } catch { return undefined; } };
+  const getNow = async (n) => { try { return await now.get(n); } catch { return undefined; } };
+  const root = ref(old.trailer.Root);
+  if (root < 0 || ref(now.trailer.Root) !== root || (now.trailer.Encrypt && !old.trailer.Encrypt)) { out.other = true; return out; }
+  // What drew the pages when signed: everything the page tree points at (contents, resources, boxes, …) except
+  // annotations, which are classified on their own. Changing any of it changes what the pages show.
+  let blind = false;
+  const drawn = new Set(), tree = new Set();
+  const reach = async (x, depth) => {
+    if (x == null || typeof x !== 'object' || depth > 200) return;
+    if (Array.isArray(x.ref)) {
+      const n = x.ref[0]; if (drawn.has(n)) return; drawn.add(n);
+      const o = await getOld(n); if (o === undefined) blind = true; else if (o) await reach(o.v, depth + 1);
+      return;
     }
+    if (Array.isArray(x)) { for (const y of x) await reach(y, depth + 1); return; }
+    if (isDict(x)) for (const [k, y] of Object.entries(x)) if (k !== 'Parent' && k !== 'Annots' && k !== 'P') await reach(y, depth + 1);
+  };
+  const walk = async (x, depth) => {
+    const n = ref(x); if (n < 0 || tree.has(n) || depth > 64) return; tree.add(n);
+    const o = await getOld(n); if (o === undefined) { blind = true; return; }
+    if (!o || !isDict(o.v)) return;
+    for (const [k, y] of Object.entries(o.v)) {
+      if (k === 'Kids') {
+        let kids = y;
+        if (ref(y) >= 0) { drawn.add(ref(y)); const a = await getOld(ref(y)); if (a === undefined) blind = true; kids = a && a.v; }
+        for (const c of Array.isArray(kids) ? kids : []) await walk(c, depth + 1);
+      } else if (k !== 'Parent' && k !== 'Annots') await reach(y, 0);
+    }
+  };
+  const cat = await getOld(root);
+  if (!cat || !isDict(cat.v)) { out.other = true; return out; }
+  await walk(cat.v.Pages, 0);
+  if (blind) { out.other = true; return out; }
+  // Numbers the signed revision refers to without defining them: an object added under one of those later is as
+  // good as a changed one.
+  const oldRefs = new Set(); { const re = /(\d+)[\x00\t\n\f\r ]+\d+[\x00\t\n\f\r ]+R(?![A-Za-z0-9])/g; let m; const t = s.slice(0, end); while ((m = re.exec(t))) oldRefs.add(+m[1]); }
+  // The objects to look at: num -> [the object now (null: removed)]
+  const cand = new Map(), add = (n, o) => { if (!cand.has(n)) cand.set(n, []); cand.get(n).push(o); };
+  const key = (e) => !e || !e[2] ? 'free' : e.slice(3).join(':');
+  for (const n of new Set([...old.map.keys(), ...now.map.keys()])) {
+    const a = old.map.get(n), b = now.map.get(n);
+    if (key(a) === key(b) && !(b && b[2] && b[3] === 1 && b[4] >= end)) continue;
+    if (n === 0) continue;
+    if (!b || !b[2]) { add(n, null); continue; }
+    const o = await getNow(n);
+    if (!o) { out.other = true; continue; } // the table points at nothing: a reader would rebuild it by scanning the file
+    add(n, o);
+  }
+  // Every object written after the signature, as a reader that scans the file would find it
+  const re = /(\d+)[\x00\t\n\f\r ]+(\d+)[\x00\t\n\f\r ]+obj(?=[\s()<>\[\]{}\/%]|$)/g; re.lastIndex = end;
+  for (let m; (m = re.exec(s));) {
+    if (m.index > end && /[0-9A-Za-z.+-]/.test(s[m.index - 1])) continue;
+    let o = null; try { o = await sgObjAt(u, s, m.index); } catch {}
+    if (!o) continue;
+    re.lastIndex = Math.max(re.lastIndex, o.endAt);
+    const n = o.num, b = now.map.get(n), listed = b && b[2] && b[3] === 1 && b[4] === m.index;
+    if (!listed) add(n, o);
+    if (o.stream && isDict(o.v) && o.v.Type === '/ObjStm') {
+      let items = []; try { items = await sgObjStmItems(o); } catch {}
+      items.forEach((it, k) => { if (!it) return; const e = now.map.get(it.num); if (!(e && e[2] && e[3] === 2 && e[4] === n && e[5] === k)) add(it.num, it); });
+    }
+  }
+  if (!cand.size) return out;
+  const same = (a, b) => JSON.stringify(a.v) === JSON.stringify(b.v) && !a.stream === !b.stream && (!a.stream || sgEq(a.stream, b.stream));
+  const sameBut = (a, b, skip) => { for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) if (!skip.includes(k) && JSON.stringify(a[k]) !== JSON.stringify(b[k])) return false; return true; };
+  const isAnnot = (d) => isDict(d) && (d.Type === '/Annot' || SG_ANNOTS.has(d.Subtype) || d.Subtype === '/Widget');
+  const isField = (d) => isDict(d) && (d.Subtype === '/Widget' || d.FT !== undefined || (d.T !== undefined && (d.Kids !== undefined || d.V !== undefined)));
+  const inherit = async (get, d, k) => { for (let hop = 0; isDict(d) && hop < 32; hop++) { if (d[k] !== undefined) return d[k]; const p = ref(d.Parent); if (p < 0) return undefined; const o = await get(p); d = o && o.v; } return undefined; };
+  const deref = async (get, x) => { if (ref(x) < 0) return x; const o = await get(ref(x)); return o ? o.v : undefined; };
+  const catNow = await getNow(root);
+  const acro = new Set([ref(cat.v.AcroForm), ref(catNow && isDict(catNow.v) ? catNow.v.AcroForm : null)].filter((n) => n >= 0));
+  const info = new Set([ref(old.trailer.Info), ref(now.trailer.Info)].filter((n) => n >= 0));
+  // An annotation list that changed: annotations it gained that are not new or changed themselves (those are
+  // checked on their own), and annotations it lost (a field's widget taken away hides it)
+  const gained = async (a, b) => {
+    const was = new Set((Array.isArray(a) ? a : []).map(ref)), is = new Set((Array.isArray(b) ? b : []).map(ref));
+    for (const n of was) if (n >= 0 && !is.has(n)) { const o = await getOld(n); if (o && isDict(o.v) && isField(o.v)) out.other = true; else out.comments = true; }
+    for (const x of Array.isArray(b) ? b : []) {
+      const n = ref(x); if (n < 0) { if (isDict(x)) out[isField(x) ? 'form' : 'comments'] = true; continue; }
+      if (was.has(n) || cand.has(n)) continue;
+      const o = await getNow(n); if (o && isDict(o.v) && isField(o.v)) out.form = true; else out.comments = true;
+    }
+  };
+  for (const [num, list] of cand) for (const nw of list) {
+    const ol = await getOld(num);
+    if (ol === undefined) { out.other = true; continue; }
+    if (!nw) { if (!ol) continue; if (!drawn.has(num) && isAnnot(ol.v) && ol.v.Subtype !== '/Widget') out.comments = true; else out.other = true; continue; }
+    if (ol && same(ol, nw)) continue;
+    if (drawn.has(num) || tree.has(num)) {
+      // a page itself may only gain or lose annotations
+      if (tree.has(num) && !drawn.has(num) && ol && isDict(ol.v) && isDict(nw.v) && ol.v.Type === '/Page' && nw.v.Type === '/Page' && !nw.stream && sameBut(ol.v, nw.v, ['Annots'])) {
+        await gained(await deref(getOld, ol.v.Annots), await deref(getNow, nw.v.Annots)); continue;
+      }
+      out.other = true; continue;
+    }
+    const d = isDict(nw.v) ? nw.v : null, t = d ? d.Type || '' : '', isStream = !!nw.stream;
+    if (ol) {
+      // an object that becomes something else
+      const od = isDict(ol.v) ? ol.v : null;
+      if (!od !== !d || !ol.stream !== !isStream || (od && (od.Type || '') !== t && !(od.Type === undefined && t === '/Annot'))) { out.other = true; continue; }
+    } else if (oldRefs.has(num) || num === root) { out.other = true; continue; }
+    const od = ol && isDict(ol.v) ? ol.v : null;
+    if (num === root) { if (!(d && !isStream && sameBut(od, d, ['AcroForm', 'DSS', 'Perms']))) out.other = true; continue; }
+    if (isStream && (t === '/XRef' || t === '/ObjStm')) { if (ol) out.other = true; continue; } // what's inside is looked at one by one
+    if (d && !isStream && (t === '/Sig' || t === '/DocTimeStamp')) { if (ol) out.other = true; continue; } // a signature's details may not change once signed
+    if (d && !isStream && info.has(num)) continue; // the document's title, author and so on
+    if (isStream && t === '/Metadata') continue;
+    if (d && !isStream && isField(d)) {
+      if ((await inherit(getNow, d, 'FT')) !== '/Sig') { out.form = true; continue; }
+      if (od && (await inherit(getOld, od, 'V')) !== undefined) { out.other = true; continue; } // a field signed before
+      const v = await inherit(getNow, d, 'V');
+      if (v === undefined || v === null) { out.form = true; continue; } // an empty signature field
+      const vn = ref(v), sd = vn >= 0 ? await getNow(vn) : null;
+      if (vn >= 0 && (await getOld(vn)) === null && sd && isDict(sd.v) && !sd.stream && sd.v.ByteRange) out.sign = true; else out.other = true;
+      continue;
+    }
+    if (d && !isStream && isAnnot(d)) { out.comments = true; continue; }
+    if (d && !isStream && acro.has(num)) { if (od && !sameBut(od, d, ['Fields', 'SigFlags', 'DR', 'NeedAppearances', 'DA'])) out.other = true; continue; }
+    if (!ol) continue; // a new object only matters where something old points at it, and that is looked at too
+    if (Array.isArray(nw.v)) {
+      // an annotation or field list kept as its own object
+      let all = true;
+      for (const x of nw.v) { const o = ref(x) >= 0 ? await getNow(ref(x)) : null; if (!(o && isDict(o.v) && (isAnnot(o.v) || isField(o.v)))) { all = false; break; } }
+      if (all) { await gained(ol.v, nw.v); continue; }
+      out.other = true; continue;
+    }
+    if (isStream && d && d.Subtype === '/Form') { out.comments = true; continue; } // an annotation's appearance, redrawn
+    out.other = true;
   }
   return out;
 }
