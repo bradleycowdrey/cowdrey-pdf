@@ -833,7 +833,8 @@ async function sgVerifyAll(bytes, password, opts = {}) {
   const L = await loadPdfLib();
   bytes = new Uint8Array(bytes);
   const s = sgLatin1(bytes);
-  if (!s.includes('/ByteRange')) return [];
+  const cut = sgCutSig(s, bytes.length);
+  if (!s.includes('/ByteRange')) return cut ? [cut] : [];
   await sgLoadLibs();
   const trust = await sgTrustRecs();
   const revocation = opts.revocation ?? !!sgPrefs().revocation;
@@ -842,7 +843,7 @@ async function sgVerifyAll(bytes, password, opts = {}) {
     pdf = await L.PDFDocument.load(bytes, { ...(password ? { password } : { ignoreEncryption: true }), updateMetadata: false, throwOnInvalidObject: false });
     fields = sgFieldsOf(L, pdf).filter((f) => f.ft === '/Sig' && f.sig && f.sig.get);
   } catch (e) { console.warn(e); }
-  if (!fields.length) return sgDamaged(s, bytes);
+  if (!fields.length) return [...sgDamaged(s, bytes), ...(cut ? [cut] : [])].map((x, k) => Object.assign(x, { n: k + 1 }));
   // the file as a reader shows it now
   let now = null; try { now = await sgRevision(bytes, s, sgStartXref(s)); } catch (e) { console.warn(e); }
   const out = [];
@@ -850,6 +851,8 @@ async function sgVerifyAll(bytes, password, opts = {}) {
     try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation)); }
     catch (e) { console.warn(e); out.push(sgBroken({ field: f.name, page: f.widgets[0] ? f.widgets[0].page : -1, rect: f.widgets[0] && f.widgets[0].rect }, 'This signature could not be read: ' + (e.message || e))); }
   }
+  // a signature cut off before its byte range: in place of what was read of it
+  if (cut) { const k = out.findIndex((x) => x.problem === 'range' && !x.end); if (k >= 0) out.splice(k, 1, Object.assign(cut, { field: out[k].field, page: out[k].page, rect: out[k].rect })); else out.push(cut); }
   // in the order they were made
   out.sort((a, b) => (a.end || 0) - (b.end || 0));
   out.forEach((x, k) => { x.n = k + 1; });
@@ -858,6 +861,20 @@ async function sgVerifyAll(bytes, password, opts = {}) {
 // A signature whose CMS could not be read at all: the signature object is damaged
 function sgBroken(r, note) {
   return Object.assign({ name: 'Unknown', notes: [] }, r, { status: 'invalid', problem: 'sigobject', statusText: SG_PROBLEM.sigobject, notes: [...((r && r.notes) || []), note], checks: [['Signature', 'bad', 'Damaged: it could not be read']] });
+}
+// A file cut short inside a signature, before its /ByteRange (often written last, or with the whole signature
+// dictionary cut off): its last update, after the last %%EOF, has a signature dictionary or a signed signature field
+// in it but no byte range, and the file does not end with %%EOF
+function sgCutSig(s, len) {
+  if (/%%EOF\s*$/.test(s.slice(-64))) return null;
+  const tail = s.slice(Math.max(0, s.lastIndexOf('%%EOF')));
+  if (/\/ByteRange\s*\[\s*\d+\s+\d+\s+\d+\s+\d+\s*\]/.test(tail)) return null;
+  // a signature dictionary, or a signature field with a value (its dictionary cut off)
+  const sig = /\/Type\s*\/Sig\b|\/Filter\s*\/Adobe\.PPK|\/SubFilter\s*\/(adbe\.pkcs7|ETSI\.)/.test(tail) || tail.split('endobj').some((o) => /\/FT\s*\/Sig\b/.test(o) && /\/V\s+\d+\s+\d+\s+R\b/.test(o));
+  if (!sig) return null;
+  return { n: 0, field: '', page: -1, name: 'Unknown', status: 'invalid', problem: 'incomplete', statusText: SG_PROBLEM.incomplete, end: len + 1,
+    notes: ['The file is incomplete: it ends in the middle of a signature, so the signature can’t be checked. It may have been cut short while copying or downloading.'],
+    checks: [['Document', 'bad', 'Incomplete: part of the file is missing']] };
 }
 // A file whose signature fields can't be found (cut short, or damaged): each signature dictionary in it is reported
 function sgDamaged(s, bytes) {
@@ -956,8 +973,18 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
     r.ts = { ok: chk.ok, time: chk.genTime, tsa: chk.tsa, der: new Uint8Array(tk.values[0].toBER(false)) };
     if (chk.tst && chk.sd) Object.assign(r.ts, await sgTokenDetails(chk.tst, chk.sd, trust));
     if (!chk.ok) r.notes.push('The timestamp does not check out.');
+    else {
+      // its time is relied on only when the timestamp authority is trusted here: anyone can run a timestamp server
+      const tc = r.ts.tsaChain, t0 = tc && tc.certs[0];
+      r.ts.trusted = !!tc && tc.trusted && !tc.problems.length && t0.ext.eku.includes('1.3.6.1.5.5.7.3.8');
+      if (!r.ts.trusted) {
+        r.ts.why = !tc ? 'its certificate is not in it' : tc.problems.length ? tc.problems[0].replace(/^The signer’s certificate/, 'The timestamp authority’s certificate').replace('vouches for the signer’s', 'vouches for the timestamp authority’s') : !t0.ext.eku.includes('1.3.6.1.5.5.7.3.8') ? 'its certificate is not one for timestamps' : 'not trusted on this device';
+        r.notes.push(`The timestamp is not relied on: ${r.ts.why === 'not trusted on this device' ? `the timestamp authority${r.ts.tsa ? ' “' + r.ts.tsa + '”' : ''} is not trusted on this device` : r.ts.why}. The time comes from the signer’s clock.`);
+      }
+    }
   }
-  r.when = r.ts && r.ts.ok ? r.ts.time : r.claimed;
+  r.stamped = !!(r.ts && r.ts.ok && r.ts.trusted);
+  r.when = r.stamped ? r.ts.time : r.claimed;
   if (signer) {
     const chain = await sgBuildChain(signer, certs, trust, r.when);
     r.chain = chain; r.trusted = chain.trusted;
@@ -965,7 +992,7 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
     Object.assign(r, { name: info.name, cert: { subject: sgNameText(info.subject), issuer: sgNameText(info.issuer), email: info.subject.email || '', o: info.subject.o || '', serial: info.serial, notBefore: info.notBefore, notAfter: info.notAfter, fp: info.fp, selfSigned: info.selfSigned, key: x0.key } });
     if (chain.problems.length) r.certExpired = true;
     r.revHosts = sgRevHosts(chain.certs);
-    if (revocation && r.sigOk) r.rev = await sgRevocation(chain.certs, r.when, !!(r.ts && r.ts.ok));
+    if (revocation && r.sigOk) r.rev = await sgRevocation(chain.certs, r.when, r.stamped);
   } else r.notes.push('The signer’s certificate is not in the signature.');
   // changes after this signature
   if (!/^\s*$/.test(s.slice(end))) r.changes = await sgLaterChanges(bytes, s, end, rev, now);
@@ -1000,7 +1027,8 @@ function sgChecks(r) {
       : r.chain.problems.length ? r.chain.problems[0] : r.trusted ? (n === 1 ? `Trusted: ${r.name}, self-signed` : `Trusted: ${who} (a chain of ${n} to “${top}”)`) : n === 1 && r.cert.selfSigned ? `Not trusted on this device: ${r.name}, self-signed` : `Not trusted on this device: ${who} (a chain of ${n}${r.chain.complete ? ` to “${top}”` : ', incomplete'})`]);
   }
   const tsText = r.ts ? `${sgWhen(r.ts.time)}${r.ts.tsa ? ' by ' + r.ts.tsa : ''}` : '';
-  if (r.ts) k.push(['Timestamp', !r.ts.ok || broken ? 'bad' : 'ok', !r.ts.ok ? 'Does not check out' : broken ? `Not relied on: it stamps a signature that no longer matches the file (${tsText})` : tsText]);
+  if (r.ts) k.push(['Timestamp', !r.ts.ok || broken ? 'bad' : r.ts.trusted ? 'ok' : 'warn', !r.ts.ok ? 'Does not check out' : broken ? `Not relied on: it stamps a signature that no longer matches the file (${tsText})`
+    : r.ts.trusted ? tsText : `Not relied on, timestamp authority ${r.ts.why === 'not trusted on this device' ? 'not trusted' : 'not valid'}: ${tsText}`]);
   else k.push(['Timestamp', 'warn', 'None: the time comes from the signer’s clock']);
   if (r.chain && !r.rev && !(r.revHosts || []).length) k.push(['Revocation', 'warn', 'Can’t be checked: the certificates name no revocation service']);
   else if (r.chain) k.push(['Revocation', !r.rev ? 'warn' : r.rev.verdict === 'good' ? 'ok' : r.rev.verdict === 'revoked' ? 'bad' : 'warn', sgRevText(r.rev, r.when)]);
@@ -1294,6 +1322,7 @@ async function sgCheckDoc(d) {
   if (!src) return;
   // a quick look first: most PDFs have no signature, and then nothing is loaded
   let has = false; for (let i = 0; i + 10 < src.length && !has; i += 1 << 20) has = sgLatin1(src.subarray(i, Math.min(src.length, i + (1 << 20) + 16))).includes('/ByteRange');
+  if (!has) has = !!sgCutSig(sgLatin1(src.subarray(Math.max(0, src.length - (4 << 20)))), src.length);
   if (!has) return;
   const job = (async () => {
     try {
@@ -1311,7 +1340,7 @@ FEATURE.onDocClosed.push(() => { sgState = { sigs: [] }; sgShowBar(); });
 function sgItemHtml(x) {
   const [label, icon, tone] = SG_STATUS[x.status];
   const c = x.cert, dt = (k, v) => v ? `<dt>${k}</dt><dd>${esc(v)}</dd>` : '';
-  const when = x.ts && x.ts.ok ? `Signed ${esc(sgWhen(x.ts.time))}` : x.when ? `Signed ${esc(sgWhen(x.when))} (the signer’s clock)` : '';
+  const when = x.stamped ? `Signed ${esc(sgWhen(x.ts.time))}` : x.when ? `Signed ${esc(sgWhen(x.when))} (the signer’s clock)` : '';
   const toneIc = { ok: 'circle-check', warn: 'circle-alert', bad: 'circle-x' };
   const checks = (x.checks || []).length ? `<ul class="sg-checks">${x.checks.map(([k, t, v]) => `<li class="sg-ck" data-sg-check="${esc(k)}" data-tone="${t}"><span class="sg-ic sg-${t}">${ic(toneIc[t])}</span><span><strong>${esc(k)}:</strong> ${esc(v)}</span></li>`).join('')}</ul>` : '';
   const role = (k, n) => k === 0 ? 'Signer' : k === n - 1 && x.chain.complete ? 'Root' : 'Issuer';
@@ -1326,7 +1355,7 @@ function sgItemHtml(x) {
   const tsBox = t ? `<details class="sg-tsd"><summary>Timestamp</summary><dl>${dt('Time', t.time ? sgWhen(t.time) + ' (' + t.time.toISOString() + ')' : '')}${dt('Authority', t.tsa)}
       ${tc ? dt('Issued by', tc.info.selfSigned ? 'Itself (self-signed)' : sgNameText(tc.info.issuer)) + dt('Valid', `${sgDay(tc.info.notBefore)} to ${sgDay(tc.info.notAfter)}`) + dt('Trusted', t.tsaChain.trusted ? 'Yes' : 'No, not on this device') : ''}
       ${dt('Serial number', t.serial)}${dt('Policy', t.policy)}${dt('Accuracy', t.accuracy)}${dt('Stamped fingerprint', t.imprint ? `${t.hash} ${t.imprint}` : '')}${dt('Checks out', t.ok ? 'Yes' : 'No')}</dl>
-      <div class="sg-acts"><button type="button" class="btn" data-sg-savets="${x.n}">Save timestamp token</button></div></details>` : '';
+      <div class="sg-acts">${tc && t.ok && tc.ext.eku.includes('1.3.6.1.5.5.7.3.8') ? `<button type="button" class="btn" data-sg-trustts="${x.n}">${t.tsaChain.trusted ? 'Stop trusting this timestamp authority' : 'Trust this timestamp authority'}</button>` : ''}<button type="button" class="btn" data-sg-savets="${x.n}">Save timestamp token</button></div></details>` : '';
   const sigBox = `<details class="sg-sigd"><summary>Signature</summary><dl>${dt('Format', x.subFilter)}${dt('Algorithm', x.alg)}${dt('Field', x.field)}${dt('Name in the PDF', x.pdfName)}${dt('Contact', x.contact)}${dt('Signer’s clock', x.claimed ? sgWhen(x.claimed) : '')}</dl></details>`;
   const top = x.chain && x.chain.certs[x.chain.certs.length - 1];
   const trustLabel = !top ? '' : top.trusted || x.trusted ? 'Stop trusting this certificate' : top.info.name === x.name ? 'Trust this certificate on this device' : `Trust “${top.info.name}” on this device`;
@@ -1335,7 +1364,7 @@ function sgItemHtml(x) {
     <div class="sg-head"><span class="sg-ic sg-${tone}" title="${esc(label)}">${ic(icon)}</span><span>${esc(x.name)}</span></div>
     <div class="sg-sub"><p class="sg-status"><strong class="sg-${tone}">${esc(x.statusText || label)}</strong>${x.certify ? ' · Certified' : ''}</p>
       ${when ? `<p>${when}</p>` : ''}
-      ${x.ts ? `<p>${x.ts.ok ? `Timestamp: ${esc(sgWhen(x.ts.time))}${x.ts.tsa ? ' by ' + esc(x.ts.tsa) : ''}` : 'The timestamp does not check out.'}</p>` : '<p>No timestamp</p>'}
+      ${x.ts ? `<p>${x.ts.ok ? `Timestamp: ${esc(sgWhen(x.ts.time))}${x.ts.tsa ? ' by ' + esc(x.ts.tsa) : ''}${x.ts.trusted ? '' : ' (not relied on)'}` : 'The timestamp does not check out.'}</p>` : '<p>No timestamp</p>'}
       ${x.reason ? `<p>Reason: ${esc(x.reason)}</p>` : ''}${x.location ? `<p>Location: ${esc(x.location)}</p>` : ''}
       ${x.notes.map((n) => `<p>${esc(n)}</p>`).join('')}
       ${x.status === 'valid' ? '<p>Who signed it is not confirmed: trust this certificate only if you know it is theirs.</p>' : ''}</div>
@@ -1367,6 +1396,12 @@ async function sgPanel() {
         const [, y] = find(b.dataset.sgTrustc); if (!y) return;
         try { if (y.trusted) await sgTrustDel(y.info.fp); else await sgTrustAdd(y.der, y.info.name); } catch { toast('Could not keep that on this device'); return; }
         await again(); redraw(); toast(y.trusted ? `${y.info.name} is no longer trusted` : `${y.info.name} is trusted on this device`);
+      });
+      $$('[data-sg-trustts]', dlg).forEach((b) => b.onclick = async () => {
+        const x = sgState.sigs.find((y) => y.n === +b.dataset.sgTrustts), tc = x && x.ts && x.ts.tsaChain; if (!tc) return;
+        const top = tc.certs[tc.certs.length - 1], on = tc.trusted;
+        try { if (on) { for (const y of tc.certs) if (y.trusted) await sgTrustDel(y.info.fp); } else await sgTrustAdd(top.der, top.info.name); } catch { toast('Could not keep that on this device'); return; }
+        await again(); redraw(); toast(on ? 'This timestamp authority is no longer trusted' : `${top.info.name} is trusted on this device`);
       });
       $$('[data-sg-savec]', dlg).forEach((b) => b.onclick = async () => {
         const [, y] = find(b.dataset.sgSavec); if (!y) return;
@@ -1707,7 +1742,7 @@ TEST_HOOKS.sgLoadLibs = async () => { const l = await sgLoadLibs(); await sgForg
 // A checked signature as plain data (for tests)
 const sgPlain = (x) => ({
   n: x.n, status: x.status, statusText: x.statusText, problem: x.problem || null, name: x.name, when: x.when ? x.when.toISOString() : null, digestOk: x.digestOk, sigOk: x.sigOk, attrSigOk: x.attrSigOk ?? null,
-  ts: x.ts ? { ok: x.ts.ok, time: x.ts.time && x.ts.time.toISOString(), tsa: x.ts.tsa, serial: x.ts.serial || '', policy: x.ts.policy || '', hash: x.ts.hash || '', imprint: x.ts.imprint || '', tokenLength: x.ts.der ? x.ts.der.length : 0, tsaIssuer: x.ts.tsaChain ? sgNameText(x.ts.tsaChain.certs[0].info.issuer) : '' } : null,
+  ts: x.ts ? { ok: x.ts.ok, trusted: !!x.ts.trusted, why: x.ts.why || '', time: x.ts.time && x.ts.time.toISOString(), tsa: x.ts.tsa, serial: x.ts.serial || '', policy: x.ts.policy || '', hash: x.ts.hash || '', imprint: x.ts.imprint || '', tokenLength: x.ts.der ? x.ts.der.length : 0, tsaIssuer: x.ts.tsaChain ? sgNameText(x.ts.tsaChain.certs[0].info.issuer) : '' } : null,
   trusted: !!x.trusted, changes: x.changes || null, changeText: x.changeText || '', field: x.field, page: x.page, reason: x.reason, location: x.location, contact: x.contact, pdfName: x.pdfName, subFilter: x.subFilter, alg: x.alg || '', certify: x.certify || 0, notes: x.notes,
   cert: x.cert ? { subject: x.cert.subject, issuer: x.cert.issuer, fp: x.cert.fp, key: x.cert.key, notAfter: x.cert.notAfter.toISOString() } : null,
   chain: x.chain ? { complete: x.chain.complete, trusted: x.chain.trusted, problems: x.chain.problems, certs: x.chain.certs.map((y) => ({ name: y.info.name, subject: sgNameText(y.info.subject), issuer: sgNameText(y.info.issuer), notBefore: y.info.notBefore.toISOString(), notAfter: y.info.notAfter.toISOString(), key: y.key, trusted: y.trusted, at: y.at, fp: y.info.fp })) } : null,

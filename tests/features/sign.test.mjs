@@ -343,8 +343,13 @@ export default async (h) => {
     eq(tsaHits, hits0 + 1, 'one request');
     const v = nodeVerify(out, ranges(out)[0]);
     ok(v.digestOk && v.sigOk, 'still valid'); eq(v.unsigned, ['1.2.840.113549.1.9.16.2.14'], 'the token is an unsigned attribute');
-    const s = await sigs(p);
-    eq([s[0].status, s[0].ts.ok, s[0].ts.time, s[0].ts.tsa, s[0].when], ['valid', true, TSA_TIME.toISOString(), 'Test Timestamp Authority', TSA_TIME.toISOString()]);
+    // a timestamp authority not trusted here: the token checks out, but its time is not relied on
+    const u = await sigs(p);
+    eq([u[0].status, u[0].ts.ok, u[0].ts.trusted, u[0].ts.time, u[0].checks.find((k) => k[0] === 'Timestamp')[1]], ['valid', true, false, TSA_TIME.toISOString(), 'warn']);
+    ok(u[0].when !== TSA_TIME.toISOString(), 'the signer’s clock, not the timestamp');
+    eq(await p.evaluate((b) => window.__cowdreyPdf.sgTrustImport(new Uint8Array(b)), Array.from(new Uint8Array(tsaCert.toSchema().toBER(false)))), 1);
+    const s = await p.evaluate((b) => window.__cowdreyPdf.sgDetails(new Uint8Array(b)), Array.from(out));
+    eq([s[0].status, s[0].ts.ok, s[0].ts.trusted, s[0].ts.time, s[0].ts.tsa, s[0].when], ['valid', true, true, TSA_TIME.toISOString(), 'Test Timestamp Authority', TSA_TIME.toISOString()]);
     const t = await panelText(p); ok(t.includes('Timestamp:') && t.includes('Test Timestamp Authority') && t.includes('2026'), t);
     await closeDialog(p);
     if (hasPdfsig) { const r = pdfsig(out); ok(/Signature is Valid/.test(r), r); }

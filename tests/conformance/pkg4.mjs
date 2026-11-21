@@ -49,6 +49,11 @@ subjectKeyIdentifier = hash
 basicConstraints = critical,CA:TRUE
 keyUsage = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
+[ ext_tsa_self ]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,timeStamping
+subjectKeyIdentifier = hash
 `);
 const keygen = (name, kind) => {
   const a = { rsa2048: ['-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:2048'], rsa4096: ['-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:4096'], p256: ['-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256'], p384: ['-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-384'], ed25519: ['-algorithm', 'ED25519'] }[kind];
@@ -146,11 +151,14 @@ const EXPIRED = makeCA(issue(ROOT, 'interx', 'Pkg4 Expired Intermediate CA', 'rs
 const UNTRUSTED = makeCA(selfSigned('uroot', 'Pkg4 Untrusted Root', 'rsa2048', 'v3_root'));
 const TSAROOT = makeCA(selfSigned('tsaroot', 'Pkg4 TSA Root', 'rsa2048', 'v3_root'));
 const TSA = issue(TSAROOT, 'tsa', 'Pkg4 Timestamp Authority', 'rsa2048', 'ext_tsa', new Date(Date.now() - 30 * DAY), new Date(Date.now() + 5 * 365 * DAY));
+// a timestamp server nobody trusts (self-signed, for timestamps): its time must not settle when a signature was made
+const ROGUE = selfSigned('rogue-tsa', 'Pkg4 Rogue TSA', 'rsa2048', 'ext_tsa_self');
 const LEAF = {
   good: issue(INTER, 'leaf-good', 'Pkg4 Chain Signer', 'rsa2048', 'ext_leaf'),
   revoked: issue(INTER, 'leaf-revoked', 'Pkg4 Revoked Signer', 'rsa2048', 'ext_leaf'),
   revokedCrl: issue(INTER, 'leaf-revoked-crl', 'Pkg4 Revoked CRL Signer', 'rsa2048', 'ext_leaf_crl'),
   late: issue(INTER, 'leaf-late', 'Pkg4 Revoked Later Signer', 'rsa2048', 'ext_leaf'),
+  rogue: issue(INTER, 'leaf-rogue', 'Pkg4 Rogue-Stamped Signer', 'rsa2048', 'ext_leaf'),
   future: issue(INTER, 'leaf-future', 'Pkg4 Future Signer', 'rsa2048', 'ext_leaf', new Date(Date.now() + 2 * DAY), new Date(Date.now() + 400 * DAY)),
   underExpired: issue(EXPIRED, 'leaf-underx', 'Pkg4 Signer Under Expired CA', 'rsa2048', 'ext_plain', new Date(Date.now() - 300 * DAY), new Date(Date.now() + 300 * DAY)),
   untrusted: issue(UNTRUSTED, 'leaf-untrusted', 'Pkg4 Untrusted Signer', 'rsa2048', 'ext_plain'),
@@ -179,6 +187,8 @@ ess_cert_id_chain = no
 ess_cert_id_alg = sha256
 `);
 write('tsa-serial', '01\n');
+write('rogue-tsa.cnf', fs.readFileSync(file('tsa.cnf'), 'utf8').replaceAll(TSA.pem, ROGUE.pem).replaceAll(TSA.key, ROGUE.key).replace(`${W}/tsa-chain.pem`, ROGUE.pem).replace(`${W}/tsa-serial`, `${W}/rogue-serial`));
+write('rogue-serial', '01\n');
 
 /* ---------------- the servers: TSA, OCSP and CRLs, over http ---------------- */
 let tsaHits = 0, n = 0, ocspHits = 0;
@@ -187,9 +197,9 @@ const server = http.createServer((rq, rs) => {
   rq.on('end', () => {
     try {
       const u = new URL(rq.url, BASE);
-      if (u.pathname === '/tsa' && rq.method === 'POST') {
+      if ((u.pathname === '/tsa' || u.pathname === '/rogue-tsa') && rq.method === 'POST') {
         tsaHits++; const q = write(`q${++n}.tsq`, Buffer.concat(chunks));
-        ossl('ts', '-reply', '-config', file('tsa.cnf'), '-queryfile', q, '-out', file(`r${n}.tsr`));
+        ossl('ts', '-reply', '-config', file(u.pathname === '/tsa' ? 'tsa.cnf' : 'rogue-tsa.cnf'), '-queryfile', q, '-out', file(`r${n}.tsr`));
         rs.writeHead(200, { 'content-type': 'application/timestamp-reply' }); return rs.end(fs.readFileSync(file(`r${n}.tsr`)));
       }
       if (u.pathname === '/ocsp' && rq.method === 'POST') {
@@ -289,7 +299,7 @@ try:
             ts = st.timestamp_validity
             out.append(dict(field=s.field_name, intact=st.intact, valid=st.valid, trusted=st.trusted, coverage=str(st.coverage).split('.')[-1],
               modification=str(st.modification_level).split('.')[-1] if st.modification_level is not None else None, signer=st.signing_cert.subject.human_friendly,
-              md=st.md_algorithm, alg=st.pkcs7_signature_mechanism, ts=None if ts is None else dict(intact=ts.intact, valid=ts.valid, time=ts.timestamp.isoformat())))
+              md=st.md_algorithm, alg=st.pkcs7_signature_mechanism, ts=None if ts is None else dict(intact=ts.intact, valid=ts.valid, trusted=ts.trusted, time=ts.timestamp.isoformat())))
         except Exception as e:
             out.append(dict(field=s.field_name, error=type(e).__name__ + ': ' + str(e)[:200]))
 except Exception as e:
@@ -501,7 +511,18 @@ await step('T3', 'Certificate revoked after the TSA date: signature valid, revoc
   const s = (await sigs(app))[0];
   const oc = await ocspClient(LEAF.late);
   const ok = s.status === 'trusted' && s.rev && s.rev.verdict === 'revokedAfter' && /after the timestamp/.test(text) && /revoked/i.test(oc);
-  return [ok ? 'pass' : 'fail', `app: ${s.statusText}; revocation: ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}`];
+  // the same, stamped by a timestamp server that is not trusted: its time is not relied on, so the signature is Revoked
+  await settings(app, { tsa: `${BASE}/rogue-tsa` });
+  await openPdf(app, TEXT1, 'Rogue stamp.pdf');
+  const rout = await signUi(app, LEAF.rogue.cn, { ts: true });
+  await settings(app, { tsa: `${BASE}/tsa` });
+  await new Promise((r) => setTimeout(r, 1500));
+  revoke(LEAF.rogue);
+  await openBuf(app, rout, 'Rogue stamp (signed).pdf');
+  await checkRevocation(app);
+  const g = (await sigs(app))[0], gts = g.checks.find((k) => k[0] === 'Timestamp'), gph = pyh(rout, [ROOT.pem, TSAROOT.pem])[0];
+  const rogueOk = g.status === 'revoked' && g.rev && g.rev.verdict === 'revoked' && g.ts && g.ts.ok && !g.ts.trusted && g.ts.tsa === 'Pkg4 Rogue TSA' && gts[1] === 'warn' && (!HAS.pyhanko || (gph.ts && gph.ts.trusted === false));
+  return [ok && rogueOk ? 'pass' : 'fail', `app: ${s.statusText}; revocation: ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}. Untrusted TSA (“Pkg4 Rogue TSA”), revoked after its stamp: app ${g.statusText}; Timestamp: ${gts[1]} (${gts[2]}); revocation: ${g.rev && g.rev.text}; pyHanko timestamp trusted=${gph.ts && gph.ts.trusted}`];
 });
 
 // Chain and revocation
@@ -578,8 +599,20 @@ await step('X3', 'Truncated file (last 200 bytes removed): reports missing/incom
   const bar = await app.textContent('.sg-bar').catch(() => '');
   const ps = pdfsig(cut), ph = pyh(cut, [ROOT.pem])[0];
   const x = s[0] || direct[0];
-  const ok = x && x.status === 'invalid' && x.problem === 'incomplete' && /incomplete/.test(x.notes[0]) && app.errors.length === errs;
-  return [ok ? 'pass' : 'fail', `app: ${x && x.statusText} — ${x && x.notes[0]}; bar: “${(bar || '').trim()}”; page errors: ${app.errors.length - errs}; pdfsig: ${ps.valid[0] || ps.text.trim().split('\n').pop()}; pyHanko: ${ph.error || 'intact=' + ph.intact}`];
+  // cut further, before the signature's /ByteRange (pyHanko writes it last) or past its whole dictionary: still incomplete
+  const deeper = [];
+  let ext = null;
+  if (HAS.pyhanko) {
+    const r = await new Promise((res) => { const pr = spawn('python3', [file('pyh_sign.py'), TEXT1, file('x3-ext.pdf'), P12.good, PW, 'foxit', `${BASE}/tsa`], { cwd: W }); let o = ''; pr.stderr.on('data', (d) => o += d); pr.on('close', (code) => res({ code, o })); });
+    if (r.code) throw new Error('pyHanko could not sign: ' + r.o.slice(-300));
+    ext = fs.readFileSync(file('x3-ext.pdf'));
+  }
+  if (ext) for (const k of [1000, 3000, Math.floor((ext.length - ext.lastIndexOf('%%EOF', ext.length - 10)) * 0.5)]) {
+    const r = await app.evaluate(async (b) => (await window.__cowdreyPdf.sgDetails(b)).map((y) => y.problem), Array.from(ext.subarray(0, ext.length - k)));
+    deeper.push(`${k}: ${r.join(',') || 'none'}`);
+  }
+  const ok = x && x.status === 'invalid' && x.problem === 'incomplete' && /incomplete/.test(x.notes[0]) && app.errors.length === errs && deeper.every((d) => /: incomplete$/.test(d));
+  return [ok ? 'pass' : 'fail', `app: ${x && x.statusText} — ${x && x.notes[0]}; bar: “${(bar || '').trim()}”; page errors: ${app.errors.length - errs}; pdfsig: ${ps.valid[0] || ps.text.trim().split('\n').pop()}; pyHanko: ${ph.error || 'intact=' + ph.intact}. pyHanko-signed file cut by more bytes (app): ${deeper.join('; ')}`];
 });
 
 // Multi-signature and incremental update

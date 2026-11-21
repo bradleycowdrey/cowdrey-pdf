@@ -5,7 +5,9 @@
    the certificates trusted on this device (a trusted root need not be in the signature), and its signature on the
    certificate below is checked. Every certificate of the chain must have been valid when the document was signed:
    at the time of the timestamp when there is one (a certificate that expired since still counts), else at the time
-   the signature says. An issuer must be a certificate authority. A signature is trusted when its chain reaches a
+   the signature says. A timestamp's time is relied on only when its authority is trusted on this device (its chain
+   reaches a trusted certificate, and its certificate is one for timestamps); otherwise the Timestamp line warns and
+   the signer's clock is used, since anyone can run a timestamp server and backdate. An issuer must be a certificate authority. A signature is trusted when its chain reaches a
    certificate trusted on this device.
 
    Revocation (CRL and OCSP) is checked only when asked: a setting in Signing IDs, or "Check revocation online" in the
@@ -130,10 +132,14 @@ async function sgNetFetch(url, body, type) {
 const sgPemOrDer = (u) => { const t = sgLatin1(u.subarray(0, 64)); if (!/-----BEGIN/.test(t)) return u; const b = sgLatin1(u).replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''); return b64ToBytes(b); };
 const sgRevTime = (x) => { try { return x.toDate ? x.toDate() : x.value instanceof Date ? x.value : new Date(x); } catch { return null; } };
 // OCSP for `cert`, issued by `issuer`: { status: 'good'|'revoked'|'unknown', at, reason, produced }
+const SG_OCSP_NONCE = '1.3.6.1.5.5.7.48.1.2';
 async function sgOcsp(url, cert, issuer) {
   const { pkijs, asn1js } = await sgLoadLibs();
   const req = new pkijs.OCSPRequest();
   await req.createForCertificate(cert, { hashAlgorithm: 'SHA-1', issuerCertificate: issuer });
+  // a nonce (RFC 8954), so an old answer can't be passed off as a new one
+  const nonce = new asn1js.OctetString({ valueHex: crypto.getRandomValues(new Uint8Array(16)).buffer }).toBER(false);
+  req.tbsRequest.requestExtensions = [new pkijs.Extension({ extnID: SG_OCSP_NONCE, extnValue: nonce })];
   const answer = await sgNetFetch(url, new Uint8Array(req.toSchema(true).toBER(false)), 'application/ocsp-request');
   let or, basic;
   try { or = pkijs.OCSPResponse.fromBER(answer); } catch { throw new SgError('The OCSP answer could not be read'); }
@@ -153,6 +159,13 @@ async function sgOcsp(url, cert, issuer) {
   if (!sigOk) throw new SgError('The OCSP answer’s signature is not valid');
   const one = (basic.tbsResponseData.responses || []).find((r) => r.certID.serialNumber.isEqual(cert.serialNumber));
   if (!one) throw new SgError('The OCSP answer is about another certificate');
+  // fresh: its nonce is ours, or (a server that ignores nonces) it is in date
+  const echo = (basic.tbsResponseData.responseExtensions || []).find((e) => e.extnID === SG_OCSP_NONCE);
+  if (echo && !sgEq(echo.extnValue.valueBlock.valueHexView, new Uint8Array(nonce))) throw new SgError('The OCSP answer is an old one (its nonce is not ours)');
+  const t = Date.now(), skew = 5 * 60000, tu = one.thisUpdate ? +one.thisUpdate : NaN, nu = one.nextUpdate ? +one.nextUpdate : NaN;
+  if (!(tu <= t + skew)) throw new SgError('The OCSP answer is dated in the future');
+  if (nu < t - skew) throw new SgError(`The OCSP answer is out of date (it was good until ${sgWhenS(one.nextUpdate)})`);
+  if (!echo && isNaN(nu) && tu < t - 60 * 60000) throw new SgError(`The OCSP answer is out of date (from ${sgWhenS(one.thisUpdate)})`);
   const st = one.certStatus, tag = st && st.idBlock ? st.idBlock.tagNumber : 2, out = { produced: basic.tbsResponseData.producedAt, via: 'OCSP' };
   if (tag === 0) out.status = 'good';
   else if (tag === 1) {
@@ -171,8 +184,9 @@ async function sgCrl(url, cert, issuer) {
   let crl; try { crl = pkijs.CertificateRevocationList.fromBER(der); } catch { throw new SgError('The revocation list could not be read'); }
   if (!sgNameEq(crl.issuer, issuer.subject) || !(await sgSignedBy(crl, issuer))) throw new SgError('The revocation list is not signed by the certificate’s issuer');
   const out = { via: 'CRL', produced: crl.thisUpdate && crl.thisUpdate.value, next: crl.nextUpdate && crl.nextUpdate.value };
+  if (out.produced && out.produced > Date.now() + 5 * 60000) throw new SgError('The revocation list is dated in the future');
   const e = (crl.revokedCertificates || []).find((r) => r.userCertificate.isEqual(cert.serialNumber));
-  if (!e) { out.status = 'good'; if (out.next && out.next < new Date()) out.stale = true; return out; }
+  if (!e) { if (out.next && out.next < Date.now() - 5 * 60000) throw new SgError(`The revocation list is out of date (it was good until ${sgWhenS(out.next)})`); out.status = 'good'; return out; }
   out.status = 'revoked'; out.at = e.revocationDate && e.revocationDate.value;
   const rc = (e.crlEntryExtensions && e.crlEntryExtensions.extensions || []).find((x) => x.extnID === '2.5.29.21');
   if (rc) try { const { asn1js } = await sgLoadLibs(); out.reason = SG_REASONS[asn1js.fromBER(rc.extnValue.valueBlock.valueHexView).result.valueBlock.valueDec] || ''; } catch {}
