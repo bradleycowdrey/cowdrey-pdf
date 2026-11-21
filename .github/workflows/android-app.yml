@@ -3,16 +3,28 @@ name: Android app
 on:
   push:
     branches: [main]
-    # Build a new Android version when the version number, the Rust code or this workflow changes.
+    # Build a new Android version when the web app, the Rust code, the version number or this workflow changes.
     paths:
+      - src/**
+      - index.html
+      - build.py
+      - desktop/build.mjs
+      - desktop/package.json
+      - desktop/package-lock.json
       - desktop/src-tauri/tauri.conf.json
       - desktop/src-tauri/Cargo.toml
       - desktop/src-tauri/src/**
       - desktop/src-tauri/capabilities/**
       - desktop/src-tauri/plugins/**
+      - tests/android/**
       - .github/workflows/android-app.yml
-      - .github/scripts/android_smoke.sh
+      - .github/scripts/android_e2e.sh
   workflow_dispatch:
+    inputs:
+      quick:
+        description: Only build the test app and run the device test (no release APK or App Bundle)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -73,6 +85,7 @@ jobs:
 
       # Phones (arm64, older armv7) and the x86_64 emulator used below.
       - name: Build the APK and App Bundle
+        if: ${{ !inputs.quick }}
         working-directory: desktop
         run: |
           set -o pipefail
@@ -83,8 +96,11 @@ jobs:
         run: |
           M=$(find src-tauri/gen/android -name AndroidManifest.xml -path '*src/main*' | head -1)
           { echo "Intent filters in $M:"; grep -A6 '<intent-filter' "$M"; } | tee -a "$RUNNER_TEMP/android-build.log"
+          { echo "SDK levels:"; grep -rhoE '(minSdk|targetSdk|compileSdk)[^,)]*' src-tauri/gen/android/app/build.gradle.kts src-tauri/gen/android/buildSrc 2>/dev/null | sort -u; } | tee -a "$RUNNER_TEMP/android-build.log"
+          { echo "Permissions:"; grep -h 'uses-permission' "$M"; } | tee -a "$RUNNER_TEMP/android-build.log"
 
       - name: Sign the APK
+        if: ${{ !inputs.quick }}
         run: |
           set -eo pipefail
           BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
@@ -110,8 +126,9 @@ jobs:
       # With the upload key, the APK goes on the version's GitHub release as Cowdrey.PDF.apk, so
       # github.com/…/releases/latest/download/Cowdrey.PDF.apk (linked from bradcowdrey.com) is always the newest.
       # The Mac workflow creates that release; wait for it, and create it only if it never appears.
+      # Only from main, and only with the upload key: test builds from other branches are never published.
       - name: Publish the APK on the GitHub release
-        if: env.KEYSTORE != ''
+        if: ${{ !inputs.quick && github.ref == 'refs/heads/main' && env.KEYSTORE != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -121,22 +138,50 @@ jobs:
           gh release upload "v$V" "$RUNNER_TEMP/Cowdrey.PDF.apk" --clobber
           echo "Published Cowdrey.PDF.apk on release v$V" | tee -a "$RUNNER_TEMP/android-build.log"
 
+      # A separate debug build for the device test only: same app, with its web view open to the test driver (Chrome
+      # DevTools protocol) and its files readable with run-as. It is never signed for release, uploaded or published.
+      - name: Build the test app (debug, x86_64, for the emulator only)
+        working-directory: desktop
+        run: |
+          set -o pipefail
+          npx tauri android build --debug --apk --ci --target x86_64 2>&1 | tail -40 | tee -a "$RUNNER_TEMP/android-build.log"
+          T=$(find src-tauri/gen/android/app/build/outputs/apk -name '*debug*.apk' | head -1)
+          echo "Test APK: $T" | tee -a "$RUNNER_TEMP/android-build.log"
+          cp "$T" "$RUNNER_TEMP/Cowdrey.PDF-test.apk"
+
+      - name: Install the device test driver
+        run: |
+          mkdir -p "$RUNNER_TEMP/driver" && cd "$RUNNER_TEMP/driver" && npm init -y > /dev/null
+          npm install --no-save --no-audit --no-fund playwright-core@1.56.1 > /dev/null && echo "playwright-core installed"
+
       - name: Allow the emulator to use hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
 
-      - name: Try it on an Android 15 emulator
+      # The release APK is launched once; then the test build runs every scenario in tests/android/run.mjs on the
+      # emulator's own web view, and saves screenshots and the files it saved.
+      - name: Test it on an Android 15 emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          PW_CORE: ${{ runner.temp }}/driver/node_modules/playwright-core
         with:
           api-level: 35
           arch: x86_64
           target: google_apis
           profile: pixel_7
+          ram-size: 4096M
+          disk-size: 6000M
           disable-animations: true
-          script: bash .github/scripts/android_smoke.sh "$RUNNER_TEMP/Cowdrey.PDF.apk" "$RUNNER_TEMP/smoke" 2>&1 | tee -a "$RUNNER_TEMP/android-build.log"
+          script: bash .github/scripts/android_e2e.sh "$RUNNER_TEMP/Cowdrey.PDF.apk" "$RUNNER_TEMP/Cowdrey.PDF-test.apk" "$RUNNER_TEMP/smoke" 2>&1 | tee -a "$RUNNER_TEMP/android-build.log"
+
+      - name: Check the device test passed
+        run: |
+          cat "$RUNNER_TEMP/smoke/result.txt" 2>/dev/null || { echo "The device test did not finish"; exit 1; }
+          grep -q '^ALL PASSED' "$RUNNER_TEMP/smoke/result.txt"
 
       - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.quick }}
         with:
           name: Cowdrey.PDF-Android
           path: |
@@ -144,14 +189,25 @@ jobs:
             ${{ runner.temp }}/Cowdrey.PDF.aab
           if-no-files-found: ignore
 
+      # The test build and what the device test saved: kept with the run only, never on a release.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Cowdrey.PDF-Android-test
+          path: |
+            ${{ runner.temp }}/Cowdrey.PDF-test.apk
+            ${{ runner.temp }}/smoke
+          if-no-files-found: ignore
+          retention-days: 14
+
       # The log and emulator screenshots go on the android-build-log branch, readable without signing in.
       - name: Publish the build log and screenshots
         if: always()
         run: |
           D=$(mktemp -d); cd "$D" && git init -q -b android-build-log
           [[ -f "$RUNNER_TEMP/android-build.log" ]] && tail -c 300000 "$RUNNER_TEMP/android-build.log" > android-build.log
-          [[ -d "$RUNNER_TEMP/smoke" ]] && cp "$RUNNER_TEMP"/smoke/*.png "$RUNNER_TEMP"/smoke/logcat.txt . 2>/dev/null
-          echo "${{ job.status }} · run ${{ github.run_number }} · ${{ github.sha }}" > status.txt
+          [[ -d "$RUNNER_TEMP/smoke" ]] && cp "$RUNNER_TEMP"/smoke/*.png "$RUNNER_TEMP"/smoke/*.txt . 2>/dev/null
+          echo "${{ job.status }} · run ${{ github.run_number }} (${{ github.run_id }}) · branch ${{ github.ref_name }} · ${{ github.sha }}" > status.txt
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Android build log, run ${{ github.run_number }}"
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build-log
