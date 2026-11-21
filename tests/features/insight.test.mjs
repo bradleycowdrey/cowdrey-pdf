@@ -155,6 +155,40 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('tables: a long account number (more than 15 digits) stays text in Excel and keeps every digit', async () => {
+    const d = await PDFDocument.create(), f = await d.embedFont(L.StandardFonts.Helvetica), pg = d.addPage([612, 792]);
+    const ROWS = [['Item', 'Code', 'Qty', 'Amount'], ['Paper', '00412', '10', '4.50'], ['Ink', '998877', '2', '19.99'], ['Long account', '12345678901234567890', '3', '7.25'], ['Card', '123456789012345', '1', '2']];
+    const cx = [72, 200, 400, 470];
+    ROWS.forEach((row, r) => row.forEach((t, c) => pg.drawText(t, { x: cx[c], y: 700 - r * 20, size: 11, font: f })));
+    const p = await open(); await openBytes(p, Buffer.from(await d.save()), 'Codes.pdf');
+    const t = await p.evaluate(() => window.__cowdreyPdf.insTables(0));
+    eq(t.map((x) => x.rows), [ROWS]);
+    const x = Buffer.from(await p.evaluate((rows) => [...window.__cowdreyPdf.insXlsx([{ name: 'Codes', rows, header: true }])], t[0].rows));
+    const { cells } = sheetCells(x);
+    eq([cells.B2, cells.B3, cells.B4, cells.B5, cells.C4, cells.D4], ['00412', 998877, '12345678901234567890', 123456789012345, 3, 7.25], 'long digits as text, 15 digits still a number');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('summary and ask: each bullet of a list without full stops is a sentence of its own', async () => {
+    const d = await PDFDocument.create(), f = await d.embedFont(L.StandardFonts.Helvetica), b = await d.embedFont(L.StandardFonts.HelveticaBold);
+    const SLIDES = [
+      ['Goals for next year', ['Launch the new mobile banking app in spring', 'Reduce support calls by a quarter', 'Open two branches in the north', 'Hire twenty new staff for the helpdesk', 'Move card payments to the new system', 'Train all staff on the mobile banking app', 'Cut paper statements by half', 'Retire the old desktop banking site by winter']],
+      ['Risks', ['The mobile banking app may launch late', 'Support calls may rise while staff learn', 'New branches may cost more than planned', 'Hiring may be slow in the north', 'Card payments may fail during the move', 'Customers may miss paper statements', 'The old desktop site may still be needed', '1. Budgets are set in the autumn']],
+    ];
+    for (const [head, items] of SLIDES) {
+      const pg = d.addPage([792, 612]); pg.drawText(head, { x: 60, y: 540, size: 28, font: b });
+      items.forEach((t, k) => pg.drawText(/^\d/.test(t) ? t : '• ' + t, { x: 60, y: 490 - k * 26, size: 16, font: f }));
+    }
+    const p = await open(); await openBytes(p, Buffer.from(await d.save()), 'Plan.pdf');
+    const t = await p.evaluate(async () => (await window.__cowdreyPdf.insText()).sents.map((x) => [x.n, x.text]));
+    eq(t, SLIDES.flatMap(([head, items], n) => [[n, head], ...items.map((x) => [n, x])]), 'a heading, then one sentence per bullet');
+    const s = await p.evaluate(async () => window.__cowdreyPdf.insSummaryOf(await window.__cowdreyPdf.insText(), 'medium'));
+    ok(s.picked.length > 2 && s.picked.every((x) => !x.text.includes('•') && x.text.length < 60), 'short picks: ' + s.picked.map((x) => x.text));
+    const r = await p.evaluate(async () => window.__cowdreyPdf.insAskOf(await window.__cowdreyPdf.insText(), 'retire the desktop banking site').map((x) => x.best.text));
+    eq(r[0], 'Retire the old desktop banking site by winter');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   // Prose: a topic sentence said again in other words, among sentences on other things.
   const SUMMARY = [
     ['Solar panels on school roofs cut energy bills and teach students about clean power.', 'The cafeteria will serve a new lunch menu starting next week.', 'Energy bills at the school fell after the solar panels went on the roofs.', 'Buses will leave ten minutes earlier on Fridays.'],

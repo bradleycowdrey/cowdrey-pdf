@@ -258,7 +258,9 @@ function insCsv(rows) {
 }
 const insTsv = (rows) => rows.map((r) => r.map((v) => String(v).replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
 const INS_NUM = /^[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
-const insIsNum = (v) => INS_NUM.test(v) && !/^[-+]?0\d/.test(v);
+// A number Excel can hold exactly: no leading zero (a code), and at most 15 significant digits, so a long account
+// number or ID stays text and keeps every digit.
+const insIsNum = (v) => INS_NUM.test(v) && !/^[-+]?0\d/.test(v) && v.replace(/\D/g, '').replace(/^0+|0+$/g, '').length <= 15;
 const insXml = (s) => String(s).replace(/[^\t\n\r -퟿-�\u{10000}-\u{10FFFF}]/gu, '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const insCol = (c) => { let s = ''; for (c++; c > 0; c = Math.floor((c - 1) / 26)) s = String.fromCharCode(65 + ((c - 1) % 26)) + s; return s; };
 // A minimal .xlsx: one sheet per table. sheets: [{ name, rows, header }]
@@ -445,6 +447,8 @@ async function insFindRun(pages, { list = true } = {}) {
 }
 
 /* --- sentences --- */
+const INS_BULLET = /^(?:[•▪▫◦‣⁃●○■□◆◇►▸▶➢➤✓✔∙·*–—-](?:\s|$)|[•▪▫◦‣⁃●○■□◆◇►▸▶➢➤✓✔∙]|\(?(?:\d{1,3}|[a-zA-Z]|[ivxIVX]{1,5})[.)](?:\s|$))/u;
+const INS_GLYPH = /[•▪▫◦‣⁃●○■□◆◇►▸▶➢➤✓✔∙·*–—-]/u;
 const INS_ABBR = /^(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|inc|ltd|co|corp|no|nos|fig|figs|p|pp|vol|e\.g|i\.e|cf|al|approx|dept|est|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|[a-z])\.$/i;
 // A page's sentences: { text, a, b } with a..b the letters they cover in findIndexOf(tc).s. Lines are joined, a word
 // broken by a hyphen at the end of a line is put back together, and a heading or a block further down starts anew.
@@ -455,6 +459,8 @@ function insSentencesOf(tc) {
     if (!it.str || !it.str.trim() || !it.transform) return;
     const y = it.transform[5], h = it.height || Math.hypot(it.transform[2], it.transform[3]) || 10;
     if (prev && (Math.abs(prev.y - y) > 1.9 * Math.max(h, prev.h) || Math.max(h, prev.h) > 1.3 * Math.min(h, prev.h))) starts.add(i);
+    // a bullet or a numbered item at the start of a line begins a new sentence (lists, slides, agendas)
+    else if (prev && Math.abs(prev.y - y) > 0.5 * Math.min(h, prev.h) && INS_BULLET.test(it.str.trimStart())) starts.add(i);
     prev = { y, h };
   });
   const t = [], o = [];
@@ -469,6 +475,7 @@ function insSentencesOf(tc) {
   const push = (end) => {
     let a = start, b = end;
     while (a < b && /[\s\u2029]/.test(T[a])) a++;
+    while (a < b && INS_GLYPH.test(T[a]) && /\s/.test(T[a + 1] || ' ')) { a++; while (a < b && /\s/.test(T[a])) a++; }
     while (b > a && /[\s\u2029]/.test(T[b - 1])) b--;
     if (b > a && /[\p{L}\p{N}]/u.test(T.slice(a, b))) out.push({ text: T.slice(a, b), a: o[a], b: o[b - 1] + 1 });
     start = end;
@@ -479,6 +486,7 @@ function insSentencesOf(tc) {
     let e = k + 1; while (e < T.length && /[.!?…"'”’)\]]/.test(T[e])) e++;
     if (e < T.length && !(T[e] === ' ' && /[\p{Lu}\p{N}"“‘(\[]/u.test(T[e + 1] || '')) && T[e] !== '\u2029') continue;
     if (T[k] === '.' && e === k + 1 && INS_ABBR.test((T.slice(0, k + 1).match(/(\S+)$/) || ['', ''])[1])) continue;
+    if (/^[\s\u2029]*\(?(?:\d{1,3}|[ivxIVX]{1,5})[.)]$/.test(T.slice(start, e))) continue; // "1." of a numbered item
     push(e); k = e - 1;
   }
   push(T.length);
