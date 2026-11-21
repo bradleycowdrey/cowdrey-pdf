@@ -509,6 +509,37 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('PDF/A: one base font under two encodings gets two font programs; a shared one is flagged and split', async () => {
+    // page text in Helvetica (WinAnsi) and a form field in Helvetica with /Differences, neither embedded
+    const d = await L.PDFDocument.create(); const pg = d.addPage([400, 300]), ctx = d.context;
+    const win = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' }));
+    const helv = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: ctx.obj({ Type: 'Encoding', BaseEncoding: 'WinAnsiEncoding', Differences: [PDFNumber.of(128), N('bullet'), PDFNumber.of(140), N('quotesinglbase')] }) }));
+    pg.node.set(N('Resources'), ctx.obj({ Font: ctx.obj({ F1: win }) }));
+    pg.node.set(N('Contents'), ctx.register(ctx.flateStream(Buffer.from('BT /F1 12 Tf 20 260 Td (\\214uvre \\200 12) Tj ET', 'latin1'))));
+    const ap = ctx.register(ctx.flateStream(Buffer.from('/Tx BMC BT /Helv 12 Tf 2 5 Td (Ada \\200 \\214 L) Tj ET EMC', 'latin1'), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 20], Resources: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    const w = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: PDFString.of('name'), V: PDFString.of('Ada'), DA: PDFString.of('/Helv 12 Tf 0 g'), Rect: [50, 200, 250, 220], F: 4, P: pg.ref, AP: ctx.obj({ N: ap }) }));
+    pg.node.set(N('Annots'), ctx.obj([w])); d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [w], DR: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    const p = await open();
+    const conv = (b, opts) => p.evaluate(async ([x, o]) => { const H = window.__cowdreyPdf, c = await H.pdfaConvert(new Uint8Array(x), o); return c.bytes ? { bytes: Array.from(c.bytes), problems: (await H.pdfaCheck(c.bytes, o)).filter((y) => y.severity === 'error').map((y) => y.rule + ': ' + y.text) } : { blocked: JSON.stringify(c) }; }, [Array.from(b), opts]);
+    const fontsOf = async (b) => { const x = await L.PDFDocument.load(new Uint8Array(b), { updateMetadata: false }); const tt = [...x.context.enumerateIndirectObjects()].map(([, o]) => o).filter((o) => o instanceof PDFDict && nameOf(o.get(N('Subtype'))) === 'TrueType' && /Arimo/.test(nameOf(o.get(N('BaseFont'))))); return { x, win: tt.find((o) => o.get(N('Encoding')) instanceof PDFName), dif: tt.find((o) => o.lookup(N('Encoding')) instanceof PDFDict) }; };
+    const r = await conv(await d.save(), { part: 2, conformance: 'B' });
+    ok(!r.blocked, r.blocked); eq(r.problems, [], '2b check');
+    const a = await fontsOf(r.bytes);
+    ok(a.win && a.dif, 'two Arimo fonts');
+    const prog = (x, f) => x.context.lookup(f.get(N('FontDescriptor'))).get(N('FontFile2')).toString();
+    ok(a.win.get(N('FontDescriptor')).toString() !== a.dif.get(N('FontDescriptor')).toString() && prog(a.x, a.win) !== prog(a.x, a.dif), 'each encoding has its own descriptor and program');
+    // the same file with the WinAnsi font pointed at the other's program: flagged, then split on export
+    a.win.set(N('FontDescriptor'), a.dif.get(N('FontDescriptor')));
+    const shared = await a.x.save({ useObjectStreams: false });
+    const ck = await check(p, shared, { part: 2, conformance: 'B' });
+    ok(ck.list.some((x) => x.rule === 'font-sharing' && /shares one font program between 2 different encodings/.test(x.text)), JSON.stringify(ck.list));
+    const r2 = await conv(shared, { part: 2, conformance: 'B' });
+    ok(!r2.blocked, r2.blocked); ok(!r2.problems.some((t) => t.startsWith('font-sharing')), JSON.stringify(r2.problems));
+    const b = await fontsOf(r2.bytes);
+    ok(prog(b.x, b.win) !== prog(b.x, b.dif), 'split into two programs');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('PDF/A: veraPDF (when installed: $VERAPDF names its jar or script) finds the output compliant', async () => {
     const jar = process.env.VERAPDF, file = path.join(tmp, 'pdfa-2b.pdf');
     if (!jar || !fs.existsSync(jar) || !fs.existsSync(file)) { console.log('      (veraPDF not installed: set VERAPDF to its jar to run it; skipped)'); return; }

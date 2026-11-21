@@ -22288,6 +22288,33 @@ function pdfaFontUnicodes(L, font) {
   }
   return { uni, unknown, base: PDFA_ENC[base] ? base : 'StandardEncoding', named: enc instanceof L.PDFName && (base === 'WinAnsiEncoding' || base === 'MacRomanEncoding') };
 }
+// How a simple font turns codes into glyphs, as a string: two font dictionaries that share one font program must
+// agree on it, or a validator reading the program through one of them finds the other's widths wrong.
+function pdfaEncodingSig(L, font) {
+  const N = L.PDFName.of, look = (o) => (font.context ? font.context.lookup(o) : o), enc = font.lookup(N('Encoding'));
+  const fd = font.lookup(N('FontDescriptor')), fl = fd instanceof L.PDFDict ? fd.lookup(N('Flags')) : null;
+  const sym = fl instanceof L.PDFNumber && fl.asNumber() & 4 ? 'S' : 'N';
+  if (enc instanceof L.PDFName) return `${sym}:${enc.decodeText()}`;
+  if (!(enc instanceof L.PDFDict)) return enc ? `${sym}:?` : `${sym}:-`;
+  const b = enc.lookup(N('BaseEncoding')), d = enc.lookup(N('Differences'));
+  const diffs = d instanceof L.PDFArray ? d.asArray().map((x) => { const o = look(x); return o instanceof L.PDFNumber ? o.asNumber() : o instanceof L.PDFName ? '/' + o.decodeText() : '?'; }).join(' ') : '';
+  return `${sym}:${b instanceof L.PDFName ? b.decodeText() : ''}[${diffs}]`;
+}
+// Embedded programs of simple fonts that font dictionaries with different encodings share:
+// [{ program, key, groups: [[[font, info]...], ...] }], one group per encoding (the first keeps the program).
+function pdfaSharedPrograms(L, fonts) {
+  const { PDFDict, PDFStream } = L, N = L.PDFName.of, by = new Map();
+  for (const [f, w] of fonts) {
+    const sub = pdfaName(L, f.get(N('Subtype'))); if (!/^(Type1|MMType1|TrueType)$/.test(sub || '')) continue;
+    const fd = f.lookup(N('FontDescriptor')); if (!(fd instanceof PDFDict)) continue;
+    const k = ['FontFile2', 'FontFile', 'FontFile3'].find((x) => fd.lookup(N(x)) instanceof PDFStream); if (!k) continue;
+    const prog = fd.lookup(N(k));
+    if (!by.has(prog)) by.set(prog, { key: k, sigs: new Map() });
+    const sigs = by.get(prog).sigs, sig = pdfaEncodingSig(L, f);
+    if (!sigs.has(sig)) sigs.set(sig, []); sigs.get(sig).push([f, w]);
+  }
+  return [...by].filter(([, v]) => v.sigs.size > 1).map(([program, v]) => ({ program, key: v.key, groups: [...v.sigs.values()] }));
+}
 // The Latin glyphs every replacement font carries (any code a simple font with these encodings can reach).
 const PDFA_LATIN = (() => { const s = new Set(); for (const t of Object.values(PDFA_ENC)) for (const u of t) if (u != null) s.add(u); for (const u of PDFA_AGL.values()) s.add(u); return [...s]; })();
 const pdfaUnicodeToName = (() => { let m = null; return (u) => { if (!m) { m = new Map(); for (const [n, c] of PDFA_AGL) if (!m.has(c)) m.set(c, n); m.set(0x20, 'space'); m.set(0x2D, 'hyphen'); } return m.get(u) || 'uni' + u.toString(16).toUpperCase().padStart(4, '0'); }; })();
@@ -22956,7 +22983,7 @@ async function pdfaConvert(bytes, opts = {}) {
   const fonts = pdfaPageFonts(L, out);
   const acroDr = acro instanceof PDFDict ? acro.lookup(N('DR')) : null, drFonts = acroDr instanceof PDFDict ? acroDr.lookup(N('Font')) : null;
   if (drFonts instanceof PDFDict) for (const [k, v] of drFonts.entries()) { const f = look(v); if (f instanceof PDFDict && !fonts.has(f)) fonts.set(f, { page: 0, key: k.decodeText(), dr: true }); }
-  const descriptors = new Map(), programs = new Map();
+  const descriptors = new Map();
   const embedded = (f) => {
     const sub = pdfaName(L, f.get(N('Subtype')));
     if (sub === 'Type3') return true;
@@ -22982,36 +23009,28 @@ async function pdfaConvert(bytes, opts = {}) {
     }
     if (sub === 'Type0' || !/^(Type1|MMType1|TrueType)$/.test(sub || '')) continue; // reported by the check
     const pick = pdfaSubstitute(L, f); if (!pick) continue;
-    const [fam, style] = pick, key = fam + style;
-    let ttf; try { ttf = await pdfaFontFile(fam, style); } catch (e) { console.warn('PDF/A: could not load a font', e); continue; }
-    if (!programs.has(key)) { const sub = pdfaTtfSubset(ttf, PDFA_LATIN); programs.set(key, ctx.register(ctx.flateStream(sub, { Length1: sub.length }))); }
-    const program = programs.get(key);
-    const psName = PDFA_FAMILY_NAME[fam] + ['-Regular', '-Bold', '-Italic', '-BoldItalic'][style];
-    if (!descriptors.has(key)) {
-      const tag = Array.from({ length: 6 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
-      const k = 1000 / ttf.upem, flags = 32 | (fam === 'tinos' ? 2 : 0) | (fam === 'cousine' ? 1 : 0) | (style & 2 ? 64 : 0) | (style & 1 ? 0x40000 : 0);
-      const name = `${tag}+${psName}`;
-      descriptors.set(key, { name, ref: ctx.register(ctx.obj({ Type: 'FontDescriptor', FontName: name, Flags: flags, FontBBox: ttf.bbox.map((x) => Math.round(x * k)), ItalicAngle: ttf.italicAngle, Ascent: Math.round(ttf.ascent * k), Descent: Math.round(ttf.descent * k), CapHeight: Math.round(ttf.capHeight * k), XHeight: Math.round(ttf.xHeight * k), StemV: style & 1 ? 140 : 80, FontFile2: program })) });
-    }
-    let desc = descriptors.get(key);
-    const was = (pdfaName(L, f.get(N('BaseFont'))) || '').replace(/^[A-Z]{6}\+/, '');
+    const [fam, style] = pick;
     const { uni, named } = pdfaFontUnicodes(L, f);
+    // One program and descriptor per family, style and encoding: fonts that read codes differently never share one.
+    const key = fam + style + ':' + (named ? f.lookup(N('Encoding')).decodeText() : uni.map((u) => (u == null ? '' : u.toString(36))).join(','));
+    let ttf; try { ttf = await pdfaFontFile(fam, style); } catch (e) { console.warn('PDF/A: could not load a font', e); continue; }
+    const psName = PDFA_FAMILY_NAME[fam] + ['-Regular', '-Bold', '-Italic', '-BoldItalic'][style];
+    const was = (pdfaName(L, f.get(N('BaseFont'))) || '').replace(/^[A-Z]{6}\+/, '');
     const differs = !named && uni.some((u, c) => u != null && u !== PDFA_ENC.WinAnsiEncoding[c]);
-    if (differs && P.kind === 'A' && part === 1) {
-      // PDF/A-1 (6.3.7) lets a non-symbolic TrueType font name only WinAnsi or MacRoman, with no Differences. A font
-      // whose codes mean other characters (a form's PDFDocEncoding, say) becomes a symbolic font instead: no
-      // Encoding, and a font program of its own whose (3,0) cmap maps each code to its glyph.
-      const sig = key + ':' + uni.map((u) => (u == null ? '' : u.toString(36))).join(',');
-      if (!descriptors.has(sig)) {
-        const symProg = pdfaTtfSubset(ttf, null, uni), base = descriptors.get(key);
-        const ref = ctx.register(ctx.flateStream(symProg, { Length1: symProg.length }));
-        const tag = Array.from({ length: 6 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
-        const name = `${tag}+${psName}`, fd = look(base.ref).clone(ctx);
-        const fl = fd.lookup(N('Flags')).asNumber();
-        fd.set(N('FontName'), N(name)); fd.set(N('Flags'), PDFNumber.of((fl & ~32) | 4)); fd.set(N('FontFile2'), ref);
-        descriptors.set(sig, { name, ref: ctx.register(fd), symbolic: true });
-      }
-      desc = descriptors.get(sig);
+    // PDF/A-1 (6.3.7) lets a non-symbolic TrueType font name only WinAnsi or MacRoman, with no Differences. A font
+    // whose codes mean other characters (a form's PDFDocEncoding, say) becomes a symbolic font instead: no
+    // Encoding, and a font program whose (3,0) cmap maps each code to its glyph.
+    const symbolic = differs && P.kind === 'A' && part === 1;
+    if (!descriptors.has(key)) {
+      const prog = symbolic ? pdfaTtfSubset(ttf, null, uni) : pdfaTtfSubset(ttf, PDFA_LATIN);
+      const program = ctx.register(ctx.flateStream(prog, { Length1: prog.length }));
+      const tag = Array.from({ length: 6 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
+      const k = 1000 / ttf.upem, flags = (symbolic ? 4 : 32) | (fam === 'tinos' ? 2 : 0) | (fam === 'cousine' ? 1 : 0) | (style & 2 ? 64 : 0) | (style & 1 ? 0x40000 : 0);
+      const name = `${tag}+${psName}`;
+      descriptors.set(key, { name, symbolic, ref: ctx.register(ctx.obj({ Type: 'FontDescriptor', FontName: name, Flags: flags, FontBBox: ttf.bbox.map((x) => Math.round(x * k)), ItalicAngle: ttf.italicAngle, Ascent: Math.round(ttf.ascent * k), Descent: Math.round(ttf.descent * k), CapHeight: Math.round(ttf.capHeight * k), XHeight: Math.round(ttf.xHeight * k), StemV: style & 1 ? 140 : 80, FontFile2: program })) });
+    }
+    const desc = descriptors.get(key);
+    if (symbolic) {
       f.delete(N('Encoding'));
     } else if (!named) {
       // Encoding: WinAnsi plus the codes that differ from it, named from the Adobe Glyph List.
@@ -23027,6 +23046,19 @@ async function pdfaConvert(bytes, opts = {}) {
     f.set(N('Widths'), ctx.obj(widths)); f.set(N('FontDescriptor'), desc.ref);
     if (!f.get(N('ToUnicode'))) f.set(N('ToUnicode'), ctx.register(ctx.flateStream(pdfaBytes(pdfaToUnicodeCMap(enc)))));
     fix(`Embedded ${psName.replace(/-Regular$/, '')} in place of ${was || 'a font that was not embedded'}`);
+  }
+  // Embedded programs shared by font dictionaries with different encodings: each encoding gets its own copy of the
+  // program and descriptor, so every font's widths can be checked against the program it reads.
+  for (const { program, key: ffKey, groups } of pdfaSharedPrograms(L, fonts)) {
+    for (const group of groups.slice(1)) {
+      const copy = ctx.register(program.clone(ctx)), fdCopies = new Map();
+      for (const [f] of group) {
+        const fd = f.lookup(N('FontDescriptor'));
+        if (!fdCopies.has(fd)) { const c = fd.clone(ctx); c.set(N(ffKey), copy); fdCopies.set(fd, ctx.register(c)); }
+        f.set(N('FontDescriptor'), fdCopies.get(fd));
+      }
+    }
+    fix('Gave each font that reads a shared font program in its own way a copy of it');
   }
   // PDF/X: the page's trimmed size is given (TrimBox), inside the bleed and the media box.
   if (isX) {
@@ -23155,6 +23187,14 @@ async function pdfaCheck(bytes, opts) {
       if (sub === 'Type0') { const ds = f.lookup(N('DescendantFonts')); const cid = ds instanceof PDFArray && ds.size() ? look(ds.get(0)) : null; fd = cid instanceof PDFDict ? cid.lookup(N('FontDescriptor')) : null; }
       const ok = fd instanceof PDFDict && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => fd.lookup(N(k)) instanceof PDFStream);
       if (!ok) { const name = (pdfaName(L, f.get(N('BaseFont'))) || w.key).replace(/^[A-Z]{6}\+/, ''); bad(`Font ${name} is not embedded${w.page ? ` on page ${w.page}` : ''}.`, { page: w.page || undefined, fix: pdfaSubstitute(L, f) ? 'auto' : 'manual' }); }
+    }
+  });
+  rule('font-sharing', () => {
+    const all = new Map(fonts), af = cat.lookup(N('AcroForm')), dr = af instanceof PDFDict ? af.lookup(N('DR')) : null, drf = dr instanceof PDFDict ? dr.lookup(N('Font')) : null;
+    if (drf instanceof PDFDict) for (const [k, v] of drf.entries()) { const f = look(v); if (f instanceof PDFDict && !all.has(f)) all.set(f, { page: 0, key: k.decodeText() }); }
+    for (const { groups } of pdfaSharedPrograms(L, all)) {
+      const [f, w] = groups[0][0], name = (pdfaName(L, f.get(N('BaseFont'))) || w.key).replace(/^[A-Z]{6}\+/, '');
+      bad(`Font ${name} shares one font program between ${groups.length} different encodings, so its widths can't all match.`, { page: w.page || undefined });
     }
   });
   rule('font-widths', () => {

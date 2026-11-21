@@ -216,6 +216,25 @@ export async function makeFixtures(A, outDir) {
     annot(d, p, tx); annot(d, p, cb);
     d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [tx, cb], DA: PDFString.of('/Helv 0 Tf 0 g'), DR: ctx.obj({ Font: ctx.obj({ Helv: helv, ZaDb: zadb }) }) }));
     await save(d, 'form.pdf');
+    // ---- the same form with page text in Helvetica too, in WinAnsiEncoding, and fields in Times-Roman and Courier
+    // (reportlab writes forms this way): one base font under two encodings, so the stand-in programs must not be shared
+    // (codes 128 and 140, Euro and OE in WinAnsi, are bullet and quotesinglbase in the fields' encoding).
+    const e = await newDoc('Form, mixed encodings'); const q = e.addPage([595, 842]); const c2 = e.context;
+    const enc = () => c2.obj({ Type: 'Encoding', BaseEncoding: 'WinAnsiEncoding', Differences: diffs.map((x) => (typeof x === 'number' ? PDFNumber.of(x) : N(x))) });
+    const pageHelv = c2.register(c2.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' }));
+    const fh = c2.register(c2.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Name: 'Helv', Encoding: enc() }));
+    const ft = c2.register(c2.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Times-Roman', Name: 'Time', Encoding: enc() }));
+    const fc = c2.register(c2.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Courier', Name: 'Cour', Encoding: enc() }));
+    q.node.set(N('Resources'), c2.obj({ Font: c2.obj({ F1: pageHelv }) }));
+    q.node.set(N('Contents'), c2.register(c2.flateStream(Buffer.from('BT /F1 14 Tf 50 790 Td (Formulaire: caf\\351, \\214uvre, \\200 12 \\227 \\223quoted\\224) Tj ET', 'latin1'))));
+    const ap2 = (ops, font) => c2.register(c2.flateStream(Buffer.from(ops, 'latin1'), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 300, 24], Resources: c2.obj({ Font: c2.obj(font) }) }));
+    const field = (name, key, font, value, ops, y) => c2.register(c2.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: PDFString.of(name), V: PDFHexString.fromText(value), DA: PDFString.of(`/${key} 12 Tf 0 g`), Rect: [50, y, 350, y + 24], F: 4, P: q.ref, AP: c2.obj({ N: ap2(`/Tx BMC q BT /${key} 12 Tf 0 g 2 7 Td (${ops}) Tj ET Q EMC`, { [key]: font }) }) }));
+    const w1 = field('nom', 'Helv', fh, 'Zoë • Ångström ‚50‘', 'Zo\\353 \\200 \\305ngstr\\366m \\221 50 \\217', 700);
+    const w2 = field('ville', 'Time', ft, 'Brühl — Œ', 'Br\\374hl \\204 \\226', 650);
+    const w3 = field('pays', 'Cour', fc, 'Côte … Ÿ', 'C\\364te \\203 \\230', 600);
+    for (const w of [w1, w2, w3]) annot(e, q, w);
+    e.catalog.set(N('AcroForm'), c2.obj({ Fields: [w1, w2, w3], DA: PDFString.of('/Helv 0 Tf 0 g'), DR: c2.obj({ Font: c2.obj({ Helv: fh, Time: ft, Cour: fc }) }) }));
+    await save(e, 'form-mixed.pdf');
   }
   // ---- Info /Trapped /False, as reportlab, Distiller and PDF/X tools write it: copies of the PDF/A inputs
   for (const n of ['a1b', 'a2b', 'a3b', 'a1bu', 'a2u', 'a3u', 'blank', 'annots', 'form']) {

@@ -185,12 +185,36 @@ for (const [id, a] of [['P3-05', '2u'], ['P3-06', '3u']]) {
 }
 // Not a matrix row: a form whose field appearances use Helvetica (not embedded) with a /Differences encoding. PDF/A-1
 // allows no Differences on a TrueType font, so the stand-in font is made symbolic there.
-const FORM = 'Form fields (Helvetica, not embedded, with /Differences) as PDF/A-1b, 2b, 3b';
-for (const [f, a] of [['form', '1b'], ['form', '2b'], ['form', '3b'], ['trap-form', '1b']]) {
+const FORM = 'Form fields (Helvetica, not embedded, with /Differences, also used in WinAnsi on the page) as every PDF/A';
+// form-mixed: Helvetica page text in WinAnsiEncoding and the same Helvetica in the fields' /Differences encoding (as
+// reportlab writes it): the stand-in program must not be shared between the two, or the widths are wrong (6.2.11.5).
+const formMixed = {};
+for (const [f, a] of [['form', '1b'], ['form', '2b'], ['form', '3b'], ['trap-form', '1b'], ...A.map(([a]) => ['form-mixed', a])]) {
   p = await app(); await openFile(p, fx[f]);
   const r = await exportVia(p, { a }, `P3-R1-${f}-${a}.pdf`);
   if (!r.file) { record('P3-R1', FORM, `${f} → PDF/A-${a}`, false, 'no file: ' + JSON.stringify(r.dialogs)); continue; }
+  if (f === 'form-mixed') formMixed[a] = r.file;
   want(r.file, a, 'P3-R1', `${f} → PDF/A-${a}`);
+}
+// A file that does share one embedded program between two encodings (the 2b copy above, with its WinAnsi font pointed
+// at the fields' font program): the in-app check must flag it, and saving it as PDF/A again must give each its own copy.
+if (formMixed['2b']) {
+  const d = await L.PDFDocument.load(fs.readFileSync(formMixed['2b']), { updateMetadata: false });
+  const tt = [...d.context.enumerateIndirectObjects()].map(([, o]) => o).filter((o) => o instanceof PDFDict && String(o.get(N('Subtype'))) === '/TrueType' && /Arimo-Regular/.test(String(o.get(N('BaseFont')))));
+  const win = tt.find((o) => o.get(N('Encoding')) instanceof PDFName), other = tt.find((o) => o.lookup(N('Encoding')) instanceof PDFDict);
+  if (!win || !other) record('P3-R1', FORM, 'shared font program: flagged by the in-app check, and fixed on export', false, `could not find the two Arimo fonts (${tt.length})`);
+  else {
+    win.set(N('FontDescriptor'), other.get(N('FontDescriptor'))); win.set(N('BaseFont'), other.get(N('BaseFont')));
+    const shared = path.join(out, 'P3-R1-shared-program.pdf'); fs.writeFileSync(shared, await d.save({ useObjectStreams: false }));
+    p = await app();
+    const ck = await p.evaluate(async (b) => (await window.__cowdreyPdf.pdfaCheck(new Uint8Array(b), { part: 2, conformance: 'B' })).map((x) => `${x.rule}: ${x.text}`), Array.from(fs.readFileSync(shared)));
+    const flagged = ck.find((x) => x.startsWith('font-sharing'));
+    record('P3-R1', FORM, 'a font program shared by two encodings is flagged by the in-app check', !!flagged, flagged || 'not flagged: ' + JSON.stringify(ck));
+    await openFile(p, shared);
+    const r = await exportVia(p, { a: '2b' }, 'P3-R1-shared-program-2b.pdf');
+    if (r.file) want(r.file, '2b', 'P3-R1', 'the shared-program file saved as PDF/A-2b again: each encoding gets its own copy');
+    else record('P3-R1', FORM, 'shared-program file → PDF/A-2b', false, 'no file: ' + JSON.stringify(r.dialogs));
+  }
 }
 // 10-13. Negatives: a clear refusal in the app, and no file
 const NEG = [
