@@ -2877,7 +2877,8 @@ async function imageMark(v, s) {
   if (s.mark) return s.mark;
   const data = await imagePng(v, s.im);
   if (!data) { toast('This picture can’t be moved, but it can be deleted or erased.'); return null; }
-  const m = { id: uid(), type: 'ie', n: s.im.n, raw: s.im.raw, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, mat: (s.im.mat || quadMat(s.im.quad)).slice() };
+  // `orig`: the pixels are still the PDF's own, so saving draws the original picture object again (no new copy).
+  const m = { id: uid(), type: 'ie', n: s.im.n, raw: s.im.raw, quad: s.im.quad, bg: sampleColors(v, s.im.quad).bg, data, mat: (s.im.mat || quadMat(s.im.quad)).slice(), orig: true };
   marksOf(v.entry).push(m); s.mark = m;
   return m;
 }
@@ -3525,6 +3526,13 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   // soft masks included, image masks not), counted the way pdf.js counts them. Marks from before that identity (no
   // raw) are found by where they are drawn.
   let rawK = -1;
+  // The picture object a found picture was drawn from, so a picture that only moves, turns or is cropped by hiding
+  // is drawn from that same object again (its bytes untouched: a JPEG stays the same JPEG).
+  const picRefs = ctx.picRefs || (ctx.picRefs = new Map());
+  const keepRef = (m, dict, name) => {
+    const raw = dict && dict.get(PDFName.of(name));
+    if (raw instanceof PDFRef) picRefs.set(m.id, raw); else if (raw && raw.dict) picRefs.set(m.id, out.context.register(raw));
+  };
   const picAt = (q) => {
     const k = ++rawK, b = quadBox(q), near = (m) => quadBox(m.quad).every((n, j) => Math.abs(n - b[j]) < .75);
     return pics.find((m) => !removed.has(m.id) && (m.raw != null ? m.raw === k && near(m) : near(m)));
@@ -3557,7 +3565,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       if (sub === '/Image') {
         if (im.inline ? im.mask : isMask(o)) return;
         const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
-        if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); }
+        if (m) { fcut.push([im.start, im.end, ' ']); ids.push(m.id); removed.add(m.id); if (!im.inline) keepRef(m, fxo, im.name); }
       } else if (sub === '/Form') { const h = formCut(fxo, im.name, im.ctm, depth + 1); if (h) { fcut.push([im.start, im.end, ` ${h.key} Do `]); ids.push(...h.ids); } }
     }, mul(fm, ctm), (g) => softMask(own.eg, g, depth + 1));
     if (!ids.length) return null;
@@ -3595,7 +3603,7 @@ async function saveContentEdits(L, out, p, marks, ctx) {
       if (sub === '/Form') { const h = formCut(xo, im.name, im.ctm, 0); if (h) cut.push([im.start, im.end, ` ${h.key} Do `]); return; }
       if (sub !== '/Image' || isMask(o)) return;
       const m = picAt([[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)));
-      if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); }
+      if (m) { cut.push([im.start, im.end, ' ']); removed.add(m.id); keepRef(m, xo, im.name); }
     }, undefined, (g) => pics.length && softMask(pageRes.eg, g, 1));
   } catch (e) { console.warn('content edit: reading the page failed, clipping instead', e); cut.length = 0; removed.clear(); anchor.clear(); moves.clear(); ops = null; }
   // Text that only moves along (after an edited run) keeps its own drawing: each of its show operators is moved
@@ -3656,8 +3664,10 @@ async function saveContentEdits(L, out, p, marks, ctx) {
   }
   for (const m of pics) {
     if (m.deleted || !m.data || !m.mat) continue;
-    let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); }
-    const key = node.newXObject('CPDFIm', im.ref);
+    // The original picture object when only its place changed; else a new one in the picture's own kind (FEATURE.picXObject).
+    let ref = FEATURE.picXObject ? await FEATURE.picXObject(L, out, m, ctx) : null;
+    if (!ref) { let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); } ref = im.ref; }
+    const key = node.newXObject('CPDFIm', ref);
     p.pushOperators(O('q'), O('cm', m.mat.map((n) => PDFNumber.of(+(+n).toFixed(4)))), O('Do', [key]), O('Q'));
   }
   for (const [id, list] of newOps) if (!placed.has(id) && !shifted.has(id)) p.pushOperators(...list);
@@ -7014,9 +7024,10 @@ addStyle(`
    Attachments panel in the sidebar, and page labels (iii, A-1…) in the page box and the thumbnails.
    Fit page, Actual size and the layouts themselves are in the core (fitScale, layoutPages, goPage).
 
-   docMarks(): { id, type: 'file', fid, name, mime, size, desc, at } — a file attached here, written into the PDF's
-   attached files when it is saved. Its bytes are kept on this device (IndexedDB 'cowdrey.pdf.files', by fid), not in
-   the marks, so undo and Recent stay small. */
+   docMarks(): { id, type: 'file', fid, name, mime, size, desc, rel, at } — a file attached here, written into the PDF's
+   attached files when it is saved; { type: 'attedit', key, name, desc, rel, removed } — a change to a file the PDF
+   came with (renamed, described, given an AFRelationship, removed). The bytes of files attached here are kept on this
+   device (IndexedDB 'cowdrey.pdf.files', by fid), not in the marks, so undo and Recent stay small. */
 
 /* ---- Hand tool: drag to move around the document; Space held down does the same in any tool ---- */
 TOOL_HINTS.hand = 'Drag to move around the page';
@@ -7193,15 +7204,16 @@ async function vwFileBytes(fid) {
 }
 const vwAdded = () => (doc ? docMarks().filter((m) => m.type === 'file') : []);
 const vwSize = (n) => (n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-// The files in the opened PDF: its attached files (the EmbeddedFiles name tree) and file attachment comments.
-let vwAttCache = null; // { doc, list: [{ name, desc, bytes, entry? }] }
+// The files in the opened PDF: its attached files (the EmbeddedFiles name tree; `key` is the tree's name for each)
+// and file attachment comments.
+let vwAttCache = null; // { doc, list: [{ key?, name, desc, bytes, entry? }] }
 async function vwFilesIn(d) {
   if (vwAttCache && vwAttCache.doc === d) return vwAttCache.list;
   const list = [], pd = pdfDocs.get(0);
   try {
     const att = await pd.getAttachments(); // a Map (pdf.js 6) or an object; the bytes are asked for one by one
     for (const [key, f] of att instanceof Map ? att : Object.entries(att || {})) {
-      list.push({ name: f.filename || key, desc: f.description || '', bytes: f.content || await pd.getAttachmentContent(key).catch(() => null) });
+      list.push({ key, name: f.filename || key, desc: f.description || '', bytes: f.content || await pd.getAttachmentContent(key).catch(() => null) });
     }
   } catch (e) { console.warn('attachments', e); }
   for (let i = 0; i < pd.numPages; i++) {
@@ -7218,34 +7230,86 @@ async function vwFilesIn(d) {
   vwAttCache = { doc: d, list };
   return list;
 }
+// Changes to the files the PDF came with: docMarks() { type: 'attedit', key, name?, desc?, rel?, removed? } (one per file).
+const VW_RELS = [['', 'Not set'], ['Source', 'Source'], ['Data', 'Data'], ['Alternative', 'Alternative'], ['Supplement', 'Supplement'], ['Unspecified', 'Unspecified']];
+const vwEdits = () => (doc ? docMarks().filter((m) => m.type === 'attedit') : []);
+const vwEditOf = (key) => vwEdits().find((m) => m.key === key);
+const vwRelLabel = (rel) => (rel ? `Relationship: ${rel}` : '');
+// What a file the PDF came with is called and says now (its edits applied), its relationship as stored in the PDF.
+let vwRelCache = null; // { doc, map: key -> AFRelationship }
+async function vwRelsIn(d) {
+  if (vwRelCache && vwRelCache.doc === d) return vwRelCache.map;
+  const map = new Map();
+  try {
+    const L = await loadPdfLib(), pdf = await picSrcDoc(0);
+    for (const it of vwTreeList(L, pdf.context, pdf.catalog)) { const s = pdf.context.lookup(it.raw), r = s instanceof L.PDFDict ? s.lookup(L.PDFName.of('AFRelationship')) : null; if (r) map.set(it.key, String(r).slice(1)); }
+  } catch (e) { console.warn(e); }
+  vwRelCache = { doc: d, map };
+  return map;
+}
+async function vwEditDlg(title, cur) {
+  const body = `<label class="field"><span>Name</span><input id="vwAttName" type="text" value="${esc(cur.name)}" autocomplete="off"></label>
+    <label class="field"><span>Description</span><input id="vwAttDesc" type="text" value="${esc(cur.desc || '')}" autocomplete="off"></label>
+    <label class="field"><span>Relationship to this PDF</span><select id="vwAttRel">${VW_RELS.map(([k, l]) => `<option value="${k}"${(cur.rel || '') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <p class="vw-note">The relationship says what the file is to the PDF (for e-invoices and PDF/A-3: Source for the file it was made from, Data for the invoice data). It is listed with the PDF's associated files.</p>`;
+  let got = null;
+  const a = await dialog(title, body, [{ label: 'Cancel' }, { label: 'Save', primary: true, value: 'ok' }], (dlg) => {
+    const read = () => { got = { name: $('#vwAttName', dlg).value.trim(), desc: $('#vwAttDesc', dlg).value.trim(), rel: $('#vwAttRel', dlg).value }; };
+    dlg.addEventListener('input', read); dlg.addEventListener('change', read); read();
+  });
+  if (a !== 'ok' || !got) return null;
+  if (!got.name) got.name = cur.name;
+  return got;
+}
 async function vwFilesPanel() {
   const panel = $('#sidePanel');
   if (!doc) { panel.innerHTML = '<p class="empty-note">Open a PDF to see its attached files.</p>'; return; }
   const d = doc;
   if (!vwAttCache || vwAttCache.doc !== d) panel.innerHTML = '<p class="empty-note">Looking for attached files…</p>';
-  const inPdf = await vwFilesIn(d);
+  const inPdf = await vwFilesIn(d), rels = await vwRelsIn(d);
   if (doc !== d || S.side !== 'files') return;
   const rows = [];
   inPdf.forEach((f, k) => {
     let where = '';
     if (f.entry) { const n = doc.pages.findIndex((e) => e.src === 0 && e.i === f.entry.i); if (n < 0) return; where = `On page ${vwLabel(n) || n + 1}`; }
-    rows.push({ key: 'p' + k, name: f.name, meta: [vwSize(f.bytes ? f.bytes.length : 0), where, f.desc].filter(Boolean).join(' · '), get: async () => f.bytes });
+    const ed = f.key != null ? vwEditOf(f.key) : null;
+    if (ed && ed.removed) return;
+    const name = (ed && ed.name) || f.name, desc = ed && ed.desc != null ? ed.desc : f.desc, rel = ed && ed.rel != null ? ed.rel : rels.get(f.key) || '';
+    rows.push({ key: 'p' + k, name, meta: [vwSize(f.bytes ? f.bytes.length : 0), where, desc, vwRelLabel(rel)].filter(Boolean).join(' · '), get: async () => f.bytes, orig: f.key != null ? { key: f.key, name, desc, rel } : null });
   });
-  for (const m of vwAdded()) rows.push({ key: 'a' + m.id, name: m.name, meta: `${vwSize(m.size)} · Added, kept when you save`, get: () => vwFileBytes(m.fid), mark: m });
+  for (const m of vwAdded()) rows.push({ key: 'a' + m.id, name: m.name, meta: [`${vwSize(m.size)} · Added, kept when you save`, m.desc, vwRelLabel(m.rel)].filter(Boolean).join(' · '), get: () => vwFileBytes(m.fid), mark: m });
+  // files attached to pages here (Attach file on the Comment tab)
+  doc.pages.forEach((e, n) => { for (const m of marksOf(e)) if (m.type === 'mdFile') rows.push({ key: 'c' + m.id, name: m.name, meta: [vwSize(m.size), `On page ${vwLabel(n) || n + 1}, added`, m.desc].filter(Boolean).join(' · '), get: () => vwFileBytes(m.fid), page: m }); });
   panel.innerHTML = `${rows.length ? `<ul class="vw-files" aria-label="Attachments">${rows.map((r) => `<li class="vw-file">${ic('paperclip')}<span class="vw-fname" title="${esc(r.name)}">${esc(r.name)}<span class="m">${esc(r.meta)}</span></span>`
     + `<button type="button" class="btn vw-fsave" data-save="${esc(r.key)}" aria-label="Save ${esc(r.name)}">Save</button>`
-    + (r.mark ? `<button type="button" class="icon-btn" data-remove="${esc(r.mark.id)}" title="Remove" aria-label="Remove ${esc(r.name)}">${ic('x')}</button>` : '') + '</li>').join('')}</ul>`
+    + (r.mark || r.orig ? `<button type="button" class="icon-btn" data-edit="${esc(r.key)}" title="Rename or describe" aria-label="Edit ${esc(r.name)}">${ic('pencil')}</button>` : '')
+    + (r.mark || r.orig ? `<button type="button" class="icon-btn" data-remove="${esc(r.key)}" title="Remove" aria-label="Remove ${esc(r.name)}">${ic('x')}</button>` : '') + '</li>').join('')}</ul>`
     : '<p class="empty-note">This PDF has no attached files.</p>'}
     <button type="button" class="btn vw-fadd" data-cmd="vw_attach">${ic('paperclip')}<span>Attach file…</span></button>`;
   icons();
+  const rowOf = (b, k) => rows.find((x) => x.key === b.dataset[k]);
   $$('[data-save]', panel).forEach((b) => { b.onclick = async () => {
-    const r = rows.find((x) => x.key === b.dataset.save), bytes = r && await r.get();
+    const r = rowOf(b, 'save'), bytes = r && await r.get();
     if (!bytes) { toast('That file is no longer on this device. Attach it again.'); return; }
-    await saveFile(bytes, r.name, (r.mark && r.mark.mime) || 'application/octet-stream');
+    await saveFile(bytes, r.name, ((r.mark || r.page) && (r.mark || r.page).mime) || 'application/octet-stream');
+  }; });
+  $$('[data-edit]', panel).forEach((b) => { b.onclick = async () => {
+    const r = rowOf(b, 'edit'); if (!r) return;
+    const cur = r.mark ? { name: r.mark.name, desc: r.mark.desc || '', rel: r.mark.rel || '' } : r.orig;
+    const got = await vwEditDlg(`Edit ${r.name}`, cur); if (!got) return;
+    const taken = new Set(rows.filter((x) => x !== r && !x.page && !(x.meta || '').startsWith('On page')).map((x) => x.name));
+    if (got.name !== cur.name && taken.has(got.name)) { toast(`There is already a file called ${got.name}.`); return; }
+    const before = snapshot();
+    if (r.mark) Object.assign(r.mark, got);
+    else { let ed = vwEditOf(r.orig.key); if (!ed) docMarks().push(ed = { id: uid(), type: 'attedit', key: r.orig.key }); Object.assign(ed, got); }
+    changed(before, 'Attachment'); renderSide();
   }; });
   $$('[data-remove]', panel).forEach((b) => { b.onclick = () => {
-    const list = docMarks(), k = list.findIndex((m) => m.id === b.dataset.remove); if (k < 0) return;
-    const before = snapshot(); list.splice(k, 1); changed(before, 'Remove attachment');
+    const r = rowOf(b, 'remove'); if (!r) return;
+    const before = snapshot(), list = docMarks();
+    if (r.mark) { const k = list.indexOf(r.mark); if (k < 0) return; list.splice(k, 1); }
+    else { let ed = vwEditOf(r.orig.key); if (!ed) list.push(ed = { id: uid(), type: 'attedit', key: r.orig.key }); ed.removed = true; }
+    changed(before, 'Remove attachment');
     renderSide();
   }; });
 }
@@ -7257,14 +7321,13 @@ vwFileInput.addEventListener('change', async () => {
 });
 async function vwAttach(files) {
   if (!has()) return;
-  const taken = new Set([...(await vwFilesIn(doc)).filter((f) => !f.entry).map((f) => f.name), ...vwAdded().map((m) => m.name)]);
+  const taken = new Set([...(await vwFilesIn(doc)).filter((f) => !f.entry && !(vwEditOf(f.key) || {}).removed).map((f) => (vwEditOf(f.key) || {}).name || f.name), ...vwAdded().map((m) => m.name)]);
   const before = snapshot(); let n = 0;
   for (const f of files) {
     if (f.size > 100 * 1024 * 1024) { toast(`${f.name} is too big to attach (over 100 MB).`); continue; }
     const bytes = new Uint8Array(await f.arrayBuffer()), fid = uid();
     // A name already used gets a number, so each file keeps its own entry in the PDF.
-    let name = f.name || 'Attachment', k = 2; const dot = name.lastIndexOf('.'), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
-    while (taken.has(name)) name = `${stem} (${k++})${ext}`;
+    const name = vwFreeName(f.name || 'Attachment', taken);
     taken.add(name);
     try { await vwDbDo('readwrite', (s) => s.put({ id: fid, doc: doc.id, bytes })); } catch (e) { console.warn('could not keep the file on this device', e); }
     vwBytes.set(fid, bytes);
@@ -7277,21 +7340,103 @@ async function vwAttach(files) {
   if (S.side !== 'files') setSide('files'); else renderSide();
   if (!isPhone() && !S.sidebar) toggleSidebar(true);
 }
+// "Name.txt", or "Name (2).txt" … when that is taken.
+function vwFreeName(name, taken) {
+  const dot = name.lastIndexOf('.'), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+  let out = name, k = 2; while (taken.has(out)) out = `${stem} (${k++})${ext}`;
+  return out;
+}
 TEST_HOOKS.attachFiles = (files) => vwAttach(files);
 cmd('vw_attach', { label: 'Attach file…', rlabel: 'Attach file', icon: 'paperclip', enabled: has, run: () => vwFileInput.click(), menu: ['vw_attach', 'vw_files'] }); // its arrow: the Attachments panel
 cmd('vw_files', { label: 'Attachments', icon: 'paperclip', enabled: has, pressed: () => S.side === 'files' && (isPhone() ? app.dataset.sidebar === 'open' : S.sidebar), run: () => { setSide('files'); if (isPhone() || !S.sidebar) toggleSidebar(true); } });
+const VW_AFR = new Set(['Source', 'Data', 'Alternative', 'Supplement', 'Unspecified']);
 FEATURE.saveDoc.push(async ({ out }) => {
   for (const m of vwAdded()) {
     const bytes = await vwFileBytes(m.fid);
     if (!bytes) { console.warn('attachment missing on this device', m.name); continue; }
-    await out.attach(bytes, m.name, { mimeType: m.mime, description: m.desc || undefined, creationDate: new Date(m.at), modificationDate: new Date(m.at) });
+    await out.attach(bytes, m.name, { mimeType: m.mime, description: m.desc || undefined, creationDate: new Date(m.at), modificationDate: new Date(m.at), ...(VW_AFR.has(m.rel) ? { afRelationship: m.rel } : {}) });
   }
 });
+// The attached files' name tree, flattened: [{ key, raw }] (raw: the file specification, usually a reference).
+function vwTreeList(L, c, catalog) {
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFString, PDFHexString } = L, N = (k) => PDFName.of(k), look = (o) => (o instanceof PDFRef ? c.lookup(o) : o), out = [];
+  const names = look(catalog.get(N('Names'))), tree = names instanceof PDFDict ? look(names.get(N('EmbeddedFiles'))) : null;
+  const walk = (node, seen) => {
+    if (!(node instanceof PDFDict) || seen.has(node)) return; seen.add(node);
+    const arr = look(node.get(N('Names')));
+    if (arr instanceof PDFArray) for (let k = 0; k + 1 < arr.size(); k += 2) { const key = look(arr.get(k)); if (key instanceof PDFString || key instanceof PDFHexString) out.push({ key: key.decodeText(), raw: arr.get(k + 1) }); }
+    const kids = look(node.get(N('Kids'))); if (kids instanceof PDFArray) for (const r of kids.asArray()) walk(look(r), seen);
+  };
+  walk(tree, new Set());
+  return out;
+}
+// The source the saved PDF is built on (as buildPdf chooses it), or -1 for a new PDF (pages extracted).
+function vwBaseOf(entries) {
+  if (entries !== doc.pages || !entries.length) return -1;
+  const s0 = entries[0].src, pd = pdfDocs.get(s0);
+  if (pd && entries.length === pd.numPages && entries.every((e, n) => e.src === s0 && e.i === n)) return s0;
+  const count = new Map(); for (const e of entries) count.set(e.src, (count.get(e.src) || 0) + 1);
+  return count.has(0) ? 0 : [...count].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+}
+// Files the PDF came with, as changed here (renamed, described, given a relationship, removed), and the files of every
+// other PDF combined into it (copied in, a name already used getting " (2)"). The relationship goes in the catalog's
+// associated files (/AF) too, as PDF/A-3 and e-invoices want.
+async function vwSaveTree({ L, out, entries }) {
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFString, PDFHexString, PDFObjectCopier } = L, N = (k) => PDFName.of(k), c = out.context;
+  const base = vwBaseOf(entries), edits = vwEdits();
+  const others = base < 0 ? [] : [...new Set(entries.map((e) => e.src))].filter((k) => k !== base);
+  if (!(edits.length && base === 0) && !others.length) return;
+  const look = (o) => (o instanceof PDFRef ? c.lookup(o) : o), cat = out.catalog;
+  const list = vwTreeList(L, c, cat), dropped = new Set();
+  const setName = (spec, name) => { spec.set(N('UF'), PDFHexString.fromText(name)); spec.set(N('F'), PDFString.of(name.replace(/[^\x20-\x7E]/g, '_'))); };
+  const applyEdit = (it, key) => {
+    const ed = edits.find((m) => m.key === key); if (!ed) return;
+    if (ed.removed) { it.gone = true; return; }
+    const spec = look(it.raw); if (!(spec instanceof PDFDict)) return;
+    if (ed.name && ed.name !== key) { setName(spec, ed.name); it.key = ed.name; }
+    if (ed.desc != null) { if (ed.desc) spec.set(N('Desc'), PDFHexString.fromText(ed.desc)); else spec.delete(N('Desc')); }
+    if (ed.rel != null) { if (ed.rel) spec.set(N('AFRelationship'), N(ed.rel)); else spec.delete(N('AFRelationship')); }
+  };
+  if (base === 0) for (const it of list) applyEdit(it, it.key);
+  const taken = new Set(list.filter((it) => !it.gone).map((it) => it.key));
+  for (const k of others) {
+    let d; try { d = await picSrcDoc(k); } catch { d = null; } if (!d) continue;
+    const src = vwTreeList(L, d.context, d.catalog); if (!src.length) continue;
+    const copier = PDFObjectCopier.for(d.context, c);
+    for (const s of src) {
+      const o = d.context.lookup(s.raw); if (!(o instanceof PDFDict)) continue;
+      const it = { key: s.key, raw: c.register(copier.copy(o)) };
+      if (k === 0) applyEdit(it, s.key);
+      if (it.gone) continue;
+      const free = vwFreeName(it.key, taken);
+      if (free !== it.key) { setName(look(it.raw), free); it.key = free; }
+      taken.add(it.key); list.push(it);
+    }
+  }
+  for (const it of list) if (it.gone && it.raw instanceof PDFRef) dropped.add(it.raw.tag);
+  const keep = list.filter((it) => !it.gone).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  let names = look(cat.get(N('Names')));
+  if (!(names instanceof PDFDict)) { names = c.obj({}); cat.set(N('Names'), names); }
+  const arr = c.obj([]); for (const it of keep) { arr.push(PDFHexString.fromText(it.key)); arr.push(it.raw); }
+  if (keep.length) names.set(N('EmbeddedFiles'), c.obj({ Names: arr })); else names.delete(N('EmbeddedFiles'));
+  // Associated files: those removed leave it; those with a relationship are in it.
+  let af = look(cat.get(N('AF')));
+  if (af instanceof PDFArray) for (let k = af.size() - 1; k >= 0; k--) { const r = af.get(k); if (r instanceof PDFRef && dropped.has(r.tag)) af.remove(k); }
+  for (const it of keep) {
+    const spec = look(it.raw); if (!(spec instanceof PDFDict) || !spec.get(N('AFRelationship'))) continue;
+    if (!(it.raw instanceof PDFRef)) { const r = c.register(spec); arr.set(keep.indexOf(it) * 2 + 1, r); it.raw = r; }
+    if (!(af instanceof PDFArray)) { af = c.obj([]); cat.set(N('AF'), af); }
+    if (!af.asArray().some((r) => r instanceof PDFRef && r.tag === it.raw.tag)) af.push(it.raw);
+  }
+  if (af instanceof PDFArray && !af.size()) cat.delete(N('AF'));
+}
+FEATURE.saveDoc.push(async (a) => { try { await vwSaveTree(a); } catch (e) { console.warn('attachments: the files of the PDF', e); } });
 // Files kept for documents no longer in Recent are let go, once, a little after start.
 setTimeout(async () => {
   try {
-    const docs = await listDocs(), keep = new Set(docs.flatMap((d) => ((d.marks && d.marks.__doc) || []).filter((m) => m.type === 'file').map((m) => m.fid)));
-    if (doc) for (const m of vwAdded()) keep.add(m.fid);
+    const fidsOf = (marks) => Object.values(marks || {}).flat().filter((m) => m && m.fid).map((m) => m.fid);
+    const docs = await listDocs(), keep = new Set(docs.flatMap((d) => fidsOf(d.marks)));
+    if (doc) for (const f of fidsOf(doc.marks)) keep.add(f);
     const ids = await vwDbDo('readonly', (s) => s.getAllKeys());
     const gone = (ids || []).filter((id) => !keep.has(id));
     if (gone.length) await vwDbDo('readwrite', (s) => { for (const id of gone) s.delete(id); });
@@ -7321,6 +7466,7 @@ addStyle(`
 .vw-file .btn.vw-fsave { flex: none; padding: 3px 10px; font-size: 12px; }
 .vw-file .icon-btn { flex: none; width: 26px; height: 26px; }
 .btn.vw-fadd { margin: 4px 8px; }
+.vw-note { font-size: 12px; color: var(--ink-2); }
 `);
 
 // ---- src/features/16-bookmarks.js
@@ -7708,7 +7854,13 @@ addStyle(`
    an `ie` mark) or one added with Picture… or a signature (`img` marks, selected with Select or Edit PDF).
    A picture is placed by a matrix (`mat`) that maps its unit square onto the page; turning and flipping change it.
    A crop is a rectangle [u0, v0, u1, v1] in that unit square (v up), drawn with an SVG clip path and saved as a clip
-   before the picture is painted. An added picture becomes a `pic` mark (matrix, crop) the first time it is changed. */
+   before the picture is painted (or, with "Keep the full picture" off, the cut-off pixels are removed and the picture
+   is made again from what is left). An added picture becomes a `pic` mark (matrix, crop) the first time it is changed.
+   Saving: a picture from the PDF whose pixels are its own (`orig`) is drawn from its original picture object, with a new
+   matrix only, so moving, turning or flipping it never makes a copy (a JPEG keeps its bytes, CMYK and ICC colours stay).
+   A picture whose pixels changed (cut, enhanced, replaced) is written once as a new object: JPEG when it was one
+   (`codec: 'jpeg'`, or a JPEG data URL), else Flate, grey when every pixel is. Then picture objects nothing on a page
+   draws any more are taken out of its resources, so deleted and replaced pictures leave the file. */
 const PIC_TYPES = new Set(['img', 'pic']);
 let picCrop = null; // { v, id, mat, rect, drag? } while a crop is being chosen
 
@@ -7745,8 +7897,8 @@ function picToPic(m) {
   return m;
 }
 // Makes a change to the selected picture, with undo.
-async function picEdit(fn) {
-  const sel = picSel(); if (!sel) return false;
+async function picEdit(fn, chosen) {
+  const sel = chosen || picSel(); if (!sel) return false;
   const before = snapshot();
   let m;
   if (sel.kind === 'ie') { m = await imageMark(sel.v, sel.s); if (!m) { drawMarks(sel.v); return false; } m.deleted = false; }
@@ -7875,15 +8027,17 @@ addStyle(`
 .pic-bar .pic-sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
 .pic-bar .btn { height: 30px; padding: 0 12px; }
 .pic-bar .pic-hint { font-size: 12px; color: var(--ink-2); padding: 0 6px; }
+.pic-bar .pic-keep { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); padding: 0 8px 0 2px; cursor: pointer; }
+.pic-bar .pic-keep input { margin: 0; accent-color: var(--accent); }
 .marks .pic-resize { pointer-events: auto; cursor: nwse-resize; }
 .pic-crop { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .pic-crop .pic-shade { fill: rgba(0,0,0,.5); fill-rule: evenodd; pointer-events: none; }
 .pic-crop .pic-frame { fill: transparent; stroke: #fff; stroke-width: 1.5; cursor: move; }
 .pic-crop .pic-frame-2 { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
 .pic-crop .pic-handle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
-@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint { display: none; } }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .pic-bar { gap: 1px; padding: 3px; } .pic-bar .icon-btn { width: 36px; height: 36px; } .pic-bar .pic-sep, .pic-bar .pic-hint, .pic-bar .pic-wide { display: none; } .pic-bar .pic-keep span { font-size: 11px; white-space: normal; max-width: 110px; } }
 `);
-const PIC_TOOLS = [['picRotL', 'rotate-ccw'], ['picRotR', 'rotate-cw'], ['picFlipH', 'flip-horizontal-2'], ['picFlipV', 'flip-vertical-2'], ['picCrop', 'crop'], '-', ['picReplace', 'replace'], ['picExtract', 'image-down'], '-', ['picDelete', 'trash-2']];
+const PIC_TOOLS = [['picRotL', 'rotate-ccw'], ['picRotR', 'rotate-cw'], ['picFlipH', 'flip-horizontal-2'], ['picFlipV', 'flip-vertical-2'], ['picCrop', 'crop'], ['imgEnhance', 'sliders-horizontal', 'pic-wide'], '-', ['picReplace', 'replace'], ['picExtract', 'image-down'], '-', ['picDelete', 'trash-2']];
 function picBar(v, sel) {
   let bar = v.el.querySelector(':scope > .pic-bar');
   if (!sel || (typeof lineEditor !== 'undefined' && lineEditor)) { if (bar) bar.remove(); return; }
@@ -7893,8 +8047,9 @@ function picBar(v, sel) {
     bar = document.createElement('div'); bar.className = 'pic-bar'; bar.dataset.mode = mode;
     bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Picture');
     bar.innerHTML = mode === 'crop'
-      ? `<span class="pic-hint">Drag the corners to crop</span><button type="button" class="btn" data-cmd="picCropCancel">Cancel</button><button type="button" class="btn primary" data-cmd="picCropApply">${ic('check')}<span>Apply</span></button>`
-      : PIC_TOOLS.map((t) => t === '-' ? '<span class="pic-sep"></span>' : `<button type="button" class="icon-btn" data-cmd="${t[0]}" title="${esc(C[t[0]].label)}" aria-label="${esc(C[t[0]].label)}">${ic(t[1])}</button>`).join('');
+      ? `<span class="pic-hint">Drag the corners to crop</span><label class="pic-keep" title="Off: the cut-off part is removed from the file"><input type="checkbox" id="picCropKeep"${picKeepFull() ? ' checked' : ''}><span>Keep the full picture (crop by hiding)</span></label><button type="button" class="btn" data-cmd="picCropCancel">Cancel</button><button type="button" class="btn primary" data-cmd="picCropApply">${ic('check')}<span>Apply</span></button>`
+      : PIC_TOOLS.filter((t) => t === '-' || C[t[0]]).map((t) => t === '-' ? '<span class="pic-sep"></span>' : `<button type="button" class="icon-btn${t[2] ? ' ' + t[2] : ''}" data-cmd="${t[0]}" title="${esc(C[t[0]].label)}" aria-label="${esc(C[t[0]].label)}">${ic(t[1])}</button>`).join('');
+    const keep = bar.querySelector('#picCropKeep'); if (keep) keep.onchange = () => { S.picCropKeep = keep.checked; saveSettings(); };
     // Keep the page from seeing the press (it would start a drag or clear the selection).
     bar.addEventListener('pointerdown', (e) => e.stopPropagation());
     v.el.appendChild(bar); icons();
@@ -7921,7 +8076,49 @@ function picCropEnd(apply) {
   const ov = c.v.el.querySelector(':scope > .pic-crop'); if (ov) ov.remove();
   if (!apply) { drawMarks(c.v); return; }
   const [u0, v0, u1, v1] = c.rect, full = u0 < .002 && v0 < .002 && u1 > .998 && v1 > .998;
+  if (!full && !picKeepFull()) { picCutApply(c.rect); return; }
   picEdit((m) => { if (full) delete m.crop; else m.crop = c.rect.map((n) => +n.toFixed(5)); }).then((done) => { if (done) toast(full ? 'Crop removed' : 'Picture cropped'); });
+}
+// "Keep the full picture (crop by hiding)": on unless turned off (then the cut-off pixels leave the file).
+const picKeepFull = () => S.picCropKeep !== false;
+// A real crop: the picture is made again from the part kept, in its own kind (JPEG stays JPEG), and placed where that
+// part was. Its transparency (soft mask) is cut the same way.
+async function picCutApply(rect) {
+  const sel = picSel(); if (!sel) return;
+  const src = await picDataOf(sel); if (!src) { toast('This picture can’t be cropped, but it can be deleted or erased.'); return; }
+  const codec = await picCodecOf(sel);
+  let cut; try { cut = await picCutPixels(src, rect, codec); } catch (e) { console.warn(e); toast('This picture can’t be cropped.'); return; }
+  const done = await picEdit((m) => {
+    const [r0, r1, r2, r3] = cut.r;
+    m.mat = mul([r2 - r0, 0, 0, r3 - r1, r0, r1], m.mat).map((n) => Math.abs(n) < 1e-9 ? 0 : +n.toFixed(6));
+    m.data = cut.data; m.orig = false; delete m.crop;
+    if (cut.codec) m.codec = cut.codec; else delete m.codec;
+  });
+  if (done) toast('Picture cropped. The cut-off part is removed.');
+}
+async function picCutPixels(data, rect, codec) {
+  const img = new Image(); img.src = data; await img.decode();
+  const W = img.naturalWidth, H = img.naturalHeight, [u0, v0, u1, v1] = rect;
+  const sx = Math.max(0, Math.min(W - 1, Math.round(u0 * W))), sy = Math.max(0, Math.min(H - 1, Math.round((1 - v1) * H)));
+  const sw = Math.max(1, Math.min(W - sx, Math.round((u1 - u0) * W))), sh = Math.max(1, Math.min(H - sy, Math.round((v1 - v0) * H)));
+  const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  const opaque = picOpaque(g.getImageData(0, 0, sw, sh).data);
+  // the part of the unit square kept, to whole pixels
+  const r = [sx / W, 1 - (sy + sh) / H, (sx + sw) / W, 1 - sy / H];
+  if (codec === 'jpeg' && opaque) return { data: c.toDataURL('image/jpeg', 0.92), r };
+  return { data: c.toDataURL('image/png'), r, codec: codec === 'jpeg' ? 'jpeg' : undefined };
+}
+function picOpaque(px) { for (let i = 3; i < px.length; i += 4) if (px[i] !== 255) return false; return true; }
+// The selected picture's pixels (a data URL).
+async function picDataOf(sel) { return sel.kind === 'ie' ? (sel.s.mark && sel.s.mark.data) || await imagePng(sel.v, sel.s.im) : sel.m.data; }
+// How a picture is kept: 'jpeg' or 'png'.
+async function picCodecOf(sel) {
+  const m = sel.kind === 'ie' ? sel.s.mark : sel.m;
+  if (m && /^data:image\/jpeg/.test(m.data || '')) return 'jpeg';
+  if (m && m.codec) return m.codec;
+  if (sel.kind === 'ie' && (!m || m.orig)) { const info = await picInfo(sel.v.entry, sel.s.im).catch(() => null); return info && info.jpeg ? 'jpeg' : 'png'; }
+  return 'png';
 }
 function picCropDraw() {
   const c = picCrop, v = c.v;
@@ -7985,6 +8182,8 @@ document.body.appendChild(picInput);
 async function picLoad(file) {
   const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
   const img = new Image(); img.src = data; await img.decode();
+  // A JPEG is kept as it is (saved with its own bytes); other kinds become PNG.
+  if (/^data:image\/jpeg/.test(data) && [1, 3].includes(picJpegComps(picB64Bytes(data)))) return { data, w: img.naturalWidth, h: img.naturalHeight };
   const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0);
   return { data: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight };
 }
@@ -8003,7 +8202,7 @@ picInput.addEventListener('change', async () => {
   const f = picInput.files[0]; picInput.value = '';
   if (!f) return;
   let pic; try { pic = await picLoad(f); } catch { toast('That file isn’t a picture Cowdrey.PDF can read.'); return; }
-  const done = await picEdit((m) => { m.mat = picFit(m.mat, m.crop, pic.w, pic.h); m.data = pic.data; delete m.crop; });
+  const done = await picEdit((m) => { m.mat = picFit(m.mat, m.crop, pic.w, pic.h); m.data = pic.data; m.orig = false; delete m.codec; delete m.crop; });
   if (done) toast('Picture replaced');
 });
 
@@ -8035,8 +8234,7 @@ function picDelete() {
 async function picPaint(L, out, p, m, ctx) {
   if (!m.data || !m.mat) return;
   const { PDFOperator, PDFNumber } = L, O = (n, a = []) => PDFOperator.of(n, a), N = (x) => PDFNumber.of(+(+x).toFixed(4));
-  let im = ctx.images.get(m.data); if (!im) { im = await out.embedPng(m.data); ctx.images.set(m.data, im); }
-  const key = p.node.newXObject('CPDFIm', im.ref), ops = [O('q')];
+  const key = p.node.newXObject('CPDFIm', await picXObject(L, out, m, ctx)), ops = [O('q')];
   if (m.crop) { const q = picQuad(m.mat, m.crop); ops.push(O('m', q[0].map(N)), O('l', q[1].map(N)), O('l', q[2].map(N)), O('l', q[3].map(N)), O('h'), O('W'), O('n')); }
   ops.push(O('cm', m.mat.map(N)), O('Do', [key]), O('Q'));
   p.pushOperators(...ops);
@@ -8058,6 +8256,206 @@ for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () =>
 const picStartImageDragCore = startImageDrag;
 startImageDrag = function (e, v, s, mode) { if (!picPressed) { drawMarks(v); return; } return picStartImageDragCore(e, v, s, mode); };
 
+/* What a picture in the PDF is made of: read with pdf-lib from the file it came from (its kind, colours, bytes). */
+const picSrcDocs = new WeakMap(); // source bytes -> its pdf-lib document
+async function picSrcDoc(src) {
+  const b = doc && doc.sources[src]; if (!b) return null;
+  let d = picSrcDocs.get(b);
+  if (!d) { const L = await loadPdfLib(); d = L.PDFDocument.load(b, b.password ? { password: b.password, updateMetadata: false } : { ignoreEncryption: true, updateMetadata: false }); picSrcDocs.set(b, d); }
+  return d;
+}
+function picStreamBytes(L, st) {
+  if (st instanceof L.PDFRawStream) return L.decodePDFRawStream(st).decode();
+  return st.getUnencodedContents ? st.getUnencodedContents() : st.getContents();
+}
+const picLatin = (b) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return s; };
+function picPageText(L, ctx, node) {
+  const raw = node.get(L.PDFName.of('Contents')), r = raw && ctx.lookup(raw);
+  const list = r instanceof L.PDFArray ? r.asArray() : raw ? [raw] : [];
+  return list.map((x) => { const st = ctx.lookup(x); return st && st.dict ? picLatin(picStreamBytes(L, st)) : ''; }).join('\n');
+}
+// Every picture a page draws (forms followed), with where it goes: [{ quad, st, ref, name }].
+function picDraws(L, d, node) {
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFNumber } = L, N = (k) => PDFName.of(k), c = d.context, out = [];
+  const walk = (src, res, ctm, depth) => {
+    const R = res instanceof PDFRef ? c.lookup(res) : res, xo = R instanceof PDFDict ? R.lookup(N('XObject')) : null;
+    walkContent(src, () => [], null, (im) => {
+      if (im.inline || !(xo instanceof PDFDict)) return;
+      const raw = xo.get(N(im.name)), st = raw && c.lookup(raw);
+      if (!st || !st.dict) return;
+      const sub = String(st.dict.lookup(N('Subtype')));
+      if (sub === '/Image') { if (String(st.dict.lookup(N('ImageMask'))) !== 'true') out.push({ quad: [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => apply(im.ctm, x, y)), st, ref: raw instanceof PDFRef ? raw : null, name: im.name }); }
+      else if (sub === '/Form' && depth < 6) {
+        const M = st.dict.lookup(N('Matrix')), fm = M instanceof PDFArray && M.size() === 6 ? M.asArray().map((x) => { const n = c.lookup(x); return n instanceof PDFNumber ? n.asNumber() : 0; }) : [1, 0, 0, 1, 0, 0];
+        let t = ''; try { t = picLatin(picStreamBytes(L, st)); } catch { return; }
+        walk(t, st.dict.lookup(N('Resources')) || R, mul(fm, im.ctm), depth + 1);
+      }
+    }, ctm);
+  };
+  let src = ''; try { src = picPageText(L, c, node); } catch { return out; }
+  walk(src, node.Resources(), [1, 0, 0, 1, 0, 0], 0);
+  return out;
+}
+// The kind of a picture object: { jpeg, cmyk, cs, bpc, w, h, smask, bytes (a JPEG's own), ref }.
+function picKind(L, st, ref) {
+  const { PDFName, PDFArray, PDFNumber } = L, N = (k) => PDFName.of(k), D = st.dict;
+  const f = D.lookup(N('Filter')), filters = f instanceof PDFArray ? f.asArray().map(String) : f ? [String(f)] : [];
+  const csv = D.lookup(N('ColorSpace'));
+  const cs = csv instanceof PDFName ? String(csv).slice(1) : csv instanceof PDFArray ? String(csv.lookup(0)).slice(1) : '';
+  let comps = 0;
+  if (cs === 'ICCBased') { const icc = csv.lookup(1), n = icc && icc.dict && icc.dict.lookup(N('N')); comps = n instanceof PDFNumber ? n.asNumber() : 0; }
+  const jpeg = filters.length === 1 && filters[0] === '/DCTDecode', bytes = jpeg ? st.getContents() : null;
+  if (jpeg && !cs) comps = picJpegComps(bytes);
+  const num = (k) => { const n = D.lookup(N(k)); return n instanceof PDFNumber ? n.asNumber() : 0; };
+  return { jpeg, cs, cmyk: cs === 'DeviceCMYK' || comps === 4, bpc: num('BitsPerComponent'), w: num('Width'), h: num('Height'), smask: !!D.get(N('SMask')), bytes, ref };
+}
+// The picture object behind a picture pdf.js drew on the page (`im` from contentMap): found by where it is drawn.
+async function picInfo(entry, im) {
+  const L = await loadPdfLib(), d = await picSrcDoc(entry.src); if (!d) return null;
+  const b = quadBox(im.quad), draws = picDraws(L, d, d.getPage(entry.i).node);
+  const dr = draws.find((x) => quadBox(x.quad).every((n, k) => Math.abs(n - b[k]) < 1));
+  return dr ? picKind(L, dr.st, dr.ref) : null;
+}
+// The number of colour components in a JPEG (from its frame header), or 0.
+function picJpegComps(b) {
+  for (let i = 2; i + 9 < b.length;) {
+    if (b[i] !== 0xFF) { i++; continue; }
+    const mk = b[i + 1];
+    if (mk === 0xFF) { i++; continue; }
+    if (mk === 0xD8 || mk === 0x01 || (mk >= 0xD0 && mk <= 0xD7)) { i += 2; continue; }
+    if (mk >= 0xC0 && mk <= 0xCF && mk !== 0xC4 && mk !== 0xC8 && mk !== 0xCC) return b[i + 9];
+    i += 2 + ((b[i + 2] << 8) | b[i + 3]);
+  }
+  return 0;
+}
+
+/* Saving: the picture object a picture is drawn from. */
+async function picXObject(L, out, m, ctx) {
+  if (m.orig && ctx.picRefs && ctx.picRefs.get(m.id)) return ctx.picRefs.get(m.id);
+  if (!m.data) return null;
+  const cache = ctx.picX || (ctx.picX = new Map()), key = (m.codec || '') + '|' + m.data;
+  if (!cache.has(key)) cache.set(key, picWrite(L, out, m.data, m.codec));
+  return cache.get(key);
+}
+FEATURE.picXObject = picXObject;
+// A new picture object from a data URL: a JPEG with its own bytes; else Flate (grey when every pixel is), or JPEG at
+// 92% when `codec` is 'jpeg'; transparency as a soft mask.
+async function picWrite(L, out, data, codec) {
+  const c = out.context, img = new Image(); img.src = data; await img.decode();
+  const W = img.naturalWidth, H = img.naturalHeight, head = { Type: 'XObject', Subtype: 'Image', Width: W, Height: H, BitsPerComponent: 8 };
+  if (/^data:image\/jpeg/.test(data)) {
+    const bytes = picB64Bytes(data), comps = picJpegComps(bytes);
+    if (comps === 1 || comps === 3) return c.register(c.stream(bytes, { ...head, ColorSpace: comps === 1 ? 'DeviceGray' : 'DeviceRGB', Filter: 'DCTDecode' }));
+  }
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+  const px = g.getImageData(0, 0, W, H).data, n = W * H;
+  let opaque = true, gray = true;
+  for (let i = 0; i < px.length; i += 4) { if (px[i + 3] !== 255) opaque = false; if (px[i] !== px[i + 1] || px[i] !== px[i + 2]) gray = false; }
+  let smask = null;
+  if (!opaque) { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = px[i * 4 + 3]; smask = c.register(c.flateStream(a, { ...head, ColorSpace: 'DeviceGray' })); }
+  const dict = { ...head, ...(smask ? { SMask: smask } : {}) };
+  if (codec === 'jpeg') {
+    const w = document.createElement('canvas'); w.width = W; w.height = H;
+    const wg = w.getContext('2d'); wg.fillStyle = '#FFFFFF'; wg.fillRect(0, 0, W, H); wg.drawImage(cv, 0, 0);
+    const blob = await new Promise((res) => w.toBlob(res, 'image/jpeg', 0.92));
+    return c.register(c.stream(new Uint8Array(await blob.arrayBuffer()), { ...dict, ColorSpace: 'DeviceRGB', Filter: 'DCTDecode' }));
+  }
+  const k = gray ? 1 : 3, b = new Uint8Array(n * k);
+  if (gray) for (let i = 0; i < n; i++) b[i] = px[i * 4];
+  else for (let i = 0; i < n; i++) { b[i * 3] = px[i * 4]; b[i * 3 + 1] = px[i * 4 + 1]; b[i * 3 + 2] = px[i * 4 + 2]; }
+  return c.register(c.flateStream(b, { ...dict, ColorSpace: gray ? 'DeviceGray' : 'DeviceRGB' }));
+}
+
+/* Saving: picture and form objects nothing on a page draws any more are taken out of its resources (and so out of the
+   file, which keeps only what something refers to). A page's resources may be shared with other pages, so the page
+   gets its own copy of them first. A form's resources are used by that form's content alone, so the form gets a
+   trimmed copy of its own (whoever draws the form sees the same content). */
+function picDropUnused(L, out, pages) {
+  const { PDFName, PDFDict, PDFRef } = L, N = (k) => PDFName.of(k), c = out.context;
+  const look = (o) => (o instanceof PDFRef ? c.lookup(o) : o);
+  // Every name a content stream spells out (whatever operator it is for: a name anywhere keeps its entry).
+  const namesCache = new Map();
+  const namesIn = (src) => { let s = namesCache.get(src); if (!s) { s = new Set(); for (const m of src.matchAll(/\/([^\s/[\]<>(){}%]+)/g)) s.add(m[1]); namesCache.set(src, s); } return s; };
+  const uses = (src, key) => {
+    const a = key.asString().slice(1); let b = a; try { b = key.decodeText(); } catch {}
+    const s = namesIn(src); return s.has(a) || s.has(b);
+  };
+  const text = (st) => picLatin(picStreamBytes(L, st));
+  const isForm = (st) => st && st.dict && String(st.dict.lookup(N('Subtype'))) === '/Form';
+  // A Type 3 font without resources of its own draws with the page's: such resources are left alone.
+  const type3 = (R) => { const F = look(R.get(N('Font'))); return F instanceof PDFDict && F.entries().some(([, f]) => { const d = look(f); return d instanceof PDFDict && String(d.lookup(N('Subtype'))) === '/Type3' && !d.get(N('Resources')); }); };
+  const seenForms = new Set();
+  let dropped = 0;
+  // Trims the XObjects of `R` (the resources `src` is drawn with); `own` puts the trimmed copy in place.
+  const trim = (R, src, own, depth) => {
+    if (!(R instanceof PDFDict) || depth > 6) return;
+    const xo = look(R.get(N('XObject')));
+    if (!(xo instanceof PDFDict) || type3(R)) return;
+    // Forms without resources of their own draw with these: what they draw counts too (until nothing new is added).
+    let all = src; const added = new Set();
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const [k, v] of xo.entries()) {
+        const st = look(v), id = k.asString();
+        if (added.has(id) || !isForm(st) || st.dict.get(N('Resources')) || !uses(all, k)) continue;
+        try { all += '\n' + text(st); } catch { return; }
+        added.add(id); grew = true;
+      }
+    }
+    const gone = xo.entries().filter(([k]) => !uses(all, k)).map(([k]) => k);
+    // The forms still drawn have their own resources trimmed in turn.
+    for (const [k, v] of xo.entries()) {
+      if (gone.includes(k)) continue;
+      const st = look(v); if (!isForm(st)) continue;
+      const tag = v instanceof PDFRef ? v.tag : null; if (tag && seenForms.has(tag)) continue; if (tag) seenForms.add(tag);
+      const FR = look(st.dict.get(N('Resources'))); if (!(FR instanceof PDFDict)) continue;
+      let fs; try { fs = text(st); } catch { continue; }
+      trim(FR, fs, (copy) => st.dict.set(N('Resources'), copy), depth + 1);
+    }
+    if (!gone.length) return;
+    const R2 = R.clone(c), xo2 = xo.clone(c);
+    for (const k of gone) xo2.delete(k);
+    R2.set(N('XObject'), xo2); own(R2); dropped += gone.length;
+  };
+  for (const p of pages) {
+    let src; try { src = picPageText(L, c, p.node); } catch { continue; }
+    trim(p.node.Resources(), src, (copy) => p.node.set(N('Resources'), copy), 0);
+  }
+  return dropped;
+}
+FEATURE.saveDoc.push(async ({ L, out, pages }) => { try { picDropUnused(L, out, pages); } catch (e) { console.warn('pictures: unused objects', e); } });
+
+/* Export all pictures: a .zip with each picture once (a JPEG with its own bytes, others as PNG). */
+async function picExportAll() {
+  if (!has()) return;
+  if (typeof crdZip !== 'function') { toast('Exporting pictures isn’t available here.'); return; }
+  const L = await loadPdfLib(), files = [], seen = new Set(), extOf = (u) => /^data:image\/jpeg/.test(u) ? 'jpg' : 'png';
+  for (let n = 0; n < doc.pages.length; n++) {
+    const e = doc.pages[n], pd = pdfDocs.get(e.src); if (!pd) continue;
+    let page, cm, draws = [];
+    try { page = await pd.getPage(e.i + 1); cm = await contentMap(page); } catch { continue; }
+    try { const d = await picSrcDoc(e.src); draws = picDraws(L, d, d.getPage(e.i).node); } catch (er) { console.warn(er); }
+    const marks = marksOf(e);
+    for (const im of cm.images) {
+      const mk = marks.find((m) => m.type === 'ie' && (m.raw != null ? m.raw === im.raw : m.n === im.n));
+      if (mk && mk.deleted) continue;
+      if (mk && !mk.orig && mk.data) { files.push({ data: picB64Bytes(mk.data), ext: extOf(mk.data), n }); continue; }
+      const b = quadBox(im.quad), dr = draws.find((x) => quadBox(x.quad).every((q, k) => Math.abs(q - b[k]) < 1));
+      const id = dr && dr.ref ? `${e.src}:${dr.ref.tag}` : null;
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      const kind = dr && picKind(L, dr.st, dr.ref);
+      if (kind && kind.jpeg && !kind.cmyk) { files.push({ data: kind.bytes, ext: 'jpg', n }); continue; }
+      const png = await imagePng({ page }, im); if (png) files.push({ data: picB64Bytes(png), ext: 'png', n });
+    }
+    for (const m of marks) if (PIC_TYPES.has(m.type) && m.data) files.push({ data: picB64Bytes(m.data), ext: extOf(m.data), n });
+  }
+  if (!files.length) { toast('This PDF has no pictures.'); return; }
+  const zip = crdZip(files.map((f, k) => ({ name: `Picture ${k + 1} (page ${f.n + 1}).${f.ext}`, data: f.data })));
+  if (await saveFile(zip, `${String(doc.name || 'Document').replace(/\.pdf$/i, '')} pictures.zip`, 'application/zip') === true) toast(`${files.length} picture${files.length === 1 ? '' : 's'} saved`);
+}
+
 /* Commands */
 const picOn = () => !!picSel() && !picCrop;
 cmd('picRotL', { contextual: true, label: 'Rotate left', icon: 'rotate-ccw', enabled: picOn, run: () => picEdit(picRotate(-1)) });
@@ -8070,7 +8468,10 @@ cmd('picCropCancel', { label: 'Cancel crop', icon: 'x', enabled: () => !!picCrop
 cmd('picReplace', { contextual: true, label: 'Replace…', icon: 'replace', enabled: picOn, run: () => picInput.click() });
 cmd('picExtract', { contextual: true, rlabel: 'Save as PNG', label: 'Save picture as PNG…', icon: 'image-down', enabled: picOn, run: picExtract });
 cmd('picDelete', { label: 'Delete picture', icon: 'trash-2', enabled: picOn, run: picDelete });
+cmd('picExportAll', { rlabel: 'All pictures', label: 'Export all pictures…', icon: 'images', enabled: has, run: picExportAll });
 ribbonAdd('edit', 'Picture', ['picRotL', 'picRotR', 'picFlipH', 'picFlipV', 'picCrop', 'picReplace', 'picExtract']);
+ribbonAdd('export', 'Export', ['picExportAll']);
+menuAdd('File', ['picExportAll']);
 
 // For tests: each picture painted on a page, with its matrix and the box of the clip in force when it is painted.
 TEST_HOOKS.picOps = async (n) => {
@@ -8094,7 +8495,751 @@ TEST_HOOKS.picOps = async (n) => {
   }
   return out;
 };
+TEST_HOOKS.picInfo = async (n) => { const v = views[n], cm = await contentMap(v.page); return Promise.all(cm.images.map(async (im) => { const k = await picInfo(v.entry, im); return k && { jpeg: k.jpeg, cs: k.cs, cmyk: k.cmyk, w: k.w, h: k.h, smask: k.smask }; })); };
+TEST_HOOKS.picExportAll = picExportAll;
 TEST_HOOKS.picSel = () => { const s = picSel(); return s && { kind: s.kind, mat: picMatOf(s), crop: picCropOf(s), cropping: !!picCrop }; };
+
+// ---- src/features/22-image-enhance.js
+/* ---------------- enhance a picture ----------------
+   Brightness, contrast, auto levels, saturation, greyscale, black and white (a threshold), sharpen (unsharp mask),
+   straighten (an angle, or Auto), remove specks (a median filter) and resample to a resolution, for the picture
+   selected (one in the PDF, picked with Edit PDF, or one added here). A panel beside the page holds the settings; the
+   result shows live on a canvas over the picture. Apply makes one new picture (the original leaves the saved file) and
+   can be undone. Pictures in CMYK become RGB once changed: the panel says so. */
+const IE_DEF = { brightness: 0, contrast: 0, saturation: 0, sharpen: 0, angle: 0, level: false, gray: false, bw: false, threshold: 128, speck: false, resample: false, dpi: 150 };
+let ieNow = null; // { sel, v, id, src: canvas (full size), small: canvas (preview size), o, view: canvas, panel, codec, cmyk, raf }
+
+/* ---- the pixel work (pure: a canvas in, a new canvas out) ---- */
+const ieCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const ieLum = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+function ieProcess(src, o, size) {
+  let c = src;
+  const W = c.width, H = c.height;
+  if (o.angle) { // turned about the centre; the corners left are white (or clear, for a picture with transparency)
+    const t = ieCanvas(W, H), g = t.getContext('2d');
+    if (o.opaque !== false) { g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, W, H); }
+    g.translate(W / 2, H / 2); g.rotate(o.angle * Math.PI / 180); g.drawImage(c, -W / 2, -H / 2);
+    c = t;
+  }
+  const out = ieCanvas(W, H), g = out.getContext('2d', { willReadFrequently: true });
+  g.drawImage(c, 0, 0);
+  const img = g.getImageData(0, 0, W, H), d = img.data, n = W * H;
+  if (o.speck) ieMedian(d, W, H);
+  if (o.level) ieLevels(d);
+  const b = o.brightness * 2.55, cc = o.contrast * 2.55, f = (259 * (cc + 255)) / (255 * (259 - cc)), s = 1 + o.saturation / 100;
+  if (b || cc || o.saturation || o.gray || o.bw) {
+    for (let i = 0; i < n * 4; i += 4) {
+      let r = d[i], gg = d[i + 1], bb = d[i + 2];
+      if (b) { r += b; gg += b; bb += b; }
+      if (cc) { r = f * (r - 128) + 128; gg = f * (gg - 128) + 128; bb = f * (bb - 128) + 128; }
+      if (o.saturation && !o.gray && !o.bw) { const L = ieLum(r, gg, bb); r = L + (r - L) * s; gg = L + (gg - L) * s; bb = L + (bb - L) * s; }
+      if (o.gray || o.bw) { const L = ieLum(r, gg, bb); r = gg = bb = o.bw ? (L >= o.threshold ? 255 : 0) : L; }
+      d[i] = r; d[i + 1] = gg; d[i + 2] = bb; // the array clamps and rounds
+    }
+  }
+  if (o.sharpen && !o.bw) ieSharpen(d, W, H, o.sharpen / 50);
+  // grey stays exactly grey after rounding
+  if (o.gray || o.bw) for (let i = 0; i < n * 4; i += 4) d[i + 1] = d[i + 2] = d[i];
+  g.putImageData(img, 0, 0);
+  if (!size || (size[0] === W && size[1] === H)) return out;
+  const r = ieCanvas(size[0], size[1]), rg = r.getContext('2d');
+  rg.imageSmoothingEnabled = true; rg.imageSmoothingQuality = 'high'; rg.drawImage(out, 0, 0, size[0], size[1]);
+  return r;
+}
+// Auto levels: each colour stretched so its darkest and lightest half percent reach black and white.
+function ieLevels(d) {
+  const n = d.length / 4;
+  for (let ch = 0; ch < 3; ch++) {
+    const h = new Uint32Array(256); for (let i = ch; i < d.length; i += 4) h[d[i]]++;
+    let lo = 0, hi = 255, acc = 0; const cut = n * 0.005;
+    while (lo < 255 && (acc += h[lo]) <= cut) lo++;
+    acc = 0; while (hi > 0 && (acc += h[hi]) <= cut) hi--;
+    if (hi - lo < 8) continue;
+    const k = 255 / (hi - lo);
+    for (let i = ch; i < d.length; i += 4) d[i] = (d[i] - lo) * k;
+  }
+}
+// Remove specks: the middle value of each 3 × 3 neighbourhood, colour by colour.
+function ieMedian(d, W, H) {
+  const src = new Uint8ClampedArray(d), v = new Array(9);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    for (let ch = 0; ch < 3; ch++) {
+      let k = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) v[k++] = src[((y + dy) * W + x + dx) * 4 + ch];
+      v.sort((a, b) => a - b);
+      d[(y * W + x) * 4 + ch] = v[4];
+    }
+  }
+}
+// Sharpen: an unsharp mask over a small blur.
+function ieSharpen(d, W, H, amount) {
+  const src = new Uint8ClampedArray(d), K = [1, 2, 1, 2, 4, 2, 1, 2, 1];
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    for (let ch = 0; ch < 3; ch++) {
+      let s = 0, k = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += src[((y + dy) * W + x + dx) * 4 + ch] * K[k++];
+      const i = (y * W + x) * 4 + ch; d[i] = src[i] + amount * (src[i] - s / 16);
+    }
+  }
+}
+// How far a picture's lines of text (or other lines) lean, in degrees (clockwise on screen): the angle at which its
+// dark pixels fall into the sharpest rows. The OCR clean-up module's own deskew is used when it is there.
+async function ieAutoAngle(c) {
+  for (const f of [typeof ocrCleanDeskewAngle === 'function' ? ocrCleanDeskewAngle : null, typeof ocrClean !== 'undefined' && ocrClean && typeof ocrClean.deskewAngle === 'function' ? ocrClean.deskewAngle : null]) {
+    if (!f) continue;
+    try { const a = await f(c); const deg = typeof a === 'number' ? a : a && a.angle; if (Number.isFinite(deg)) return deg; } catch (e) { console.warn('deskew', e); }
+  }
+  const k = Math.min(1, 500 / Math.max(c.width, c.height)), w = Math.max(1, Math.round(c.width * k)), h = Math.max(1, Math.round(c.height * k));
+  const t = ieCanvas(w, h), g = t.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, w, h); g.drawImage(c, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data; let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += ieLum(d[i], d[i + 1], d[i + 2]);
+  const mean = sum / (w * h), pts = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; if (ieLum(d[i], d[i + 1], d[i + 2]) < Math.min(128, mean * 0.75)) pts.push(x - w / 2, y - h / 2); }
+  if (pts.length < 40) return 0;
+  const step = Math.max(1, Math.floor(pts.length / 2 / 30000)) * 2;
+  let best = 0, bestScore = -1;
+  for (let a = -15; a <= 15.001; a += 0.25) {
+    const r = a * Math.PI / 180, sn = Math.sin(r), cs = Math.cos(r), off = Math.ceil(Math.hypot(w, h) / 2), bins = new Float64Array(off * 2 + 2);
+    for (let i = 0; i < pts.length; i += step) bins[Math.round(pts[i + 1] * cs - pts[i] * sn) + off]++;
+    let s = 0; for (const b of bins) s += b * b;
+    if (s > bestScore * 1.0001) { bestScore = s; best = a; }
+  }
+  return -best; // turn it back
+}
+
+/* ---- the panel ---- */
+addStyle(`
+.ie-panel { position: fixed; z-index: 40; right: 16px; top: 130px; width: 290px; max-height: calc(100vh - 160px); overflow: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 34px rgba(0,0,0,.28); padding: 12px 14px; font-size: 13px; }
+.ie-panel h2 { font-size: 14px; margin: 0 0 8px; }
+.ie-panel .ie-row { display: grid; grid-template-columns: 92px 1fr 38px; align-items: center; gap: 6px; margin: 6px 0; }
+.ie-panel .ie-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+.ie-panel .ie-row output { font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-2); font-size: 12px; }
+.ie-panel .ie-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+.ie-panel .ie-check input { accent-color: var(--accent); margin: 0; }
+.ie-panel .ie-dpi { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.ie-panel .ie-dpi input[type="number"] { width: 72px; }
+.ie-panel .ie-note { font-size: 12px; color: var(--ink-2); margin: 8px 0; }
+.ie-panel .ie-foot { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; }
+.ie-panel .ie-foot .btn { height: 30px; padding: 0 12px; }
+.ie-panel .ie-auto { height: 24px; padding: 0 8px; font-size: 12px; }
+.ie-view { position: absolute; left: 0; top: 0; z-index: 4; transform-origin: 0 0; pointer-events: none; }
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) { .ie-panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 52vh; } }
+`);
+const IE_SLIDERS = [['brightness', 'Brightness', -100, 100, 1], ['contrast', 'Contrast', -100, 100, 1], ['saturation', 'Saturation', -100, 100, 1], ['sharpen', 'Sharpen', 0, 100, 1], ['angle', 'Straighten', -45, 45, 0.25]];
+function ieDpiNow(st) { const m = st.mat, wIn = Math.hypot(m[0], m[1]) / 72; return wIn > 0 ? Math.round(st.src.width / wIn) : 0; }
+async function ieOpen() {
+  const sel = picSel(); if (!sel) return;
+  if (ieNow) ieClose();
+  const data = await picDataOf(sel); if (!data) { toast('This picture can’t be changed, but it can be deleted or erased.'); return; }
+  const img = new Image(); img.src = data; try { await img.decode(); } catch { toast('This picture can’t be changed.'); return; }
+  const src = ieCanvas(img.naturalWidth, img.naturalHeight), sg = src.getContext('2d', { willReadFrequently: true }); sg.drawImage(img, 0, 0);
+  const k = Math.min(1, 700 / Math.max(src.width, src.height)), small = ieCanvas(Math.max(1, Math.round(src.width * k)), Math.max(1, Math.round(src.height * k)));
+  small.getContext('2d').drawImage(src, 0, 0, small.width, small.height);
+  const opaque = picOpaque(sg.getImageData(0, 0, src.width, src.height).data);
+  let cmyk = false;
+  if (sel.kind === 'ie' && (!sel.s.mark || sel.s.mark.orig)) { const info = await picInfo(sel.v.entry, sel.s.im).catch(() => null); cmyk = !!(info && info.cmyk); }
+  const st = ieNow = { sel, v: sel.v, id: picIdOf(sel), src, small, opaque, o: { ...IE_DEF, opaque }, codec: await picCodecOf(sel), cmyk, mat: picMatOf(sel).slice() };
+  st.o.dpi = ieDpiNow(st) || 150;
+  const panel = st.panel = document.createElement('div');
+  panel.className = 'ie-panel'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Enhance picture');
+  panel.innerHTML = `<h2>Enhance picture</h2>
+    ${IE_SLIDERS.map(([k, label, lo, hi, step]) => `<label class="ie-row"><span>${label}</span><input type="range" id="ie_${k}" data-k="${k}" min="${lo}" max="${hi}" step="${step}" value="${st.o[k]}"><output id="ie_${k}_v">${st.o[k]}</output></label>`).join('')}
+    <div class="ie-row" style="grid-template-columns: 1fr auto"><span></span><button type="button" class="btn ie-auto" id="ieAuto">Straighten automatically</button></div>
+    <label class="ie-check"><input type="checkbox" id="ie_level" data-k="level"><span>Auto levels</span></label>
+    <label class="ie-check"><input type="checkbox" id="ie_gray" data-k="gray"><span>Greyscale</span></label>
+    <label class="ie-check"><input type="checkbox" id="ie_bw" data-k="bw"><span>Black and white</span></label>
+    <label class="ie-row" id="ie_threshold_row" hidden><span>Threshold</span><input type="range" id="ie_threshold" data-k="threshold" min="1" max="254" step="1" value="${st.o.threshold}"><output id="ie_threshold_v">${st.o.threshold}</output></label>
+    <label class="ie-check"><input type="checkbox" id="ie_speck" data-k="speck"><span>Remove specks</span></label>
+    <div class="ie-dpi"><label class="ie-check" style="margin:0"><input type="checkbox" id="ie_resample" data-k="resample"><span>Resample to</span></label><input type="number" id="ie_dpi" data-k="dpi" min="36" max="1200" step="1" value="${st.o.dpi}" aria-label="Resolution in dots per inch"><span>dpi</span></div>
+    <p class="ie-note">${esc(`${st.src.width} × ${st.src.height} pixels, about ${ieDpiNow(st)} dpi.`)}${cmyk ? ' This picture is CMYK: once changed it is saved as RGB.' : ''}</p>
+    <div class="ie-foot"><button type="button" class="btn" id="ieReset">Reset</button><button type="button" class="btn" id="ieCancel">Cancel</button><button type="button" class="btn primary" id="ieApply">Apply</button></div>`;
+  document.body.appendChild(panel);
+  panel.addEventListener('input', (e) => {
+    const t = e.target, k = t.dataset && t.dataset.k; if (!k) return;
+    st.o[k] = t.type === 'checkbox' ? t.checked : +t.value;
+    const out = $(`#ie_${k}_v`, panel); if (out) out.textContent = t.value;
+    if (k === 'bw') $('#ie_threshold_row', panel).hidden = !t.checked;
+    iePreview();
+  });
+  $('#ieAuto', panel).onclick = async () => { const a = Math.max(-45, Math.min(45, Math.round(await ieAutoAngle(st.src) * 4) / 4)); st.o.angle = a; $('#ie_angle', panel).value = a; $('#ie_angle_v', panel).textContent = a; iePreview(); };
+  $('#ieReset', panel).onclick = () => { ieSet({ ...IE_DEF, dpi: ieDpiNow(st) || 150 }); };
+  $('#ieCancel', panel).onclick = () => ieClose();
+  $('#ieApply', panel).onclick = () => ieApply();
+  panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ieClose(); } });
+  iePreview(); refreshRibbon();
+  const first = $('#ie_brightness', panel); if (first) first.focus();
+}
+// Settings set from outside (Reset, the tests): the panel follows.
+function ieSet(o) {
+  const st = ieNow; if (!st) return;
+  Object.assign(st.o, o);
+  for (const [k, v] of Object.entries(st.o)) {
+    const el = $(`#ie_${k}`, st.panel); if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+    const out = $(`#ie_${k}_v`, st.panel); if (out) out.textContent = v;
+  }
+  $('#ie_threshold_row', st.panel).hidden = !st.o.bw;
+  iePreview();
+}
+// The live result, on a canvas laid over the picture on the page.
+function iePreview() {
+  const st = ieNow; if (!st) return;
+  cancelAnimationFrame(st.raf);
+  st.raf = requestAnimationFrame(() => {
+    if (ieNow !== st) return;
+    const v = st.v, o = { ...st.o, angle: st.o.angle };
+    const c = ieProcess(st.small, o);
+    let view = v.el.querySelector(':scope > canvas.ie-view');
+    if (!view) { view = document.createElement('canvas'); view.className = 'ie-view'; v.el.appendChild(view); }
+    view.width = c.width; view.height = c.height; view.getContext('2d').drawImage(c, 0, 0);
+    const m = picMatOf(st.sel), O = toView(v, ...apply(m, 0, 1)), X = toView(v, ...apply(m, 1, 1)), Y = toView(v, ...apply(m, 0, 0));
+    view.style.transform = `matrix(${(X[0] - O[0]) / c.width}, ${(X[1] - O[1]) / c.width}, ${(Y[0] - O[0]) / c.height}, ${(Y[1] - O[1]) / c.height}, ${O[0]}, ${O[1]})`;
+    const crop = picCropOf(st.sel);
+    view.style.clipPath = crop ? `inset(${(1 - crop[3]) * 100}% ${(1 - crop[2]) * 100}% ${crop[1] * 100}% ${crop[0] * 100}%)` : '';
+  });
+}
+function ieClose() {
+  const st = ieNow; if (!st) return;
+  ieNow = null; cancelAnimationFrame(st.raf);
+  st.panel.remove();
+  const view = st.v.el.querySelector(':scope > canvas.ie-view'); if (view) view.remove();
+  refreshRibbon();
+}
+async function ieApply() {
+  const st = ieNow; if (!st) return false;
+  const o = st.o, sameAsBefore = JSON.stringify({ ...o, dpi: 0, opaque: 0 }) === JSON.stringify({ ...IE_DEF, dpi: 0, opaque: 0 });
+  if (sameAsBefore) { ieClose(); return false; }
+  let size = null;
+  if (o.resample && o.dpi > 0) {
+    const m = st.mat, wIn = Math.hypot(m[0], m[1]) / 72, hIn = Math.hypot(m[2], m[3]) / 72;
+    size = [Math.max(1, Math.round(wIn * o.dpi)), Math.max(1, Math.round(hIn * o.dpi))];
+    if (size[0] * size[1] > 40e6) { toast('That resolution is too high for this picture.'); return false; }
+  }
+  const c = ieProcess(st.src, o, size), grey = o.gray || o.bw;
+  const opaque = picOpaque(c.getContext('2d').getImageData(0, 0, c.width, c.height).data);
+  // JPEG stays JPEG, except for grey results, which are kept exactly (Flate, one grey channel).
+  const data = st.codec === 'jpeg' && opaque && !grey ? c.toDataURL('image/jpeg', 0.92) : c.toDataURL('image/png');
+  const codec = st.codec === 'jpeg' && !opaque && !grey ? 'jpeg' : null;
+  const sel = st.sel;
+  ieClose();
+  const done = await picEdit((m) => { m.data = data; m.orig = false; if (codec) m.codec = codec; else delete m.codec; }, sel);
+  if (done) undoToast('Picture changed');
+  return done;
+}
+// The panel goes when the picture is no longer selected (or another one is).
+FEATURE.afterRender.push(() => { if (ieNow && !ieNow.v.el.isConnected) ieClose(); });
+FEATURE.onDocShown.push(() => ieClose());
+FEATURE.onDocClosed.push(() => ieClose());
+const ieDrawMarks0 = drawMarks;
+drawMarks = function (v) {
+  ieDrawMarks0(v);
+  const st = ieNow;
+  if (st && st.v === v) { const s = picSel(); if (!s || picIdOf(s) && st.id && picIdOf(s) !== st.id) ieClose(); else iePreview(); }
+};
+
+/* ---- commands and menus ---- */
+cmd('imgEnhance', { contextual: true, rlabel: 'Enhance', label: 'Enhance picture…', icon: 'sliders-horizontal', enabled: () => !!picSel() && !picCrop, pressed: () => !!ieNow, run: () => (ieNow ? ieClose() : ieOpen()) });
+ribbonAdd('edit', 'Picture', ['imgEnhance']);
+const IE_MENU = ['picRotL', 'picRotR', 'picFlipH', 'picFlipV', '-', 'picCrop', 'imgEnhance', '-', 'picReplace', 'picExtract', '-', 'picDelete'];
+const ieMenuItems = () => IE_MENU.map((id) => id === '-' ? '-' : ctxCmd(id));
+FEATURE.markTypes.pic.menu = IE_MENU.filter((id) => id !== '-' && id !== 'picDelete');
+// Right-click on the picture selected with Edit PDF (or on a picture moved before): the picture's own menu.
+const iePageMenu0 = pageMenu;
+pageMenu = function (v, cx, cy, anchor) {
+  const sel = picSel();
+  if (sel && sel.v === v && sel.kind === 'ie') {
+    const b = v.el.getBoundingClientRect(), [x, y] = toPdf(v, cx - b.left, cy - b.top);
+    if (inQuad(picQuad(picMatOf(sel), picCropOf(sel)), x, y)) return openCtx(ieMenuItems(), { x: cx, y: cy }, anchor || viewer, 'Picture');
+  }
+  return iePageMenu0(v, cx, cy, anchor);
+};
+const ieMarkMenu0 = markMenu;
+markMenu = function (v, m, at, anchor) {
+  if (m.type === 'ie' && !m.deleted) {
+    contentMap(v.page).then((cm) => {
+      if (!(selContent && selContent.mark === m)) selectContent({ v, kind: 'image', im: imageOf(cm, m) || { n: m.n, quad: m.quad, mat: quadMat(m.quad) }, mark: m });
+      openCtx(ieMenuItems(), at, anchor || viewer, 'Picture');
+    });
+    return true;
+  }
+  if (m.type === 'img') {
+    const r = ieMarkMenu0(v, m, at, anchor);
+    const extra = ['-', ...IE_MENU.filter((id) => id !== '-' && id !== 'picDelete')].map((id) => id === '-' ? '-' : ctxCmd(id));
+    return openCtx([...ctxItems, ...extra], at, anchor || viewer, 'Picture') && r;
+  }
+  return ieMarkMenu0(v, m, at, anchor);
+};
+
+TEST_HOOKS.ieOpen = () => ieOpen();
+TEST_HOOKS.ieSet = (o) => ieSet(o);
+TEST_HOOKS.ieApply = () => ieApply();
+TEST_HOOKS.ieAutoAngle = async (data) => { const img = new Image(); img.src = data; await img.decode(); const c = ieCanvas(img.naturalWidth, img.naturalHeight); c.getContext('2d').drawImage(img, 0, 0); return ieAutoAngle(c); };
+TEST_HOOKS.ieOpenNow = () => !!ieNow;
+
+// ---- src/features/24-media.js
+/* ---------------- files on a page, video and sound, portfolios ----------------
+   Attach file (Comment tab): a paperclip on the page that holds a file (a FileAttachment comment). Insert video or
+   audio (Edit tab): a video or sound file kept in the PDF, shown by a poster picture, played here (and in readers that
+   play media) from a Play button. Video, sound and Sound comments in an opened PDF play the same way, from the file
+   they hold (never from the web). A portfolio (a PDF made as a folder of files) shows its files with Open and Save.
+
+   Marks: { type: 'mdFile', x, y (top left), fid, name, mime, size, desc, icon, at }
+          { type: 'mdMedia', rect [x0, y0, x1, y1], fid, name, mime, size, poster (data URL), at }
+   The files' bytes are kept on this device with the attached files (15-view.js: IndexedDB, by fid), not in the marks. */
+const MD_ICONS = [['PushPin', 'Push pin'], ['Paperclip', 'Paperclip'], ['Graph', 'Graph'], ['Tag', 'Tag']];
+const MD_MEDIA_MAX = 200 * 1024 * 1024;
+const MD = { at: null, media: null, players: new Set() };
+const mdIcon = () => (MD_ICONS.some(([k]) => k === S.mdIcon) ? S.mdIcon : 'PushPin');
+
+/* ---- keeping a file's bytes on this device ---- */
+async function mdKeep(bytes) {
+  const fid = uid();
+  try { await vwDbDo('readwrite', (s) => s.put({ id: fid, doc: doc.id, bytes })); } catch (e) { console.warn('could not keep the file on this device', e); }
+  vwBytes.set(fid, bytes);
+  return fid;
+}
+
+/* ---- the PDF objects: an embedded file and its file specification ---- */
+function mdFileSpec(L, out, bytes, name, mime, desc, when) {
+  const { PDFName, PDFString, PDFHexString } = L, c = out.context, date = when ? new Date(when) : new Date();
+  const ef = c.register(c.flateStream(bytes, { Type: 'EmbeddedFile', ...(mime ? { Subtype: mime } : {}), Params: { Size: bytes.length, CreationDate: PDFString.fromDate(date), ModDate: PDFString.fromDate(date) } }));
+  const spec = c.obj({ Type: 'Filespec', EF: { F: ef, UF: ef } });
+  spec.set(PDFName.of('F'), PDFString.of(name.replace(/[^\x20-\x7E]/g, '_')));
+  spec.set(PDFName.of('UF'), PDFHexString.fromText(name));
+  if (desc) spec.set(PDFName.of('Desc'), PDFHexString.fromText(desc));
+  return c.register(spec);
+}
+const mdNum = (n) => { const r = Math.round(n * 1000) / 1000; return Object.is(r, -0) ? '0' : String(r); };
+function mdAddAnnot(L, out, p, dict) {
+  const { PDFName } = L;
+  const ref = dict instanceof L.PDFRef ? dict : out.context.register(dict);
+  let annots = p.node.lookup(PDFName.of('Annots'));
+  if (!annots) { annots = out.context.obj([]); p.node.set(PDFName.of('Annots'), annots); }
+  annots.push(ref);
+  return ref;
+}
+
+/* ---- Attach file: a file attachment comment ---- */
+TOOL_HINTS.mdattach = 'Click where the file goes';
+const mdAttachInput = Object.assign(document.createElement('input'), { type: 'file', hidden: true, id: 'mdAttachInput' });
+document.body.appendChild(mdAttachInput);
+FEATURE.tools.mdattach = {
+  down(e, v) {
+    e.preventDefault();
+    const [x, y] = toPdf(v, ...localPoint(e, v));
+    MD.at = { entry: v.entry, x, y };
+    mdAttachInput.click();
+  },
+};
+mdAttachInput.addEventListener('change', async () => {
+  const f = mdAttachInput.files[0], at = MD.at; mdAttachInput.value = ''; MD.at = null;
+  if (!f || !at || !doc) return;
+  if (f.size > 100 * 1024 * 1024) { toast(`${f.name} is too big to attach (over 100 MB).`); return; }
+  await mdAttachAt(at.entry, at.x, at.y, f.name || 'Attachment', f.type, new Uint8Array(await f.arrayBuffer()));
+});
+async function mdAttachAt(entry, x, y, name, mime, bytes) {
+  const fid = await mdKeep(bytes), before = snapshot();
+  const m = { id: uid(), type: 'mdFile', x, y, fid, name, mime: mime || 'application/octet-stream', size: bytes.length, desc: '', icon: mdIcon(), at: Date.now() };
+  marksOf(entry).push(m);
+  changed(before, 'Attach file');
+  setTool('select');
+  const v = views.find((vv) => vv.entry === entry);
+  if (v) { drawMarks(v); selectNew(v, m); }
+  toast(`Attached ${name}. Double-click it to add a description.`);
+  if (S.side === 'files') renderSide();
+  return m;
+}
+// The icon, drawn in a 16 × 20 box (PDF units, y up), as paths for the screen and the saved appearance.
+function mdIconPaths(icon) {
+  switch (icon) {
+    case 'Paperclip': return [['M', 11, 6], ['L', 11, 15], ['C', 11, 18.5, 5, 18.5, 5, 15], ['L', 5, 5], ['C', 5, 2.5, 9, 2.5, 9, 5], ['L', 9, 14], ['C', 9, 15.2, 7, 15.2, 7, 14], ['L', 7, 7]];
+    case 'Graph': return [['M', 3, 3], ['L', 3, 17], ['M', 3, 3], ['L', 14, 3], ['M', 6, 5], ['L', 6, 10], ['M', 9, 5], ['L', 9, 14], ['M', 12, 5], ['L', 12, 8]];
+    case 'Tag': return [['M', 3, 4], ['L', 3, 12], ['L', 8, 17], ['L', 13, 12], ['L', 13, 4], ['Z'], ['M', 7, 12], ['L', 9, 12]];
+    default: return [['M', 8, 2], ['L', 8, 10], ['M', 4, 10], ['L', 12, 10], ['M', 5, 10], ['L', 6, 16], ['L', 10, 16], ['L', 11, 10], ['M', 5.5, 16], ['L', 10.5, 16], ['L', 10.5, 18], ['L', 5.5, 18], ['Z']];
+  }
+}
+const MD_W = 16, MD_H = 20;
+FEATURE.markTypes.mdFile = {
+  draw(v, m) {
+    const g = svgEl('g', { class: 'mk' }), P = (u, w) => toView(v, m.x + u, m.y - MD_H + w);
+    const box = [P(0, 0), P(MD_W, 0), P(MD_W, MD_H), P(0, MD_H)];
+    g.appendChild(svgEl('polygon', { points: box.map((q) => q.join(',')).join(' '), fill: '#FFF3BF', stroke: '#8A6D00', 'stroke-width': 1 }));
+    const d = mdIconPaths(m.icon).map((c) => c[0] === 'Z' ? 'Z' : c[0] === 'C' ? `C${P(c[1], c[2]).join(' ')} ${P(c[3], c[4]).join(' ')} ${P(c[5], c[6]).join(' ')}` : c[0] + P(c[1], c[2]).join(' ')).join('');
+    g.appendChild(svgEl('path', { d, fill: 'none', stroke: '#5C4800', 'stroke-width': Math.max(1, 1.3 * scale), 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+    const t = svgEl('title', {}); t.textContent = m.desc ? `${m.name}: ${m.desc}` : m.name; g.appendChild(t);
+    g.addEventListener('dblclick', (e) => { if (app.dataset.tool === 'select') { e.stopPropagation(); mdEditFile(v, m); } });
+    return g;
+  },
+  move(m, o, dx, dy) { m.x = o.x + dx; m.y = o.y + dy; },
+  menu: ['md_fileDesc', 'md_fileSave', ...MD_ICONS.map(([k]) => 'md_icon' + k)],
+  async save({ L, out, p, m }) {
+    const { PDFName, PDFString, PDFHexString } = L, bytes = await vwFileBytes(m.fid);
+    if (!bytes) { console.warn('attachment missing on this device', m.name); return; }
+    const spec = mdFileSpec(L, out, bytes, m.name, m.mime, m.desc, m.at);
+    const rect = [m.x, m.y - MD_H, m.x + MD_W, m.y];
+    const ops = ['q', '1 0.953 0.749 rg 0.541 0.427 0 RG 1 w', `0.5 0.5 ${MD_W - 1} ${MD_H - 1} re B`, '0.361 0.282 0 RG 1.3 w 1 J 1 j'];
+    for (const c of mdIconPaths(m.icon)) ops.push(c[0] === 'Z' ? 'h' : c.slice(1).map(mdNum).join(' ') + ' ' + { M: 'm', L: 'l', C: 'c' }[c[0]]);
+    ops.push('S', 'Q');
+    const ap = out.context.register(out.context.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: [0, 0, MD_W, MD_H], Matrix: [1, 0, 0, 1, 0, 0] }));
+    const annot = out.context.obj({ Type: 'Annot', Subtype: 'FileAttachment', Rect: rect, F: 4, C: [1, 0.83, 0.23], FS: spec, Name: m.icon || 'PushPin', AP: { N: ap } });
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(m.desc || m.name));
+    annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
+    annot.set(PDFName.of('M'), PDFString.fromDate(new Date(m.at || Date.now())));
+    const who = m.author || S.author; if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
+    annot.set(PDFName.of('P'), p.ref);
+    mdAddAnnot(L, out, p, annot);
+  },
+};
+FEATURE.markLabels.push((m) => (m.type === 'mdFile' ? { label: 'Attached file', text: m.desc ? `${m.name}: ${m.desc}` : m.name } : m.type === 'mdMedia' ? { label: /^audio\//.test(m.mime) ? 'Sound' : 'Video', text: m.name } : null));
+async function mdEditFile(v, m) {
+  const t = await askText('Description', m.name, m.desc || '', 'Save', false, true);
+  if (t == null || t === (m.desc || '')) return;
+  const before = snapshot(); m.desc = t.trim(); drawMarks(v); changed(before, 'Attachment');
+}
+const mdSelFile = () => { const m = doc && selectedMark(); return m && m.type === 'mdFile' ? m : null; };
+cmd('md_attachFile', { label: 'Attach file', icon: 'paperclip', enabled: has, pressed: () => app.dataset.tool === 'mdattach', run: () => { setTool('mdattach'); toast('Click where the file goes'); } });
+cmd('md_fileDesc', { label: 'Edit description…', icon: 'pencil', enabled: () => !!mdSelFile(), run: () => { const m = mdSelFile(), v = m && views.find((x) => x.entry === selMark.entry); if (v) mdEditFile(v, m); } });
+cmd('md_fileSave', { label: 'Save the file…', icon: 'download', enabled: () => !!mdSelFile(), run: async () => { const m = mdSelFile(); if (!m) return; const b = await vwFileBytes(m.fid); if (!b) { toast('That file is no longer on this device. Attach it again.'); return; } await saveFile(b, m.name, m.mime); } });
+for (const [k, label] of MD_ICONS) cmd('md_icon' + k, { label: `Icon: ${label}`, icon: 'paperclip', enabled: () => !!mdSelFile(), pressed: () => { const m = mdSelFile(); return !!m && m.icon === k; }, run: () => { const m = mdSelFile(); if (!m) return; S.mdIcon = k; saveSettings(); const before = snapshot(); m.icon = k; redrawPage(selMark.entry); changed(before, 'Attachment'); } });
+ribbonAdd('markup', 'Add', ['md_attachFile']);
+menuAdd('Comment', ['md_attachFile']);
+addStyle(`.app[data-tool="mdattach"] .marks { cursor: copy; }`);
+TEST_HOOKS.mdAttachAt = async (n, x, y, name, mime, bytes) => { const m = await mdAttachAt(views[n].entry, x, y, name, mime, new Uint8Array(bytes)); return m.id; };
+
+/* ---- Insert video or audio ---- */
+const mdMediaInput = Object.assign(document.createElement('input'), { type: 'file', hidden: true, id: 'mdMediaInput', accept: 'video/mp4,video/webm,audio/mpeg,audio/mp4,audio/x-m4a,.mp4,.m4v,.webm,.mp3,.m4a' });
+document.body.appendChild(mdMediaInput);
+const mdMimeOf = (name, type) => (/^(video|audio)\//.test(type || '') ? type : ({ mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', m4a: 'audio/mp4' })[(String(name).split('.').pop() || '').toLowerCase()] || '');
+mdMediaInput.addEventListener('change', async () => {
+  const f = mdMediaInput.files[0]; mdMediaInput.value = '';
+  if (!f || !doc) return;
+  await mdMediaChosen(f.name, f.type, new Uint8Array(await f.arrayBuffer()));
+});
+async function mdMediaChosen(name, type, bytes) {
+  const mime = mdMimeOf(name, type);
+  if (!mime) { toast('Choose an MP4, WebM, MP3 or M4A file.'); return false; }
+  if (bytes.length > MD_MEDIA_MAX) { toast(`${name} is too big (over 200 MB).`); return false; }
+  const poster = await mdPoster(bytes, mime, name);
+  MD.media = { name, mime, bytes, ...poster };
+  setTool('mdplace');
+  toast(coarse() ? 'Tap where it goes' : 'Drag a box where it goes, or click for its own size');
+  return true;
+}
+// A picture for the page: a frame from the video (its own proportions), else a plain one with the file's name.
+async function mdPoster(bytes, mime, name) {
+  if (/^video\//.test(mime)) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime })), v = document.createElement('video');
+    try {
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+      await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('video')); setTimeout(() => rej(new Error('timeout')), 6000); });
+      const t = Math.min(0.5, (Number.isFinite(v.duration) ? v.duration : 1) / 3);
+      if (t > 0) await new Promise((res) => { v.onseeked = res; v.currentTime = t; setTimeout(res, 2500); });
+      const W = v.videoWidth, H = v.videoHeight; if (!W || !H) throw new Error('no frame');
+      const k = Math.min(1, 640 / Math.max(W, H)), c = document.createElement('canvas'); c.width = Math.round(W * k); c.height = Math.round(H * k);
+      const g = c.getContext('2d'); g.drawImage(v, 0, 0, c.width, c.height); mdPlayGlyph(g, c.width, c.height);
+      return { poster: c.toDataURL('image/jpeg', 0.85), w: W, h: H }; // a frame: JPEG, kept as it is in the PDF
+    } catch (e) { console.warn('no poster frame', e); } finally { URL.revokeObjectURL(url); v.removeAttribute('src'); }
+  }
+  const audio = /^audio\//.test(mime), c = document.createElement('canvas'); c.width = audio ? 480 : 640; c.height = audio ? 120 : 360;
+  const g = c.getContext('2d'); g.fillStyle = '#1F2430'; g.fillRect(0, 0, c.width, c.height);
+  mdPlayGlyph(g, audio ? c.height : c.width, c.height);
+  g.fillStyle = '#FFFFFF'; g.font = '600 22px Helvetica, Arial, sans-serif'; g.textBaseline = 'middle';
+  const label = String(name).length > 34 ? String(name).slice(0, 33) + '…' : String(name);
+  if (audio) g.fillText(label, c.height + 4, c.height / 2); else { g.textAlign = 'center'; g.fillText(label, c.width / 2, c.height - 34); }
+  return { poster: c.toDataURL('image/png'), w: c.width, h: c.height };
+}
+function mdPlayGlyph(g, w, h) {
+  const r = Math.min(w, h) * 0.16, cx = w / 2, cy = h / 2;
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#FFFFFF'; g.beginPath(); g.moveTo(cx - r * 0.35, cy - r * 0.5); g.lineTo(cx + r * 0.55, cy); g.lineTo(cx - r * 0.35, cy + r * 0.5); g.closePath(); g.fill();
+}
+TOOL_HINTS.mdplace = 'Drag a box where the video or sound goes';
+FEATURE.tools.mdplace = {
+  down(e, v) {
+    e.preventDefault();
+    const pend = MD.media; if (!pend) { setTool('select'); return; }
+    const [sx, sy] = localPoint(e, v), box = document.createElement('div');
+    box.className = 'md-drag'; v.el.appendChild(box);
+    let last = [sx, sy];
+    const show = () => { const [x, y] = last; Object.assign(box.style, { left: Math.min(x, sx) + 'px', top: Math.min(y, sy) + 'px', width: Math.abs(x - sx) + 'px', height: Math.abs(y - sy) + 'px' }); };
+    const move = (ev) => { last = localPoint(ev, v); show(); };
+    const up = async () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); box.remove();
+      const a = toPdf(v, sx, sy), b = toPdf(v, ...last);
+      let rect = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+      if (rect[2] - rect[0] < 12 || rect[3] - rect[1] < 12) { // a click: its own proportions, 240 points wide, from there
+        const w = /^audio\//.test(pend.mime) ? 240 : 240, h = w * pend.h / pend.w;
+        rect = [a[0], a[1] - h, a[0] + w, a[1]];
+      }
+      MD.media = null;
+      await mdPlaceMedia(v.entry, rect, pend);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  },
+};
+async function mdPlaceMedia(entry, rect, pend) {
+  const fid = await mdKeep(pend.bytes), before = snapshot();
+  const m = { id: uid(), type: 'mdMedia', rect: rect.map((n) => +n.toFixed(3)), fid, name: pend.name, mime: pend.mime, size: pend.bytes.length, poster: pend.poster, at: Date.now() };
+  marksOf(entry).push(m);
+  changed(before, /^audio\//.test(m.mime) ? 'Insert sound' : 'Insert video');
+  setTool('select');
+  const v = views.find((vv) => vv.entry === entry); if (v) { drawMarks(v); selectNew(v, m); }
+  toast('Added. Some apps show only its picture; Cowdrey.PDF and Acrobat play it.');
+  return m;
+}
+FEATURE.markTypes.mdMedia = {
+  draw(v, m) {
+    const g = svgEl('g', { class: 'mk' }), [x0, y0, x1, y1] = m.rect;
+    const o = toView(v, x0, y1), X = toView(v, x1, y1), Y = toView(v, x0, y0);
+    g.appendChild(svgEl('image', { x: 0, y: 0, width: 1, height: 1, href: m.poster, preserveAspectRatio: 'none', transform: `matrix(${X[0] - o[0]} ${X[1] - o[1]} ${Y[0] - o[0]} ${Y[1] - o[1]} ${o[0]} ${o[1]})` }));
+    const q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([a, b]) => toView(v, a, b).join(','));
+    g.appendChild(svgEl('polygon', { points: q.join(' '), fill: 'transparent', stroke: '#5F5F5F', 'stroke-width': 1 }));
+    g.addEventListener('dblclick', (e) => { if (app.dataset.tool === 'select') { e.stopPropagation(); mdPlayMark(v, m); } });
+    return g;
+  },
+  move(m, o, dx, dy) { m.rect = [o.rect[0] + dx, o.rect[1] + dy, o.rect[2] + dx, o.rect[3] + dy]; },
+  menu: ['md_play'],
+  async save({ L, out, p, m }) {
+    const { PDFName, PDFString, PDFHexString } = L, c = out.context, bytes = await vwFileBytes(m.fid);
+    if (!bytes) { console.warn('media missing on this device', m.name); return; }
+    const spec = mdFileSpec(L, out, bytes, m.name, m.mime, '', m.at);
+    const [x0, y0, x1, y1] = m.rect, w = x1 - x0, h = y1 - y0;
+    const img = FEATURE.picXObject ? await FEATURE.picXObject(L, out, { data: m.poster }, {}) : (await out.embedPng(m.poster)).ref;
+    const ap = c.register(c.stream(`q ${mdNum(w)} 0 0 ${mdNum(h)} 0 0 cm /Poster Do Q`, { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: [0, 0, w, h], Resources: { XObject: { Poster: img } } }));
+    const ref = c.nextRef(), audio = /^audio\//.test(m.mime);
+    const clip = c.obj({ Type: 'MediaClip', S: 'MCD', D: spec, P: { Type: 'MediaPermissions' } });
+    clip.set(PDFName.of('N'), PDFHexString.fromText(m.name));
+    clip.set(PDFName.of('CT'), PDFString.of(m.mime));
+    clip.lookup(PDFName.of('P')).set(PDFName.of('TF'), PDFString.of('TEMPACCESS'));
+    const rendition = c.obj({ Type: 'Rendition', S: 'MR', C: clip, P: { Type: 'MediaPlayParams', BE: { C: true } } });
+    rendition.set(PDFName.of('N'), PDFHexString.fromText(m.name));
+    const annot = c.obj({ Type: 'Annot', Subtype: 'Screen', Rect: [x0, y0, x1, y1], F: 4, P: p.ref, AP: { N: ap }, A: { Type: 'Action', S: 'Rendition', OP: 0, AN: ref, R: rendition } });
+    annot.set(PDFName.of('T'), PDFHexString.fromText(m.name));
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(`${audio ? 'Sound' : 'Video'}: ${m.name}`));
+    annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
+    annot.set(PDFName.of('M'), PDFString.fromDate(new Date(m.at || Date.now())));
+    c.assign(ref, annot);
+    mdAddAnnot(L, out, p, ref);
+  },
+};
+const mdSelMedia = () => { const m = doc && selectedMark(); return m && m.type === 'mdMedia' ? m : null; };
+cmd('md_insertMedia', { label: 'Insert video or audio…', rlabel: 'Video or audio', icon: 'clapperboard', enabled: has, pressed: () => app.dataset.tool === 'mdplace', run: () => mdMediaInput.click() });
+cmd('md_play', { label: 'Play', icon: 'play', enabled: () => !!mdSelMedia(), run: () => { const m = mdSelMedia(), v = m && views.find((x) => x.entry === selMark.entry); if (v) mdPlayMark(v, m); } });
+ribbonAdd('edit', 'Add', ['md_insertMedia']);
+{ const em = MENUS.find(([t]) => t === 'Edit')[1], j = em.indexOf('image'); em.splice(j < 0 ? em.length : j + 1, 0, 'md_insertMedia'); }
+TEST_HOOKS.mdMediaChosen = (name, type, bytes) => mdMediaChosen(name, type, new Uint8Array(bytes));
+TEST_HOOKS.mdPlaceMedia = async (n, rect) => { const pend = MD.media; MD.media = null; const m = await mdPlaceMedia(views[n].entry, rect, pend); return m.id; };
+
+/* ---- playing: a player in the media's box ---- */
+addStyle(`
+.page .annotationLayer .mediaAnnotation { display: none !important; }
+.md-play { position: absolute; z-index: 5; display: flex; align-items: center; gap: 6px; transform: translate(-50%, -50%); height: 34px; padding: 0 14px 0 10px; border-radius: 17px; border: 1px solid rgba(255,255,255,.6); background: rgba(20,22,28,.78); color: #fff; font: 600 13px/1 var(--font, system-ui); cursor: pointer; box-shadow: 0 3px 12px rgba(0,0,0,.3); }
+.md-play:hover { background: rgba(20,22,28,.92); }
+.md-play svg { width: 16px; height: 16px; }
+.md-player { position: absolute; z-index: 5; background: #000; object-fit: contain; }
+audio.md-player { background: transparent; }
+.md-drag { position: absolute; z-index: 5; border: 1.5px dashed var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); pointer-events: none; }
+.app[data-tool="mdplace"] .marks { cursor: crosshair; }
+`);
+// The box on screen of a rect in PDF units (any page rotation).
+function mdBox(v, r) {
+  const q = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]].map(([x, y]) => toView(v, x, y));
+  const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]);
+  return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+}
+function mdPlayer(v, rect, bytes, mime, name, key) {
+  const old = v.el.querySelector(`:scope > .md-player[data-key="${CSS.escape(key)}"]`); if (old) { old.play && old.play().catch(() => {}); return old; }
+  const type = /^(video|audio)\//.test(mime || '') ? mime : 'video/mp4';
+  const url = URL.createObjectURL(new Blob([bytes], { type })), audio = type.startsWith('audio/');
+  const el = document.createElement(audio ? 'audio' : 'video'), b = mdBox(v, rect);
+  el.className = 'md-player'; el.dataset.key = key; el.src = url; el.controls = true; el.autoplay = true; el.title = name || '';
+  if (!audio) el.playsInline = true;
+  Object.assign(el.style, { left: b.left + 'px', top: (audio ? b.top + Math.max(0, b.height - 54) / 2 : b.top) + 'px', width: b.width + 'px', height: (audio ? Math.min(54, b.height || 54) : b.height) + 'px' });
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.addEventListener('emptied', () => URL.revokeObjectURL(url), { once: true });
+  v.el.appendChild(el); MD.players.add(el);
+  el.play().catch(() => {});
+  return el;
+}
+async function mdPlayMark(v, m) {
+  const b = await vwFileBytes(m.fid);
+  if (!b) { toast('That file is no longer on this device. Insert it again.'); return; }
+  mdPlayer(v, m.rect, b, m.mime, m.name, 'm' + m.id);
+}
+// Video, sound and Sound comments in the PDF: a Play button on each (what they hold is read only when it is pressed).
+FEATURE.afterRender.push(async (v) => {
+  let annots; try { annots = await v.page.getAnnotations({ intent: 'display' }); } catch { return; }
+  if (!v.el.isConnected) return;
+  const gone = new Set(marksOf(v.entry).filter((m) => m.type === 'ae' && m.deleted).map((m) => m.ref));
+  const pd = pdfDocs.get(v.entry.src);
+  for (const a of annots) {
+    if (!a.rect || gone.has(a.id) || !['Screen', 'RichMedia', 'Sound'].includes(a.subtype)) continue;
+    const media = a.richMedia;
+    if (!media && a.subtype !== 'Sound') continue;
+    if (v.el.querySelector(`:scope > .md-play[data-key="${CSS.escape('a' + a.id)}"]`)) continue;
+    const b = mdBox(v, a.rect), btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'md-play'; btn.dataset.key = 'a' + a.id;
+    btn.innerHTML = `${ic('play')}<span>Play</span>`;
+    btn.setAttribute('aria-label', `Play ${(media && media.filename) || 'sound'}`);
+    btn.style.left = b.left + b.width / 2 + 'px'; btn.style.top = b.top + b.height / 2 + 'px';
+    btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation(); btn.disabled = true;
+      let bytes = null, mime = media && media.contentType;
+      try { bytes = media ? await pd.getAttachmentContent(media.fileId) : null; } catch (er) { console.warn(er); }
+      if (a.subtype === 'Sound' && (!bytes || !mdIsRiff(bytes))) { const w = await mdSoundWav(v.entry, a.id).catch(() => null); if (w) { bytes = w; mime = 'audio/wav'; } }
+      btn.disabled = false;
+      if (!bytes) { toast('This media can’t be played here.'); return; }
+      btn.remove();
+      mdPlayer(v, a.rect, bytes, mime, media && media.filename, 'a' + a.id);
+    });
+    v.el.appendChild(btn); icons();
+  }
+});
+const mdIsRiff = (b) => b && b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46;
+// A Sound comment's samples as a WAV file: /R rate, /C channels, /B bits, /E encoding (Raw, Signed, muLaw, ALaw).
+function mdWav(samples, rate, ch, bits, enc) {
+  const law = enc === 'muLaw' || enc === 'ALaw', outBits = law ? 16 : bits === 16 ? 16 : 8, n = law ? samples.length : Math.floor(samples.length / (bits === 16 ? 2 : 1));
+  const data = new Uint8Array(n * (outBits / 8)), dv = new DataView(data.buffer);
+  for (let i = 0; i < n; i++) {
+    if (law) {
+      const u = ~samples[i] & 0xFF;
+      let s;
+      if (enc === 'muLaw') { const t = ((u & 0x0F) << 3) + 0x84; s = (t << ((u & 0x70) >> 4)) - 0x84; s = u & 0x80 ? -s : s; }
+      else { const a = samples[i] ^ 0x55, seg = (a & 0x70) >> 4; let t = (a & 0x0F) << 4; t += seg ? 0x108 : 8; if (seg > 1) t <<= seg - 1; s = a & 0x80 ? t : -t; }
+      dv.setInt16(i * 2, Math.max(-32768, Math.min(32767, s)), true);
+    } else if (bits === 16) { // PDF samples are big-endian; WAV wants little-endian, signed
+      let x = (samples[i * 2] << 8) | samples[i * 2 + 1];
+      if (enc === 'Signed') { if (x >= 0x8000) x -= 0x10000; } else x -= 0x8000;
+      dv.setInt16(i * 2, x, true);
+    } else data[i] = enc === 'Signed' ? (samples[i] + 128) & 0xFF : samples[i]; // WAV 8-bit is unsigned
+  }
+  const head = new DataView(new ArrayBuffer(44)), w = (o, s) => { for (let k = 0; k < 4; k++) head.setUint8(o + k, s.charCodeAt(k)); };
+  const align = ch * outBits / 8;
+  w(0, 'RIFF'); head.setUint32(4, 36 + data.length, true); w(8, 'WAVE'); w(12, 'fmt '); head.setUint32(16, 16, true); head.setUint16(20, 1, true);
+  head.setUint16(22, ch, true); head.setUint32(24, rate, true); head.setUint32(28, rate * align, true); head.setUint16(32, align, true); head.setUint16(34, outBits, true);
+  w(36, 'data'); head.setUint32(40, data.length, true);
+  const out = new Uint8Array(44 + data.length); out.set(new Uint8Array(head.buffer), 0); out.set(data, 44);
+  return out;
+}
+async function mdSoundWav(entry, id) {
+  const r = /^(\d+)R(\d*)$/.exec(String(id || '')); if (!r) return null;
+  const L = await loadPdfLib(), d = await picSrcDoc(entry.src); if (!d) return null;
+  const a = d.context.lookup(L.PDFRef.of(+r[1], +(r[2] || 0))); if (!(a instanceof L.PDFDict)) return null;
+  const st = a.lookup(L.PDFName.of('Sound')); if (!st || !st.dict) return null;
+  const num = (k, dflt) => { const x = st.dict.lookup(L.PDFName.of(k)); return x instanceof L.PDFNumber ? x.asNumber() : dflt; };
+  const e = st.dict.lookup(L.PDFName.of('E')), enc = e ? String(e).slice(1) : 'Raw';
+  return mdWav(picStreamBytes(L, st), Math.round(num('R', 8000)), num('C', 1), num('B', 8), enc);
+}
+TEST_HOOKS.mdWav = (s, r, c, b, e) => Array.from(mdWav(new Uint8Array(s), r, c, b, e));
+FEATURE.onDocClosed.push(() => { for (const el of MD.players) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch {} } MD.players.clear(); });
+
+/* ---- portfolios: a PDF that is a folder of files ---- */
+let mdPf = null; // { doc, files: [{ key, name, desc, size, mod, fields: {}, folder, bytes() }], schema: [{ key, name, type }] }
+async function mdReadPortfolio(d) {
+  const L = await loadPdfLib(), pdf = await picSrcDoc(0); if (!pdf || doc !== d) return null;
+  const { PDFName, PDFDict, PDFArray, PDFRef, PDFString, PDFHexString, PDFNumber } = L, N = (k) => PDFName.of(k), c = pdf.context;
+  const look = (o) => (o instanceof PDFRef ? c.lookup(o) : o);
+  const col = look(pdf.catalog.get(N('Collection'))); if (!(col instanceof PDFDict)) return null;
+  const str = (o) => { o = look(o); return o instanceof PDFString || o instanceof PDFHexString ? o.decodeText() : o instanceof PDFName ? o.decodeText() : o instanceof PDFNumber ? String(o.asNumber()) : ''; };
+  // Columns: the schema's fields, in their order, those shown
+  const schema = [], sc = look(col.get(N('Schema')));
+  if (sc instanceof PDFDict) for (const [k, v] of sc.entries()) {
+    const f = look(v); if (!(f instanceof PDFDict) || String(f.get(N('Type'))) === '/CollectionSchema') continue;
+    const V = look(f.get(N('V'))), O = look(f.get(N('O')));
+    if (V && String(V) === 'false') continue;
+    schema.push({ key: k.decodeText(), name: str(f.get(N('N'))) || k.decodeText(), type: String(f.get(N('Subtype')) || '/S').slice(1), order: O instanceof PDFNumber ? O.asNumber() : 999 });
+  }
+  schema.sort((a, b) => a.order - b.order);
+  // Folders: ids to their path
+  const folders = new Map(), fr = look(col.get(N('Folders')));
+  const walk = (f, path, seen = new Set()) => {
+    for (let x = f; x instanceof PDFDict && !seen.has(x); x = look(x.get(N('Next')))) {
+      seen.add(x);
+      const id = look(x.get(N('ID'))), name = str(x.get(N('Name'))), p = path === null ? '' : path ? `${path}/${name}` : name;
+      if (id instanceof PDFNumber) folders.set(id.asNumber(), p);
+      walk(look(x.get(N('Child'))), p, seen);
+      if (path === null) break; // the root has no siblings
+    }
+  };
+  if (fr instanceof PDFDict) walk(fr, null);
+  const files = [];
+  const names = look(pdf.catalog.get(N('Names'))), tree = names instanceof PDFDict ? look(names.get(N('EmbeddedFiles'))) : null;
+  const leaves = (node, seen = new Set()) => {
+    if (!(node instanceof PDFDict) || seen.has(node)) return; seen.add(node);
+    const arr = look(node.get(N('Names')));
+    if (arr instanceof PDFArray) for (let k = 0; k + 1 < arr.size(); k += 2) {
+      const key = str(arr.get(k)), spec = look(arr.get(k + 1)); if (!(spec instanceof PDFDict)) continue;
+      const ef = look(spec.get(N('EF'))), st = ef instanceof PDFDict ? look(ef.get(N('UF')) || ef.get(N('F'))) : null;
+      const params = st && st.dict ? look(st.dict.get(N('Params'))) : null, size = params instanceof PDFDict ? look(params.get(N('Size'))) : null;
+      const ci = look(spec.get(N('CI'))), fields = {};
+      if (ci instanceof PDFDict) for (const [fk, fv] of ci.entries()) { const x = look(fv); fields[fk.decodeText()] = x instanceof PDFDict ? str(x.get(N('D'))) : str(x); }
+      const fm = /^<(\d+)>(.*)$/.exec(key), name = str(spec.get(N('UF'))) || str(spec.get(N('F'))) || (fm ? fm[2] : key);
+      let mod = ''; try { const md = params instanceof PDFDict ? look(params.get(N('ModDate'))) : null; const dt = md && md.decodeDate && md.decodeDate(); if (dt) mod = dt.toLocaleDateString(); } catch {}
+      files.push({ key, name, desc: str(spec.get(N('Desc'))), size: size instanceof PDFNumber ? size.asNumber() : 0, mod, fields, folder: fm ? folders.get(+fm[1]) || '' : '', bytes: () => (st && st.dict ? picStreamBytes(L, st) : null) });
+    }
+    const kids = look(node.get(N('Kids'))); if (kids instanceof PDFArray) for (const r of kids.asArray()) leaves(look(r), seen);
+  };
+  leaves(tree);
+  files.sort((a, b) => a.folder.localeCompare(b.folder) || a.name.localeCompare(b.name));
+  return { doc: d, files, schema };
+}
+FEATURE.onDocShown.push(async (d) => {
+  mdPf = null; mdPfBar();
+  let pf = null; try { pf = await mdReadPortfolio(d); } catch (e) { console.warn('portfolio', e); }
+  if (doc !== d) return;
+  mdPf = pf; mdPfBar();
+});
+FEATURE.onDocClosed.push(() => { mdPf = null; mdPfBar(); });
+function mdPfBar() {
+  let bar = $('#mdPfBar');
+  if (!mdPf || mdPf.doc !== doc) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'mdPfBar'; bar.className = 'md-pf-bar'; bar.setAttribute('role', 'status');
+    viewer.parentNode.insertBefore(bar, viewer);
+  }
+  const n = mdPf.files.length;
+  bar.innerHTML = `${ic('folder-open')}<span><b>Portfolio</b> · This PDF holds ${n} file${n === 1 ? '' : 's'}.</span><button type="button" class="btn" data-cmd="md_portfolio">Show files</button>`;
+  icons();
+}
+async function mdPfPanel() {
+  const pf = mdPf; if (!pf) return;
+  const cols = pf.schema.length ? pf.schema : [{ key: '_name', name: 'Name', type: 'F' }, { key: '_desc', name: 'Description', type: 'Desc' }, { key: '_size', name: 'Size', type: 'Size' }];
+  const cell = (f, c) => c.type === 'F' ? f.name : c.type === 'Desc' ? f.desc : c.type === 'Size' ? vwSize(f.size) : c.type === 'ModDate' ? f.mod : c.type === 'CreationDate' ? '' : f.fields[c.key] || '';
+  let folder = null;
+  const rows = pf.files.map((f, k) => {
+    const head = f.folder !== folder ? `<tr class="md-pf-folder"><td colspan="${cols.length + 1}">${ic('folder')} ${esc(f.folder || 'Top level')}</td></tr>` : '';
+    folder = f.folder;
+    const pdf = /\.pdf$/i.test(f.name);
+    return head + `<tr class="md-pf-file">${cols.map((c) => `<td>${esc(cell(f, c))}</td>`).join('')}<td class="md-pf-acts">${pdf ? `<button type="button" class="btn" data-pf-open="${k}">Open</button>` : ''}<button type="button" class="btn" data-pf-save="${k}">Save</button></td></tr>`;
+  }).join('');
+  const body = `<p>The files in this portfolio. Open a PDF to read it here, or save any file.</p><div class="md-pf-wrap"><table class="md-pf"><thead><tr>${cols.map((c) => `<th>${esc(c.name)}</th>`).join('')}<th></th></tr></thead><tbody>${rows || `<tr><td colspan="${cols.length + 1}">No files.</td></tr>`}</tbody></table></div>`;
+  await dialog('Portfolio', body, [{ label: 'Close', primary: true }], (dlg) => {
+    $$('[data-pf-open]', dlg).forEach((b) => { b.onclick = async () => { const f = pf.files[+b.dataset.pfOpen], bytes = f && f.bytes(); if (!bytes) return; $('[data-x]', dlg).click(); await openBytes(new Uint8Array(bytes), f.name); }; });
+    $$('[data-pf-save]', dlg).forEach((b) => { b.onclick = async () => { const f = pf.files[+b.dataset.pfSave], bytes = f && f.bytes(); if (bytes) await saveFile(bytes, f.name, 'application/octet-stream'); }; });
+  });
+}
+cmd('md_portfolio', { label: 'Portfolio files…', icon: 'folder-open', enabled: () => !!mdPf && mdPf.doc === doc, hidden: false, run: mdPfPanel });
+addStyle(`
+.md-pf-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--ink); border-bottom: 1px solid var(--line); font-size: 13px; }
+.md-pf-bar svg { width: 16px; height: 16px; flex: none; }
+.md-pf-bar span { flex: 1; min-width: 0; }
+.md-pf-bar .btn { height: 28px; padding: 0 12px; }
+.md-pf-wrap { max-height: 55vh; overflow: auto; }
+.md-pf { width: 100%; border-collapse: collapse; font-size: 13px; }
+.md-pf th { text-align: left; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--line); padding: 6px; position: sticky; top: 0; background: var(--surface); }
+.md-pf td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.md-pf .md-pf-folder td { font-weight: 600; color: var(--ink-2); }
+.md-pf .md-pf-folder svg { width: 14px; height: 14px; vertical-align: -2px; }
+.md-pf .md-pf-acts { white-space: nowrap; text-align: right; }
+.md-pf .md-pf-acts .btn { height: 26px; padding: 0 10px; margin-left: 4px; font-size: 12px; }
+`);
+TEST_HOOKS.portfolio = () => mdPf && { files: mdPf.files.map((f) => ({ name: f.name, folder: f.folder, desc: f.desc, fields: f.fields })), schema: mdPf.schema };
+TEST_HOOKS.addSource = (bytes, name) => addSource(new Uint8Array(bytes), null, null, name);
+TEST_HOOKS.annotFiles = async (n) => {
+  const v = views[n], pd = pdfDocs.get(v.entry.src), list = await v.page.getAnnotations({ intent: 'display' });
+  return Promise.all(list.filter((a) => a.subtype === 'FileAttachment').map(async (a) => ({ name: a.file && a.file.filename, desc: a.contentsObj && a.contentsObj.str, icon: a.name, bytes: Array.from((a.file && a.file.content) || await pd.getAttachmentContent(a.fileId) || []) })));
+};
 
 // ---- src/features/30-links.js
 /* ---------------- links ----------------
@@ -9023,7 +10168,9 @@ TEST_HOOKS.cmdIcon = (id) => C[id] && C[id].icon;
      cmShape   oval, cloud (Circle / Square with a cloudy border), line, arrow (Line), polygon, polyline
      cmCallout a box of text with a leader line to a point (FreeText, callout)
      cmType    typewriter text, no box (FreeText, typewriter)
-     cmStamp   a stamp (Stamp)
+     cmStamp   a stamp (Stamp): one of the standard ones, your own text, or "Approved by <name> on <date and time>"
+     cmPicStamp a picture stamp (Stamp, its appearance the picture): a picture file, a saved signature, or one of
+               Your stamps (store key 'stamps': pictures and text stamps, named, added and deleted in the Stamp dialog)
    The core highlight (hl, also the area highlight), box (rect) and pen (ink) marks are saved the same way, as
    Highlight, Square and Ink annotations, so every comment made here is a comment in other apps too. */
 const CM_FILL_OPACITY = 0.25;
@@ -9495,36 +10642,132 @@ function cmStampSize(label, sub) {
 function cmStampHtml(label, color, sub) {
   return `<span class="cm-stamp-face" style="--cm-c:${color}">${esc(label.toUpperCase())}${sub ? `<small>${esc(sub)}</small>` : ''}</span>`;
 }
+// Your stamps (kept on this device, store key 'stamps'): pictures and text stamps, each with a name.
+//   { id, name, kind: 'picture', data, w, h } | { id, name, kind: 'text', label }
+const cmLib = () => { const l = store.get('stamps', []); return Array.isArray(l) ? l.filter((s) => s && s.id) : []; };
+const cmLibSet = (l) => store.set('stamps', l);
+const cmLibAdd = (s) => { const l = cmLib(); if (s.kind === 'picture' ? l.some((x) => x.data === s.data) : l.some((x) => x.kind === 'text' && x.label === s.label)) return; cmLibSet([...l, { id: uid(), ...s }]); };
+// The name on a dynamic stamp: yours (as set for comments), else the PDF's author.
+async function cmStampName() {
+  if (S.author) return S.author;
+  try { const md = await pdfDocs.get(0).getMetadata(); const a = md && md.info && md.info.Author; if (a && String(a).trim()) return String(a).trim(); } catch {}
+  return '';
+}
+const cmNowText = () => new Date().toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const cmDynSub = (name) => `by ${name || 'No name'} on ${cmNowText()}`;
+// A picture file as a stamp picture: a JPEG as it is, other kinds (SVG drawn at its size, or 600 pixels wide) as PNG.
+async function cmStampPicture(file) {
+  const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  const img = new Image(); img.src = data; await img.decode();
+  const svg = /svg/i.test(file.type) || /\.svg$/i.test(file.name || '');
+  let w = img.naturalWidth || 600, h = img.naturalHeight || 600;
+  if (svg) { const k = Math.max(1, 600 / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k); }
+  if (/^data:image\/jpeg/.test(data) && !svg) return { data, w, h };
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return { data: c.toDataURL('image/png'), w, h };
+}
 async function cmPickStamp() {
-  let pick = null, custom = '';
-  const body = `<p>Pick a stamp, then click the page to place it.</p><div class="cm-stamps">${CM_STAMPS.map(([k, label, color]) => `<button type="button" class="cm-stamp" data-stamp="${k}" aria-label="${esc(label)}">${cmStampHtml(label, color, k === 'received' ? cmToday() : '')}</button>`).join('')}</div>
-    <label class="field"><span>Custom stamp</span><input id="cmStampText" type="text" placeholder="Your text, like Paid" autocomplete="off" maxlength="40"></label>`;
+  let pick = null, custom = '', pic = null, keep = true;
+  const who = await cmStampName(), sigs = sigSaved(), lib = cmLib();
+  const thumb = (data) => `<img src="${esc(data)}" alt="" class="cm-stamp-img">`;
+  const body = `<p>Pick a stamp, then click the page to place it.</p><div class="cm-stamps">${CM_STAMPS.map(([k, label, color]) => `<button type="button" class="cm-stamp" data-stamp="${k}" aria-label="${esc(label)}">${cmStampHtml(label, color, k === 'received' ? cmToday() : '')}</button>`).join('')}
+    <button type="button" class="cm-stamp" data-dyn="approved" id="cmStampDyn" aria-label="Approved, with your name and the time">${cmStampHtml('Approved', '#2B8A3E', cmDynSub(who))}</button></div>
+    <h3 class="cm-stamp-h">Pictures</h3>
+    <div class="cm-stamps">${sigs.map((s, k) => `<button type="button" class="cm-stamp" data-sig="${k}" aria-label="Signature ${k + 1}">${thumb(s.data)}</button>`).join('')}
+    <button type="button" class="cm-stamp cm-stamp-add" id="cmStampPicBtn">${ic('image-plus')}<span>Choose a picture…</span></button></div>
+    <input type="file" id="cmStampPic" accept="image/png,image/jpeg,image/svg+xml,.svg" hidden>
+    ${lib.length ? `<h3 class="cm-stamp-h">Your stamps</h3><div class="cm-lib">${lib.map((s) => `<div class="cm-lib-item" data-lib-row="${esc(s.id)}"><button type="button" class="cm-stamp" data-lib="${esc(s.id)}" aria-label="${esc(s.name)}">${s.kind === 'picture' ? thumb(s.data) : cmStampHtml(s.label, '#2448C9', '')}</button><input type="text" class="cm-lib-name" data-lib-name="${esc(s.id)}" value="${esc(s.name)}" aria-label="Name of this stamp" maxlength="40"><button type="button" class="icon-btn" data-lib-del="${esc(s.id)}" title="Delete" aria-label="Delete ${esc(s.name)}">${ic('trash-2')}</button></div>`).join('')}</div>` : ''}
+    <label class="field"><span>Custom stamp</span><input id="cmStampText" type="text" placeholder="Your text, like Paid" autocomplete="off" maxlength="40"></label>
+    <label class="cm-stamp-keep"><input type="checkbox" id="cmStampKeep" checked><span>Keep a custom stamp or picture in Your stamps</span></label>`;
   const a = await dialog('Stamp', body, [{ label: 'Cancel' }, { label: 'Use custom stamp', primary: true, value: 'custom' }], (dlg) => {
-    $$('[data-stamp]', dlg).forEach((b) => b.onclick = () => { pick = b.dataset.stamp; $('[data-a="1"]', dlg).click(); });
+    const done = () => $('[data-a="1"]', dlg).click();
+    $$('[data-stamp]', dlg).forEach((b) => b.onclick = () => { pick = b.dataset.stamp; done(); });
+    $$('[data-dyn]', dlg).forEach((b) => b.onclick = () => { pick = 'dynamic'; done(); });
+    $$('[data-sig]', dlg).forEach((b) => b.onclick = () => { const s = sigs[+b.dataset.sig]; pic = { data: s.data, w: s.w, h: s.h, name: 'Signature', fromLib: true }; done(); });
+    $$('[data-lib]', dlg).forEach((b) => b.onclick = () => { const s = cmLib().find((x) => x.id === b.dataset.lib); if (!s) return; if (s.kind === 'picture') pic = { data: s.data, w: s.w, h: s.h, name: s.name, fromLib: true }; else { pick = 'lib'; custom = s.label; } done(); });
+    $$('[data-lib-name]', dlg).forEach((inp) => { inp.onchange = () => { const name = inp.value.trim(); if (!name) return; cmLibSet(cmLib().map((x) => x.id === inp.dataset.libName ? { ...x, name } : x)); }; inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); inp.blur(); } }; });
+    $$('[data-lib-del]', dlg).forEach((b) => b.onclick = () => { cmLibSet(cmLib().filter((x) => x.id !== b.dataset.libDel)); const row = b.closest('.cm-lib-item'); if (row) row.remove(); });
+    const file = $('#cmStampPic', dlg);
+    $('#cmStampPicBtn', dlg).onclick = () => file.click();
+    file.onchange = async () => {
+      const f = file.files[0]; if (!f) return;
+      try { pic = { ...(await cmStampPicture(f)), name: (f.name || 'Picture').replace(/\.[a-z0-9]+$/i, '') }; } catch { toast('That file isn’t a picture Cowdrey.PDF can read.'); return; }
+      keep = $('#cmStampKeep', dlg).checked; done();
+    };
     const inp = $('#cmStampText', dlg);
     inp.oninput = () => { custom = inp.value; };
-    inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('[data-a="1"]', dlg).click(); } };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } };
+    $('#cmStampKeep', dlg).onchange = (e) => { keep = e.target.checked; };
   });
   if (!a) return;
-  if (pick) {
+  if (pic) {
+    if (keep && !pic.fromLib) cmLibAdd({ kind: 'picture', name: pic.name, data: pic.data, w: pic.w, h: pic.h });
+    CM.stamp = { picture: pic };
+  } else if (pick === 'dynamic') {
+    const name = who || (await askText('Your name', 'Shown on the stamp, and as the author of your comments.', '', 'Use')) || '';
+    if (!who && name.trim()) { S.author = name.trim(); saveSettings(); }
+    CM.stamp = { stamp: 'dynamic', label: 'Approved', color: '#2B8A3E', name: 'Approved', sub: '', dynamic: true };
+  } else if (pick && pick !== 'lib') {
     const [k, label, color, name] = CM_STAMPS.find((s) => s[0] === pick);
     CM.stamp = { stamp: k, label, color, name, sub: k === 'received' ? cmToday() : '' };
   } else {
     if (!custom.trim()) { toast('Type the stamp text first'); return; }
+    if (keep && pick !== 'lib') cmLibAdd({ kind: 'text', name: custom.trim(), label: custom.trim() });
     CM.stamp = { stamp: 'custom', label: custom.trim(), name: 'Custom', sub: '' };
   }
   setTool('cmstamp'); toast('Click the page to place the stamp');
 }
 FEATURE.tools.cmstamp = {
-  down(e, v) {
+  async down(e, v) {
     e.preventDefault();
     if (!CM.stamp) { cmPickStamp(); return; }
-    const [x, y] = toPdf(v, ...localPoint(e, v)), s = CM.stamp, before = snapshot();
-    const m = { id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub: s.sub, name: s.name, color: s.color || cmStroke('cmstamp'), text: s.label, ...cmStampSize(s.label, s.sub) };
+    const [x, y] = toPdf(v, ...localPoint(e, v)), s = CM.stamp;
+    let m;
+    if (s.picture) {
+      // a picture stamp: 150 points across its longer side, upright on screen
+      const k = 150 / Math.max(s.picture.w, s.picture.h);
+      m = { id: uid(), type: 'cmPicStamp', x, y, w: +(s.picture.w * k).toFixed(2), h: +(s.picture.h * k).toFixed(2), rot: totalRot(v), data: s.picture.data, name: s.picture.name || 'Picture' };
+    } else {
+      // a dynamic stamp says who and when, at the moment it is placed
+      const sub = s.dynamic ? cmDynSub(await cmStampName()) : s.sub;
+      m = { id: uid(), type: 'cmStamp', x, y, rot: totalRot(v), tilt: CM_TILT, stamp: s.stamp, label: s.label, sub, name: s.name, color: s.color || cmStroke('cmstamp'), text: s.label, ...cmStampSize(s.label, sub) };
+    }
+    const before = snapshot();
     marksOf(v.entry).push(m);
     drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
   },
 };
+// A picture stamp: centred on x, y, w × h points, turned by rot (counter-clockwise in PDF space, as the page turns).
+function cmPicCorners(m) {
+  const a = (m.rot || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), w2 = m.w / 2, h2 = m.h / 2;
+  const P = (u, w) => [m.x + c * u - s * w, m.y + s * u + c * w];
+  return { bl: P(-w2, -h2), br: P(w2, -h2), tr: P(w2, h2), tl: P(-w2, h2) };
+}
+FEATURE.markTypes.cmPicStamp = {
+  draw(v, m) {
+    const g = svgEl('g', { class: 'mk' }), { bl, br, tl } = cmPicCorners(m), o = toView(v, ...tl), X = toView(v, ...[br[0] + tl[0] - bl[0], br[1] + tl[1] - bl[1]]), Y = toView(v, ...bl);
+    g.appendChild(svgEl('image', { x: 0, y: 0, width: 1, height: 1, href: m.data, preserveAspectRatio: 'none', transform: `matrix(${X[0] - o[0]} ${X[1] - o[1]} ${Y[0] - o[0]} ${Y[1] - o[1]} ${o[0]} ${o[1]})` }));
+    return g;
+  },
+  async save({ L, out, p, m }) {
+    const { PDFName, PDFHexString, PDFString } = L, c = out.context, q = cmPicCorners(m), pts = [q.bl, q.br, q.tr, q.tl];
+    const rect = [Math.min(...pts.map((t) => t[0])), Math.min(...pts.map((t) => t[1])), Math.max(...pts.map((t) => t[0])), Math.max(...pts.map((t) => t[1]))];
+    const img = FEATURE.picXObject ? await FEATURE.picXObject(L, out, { data: m.data }, {}) : (await out.embedPng(m.data)).ref;
+    // the unit square onto the picture's place (in page space: the form's BBox is the Rect, its Matrix none)
+    const mat = [q.br[0] - q.bl[0], q.br[1] - q.bl[1], q.tl[0] - q.bl[0], q.tl[1] - q.bl[1], q.bl[0], q.bl[1]];
+    const ap = c.register(c.stream(`q ${mat.map(cmNum).join(' ')} cm /Im Do Q`, { Type: 'XObject', Subtype: 'Form', FormType: 1, BBox: rect, Resources: { XObject: { Im: img } } }));
+    const annot = c.obj({ Type: 'Annot', Subtype: 'Stamp', Rect: rect, F: 4, Name: 'Image', AP: { N: ap } });
+    annot.set(PDFName.of('NM'), PDFString.of('cpdf-' + m.id));
+    annot.set(PDFName.of('Contents'), PDFHexString.fromText(m.name || 'Picture'));
+    const who = cmAuthorOf(m); if (who) annot.set(PDFName.of('T'), PDFHexString.fromText(who));
+    annot.set(PDFName.of('M'), PDFString.fromDate(m.at ? new Date(m.at) : new Date()));
+    const ref = c.register(annot);
+    let annots = p.node.lookup(PDFName.of('Annots'));
+    if (!annots) { annots = c.obj([]); p.node.set(PDFName.of('Annots'), annots); }
+    annots.push(ref);
+  },
+};
+FEATURE.markLabels.push((m) => (m.type === 'cmPicStamp' ? { label: 'Stamp', text: m.name || 'Picture' } : null));
 
 /* ---- commands and the Comment tab ---- */
 const cmTool = (id, label, icon, tool, hint) => cmd(id, { label, icon, enabled: has, pressed: () => app.dataset.tool === tool, run: () => { setTool(tool); if (hint) toast(hint); } });
@@ -10089,6 +11332,15 @@ addStyle(`
 .cm-stamp:hover, .cm-stamp:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cm-stamp-face { display: inline-flex; flex-direction: column; align-items: center; color: var(--cm-c); border: 2px solid var(--cm-c); box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px var(--cm-c); border-radius: 7px; padding: 3px 9px; font: 700 13px/1.15 Helvetica, Arial, sans-serif; letter-spacing: .02em; white-space: nowrap; transform: rotate(-${CM_TILT}deg); background: color-mix(in srgb, var(--cm-c) 7%, #fff); }
 .cm-stamp-face small { font-weight: 400; font-size: 9px; }
+.cm-stamp-h { font-size: 13px; margin: 14px 0 2px; color: var(--ink-2); }
+.cm-stamp-img { max-width: 112px; max-height: 44px; object-fit: contain; }
+.cm-stamp-add { color: #333; display: flex; gap: 6px; font-size: 12px; }
+.cm-stamp-add svg { width: 16px; height: 16px; }
+.cm-lib { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.cm-lib-item { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; }
+.cm-lib-item .cm-stamp { min-height: 48px; padding: 4px; }
+.cm-lib-name { font: inherit; font-size: 13px; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; min-width: 0; }
+.cm-stamp-keep { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
 `);
 TEST_HOOKS.cmItems = async () => (await cmItems()).map((it) => [it.label, it.n + 1, it.text, !!it.m]);
 TEST_HOOKS.setAuthor = (name) => { S.author = name; saveSettings(); };
