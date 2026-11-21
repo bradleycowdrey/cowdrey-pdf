@@ -97,6 +97,7 @@ const FEATURE = {
   savePage: [],    // async ({ L, out, p, entry, n, entries, marks, ctx }) — after a page's marks are saved
   savePageLate: [], // the same, after every savePage hook (redaction among them): drawing that must not be cut
   saveDoc: [],     // async ({ L, out, pages, entries, ctx }) — after every page, before the file is written
+  beforeSave: [],  // async ({ copy }) — before Save or Save a copy builds the file: false cancels; { copy: true } saves a copy instead; { bytes } saves those bytes as they are
   editFreeText: null, // async (v, a) -> true when a FreeText comment from the PDF was edited as a mark
   commitEdits: [], // async () — keep what is being typed in a feature's own editor, before saving, printing or exporting
   afterRender: [], // (v) — after a page is drawn on screen
@@ -3066,7 +3067,9 @@ async function nativeSave(bytes, copy) {
 async function savePdf(copy) {
   if (!doc) return false;
   try {
-    const bytes = await buildPdf();
+    let given = null;
+    for (const h of FEATURE.beforeSave) { const r = await h({ copy }); if (r === false) return false; if (r && r.copy) copy = true; if (r && r.bytes) given = r.bytes; }
+    const bytes = given || await buildPdf();
     if (!bytes) return false;
     if (NATIVE) {
       if (!(await nativeSave(bytes, copy))) return false;

@@ -47,5 +47,12 @@ html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/]+\/)?[^@/]+)@[^
   if (!copied.has(rel)) { const dest = path.join(dist, 'vendor', out); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest); copied.add(rel); }
   return `./vendor/${out}`;
 });
+// Signing (src/features/76-sign.js): pkijs, asn1js and the two small libraries they import, and node-forge for
+// PKCS#12 files. The address of each is in the page and is copied above like any other; the page fetches the ES
+// modules and links their imports itself, so each must be a single file that is there. Signing must work offline.
+{
+  const SIGNING = ['pkijs/build/index.es.js', 'asn1js/build/index.es.js', 'pvtsutils/build/index.es.js', 'pvutils/build/utils.es.js', 'node-forge/dist/forge.min.js'];
+  if (html.includes('./vendor/pkijs/')) for (const rel of SIGNING) if (!copied.has(rel)) throw new Error(`Signing needs ${rel} in the bundle`);
+}
 fs.writeFileSync(path.join(dist, 'index.html'), html);
 console.log(`desktop/dist ready (${copied.size} libraries: ${[...copied].join(', ')})`);
