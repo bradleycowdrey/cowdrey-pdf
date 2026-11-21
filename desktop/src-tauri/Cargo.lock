@@ -567,6 +567,8 @@ dependencies = [
  "base64 0.22.1",
  "objc2",
  "objc2-foundation",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",

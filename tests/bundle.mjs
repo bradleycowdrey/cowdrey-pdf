@@ -24,8 +24,17 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.page canvas').length === 3, null, { timeout: 15000 });
   const head = await page.evaluate(async () => String.fromCharCode(...(await window.__cowdreyPdf.buildPdf()).slice(0, 5)));
   if (head !== '%PDF-') throw new Error('Save did not produce a PDF');
+  // certificate signing: the signing libraries load from ./vendor; sign the open PDF and check the signature
+  if (!(await page.evaluate(() => window.__cowdreyPdf.sgLoadLibs()))) throw new Error('The signing libraries did not load');
+  const p12 = Array.from(fs.readFileSync(path.join(root, 'tests/fixtures/sign-ec.p12')));
+  const signed = await page.evaluate(async (b) => {
+    const h = window.__cowdreyPdf, id = await h.sgImportId(new Uint8Array(b), 'test');
+    window.__lastSignedShown = 0; await h.sgSignNow({ id: id.id, password: 'test', page: 0, rect: [320, 640, 540, 700] });
+    return h.sgVerify(window.__lastSigned);
+  }, p12);
+  if (signed.length !== 1 || signed[0].status !== 'valid') throw new Error('Signing did not work offline: ' + JSON.stringify(signed));
   if (errors.length) throw new Error(errors.join('\n'));
   await page.screenshot({ path: process.env.SHOT || '/dev/null' }).catch(() => {});
-  ok = true; console.log('✓ the app bundle opens a PDF and saves it, offline');
-} catch (e) { console.log('✗ the app bundle could not open a PDF:', e.message, errors); }
+  ok = true; console.log('✓ the app bundle opens a PDF, saves it and signs it, offline');
+} catch (e) { console.log('✗ the app bundle failed offline:', e.message, errors); }
 await browser.close(); srv.close(); process.exit(ok ? 0 : 1);
