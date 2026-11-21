@@ -36,6 +36,17 @@ if (html.includes(OCR[0][0])) {
   const LANG = '`https://cdn.jsdelivr.net/npm/@tesseract.js-data/${lang}@1.0.0/4.0.0_best_int`';
   if (html.includes(LANG)) html = html.split(LANG).join("(lang === 'eng' ? new URL('./vendor/@tesseract.js-data/eng/4.0.0_best_int', location.href).href : " + LANG + ')');
 }
+// ---- optimize (src/features/82-optimize.js): pdf.js's picture decoders (JPEG 2000, JBIG2, CCITT), a folder pdf.js
+// adds file names to. Its worker runs from a blob, so the address is made absolute against the app's own. fflate is a
+// plain jsDelivr file, copied below like the rest.
+const WASM = "'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/wasm/'";
+if (html.includes(WASM)) {
+  const from = path.join(nm, 'pdfjs-dist/wasm'), to = path.join(dist, 'vendor/pdfjs-dist/wasm');
+  fs.mkdirSync(to, { recursive: true });
+  for (const f of fs.readdirSync(from)) if (/^(jbig2|openjpeg|qcms)/.test(f)) fs.copyFileSync(path.join(from, f), path.join(to, f));
+  html = html.split(WASM).join("new URL('./vendor/pdfjs-dist/wasm/', location.href).href");
+}
+// ---- end optimize
 const copied = new Set();
 html = html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/((?:@[^/]+\/)?[^@/]+)@[^/'"\s]+\/([^'"\s)]+)/g, (whole, pkg, file) => {
   if (pkg.includes('${') || file.includes('`')) return whole; // an address built at run time (online-only OCR languages)
