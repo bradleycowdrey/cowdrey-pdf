@@ -581,8 +581,13 @@ async function sgCheckToken(schema, data) {
     const alg = SG_HASH[tst.messageImprint.hashAlgorithm.algorithmId];
     out.imprintOk = !!alg && sgEq(await sgDigest(alg, data), tst.messageImprint.hashedMessage.valueBlock.valueHexView);
     const v = await sd.verify({ signer: 0, data: new Uint8Array(data).slice().buffer, extendedMode: true, checkChain: false });
-    out.ok = !!v.signatureVerified && out.imprintOk;
-    if (v.signerCertificate) { const n = sgNameOf(v.signerCertificate.subject); out.tsa = n.cn || n.o || ''; }
+    // the certificate the token was verified with (pkijs matches the signer info's issuer+serial or key id):
+    // the timestamp authority's details and trust come from this one, never from a look-alike in the token
+    out.signer = v.signerCertificate || null;
+    out.essOk = out.signer ? await sgEssOk(sd.signerInfos[0], out.signer) : false;
+    out.ok = !!v.signatureVerified && out.imprintOk && out.essOk;
+    if (out.signer) { const n = sgNameOf(out.signer.subject); out.tsa = n.cn || n.o || ''; }
+    if (v.signatureVerified && out.imprintOk && !out.essOk) out.error = 'the token names another certificate than the one it was signed with';
   } catch (e) { out.error = e && (e.message || e.toString()); }
   return out;
 }
@@ -971,7 +976,7 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
   if (tk) {
     const chk = await sgCheckToken(tk.values[0], si.signature.valueBlock.valueHexView);
     r.ts = { ok: chk.ok, time: chk.genTime, tsa: chk.tsa, der: new Uint8Array(tk.values[0].toBER(false)) };
-    if (chk.tst && chk.sd) Object.assign(r.ts, await sgTokenDetails(chk.tst, chk.sd, trust));
+    if (chk.tst && chk.sd) Object.assign(r.ts, await sgTokenDetails(chk.tst, chk.sd, trust, chk.signer));
     if (!chk.ok) r.notes.push('The timestamp does not check out.');
     else {
       // its time is relied on only when the timestamp authority is trusted here: anyone can run a timestamp server
@@ -979,7 +984,7 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
       r.ts.trusted = !!tc && tc.trusted && !tc.problems.length && t0.ext.eku.includes('1.3.6.1.5.5.7.3.8');
       if (!r.ts.trusted) {
         r.ts.why = !tc ? 'its certificate is not in it' : tc.problems.length ? tc.problems[0].replace(/^The signer’s certificate/, 'The timestamp authority’s certificate').replace('vouches for the signer’s', 'vouches for the timestamp authority’s') : !t0.ext.eku.includes('1.3.6.1.5.5.7.3.8') ? 'its certificate is not one for timestamps' : 'not trusted on this device';
-        r.notes.push(`The timestamp is not relied on: ${r.ts.why === 'not trusted on this device' ? `the timestamp authority${r.ts.tsa ? ' “' + r.ts.tsa + '”' : ''} is not trusted on this device` : r.ts.why}. The time comes from the signer’s clock.`);
+        r.notes.push(`The timestamp is not relied on: ${r.ts.why === 'not trusted on this device' ? `the timestamp authority${r.ts.tsa ? ' “' + r.ts.tsa + '”' : ''} is not trusted on this device` : r.ts.why.replace(/\.+$/, '')}. The time comes from the signer’s clock.`);
       }
     }
   }

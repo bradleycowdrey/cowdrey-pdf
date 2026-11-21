@@ -264,15 +264,32 @@ async function sgAttrsSigOk(si, signer) {
 
 /* ---- timestamp details ---- */
 const SG_HASHNAME = { [SG_OID.sha1]: 'SHA-1', [SG_OID.sha256]: 'SHA-256', [SG_OID.sha384]: 'SHA-384', [SG_OID.sha512]: 'SHA-512' };
-async function sgTokenDetails(tst, sd, trust) {
+// The ESS signing-certificate attribute (RFC 3161 / RFC 5035) names the certificate the timestamp authority signed
+// with by its hash. When it is there it must be the certificate the token verified with. Missing: nothing to compare.
+async function sgEssOk(si, cert) {
+  try {
+    const at = si.signedAttrs && si.signedAttrs.attributes.find((x) => x.type === '1.2.840.113549.1.9.16.2.47' || x.type === '1.2.840.113549.1.9.16.2.12');
+    if (!at) return true;
+    const v2 = at.type === '1.2.840.113549.1.9.16.2.47';
+    const first = at.values[0].valueBlock.value[0].valueBlock.value[0], parts = first.valueBlock.value;
+    let alg = v2 ? 'SHA-256' : 'SHA-1', k = 0;
+    if (v2 && parts[0] && parts[0].idBlock.tagClass === 1 && parts[0].idBlock.tagNumber === 16) { // hashAlgorithm given (else SHA-256)
+      alg = SG_HASH[parts[0].valueBlock.value[0].valueBlock.toString()]; k = 1;
+    }
+    if (!alg) return false;
+    const want = parts[k].valueBlock.valueHexView;
+    return sgEq(await sgDigest(alg, new Uint8Array(cert.toSchema(false).toBER(false))), want);
+  } catch { return false; }
+}
+async function sgTokenDetails(tst, sd, trust, signer) {
   const out = { serial: '', policy: '', hash: '', imprint: '', tsaChain: null };
   try { out.serial = sgHex(tst.serialNumber.valueBlock.valueHexView).toUpperCase(); } catch {}
   try { out.policy = tst.policy; } catch {}
   try { out.hash = SG_HASHNAME[tst.messageImprint.hashAlgorithm.algorithmId] || tst.messageImprint.hashAlgorithm.algorithmId; out.imprint = sgHex(tst.messageImprint.hashedMessage.valueBlock.valueHexView).toUpperCase(); } catch {}
   try { if (tst.accuracy) { const a = tst.accuracy; out.accuracy = [a.seconds && a.seconds + ' s', a.millis && a.millis + ' ms', a.micros && a.micros + ' µs'].filter(Boolean).join(' '); } } catch {}
   try {
-    const si = sd.signerInfos[0], certs = (sd.certificates || []).filter((c) => c.subject);
-    const signer = certs.find((c) => si.sid && si.sid.serialNumber && c.serialNumber.isEqual(si.sid.serialNumber)) || certs[0];
+    const certs = (sd.certificates || []).filter((c) => c.subject);
+    // only the certificate the token verified with (no signer found: no chain, so the time is not relied on)
     if (signer) out.tsaChain = await sgBuildChain(signer, certs, trust, tst.genTime);
   } catch (e) { console.warn(e); }
   return out;

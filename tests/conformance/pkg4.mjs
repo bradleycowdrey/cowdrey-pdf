@@ -61,9 +61,9 @@ const keygen = (name, kind) => {
 };
 const mdOf = (kind) => kind === 'ed25519' ? [] : ['-' + (kind === 'p384' ? 'sha384' : 'sha256')];
 // A self-signed certificate (a root, or a signer that is its own root)
-function selfSigned(name, cn, kind, ext = 'v3_self') {
+function selfSigned(name, cn, kind, ext = 'v3_self', more = []) {
   keygen(name, kind);
-  ossl('req', '-x509', '-new', '-config', file('openssl.cnf'), '-key', file(name + '.key'), ...mdOf(kind), '-days', '3650', '-subj', `/CN=${cn}/O=Cowdrey Pkg4`, '-extensions', ext, '-out', file(name + '.pem'));
+  ossl('req', '-x509', '-new', '-config', file('openssl.cnf'), '-key', file(name + '.key'), ...mdOf(kind), '-days', '3650', ...more, '-subj', `/CN=${cn}/O=Cowdrey Pkg4`, '-extensions', ext, '-out', file(name + '.pem'));
   return { name, cn, kind, key: file(name + '.key'), pem: file(name + '.pem') };
 }
 // A certificate authority directory for `openssl ca`
@@ -153,12 +153,16 @@ const TSAROOT = makeCA(selfSigned('tsaroot', 'Pkg4 TSA Root', 'rsa2048', 'v3_roo
 const TSA = issue(TSAROOT, 'tsa', 'Pkg4 Timestamp Authority', 'rsa2048', 'ext_tsa', new Date(Date.now() - 30 * DAY), new Date(Date.now() + 5 * 365 * DAY));
 // a timestamp server nobody trusts (self-signed, for timestamps): its time must not settle when a signature was made
 const ROGUE = selfSigned('rogue-tsa', 'Pkg4 Rogue TSA', 'rsa2048', 'ext_tsa_self');
+// a look-alike: self-signed, with the trusted timestamp authority's serial number; its tokens carry the trusted
+// authority's certificate first, so only the certificate the token really verifies with may count
+const SWAP = selfSigned('swap-tsa', 'Pkg4 Swap TSA', 'rsa2048', 'ext_tsa_self', ['-set_serial', '0x' + ossl('x509', '-in', TSA.pem, '-noout', '-serial').stdout.trim().split('=')[1]]);
 const LEAF = {
   good: issue(INTER, 'leaf-good', 'Pkg4 Chain Signer', 'rsa2048', 'ext_leaf'),
   revoked: issue(INTER, 'leaf-revoked', 'Pkg4 Revoked Signer', 'rsa2048', 'ext_leaf'),
   revokedCrl: issue(INTER, 'leaf-revoked-crl', 'Pkg4 Revoked CRL Signer', 'rsa2048', 'ext_leaf_crl'),
   late: issue(INTER, 'leaf-late', 'Pkg4 Revoked Later Signer', 'rsa2048', 'ext_leaf'),
   rogue: issue(INTER, 'leaf-rogue', 'Pkg4 Rogue-Stamped Signer', 'rsa2048', 'ext_leaf'),
+  swap: issue(INTER, 'leaf-swap', 'Pkg4 Swap-Stamped Signer', 'rsa2048', 'ext_leaf'),
   future: issue(INTER, 'leaf-future', 'Pkg4 Future Signer', 'rsa2048', 'ext_leaf', new Date(Date.now() + 2 * DAY), new Date(Date.now() + 400 * DAY)),
   underExpired: issue(EXPIRED, 'leaf-underx', 'Pkg4 Signer Under Expired CA', 'rsa2048', 'ext_plain', new Date(Date.now() - 300 * DAY), new Date(Date.now() + 300 * DAY)),
   untrusted: issue(UNTRUSTED, 'leaf-untrusted', 'Pkg4 Untrusted Signer', 'rsa2048', 'ext_plain'),
@@ -189,6 +193,21 @@ ess_cert_id_alg = sha256
 write('tsa-serial', '01\n');
 write('rogue-tsa.cnf', fs.readFileSync(file('tsa.cnf'), 'utf8').replaceAll(TSA.pem, ROGUE.pem).replaceAll(TSA.key, ROGUE.key).replace(`${W}/tsa-chain.pem`, ROGUE.pem).replace(`${W}/tsa-serial`, `${W}/rogue-serial`));
 write('rogue-serial', '01\n');
+write('swap-tsa.cnf', fs.readFileSync(file('tsa.cnf'), 'utf8').replaceAll(TSA.pem, SWAP.pem).replaceAll(TSA.key, SWAP.key).replace(`${W}/tsa-chain.pem`, SWAP.pem).replace(`${W}/tsa-serial`, `${W}/swap-serial`));
+write('swap-serial', '01\n');
+// puts the trusted authority's certificate first in a token's certificates (they are not signed, so the token still verifies)
+write('swap-certs.py', `import sys
+from asn1crypto import tsp, cms, pem, core
+def load(p):
+    d = open(p, 'rb').read()
+    return pem.unarmor(d)[2] if pem.detect(d) else d
+r = tsp.TimeStampResp.load(open(sys.argv[1], 'rb').read())
+sd = r['time_stamp_token']['content']
+# a SET OF in exactly this order (a DER dump would sort it)
+raw = b''.join(load(p) for p in sys.argv[3:])
+sd['certificates'] = cms.CertificateSet.load(core.Asn1Value(tag=17, class_=0, method=1, contents=raw).dump())
+open(sys.argv[2], 'wb').write(r.dump())
+`);
 
 /* ---------------- the servers: TSA, OCSP and CRLs, over http ---------------- */
 let tsaHits = 0, n = 0, ocspHits = 0;
@@ -197,9 +216,10 @@ const server = http.createServer((rq, rs) => {
   rq.on('end', () => {
     try {
       const u = new URL(rq.url, BASE);
-      if ((u.pathname === '/tsa' || u.pathname === '/rogue-tsa') && rq.method === 'POST') {
+      if ((u.pathname === '/tsa' || u.pathname === '/rogue-tsa' || u.pathname === '/swap-tsa') && rq.method === 'POST') {
         tsaHits++; const q = write(`q${++n}.tsq`, Buffer.concat(chunks));
-        ossl('ts', '-reply', '-config', file(u.pathname === '/tsa' ? 'tsa.cnf' : 'rogue-tsa.cnf'), '-queryfile', q, '-out', file(`r${n}.tsr`));
+        ossl('ts', '-reply', '-config', file(u.pathname.slice(1) + '.cnf'), '-queryfile', q, '-out', file(`r${n}.tsr`));
+        if (u.pathname === '/swap-tsa') { run('python3', ['-I', file('swap-certs.py'), file(`r${n}.tsr`), file(`r${n}s.tsr`), TSA.pem, SWAP.pem]); fs.renameSync(file(`r${n}s.tsr`), file(`r${n}.tsr`)); }
         rs.writeHead(200, { 'content-type': 'application/timestamp-reply' }); return rs.end(fs.readFileSync(file(`r${n}.tsr`)));
       }
       if (u.pathname === '/ocsp' && rq.method === 'POST') {
@@ -522,7 +542,19 @@ await step('T3', 'Certificate revoked after the TSA date: signature valid, revoc
   await checkRevocation(app);
   const g = (await sigs(app))[0], gts = g.checks.find((k) => k[0] === 'Timestamp'), gph = pyh(rout, [ROOT.pem, TSAROOT.pem])[0];
   const rogueOk = g.status === 'revoked' && g.rev && g.rev.verdict === 'revoked' && g.ts && g.ts.ok && !g.ts.trusted && g.ts.tsa === 'Pkg4 Rogue TSA' && gts[1] === 'warn' && (!HAS.pyhanko || (gph.ts && gph.ts.trusted === false));
-  return [ok && rogueOk ? 'pass' : 'fail', `app: ${s.statusText}; revocation: ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}. Untrusted TSA (“Pkg4 Rogue TSA”), revoked after its stamp: app ${g.statusText}; Timestamp: ${gts[1]} (${gts[2]}); revocation: ${g.rev && g.rev.text}; pyHanko timestamp trusted=${gph.ts && gph.ts.trusted}`];
+  // the same with a look-alike timestamp server: the trusted authority's serial number and certificate (placed first)
+  // in its tokens, but signed with its own key. The time must still not be relied on.
+  await settings(app, { tsa: `${BASE}/swap-tsa` });
+  await openPdf(app, TEXT1, 'Swap stamp.pdf');
+  const wout = await signUi(app, LEAF.swap.cn, { ts: true });
+  await settings(app, { tsa: `${BASE}/tsa` });
+  await new Promise((r) => setTimeout(r, 1500));
+  revoke(LEAF.swap);
+  await openBuf(app, wout, 'Swap stamp (signed).pdf');
+  await checkRevocation(app);
+  const w = (await sigs(app))[0], wts = w.checks.find((k) => k[0] === 'Timestamp'), wph = pyh(wout, [ROOT.pem, TSAROOT.pem])[0];
+  const swapOk = w.status === 'revoked' && w.rev && w.rev.verdict === 'revoked' && w.ts && w.ts.ok && !w.ts.trusted && w.ts.tsa === 'Pkg4 Swap TSA' && wts[1] === 'warn' && !/\.\./.test(w.notes.join(' ')) && (!HAS.pyhanko || (wph.ts && wph.ts.trusted === false));
+  return [ok && rogueOk && swapOk ? 'pass' : 'fail', `app: ${s.statusText}; revocation: ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}. Untrusted TSA (“Pkg4 Rogue TSA”), revoked after its stamp: app ${g.statusText}; Timestamp: ${gts[1]} (${gts[2]}); revocation: ${g.rev && g.rev.text}; pyHanko timestamp trusted=${gph.ts && gph.ts.trusted}. Look-alike TSA (“Pkg4 Swap TSA”, the trusted authority’s serial number and certificate placed first in its token): app ${w.statusText}; Timestamp: ${wts[1]} (${wts[2]}); pyHanko timestamp trusted=${wph.ts && wph.ts.trusted}`];
 });
 
 // Chain and revocation
