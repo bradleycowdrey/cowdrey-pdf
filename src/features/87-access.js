@@ -195,15 +195,75 @@ function acContainer(K) {
   return { ref: r.ref, dict: r.root };
 }
 function acAppend(K, parent, ref) { const list = acKids(K, parent.dict); list.push(ref); acSetKids(K, parent.dict, list); K.dict(ref).set(K.N('P'), parent.ref); }
-// Puts a new element after the last element with content on the page (in reading order), or at the end.
-function acInsertForPage(K, pageRef, ref) {
-  let last = null;
-  acWalk(K, (er, e, pr, pe, page) => {
-    if (acItems(K, e, page).some((it) => it.page && it.page.tag === pageRef.tag)) last = { er, pr, pe };
-  });
-  if (!last) { acAppend(K, acContainer(K), ref); return; }
-  const list = acKids(K, last.pe), k = list.findIndex((x) => x instanceof K.PDFRef && x.tag === last.er.tag);
-  list.splice(k + 1, 0, ref); acSetKids(K, last.pe, list); K.dict(ref).set(K.N('P'), last.pr);
+// Puts new elements after the last element with content on their page (in reading order), or at the end. The tree is
+// walked once for all of them and each parent's kids are written once (a PDF with thousands of links stays quick).
+function acInserter(K) {
+  let last = null; const adds = [];
+  const index = () => {
+    last = new Map();
+    acWalk(K, (er, e, pr, pe, page) => { for (const it of acItems(K, e, page)) if (it.page) last.set(it.page.tag, { er, pr, pe }); });
+  };
+  return {
+    add(pageRef, ref) { if (!last) index(); adds.push({ at: last.get(pageRef.tag) || null, ref }); },
+    flush() {
+      const byParent = new Map(), tail = [];
+      for (const a of adds) {
+        if (!a.at) { tail.push(a.ref); continue; }
+        let g = byParent.get(a.at.pe); if (!g) byParent.set(a.at.pe, g = { pr: a.at.pr, after: new Map() });
+        const t = a.at.er.tag; if (!g.after.has(t)) g.after.set(t, []); g.after.get(t).push(a.ref);
+      }
+      for (const [pe, g] of byParent) {
+        const list = [], left = new Map(g.after);
+        for (const kid of acKids(K, pe)) { list.push(kid); const x = kid instanceof K.PDFRef && left.get(kid.tag); if (x) { list.push(...x); left.delete(kid.tag); } }
+        for (const x of left.values()) list.push(...x); // its anchor left the tree since: at the end of the parent
+        acSetKids(K, pe, list);
+        for (const refs of g.after.values()) for (const r of refs) K.dict(r).set(K.N('P'), g.pr);
+      }
+      if (tail.length) { const box = acContainer(K); acSetKids(K, box.dict, [...acKids(K, box.dict), ...tail]); for (const r of tail) K.dict(r).set(K.N('P'), box.ref); }
+      adds.length = 0; last = null;
+    },
+  };
+}
+// Removes an element left with nothing in it (and a parent that it leaves empty, up to a grouping element).
+function acDropEmpty(K, ref) {
+  for (let n = 0; ref && n < 50; n++) {
+    const e = K.dict(ref); if (!acIsElem(K, e) || acKids(K, e).length) return;
+    const par = acParentOf(K, ref); if (!par) return;
+    acSetKids(K, par.dict, acKids(K, par.dict).filter((x) => !(x instanceof K.PDFRef && x.tag === ref.tag)));
+    if (par.dict === acRoot(K).root || AC_GROUPING.has(acRoleOf(K, K.name(par.dict.get(K.N('S'))) || ''))) return;
+    ref = par.ref;
+  }
+}
+// After pages are moved, merged or extracted in another order: the elements of each grouping element (Document, Part,
+// Sect…) in the order of the pages they are on. Elements on the same page keep their order.
+function acSortByPage(K, pages) {
+  const r = acRoot(K); if (!r) return;
+  const at = new Map(pages.map((p, i) => [p.ref.tag, i])), memo = new Map();
+  const keyOf = (ref, inh, seen) => {
+    if (memo.has(ref.tag)) return memo.get(ref.tag);
+    const e = K.dict(ref); if (!acIsElem(K, e) || seen.has(ref.tag)) return Infinity;
+    seen.add(ref.tag);
+    const own = e.get(K.N('Pg')), pg = own instanceof K.PDFRef ? own : inh; let k = Infinity;
+    for (const it of acItems(K, e, pg)) if (it.page && at.has(it.page.tag)) k = Math.min(k, at.get(it.page.tag));
+    for (const kid of acKids(K, e)) if (kid instanceof K.PDFRef) k = Math.min(k, keyOf(kid, pg, seen));
+    memo.set(ref.tag, k); return k;
+  };
+  const done = new Set();
+  const sort = (dict, inh) => {
+    const kids = acKids(K, dict), refs = kids.filter((kid) => kid instanceof K.PDFRef && acIsElem(K, K.dict(kid)));
+    if (refs.length > 1 && refs.length === kids.length) {
+      // an element with nothing on a page stays after the one before it
+      let prev = 0; const keyed = refs.map((kid, n) => { let k = keyOf(kid, inh, new Set()); if (!Number.isFinite(k)) k = prev; prev = k; return { kid, k, n }; });
+      keyed.sort((a, b) => a.k - b.k || a.n - b.n);
+      if (keyed.some((x, n) => x.n !== n)) acSetKids(K, dict, keyed.map((x) => x.kid));
+    }
+    for (const kid of refs) {
+      if (done.has(kid.tag)) continue; done.add(kid.tag);
+      const e = K.dict(kid), own = e.get(K.N('Pg'));
+      if (AC_GROUPING.has(acRoleOf(K, K.name(e.get(K.N('S'))) || ''))) sort(e, own instanceof K.PDFRef ? own : inh);
+    }
+  };
+  sort(r.root, null);
 }
 
 /* ---- tags through page deletes and merges ---- */
@@ -443,18 +503,20 @@ async function acLate({ L, out, p, entry, ctx }) {
 }
 // Elements for added text and pictures, after what was already on their page.
 function acApplyPending(K, ctx, skip) {
+  const ins = acInserter(K);
   for (const it of ctx.acPending || []) {
     if (skip && skip.has(it.pg.tag)) continue;
     const ref = acNewElem(K, it.role, null, { Pg: it.pg, K: K.PDFNumber.of(it.mcid), ...(it.role === 'Figure' ? acFigureAttrs(K, it.alt, it.box) : {}) });
-    acInsertForPage(K, it.pg, ref);
+    ins.add(it.pg, ref);
   }
+  ins.flush();
 }
 function acFigureAttrs(K, alt, box) {
   return { ...(alt ? { Alt: K.PDFHexString.fromText(alt) } : {}), ...(box ? { A: K.c.obj({ O: 'Layout', BBox: box.map(ac2) }) } : {}) };
 }
 // Comments, links and form fields of a tagged PDF that have no tag: Annot, Link and Form elements.
 function acTagAnnots(K, pages, place) {
-  const done = new Set();
+  const done = new Set(), ins = acInserter(K);
   acWalk(K, (er, e, pr, pe, page) => { for (const it of acItems(K, e, page)) if (it.kind === 'obj' && it.obj instanceof K.PDFRef) done.add(it.obj.tag); });
   for (const p of pages) {
     const an = K.look(p.node.get(K.N('Annots'))); if (!(an instanceof K.PDFArray)) continue;
@@ -471,10 +533,11 @@ function acTagAnnots(K, pages, place) {
       }
       const alt = S === 'Form' ? K.str(d.get(K.N('TU'))) || K.str(K.dict(d.get(K.N('Parent')))?.get(K.N('TU'))) : K.str(d.get(K.N('Contents')));
       const elem = acNewElem(K, S, null, { Pg: p.ref, K: K.c.obj([K.c.obj({ Type: 'OBJR', Obj: ref, Pg: p.ref })]), ...(alt && S !== 'Link' ? { Alt: K.PDFHexString.fromText(alt) } : {}) });
-      if (!(place && place(p, d, elem))) acInsertForPage(K, p.ref, elem);
+      if (!(place && place(p, d, elem))) ins.add(p.ref, elem);
     }
     if (any || an.size()) p.node.set(K.N('Tabs'), K.N('S'));
   }
+  ins.flush();
 }
 
 /* ---- auto-tagging: the plan (made with pdf.js when the command runs, or when saving for pages added since) ---- */
@@ -698,6 +761,7 @@ const acRoleFor = (blocks, t) => { const id = t.split('/')[0], b = blocks.find((
 
 /* ---- alt text, when saving ---- */
 function acApplyAlt(K, m, pages, entries, skip) {
+  const place = acInserter(K);
   for (let n = 0; n < pages.length; n++) {
     const p = pages[n], key = pageKey(entries[n]);
     if (skip && skip.has(p.ref.tag)) continue;
@@ -712,7 +776,7 @@ function acApplyAlt(K, m, pages, entries, skip) {
       if (u.covered && u.mc && u.mc.mcid != null) {
         const er = owners.get(u.mc.mcid), e = er && K.dict(er);
         if (!e) continue;
-        if (it.deco) { wraps.push({ start: u.mc.start, end: u.mc.openEnd, replace: '/Artifact BMC\n' }); acDropMcid(K, e, p.ref, u.mc.mcid); continue; }
+        if (it.deco) { wraps.push({ start: u.mc.start, end: u.mc.openEnd, replace: '/Artifact BMC\n' }); acDropMcid(K, e, p.ref, u.mc.mcid); acDropEmpty(K, er); continue; }
         if (it.alt) e.set(K.N('Alt'), K.PDFHexString.fromText(it.alt));
         continue;
       }
@@ -732,10 +796,11 @@ function acApplyAlt(K, m, pages, entries, skip) {
     all.sort((a, b) => b.at - a.at || (a.o ?? 0) - (b.o ?? 0));
     for (const x of all) s = s.slice(0, x.at) + x.t + s.slice(x.at + x.del);
     acSetSrc(K, node, s);
-    for (const ref of elems) acInsertForPage(K, p.ref, ref);
+    for (const ref of elems) place.add(p.ref, ref);
   }
+  place.flush();
   // Pictures already tagged in the PDF, named by their element.
-  for (const it of (m.items || []).filter((x) => x.ref && doc.sources.length && acBaseIsSource0(K))) {
+  for (const it of (m.items || []).filter((x) => x.ref && !x.deco && doc.sources.length && acBaseIsSource0(K))) {
     const e = K.dict(K.PDFRef.of(it.ref[0], it.ref[1])); if (!acIsElem(K, e)) continue;
     if (it.alt) e.set(K.N('Alt'), K.PDFHexString.fromText(it.alt));
   }
@@ -758,7 +823,8 @@ function acDropMcid(K, e, pageRef, mcid) {
 }
 
 /* ---- reading order and tag type changes on the PDF's own tags ---- */
-// ops: { op: 'move', ref, before } (before: a sibling's ref, or null for the end) | { op: 'retag', ref, S } |
+// ops: { op: 'move', ref, before } or { op: 'move', ref, after } (a sibling's ref; the panel moves an element to the end
+// of its page with after: the parent can hold every page's elements) | { op: 'retag', ref, S } |
 // { op: 'merge', ref, next } | { op: 'split', ref }. Refs are [num, gen] of the opened file's objects.
 function acParentOf(K, ref) {
   let found = null;
@@ -784,7 +850,9 @@ function acTagOps(K, ops, artifacts) {
       }
       if (op.op === 'move') {
         list.splice(k, 1);
-        const at = op.before ? list.findIndex((x) => x instanceof K.PDFRef && x.tag === R(op.before).tag) : -1;
+        const find = (x) => list.findIndex((y) => y instanceof K.PDFRef && y.tag === R(x).tag);
+        let at = op.before ? find(op.before) : -1;
+        if (op.after) { at = find(op.after); if (at >= 0) at++; }
         list.splice(at < 0 ? list.length : at, 0, ref); acSetKids(K, par.dict, list); continue;
       }
       if (op.op === 'merge') {
@@ -874,8 +942,10 @@ FEATURE.savePageLate.push(async (a) => { try { await acLate(a); } catch (e) { co
 FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => {
   try {
     const K = acK(L, out); K.ctx0 = ctx.sources && ctx.sources.loaded[0];
-    const anyTagged = entries.some((e) => acSrcTagged(L, ctx, e.src));
+    const anyTagged = entries.some((e) => acSrcTagged(L, ctx, e.src)), hadRoot = !!acRoot(K);
     if (anyTagged) acKeepStructure(K, pages, entries, ctx);
+    // Tags copied into a file that had none (an extract, or tagged pages added to an untagged PDF): it is tagged now.
+    if (anyTagged && !hadRoot && acRoot(K) && !K.dict(K.cat.get(K.N('MarkInfo')))) K.cat.set(K.N('MarkInfo'), K.c.obj({ Marked: true }));
     const ed = acMark('acorder');
     if (ed && acRoot(K) && acBaseIsSource0(K)) {
       const art = new Map(); acTagOps(K, ed.ops, art);
@@ -888,6 +958,9 @@ FEATURE.saveDoc.push(async ({ L, out, pages, entries, ctx }) => {
     if (anyTagged) acApplyPending(K, ctx, auto);
     if (anyTagged || auto) acTagAnnots(K, pages, null);
     acApplyFixes(K, acMark('a11yfix'), pages);
+    // Pages in another order than in their files (moved, extracted, or combined): the tags follow the pages.
+    const inOrder = entries.every((e, n) => e.src === entries[0].src && (n === 0 || e.i > entries[n - 1].i));
+    if (anyTagged && !inOrder && acRoot(K)) acSortByPage(K, pages);
     if (acRoot(K)) acRebuildParentTree(K);
     if (ACC.ua) {
       const f = acMark('a11yfix');
@@ -1174,7 +1247,7 @@ async function acOrderEdit(op) {
   if (model.mode === 'auto') {
     const key = pageKey(e), at = acMark('autotag'), blocks = JSON.parse(JSON.stringify(await acBlocksFor(at, e)));
     const k = blocks.findIndex((b) => b.id === op.id); if (k < 0) return;
-    if (op.op === 'move') { const [b] = blocks.splice(k, 1); const j = op.before ? blocks.findIndex((x) => x.id === op.before) : -1; blocks.splice(j < 0 ? blocks.length : j, 0, b); }
+    if (op.op === 'move') { const [b] = blocks.splice(k, 1); let j = op.before ? blocks.findIndex((x) => x.id === op.before) : -1; if (op.after) { j = blocks.findIndex((x) => x.id === op.after); if (j >= 0) j++; } blocks.splice(j < 0 ? blocks.length : j, 0, b); }
     if (op.op === 'retag') {
       const b = blocks[k];
       if (op.S === 'L' && b.role !== 'L') { b.items = (b.lines || []).map((l) => [l]); delete b.lines; }
@@ -1200,7 +1273,16 @@ async function acOrderEdit(op) {
     const R = (id) => id ? id.split(':').map(Number) : null;
     const o = { op: op.op, ref: it.ref };
     if (op.op === 'retag') o.S = op.S;
-    if (op.op === 'move') { const b = op.before && model.items.find((x) => x.id === op.before); if (b && b.parent !== it.parent) return; o.before = b ? R(b.id) : null; }
+    if (op.op === 'move') {
+      const b = op.before && model.items.find((x) => x.id === op.before); if (b && b.parent !== it.parent) return;
+      if (b) o.before = R(b.id);
+      else {
+        // To the end of this page: after the last element of the page with the same parent (the parent can be the
+        // Document, which holds the elements of every page).
+        const sibs = model.items.filter((x) => x.parent === it.parent && x.id !== it.id), a = op.after ? sibs.find((x) => x.id === op.after) : sibs[sibs.length - 1];
+        if (!a) return; o.after = R(a.id);
+      }
+    }
     if (op.op === 'merge') { const k = model.items.indexOf(it), nx = model.items.slice(k + 1).find((x) => x.parent === it.parent); if (!nx) return; o.next = R(nx.id); }
     await acSetMark('acorder', (m) => { m.ops = [...(m.ops || []), o]; });
   }
@@ -1249,7 +1331,7 @@ async function acOrderRender() {
     li.onclick = (ev) => { if (ev.target.closest('select, button')) return; ACC.orderSel = it.id; $$('.ac-item', panel).forEach((x) => x.classList.toggle('on', x === li)); acOrderDrawAll(); };
     $('[data-role]', li).onchange = (ev) => acOrderEdit({ op: 'retag', id: it.id, S: ev.target.value });
     $('[data-act="up"]', li).onclick = () => { const b = sibAfter(k, -1); if (b) acOrderEdit({ op: 'move', id: it.id, before: b.id }); };
-    $('[data-act="down"]', li).onclick = () => { const b = sibAfter(k, 1); if (!b) return; const after = sibAfter(items.indexOf(b), 1); acOrderEdit({ op: 'move', id: it.id, before: after ? after.id : null }); };
+    $('[data-act="down"]', li).onclick = () => { const b = sibAfter(k, 1); if (b) acOrderEdit({ op: 'move', id: it.id, after: b.id }); };
     $('[data-act="merge"]', li).onclick = () => acOrderEdit({ op: 'merge', id: it.id });
     $('[data-act="split"]', li).onclick = () => acOrderEdit({ op: 'split', id: it.id });
     li.ondragstart = (ev) => { ACC.drag = it.id; ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/x-tag', it.id); li.classList.add('drag'); };
@@ -1427,8 +1509,9 @@ addStyle(`
 .ac-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .ac-head h2 { font-size: 14px; margin: 0; flex: 1; }
 .ac-pg { font-size: 12px; color: var(--ink-3); }
-.ac-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.ac-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 13px; cursor: grab; border: 1px solid transparent; }
+/* one column as wide as the panel: a long line of text is cut short, never pushing the buttons out of view */
+.ac-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.ac-item { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 13px; cursor: grab; border: 1px solid transparent; min-width: 0; box-sizing: border-box; }
 .ac-item:hover { background: var(--hover); } .ac-item.on { border-color: var(--accent); background: var(--accent-soft); }
 .ac-item.drag { opacity: .5; } .ac-item.ac-before { box-shadow: inset 0 2px 0 var(--accent); }
 .ac-num { flex: none; min-width: 20px; height: 20px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
@@ -1436,6 +1519,7 @@ addStyle(`
 .ac-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .ac-btns { flex: none; display: flex; } .ac-btns .icon-btn { width: 26px; height: 26px; } .ac-btns svg { width: 14px; height: 14px; }
 .ac-btns .icon-btn:disabled { opacity: .3; }
+@media (pointer: coarse) { .ac-item { flex-wrap: wrap; } .ac-btns { margin-left: auto; } .ac-btns .icon-btn { width: 40px; height: 40px; } .ac-txt { order: 5; flex-basis: 100%; } }
 .ac-panel .btn svg { width: 15px; height: 15px; vertical-align: -3px; }
 svg.ac-ord { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; overflow: visible; }
 .ac-box rect { fill: rgba(36, 72, 201, .08); stroke: #2448c9; stroke-width: 1.2; }

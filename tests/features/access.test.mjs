@@ -294,6 +294,134 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  // A tagged PDF with n pages of `paras` P elements each (MCIDs 0..paras-1) and `links` untagged URI links a page.
+  async function linkedPdf(n, paras, links, file) {
+    const d = await L.PDFDocument.create(), f = await d.embedFont(L.StandardFonts.Helvetica), c = d.context;
+    const rootRef = c.nextRef(), docRef = c.nextRef(), nums = [], kids = [];
+    for (let i = 0; i < n; i++) {
+      const pg = d.addPage([612, 792]); pg.node.setFontDictionary(N('F1'), f.ref);
+      let s = ''; const mine = [];
+      for (let k = 0; k < paras; k++) {
+        s += `/P <</MCID ${k}>> BDC BT /F1 11 Tf 72 ${740 - k * 20} Td (Paragraph ${k + 1} of page ${i + 1}) Tj ET EMC\n`;
+        const e = c.register(c.obj({ Type: 'StructElem', S: 'P', P: docRef, Pg: pg.ref, K: k })); kids.push(e); mine.push(e);
+      }
+      pg.node.set(N('Contents'), c.register(c.stream(s)));
+      pg.node.set(N('StructParents'), L.PDFNumber.of(i)); nums.push(L.PDFNumber.of(i), c.register(c.obj(mine)));
+      const an = [];
+      for (let k = 0; k < links; k++) an.push(c.register(c.obj({ Type: 'Annot', Subtype: 'Link', Rect: [72, 740 - k * 20, 200, 752 - k * 20], Border: [0, 0, 0], A: { S: 'URI', URI: L.PDFString.of(`https://example.com/${i}/${k}`) } })));
+      if (an.length) pg.node.set(N('Annots'), c.obj(an));
+    }
+    c.assign(docRef, c.obj({ Type: 'StructElem', S: 'Document', P: rootRef, K: kids }));
+    const pt = c.obj({}); pt.set(N('Nums'), c.obj(nums));
+    c.assign(rootRef, c.obj({ Type: 'StructTreeRoot', K: docRef, ParentTree: c.register(pt), ParentTreeNextKey: n }));
+    d.catalog.set(N('StructTreeRoot'), rootRef); d.catalog.set(N('MarkInfo'), c.obj({ Marked: true }));
+    fs.writeFileSync(file, await d.save()); return file;
+  }
+  const docKids = (d) => treeOf(d)[0].kids.map((e) => `${e.S}@${e.pg}`);
+  const marked = (d) => { const mi = d.catalog.lookup(N('MarkInfo')); return !!mi && String(mi.get(N('Marked'))) === 'true'; };
+
+  await test('Accessibility: reading order Move down on a PDF’s own tags keeps the element on its page (not the end of the document)', async () => {
+    const p = await open(); await openPdf(p, await taggedPdf('Alpha', 3, tmp('md')), 'Alpha.pdf');
+    await run(p, 'acOrder'); await p.waitForSelector('#acOrder .ac-item'); await p.waitForTimeout(300);
+    await p.click('#acOrder .ac-item:first-child [data-act="down"]'); await p.waitForTimeout(500);
+    eq(await p.$$eval('#acOrder .ac-item select', (s) => s.map((x) => x.value)), ['P', 'H1']);
+    const op = await p.evaluate(() => window.__cowdreyPdf.doc.marks.__doc.find((m) => m.type === 'acorder').ops[0]);
+    ok(op.after && !op.before, JSON.stringify(op));
+    let d = await L.PDFDocument.load(await savedOf(p));
+    eq(docKids(d), ['P@0', 'H1@0', 'H1@1', 'P@1', 'H1@2', 'P@2']);
+    // and back up again, then the last item of page 3 down (nothing after it: the button is off)
+    await p.click('#acOrder .ac-item:nth-child(2) [data-act="up"]'); await p.waitForTimeout(500);
+    d = await L.PDFDocument.load(await savedOf(p));
+    eq(docKids(d), ['H1@0', 'P@0', 'H1@1', 'P@1', 'H1@2', 'P@2']);
+    // moving to the end of page 2 by the API (no sibling given) stays on page 2
+    await jump(p, 2); await p.waitForTimeout(800);
+    const m = await p.evaluate(() => window.__cowdreyPdf.acOrderModel(1));
+    await p.evaluate((id) => window.__cowdreyPdf.acOrderEdit({ op: 'move', id, before: null }), m.items[0].id);
+    d = await L.PDFDocument.load(await savedOf(p));
+    eq(docKids(d), ['H1@0', 'P@0', 'P@1', 'H1@1', 'H1@2', 'P@2']);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  for (const [label, o] of [['desktop', {}], ['phone', { width: 390, height: 844, touch: true, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' }]]) {
+    await test(`Accessibility: reading order rows fit the panel, with their buttons in view (${label})`, async () => {
+      const p = await open(o); await openPdf(p, WORD, 'Pelican report.pdf');
+      await run(p, 'acAutoTag'); await run(p, 'acOrder');
+      await p.waitForSelector('#acOrder .ac-item'); await p.waitForTimeout(400);
+      const r = await p.$eval('#acOrder', (panel) => {
+        const pr = panel.getBoundingClientRect(), list = panel.querySelector('.ac-list');
+        const out = [...panel.querySelectorAll('.ac-item button')].map((b) => b.getBoundingClientRect()).filter((x) => x.right > pr.right + 1 || x.left < pr.left - 1 || x.right > innerWidth);
+        return { off: out.length, sw: list.scrollWidth, cw: list.clientWidth, n: panel.querySelectorAll('.ac-item button').length, pw: panel.scrollWidth - panel.clientWidth };
+      });
+      ok(r.n >= 8 && !r.off && r.sw <= r.cw + 1 && r.pw <= 1, JSON.stringify(r));
+      // the buttons work there: merge the first two items
+      const before = await p.$$eval('#acOrder .ac-item', (x) => x.length);
+      await p.click('#acOrder .ac-item:first-child [data-act="merge"]'); await p.waitForTimeout(500);
+      eq(await p.$$eval('#acOrder .ac-item', (x) => x.length), before - 1);
+      eq(p.errors, []); await p.ctx.close();
+    });
+  }
+
+  await test('Accessibility: Decorative on a picture that is already tagged takes its Figure out of the tree; the check passes', async () => {
+    const p = await open(); await openPdf(p, WORD, 'Pelican report.pdf');
+    await run(p, 'acAutoTag');
+    const bytes = await savedOf(p);
+    ok(flat(treeOf(await L.PDFDocument.load(bytes))).some((e) => e.S === 'Figure'), 'a figure to start with');
+    await reopen(p, bytes);
+    const rows = await p.evaluate(() => window.__cowdreyPdf.acPictures());
+    eq([rows.length, rows[0].kind, !!rows[0].ref], [1, 'pdf', true]);
+    await p.evaluate(() => window.__cowdreyPdf.acSaveAlt([{ k: 0, deco: true }]));
+    const items = await p.evaluate(() => window.__cowdreyPdf.acCheck());
+    ok(items.find((x) => x.id === 'alt').ok, JSON.stringify(items.find((x) => x.id === 'alt')));
+    const d = await L.PDFDocument.load(await savedOf(p)), s = streamOf(d, 0);
+    ok(!flat(treeOf(d)).some((e) => e.S === 'Figure'), 'no Figure left: ' + JSON.stringify(treeOf(d)));
+    ok(/\/Artifact BMC\s*\/Image-\d+ Do|\/Artifact BMC\s*q[^]*?Do/.test(s) && !/\/Figure/.test(s), s);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Accessibility: saving a tagged PDF with many links grows with the page count, not faster; every link is tagged on its page', async () => {
+    const p = await open(), time = async (n, f) => {
+      await openPdf(p, await linkedPdf(n, 10, 5, f), 'Links.pdf');
+      const t = await p.evaluate(async () => { const t0 = performance.now(); await window.__cowdreyPdf.buildPdf(); return performance.now() - t0; });
+      return t;
+    };
+    await time(20, tmp('l0')); // warm up
+    const small = await time(60, tmp('l1')), big = await time(240, tmp('l2'));
+    ok(big / small < 8, `60 pages: ${small.toFixed(0)} ms, 240 pages: ${big.toFixed(0)} ms`);
+    const d = await L.PDFDocument.load(await savedOf(p)), kids = treeOf(d)[0].kids;
+    eq(kids.filter((e) => e.S === 'Link').length, 240 * 5);
+    // each page's links come after its paragraphs, before the next page's
+    const pages = kids.map((e) => e.pg);
+    ok(pages.every((x, k) => k === 0 || x >= pages[k - 1]), 'in page order');
+    eq(kids.slice(0, 15).map((e) => e.S), [...Array(10).fill('P'), ...Array(5).fill('Link')]);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Accessibility: tags copied into a new or untagged file are marked as tagged and follow the page order', async () => {
+    const p = await open(); await openPdf(p, await taggedPdf('Alpha', 3, tmp('x')), 'Alpha.pdf');
+    // extract pages 3 and 1, in that order
+    let d = await L.PDFDocument.load(Buffer.from(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.buildPdf([2, 0])))));
+    ok(marked(d), 'MarkInfo');
+    eq(flat(treeOf(d)).filter((e) => /^(H1|P)$/.test(e.S)).map((e) => `${e.S}@${e.pg}`), ['H1@0', 'P@0', 'H1@1', 'P@1']);
+    // pages moved: page 1 down
+    await openPdf(p, await taggedPdf('Bravo', 2, tmp('y')), 'Bravo.pdf');
+    await run(p, 'down'); await p.waitForTimeout(300);
+    d = await L.PDFDocument.load(await savedOf(p));
+    eq(docKids(d), ['H1@0', 'P@0', 'H1@1', 'P@1']);
+    ok(treeOf(d)[0].kids[0].mc.length && /Bravo heading 2/.test(streamOf(d, 0)), 'the first element is the new first page’s');
+    // an untagged file with a tagged one added
+    await openPdf(p, SAMPLE);
+    const [fc] = await Promise.all([p.waitForEvent('filechooser'), run(p, 'merge')]);
+    await fc.setFiles([await taggedPdf('Charlie', 2, tmp('z'))]); await p.waitForSelector('#dialog[open] .pg60-file'); await p.waitForTimeout(300);
+    await p.click('#dialog .btn.primary'); await p.waitForFunction(() => window.__cowdreyPdf.doc.pages.length === 5, null, { timeout: 10000 }); await p.waitForTimeout(500);
+    d = await L.PDFDocument.load(await savedOf(p));
+    ok(marked(d), 'MarkInfo after combining');
+    const top = docKids(d);
+    eq(top.map((x) => x.split('@')[0]), ['Form', 'Form', 'Part'], JSON.stringify(top));
+    const items = await p.evaluate(() => window.__cowdreyPdf.acCheck());
+    ok(items.find((x) => x.id === 'tagged').ok, JSON.stringify(items.find((x) => x.id === 'tagged')));
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   // Headings at three sizes over two pages, for bookmarks.
   async function headingsPdf(file) {
     const d = await L.PDFDocument.create(), b = await d.embedFont(L.StandardFonts.HelveticaBold), r = await d.embedFont(L.StandardFonts.Helvetica);
@@ -388,5 +516,5 @@ export default async (h) => {
     await p.ctx.close();
   });
 
-  for (const n of ['a', 'ma', 'mb', 'c', 'o', 'h', 's']) { try { fs.unlinkSync(tmp(n)); } catch {} }
+  for (const n of ['a', 'ma', 'mb', 'c', 'o', 'h', 's', 'md', 'l0', 'l1', 'l2', 'x', 'y', 'z']) { try { fs.unlinkSync(tmp(n)); } catch {} }
 };
