@@ -5,7 +5,7 @@
 // Usage: node tests/android/run.mjs <test apk> <output dir>
 import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module';
 import * as A from './lib.mjs';
-const { adb, sh, log, shot, sleep, PKG, root } = A;
+const { adb, adbBytes, sh, log, shot, sleep, PKG, root } = A;
 const require = createRequire(import.meta.url);
 const NM = path.join(root, 'desktop/node_modules');
 const L = require(path.join(NM, 'pdf-lib'));
@@ -18,27 +18,62 @@ A.setOut(OUTDIR || '/tmp/android-e2e');
 const results = [];
 let page = null;
 const only = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
-async function test(name, fn) {
+// The results so far are written after every scenario, so a run that is stopped still says how far it got.
+function writeResults(done) {
+  const passed = results.filter((r) => r[0]).length;
+  const summary = results.map(([p, n, e]) => `${p ? 'PASS' : 'FAIL'}  ${n}${e ? '\n      ' + e : ''}`).join('\n');
+  const head = !done ? 'NOT FINISHED' : passed === results.length ? 'ALL PASSED' : 'SOME FAILED';
+  const errors = page && !page.isClosed() ? page.errors : [];
+  fs.writeFileSync(path.join(A.OUT, 'result.txt'), `${head}: ${passed}/${results.length}\n${summary}\n${errors.length ? '\npage errors:\n' + errors.slice(0, 30).join('\n') + '\n' : ''}`);
+  return { passed, summary, head };
+}
+// Back to the app in front, with none of Android's windows over it (a test that failed can leave one open).
+async function frontApp() {
+  for (let i = 0; i < 4 && !/cowdreypdf\/.*Activity/.test(A.focused()); i++) { A.back(); await sleep(1000); }
+  if (!/cowdreypdf\/.*Activity/.test(A.focused()) && A.pid()) { sh(`am start -n ${comp}`); await sleep(2000); }
+}
+async function test(name, fn, limit = /OCR|batch|compare|sign/i.test(name) ? 420000 : 240000) {
   if (only && !only.test(name)) return;
   const t0 = Date.now(); log(`\n== ${name}`);
+  let timer;
   try {
+    await frontApp();
     if ((!page || page.isClosed()) && A.pid()) page = await A.connect();
-    await fn(); results.push([true, name]); log(`PASS ${name} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
+    // A scenario never runs on for ever: one that takes too long fails, and the next one starts.
+    await Promise.race([fn(), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`took longer than ${limit / 1000} s`)), limit); })]);
+    results.push([true, name]); log(`PASS ${name} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   } catch (e) {
     results.push([false, name, (e && e.message || String(e)).split('\n')[0]]); log(`FAIL ${name}: ${e && e.stack || e}`);
     shot('fail-' + name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40));
     // leave Android's own windows and the app's dialogs for the next scenario
-    for (let i = 0; i < 3 && !/cowdreypdf\/.*MainActivity|cowdreypdf.*Activity/.test(A.focused()); i++) { A.back(); await sleep(800); }
-    await closeDialogs();
-  }
+    await frontApp();
+    await withLimit(closeDialogs(), 20000).catch(() => {});
+  } finally { clearTimeout(timer); writeResults(false); }
 }
-// Closes the app's dialogs the way Escape or Back does (cancel), so the app's own dialog code finishes them.
-async function closeDialogs() {
-  for (let i = 0; i < 4; i++) {
-    try { if (!(await page.evaluate(() => { const d = document.querySelector('#dialog'); if (!d || !d.open) return false; d.dispatchEvent(new Event('cancel', { cancelable: true })); return true; }))) return; } catch { return; }
+const withLimit = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timed out')), ms))]);
+// Closes the app's dialogs the way Escape or Back does (cancel), so the app's own dialog code finishes them. It keeps
+// watching for a moment: a dialog can open again just after (Signing IDs comes back after an import).
+async function closeDialogs(watch = 2500) {
+  const end = Date.now() + watch;
+  for (let i = 0; i < 12; i++) {
+    let open = false;
+    try { open = await withLimit(page.evaluate(() => { const d = document.querySelector('#dialog'); if (!d || !d.open) return false; d.dispatchEvent(new Event('cancel', { cancelable: true })); return true; }), 5000); } catch { return; }
+    if (!open && Date.now() > end) return;
     await sleep(500);
   }
 }
+// What took and lost the focus (and the window's size), for scenarios that type: logged when they fail.
+const watchFocus = () => page.evaluate(() => {
+  window.__fx = [];
+  const d = (e) => e && e !== window && e !== document ? `${e.tagName || e.nodeName}${e.id ? '#' + e.id : ''}${e.className && typeof e.className === 'string' ? '.' + e.className.split(' ')[0] : ''}${e.name ? '[' + e.name + ']' : ''}` : String(e);
+  const t0 = performance.now(), rec = (s) => window.__fx.push(`${Math.round(performance.now() - t0)} ${s}`);
+  if (window.__fxOn) return; window.__fxOn = true;
+  for (const t of ['focusin', 'focusout', 'pointerdown', 'touchstart', 'touchcancel', 'click', 'contextmenu', 'dragstart', 'drop']) document.addEventListener(t, (e) => rec(`${t} ${d(e.target)}${e.relatedTarget ? ' → ' + d(e.relatedTarget) : ''}`), true);
+  addEventListener('resize', () => rec(`resize ${innerWidth}x${innerHeight}`));
+  if (window.visualViewport) visualViewport.addEventListener('resize', () => rec(`viewport ${Math.round(visualViewport.height)}`));
+  new MutationObserver((ms) => { for (const m of ms) for (const n of m.removedNodes) if (n.nodeType === 1 && (n.matches('.line-editor, .annotationLayer, .page') || n.querySelector && n.querySelector('.line-editor'))) rec(`removed ${d(n)}`); }).observe(document.body, { childList: true, subtree: true });
+});
+const focusLog = async () => { try { log('  focus log:', (await page.evaluate(() => (window.__fx || []).slice(-40).join(' | '))) || '(none)'); log('  active:', await page.evaluate(() => { const a = document.activeElement; return a ? `${a.tagName}.${a.className} ${a.name || ''}` : ''; })); } catch {} };
 const ok = (v, m) => { if (!v) throw new Error(m || 'not ok'); };
 const eq = (a, b, m = '') => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m} expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const fixture = (n) => path.join(root, 'tests/fixtures', n);
@@ -188,6 +223,10 @@ async function tablesPdf() {
 /* ================= the scenarios ================= */
 log('device:', sh('getprop ro.product.model').trim(), '· Android', sh('getprop ro.build.version.release').trim(), '· API', sh('getprop ro.build.version.sdk').trim());
 log('web view:', (sh('dumpsys webviewupdate | grep -iE "Current WebView package"') || '').trim().replace(/\s+/g, ' '));
+// The emulator's Google setup app can stop responding while the emulator is busy, and its "isn't responding" window
+// then covers everything: it is turned off for the test (A.focused() closes any such window that still shows).
+for (const p of ['com.google.android.googlesdksetup', 'com.google.android.setupwizard']) log(`turn off ${p}:`, sh(`pm disable-user --user 0 ${p} 2>&1`).trim().split('\n').pop());
+A.focused();
 adb('uninstall', PKG);
 log(adb('install', '-r', '-g', APK).trim());
 log('test build:', sh(`dumpsys package ${PKG} | grep -m1 versionName`).trim());
@@ -314,13 +353,17 @@ await test('Save again: goes straight to the same file; Save as copy and a cance
 
 await test('Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)', async () => {
   await openBytes(fs.readFileSync(fixture('word.pdf')), 'Pelican report.pdf');
+  await watchFocus();
   await run('tool_edit');
   for (const [find, typed] of [['Budget', 'Budget approved for the whole year'], ['second phase', 'Ο πελεκάνος πετά ψηλά']]) {
     const b = await page.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
     await A.tapCss(page, b.x + 10, b.y + b.height / 2);
     await page.waitForSelector('.line-editor', { timeout: 15000 });
-    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('.line-editor'), null, { timeout: 10000 });
-    await page.evaluate(() => document.execCommand('selectAll')); await page.keyboard.insertText(typed); await page.keyboard.press('Enter'); await sleep(800);
+    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('.line-editor'), null, { timeout: 10000 }).catch(async (e) => { await focusLog(); throw e; });
+    await sleep(1500); // the keyboard comes up
+    const inEditor = await page.evaluate(() => { const ed = document.activeElement && document.activeElement.closest('.line-editor'); if (!ed) return false; const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); return true; });
+    if (!inEditor) { await focusLog(); throw new Error('the line editor lost the focus'); }
+    await page.keyboard.insertText(typed); await sleep(300); await page.keyboard.press('Enter'); await sleep(800);
   }
   shot('edit-pdf-greek');
   await run('tool_select');
@@ -333,6 +376,7 @@ await test('Edit PDF: a line retyped in Latin and in Greek; the saved PDF has th
 await test('forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved', async () => {
   await openBytes(SAMPLE, 'Quarterly report.pdf');
   await page.evaluate(() => getSelection().removeAllRanges());
+  await run('tool_select'); await watchFocus();
   for (let i = 0; i < 3; i++) {
     await A.tapEl(page, '.annotationLayer input[name="name"]');
     if (await page.waitForFunction(() => document.activeElement && document.activeElement.name === 'name', null, { timeout: 6000 }).catch(() => null)) break;
@@ -341,6 +385,7 @@ await test('forms: tap a field, the keyboard comes up and the field stays in vie
   const ime = sh('dumpsys input_method | grep -m1 mInputShown').trim();
   const fit = await page.evaluate(() => { const r = document.activeElement.getBoundingClientRect(); return { name: document.activeElement.name, bottom: Math.round(r.bottom), top: Math.round(r.top), vh: Math.round(visualViewport.height), ih: innerHeight, kb: document.documentElement.dataset.keyboard }; });
   log('  keyboard:', ime, JSON.stringify(fit));
+  if (fit.name !== 'name') await focusLog();
   shot('form-keyboard');
   eq(fit.name, 'name', 'the field has the focus');
   ok(fit.bottom <= fit.vh && fit.top >= 0, 'the field is above the keyboard');
@@ -411,7 +456,11 @@ await test('certificate signing: import a .p12 through the picker, sign, save; t
   await page.waitForSelector('#dialog[open] #dlgInput', { timeout: 20000 });
   await page.fill('#dlgInput', 'pw1234'); await page.click('#dialog .dlg-foot .btn.primary');
   await page.waitForFunction(() => /Signing ID for Android Signer added/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
-  await closeDialogs();
+  // Signing IDs opens again with the new ID in it
+  await page.waitForSelector('#dialog[open] #sgImport', { timeout: 20000 });
+  ok(/Android Signer/.test(await page.textContent('#dialog #sgIdList')), 'the ID is listed');
+  shot('signing-ids');
+  await answer('Close'); await page.waitForFunction(() => !document.querySelector('#dialog').open, null, { timeout: 10000 });
   await sleep(500);
   const { bytes } = await saveThroughDialog(async () => {
     await run('sgSign'); await page.waitForSelector('#dialog[open] #sgPlace');
@@ -496,22 +545,30 @@ await test('batch: an action run on a PDF from the picker; the zip comes out thr
 
 await test('split into files: one folder picked once, every part saved in it', async () => {
   await openBytes(SAMPLE, 'Quarterly report.pdf');
-  const before = A.listDownloads();
+  sh(`mkdir -p '${A.DL}/Split parts'`); await sleep(1000);
+  const listParts = () => sh(`ls -1 '${A.DL}/Split parts'`).split('\n').map((x) => x.trim()).filter((x) => x && !/No such file/.test(x));
   await run('pg60_split'); await page.waitForSelector('#dialog[open]');
   await page.check('#dialog input[name="how"][value="each"]').catch(() => {});
   await page.click('#dialog .dlg-foot .btn.primary');
   const end = Date.now() + 30000; while (Date.now() < end && !isDocs()) await sleep(700);
   ok(isDocs(), 'the folder picker is open');
   await sleep(1500); shot('split-folder');
-  let use = await A.waitUi(/use this folder/i, 5000);
-  if (!use) { await toDownloads(); use = await A.waitUi(/use this folder/i, 8000); }
+  // (Android lets an app have a folder in Downloads, not Downloads itself)
+  let dir = await A.waitUi(/^Split parts$/, 4000);
+  if (!dir) { await toDownloads(); dir = await A.waitUi(/^Split parts$/, 8000); }
+  ok(dir, 'the Split parts folder is listed'); sh(`input tap ${dir.x} ${dir.y}`); await sleep(2000);
+  const use = await A.waitUi(/use this folder/i, 8000);
   ok(use, 'Use this folder'); sh(`input tap ${use.x} ${use.y}`); await sleep(1500);
+  shot('split-allow');
   await A.tapUi(/^allow$/i, 8000);
-  const got = await A.waitNewDownload(before, 30000);
-  await sleep(3000);
-  const all = A.listDownloads().filter((n) => !before.includes(n));
-  log('  new files:', all.join(', '));
-  eq(all.filter((n) => /part \d\)\.pdf$/.test(n)).length, 3, 'three parts'); void got;
+  let all = []; const end2 = Date.now() + 30000;
+  while (Date.now() < end2 && (all = listParts()).length < 3) await sleep(1000);
+  log('  files in Split parts:', all.join(', '));
+  eq(all.filter((n) => /part \d\)\.pdf$/.test(n)).length, 3, 'three parts');
+  const part = adbBytes('exec-out', 'cat', `${A.DL}/Split parts/${all.sort()[0]}`);
+  eq((await L.PDFDocument.load(part)).getPageCount(), 1, 'one page in a part');
+  await page.waitForFunction(() => /Saved 3 files/.test(document.querySelector('#toast').textContent), null, { timeout: 10000 }).catch(() => {});
+  log('  toast:', await toastText());
 });
 
 await test('print: the PDF goes to Android\'s print service (its preview opens)', async () => {
@@ -579,9 +636,9 @@ await test('phone layout in dark mode: the ribbon scrolls sideways, nothing wide
 
 await test('touch: long-press and drag a page thumbnail to move the page', async () => {
   await openBytes(SAMPLE, 'Quarterly report.pdf');
-  await run('sidebar'); await sleep(800);
+  await page.evaluate(() => { if (document.querySelector('#app').dataset.sidebar !== 'open') window.__cowdreyPdf.run('sidebar'); }); await sleep(800);
   await page.evaluate(() => { const b = document.querySelector('[data-side="thumbs"]'); if (b) b.click(); });
-  await page.waitForSelector('.thumb[data-n="2"]', { timeout: 10000 }); await sleep(800);
+  await page.waitForSelector('.thumb[data-n="2"]', { timeout: 10000 }); await sleep(800); await watchFocus();
   const a = await page.locator('.thumb[data-n="0"]').boundingBox(), b = await page.locator('.thumb[data-n="2"]').boundingBox();
   const s = await A.screenOf(page);
   const [x1, y1] = s.at(a.x + a.width / 2, a.y + a.height / 2), [x2, y2] = s.at(b.x + b.width / 2, b.y + b.height * .7);
@@ -590,9 +647,10 @@ await test('touch: long-press and drag a page thumbnail to move the page', async
   sh(`input motionevent UP ${x2} ${y2}`); await sleep(1200);
   const order = await page.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.i));
   log('  page order:', order.join(','));
+  if (order[0] === 0) await focusLog();
   shot('thumb-moved');
   ok(order[0] !== 0, 'the first page moved');
-  await run('sidebar');
+  await page.evaluate(() => { if (document.querySelector('#app').dataset.sidebar === 'open') window.__cowdreyPdf.run('sidebar'); });
 });
 
 await test('memory: the app\'s memory after all of the above', async () => {
@@ -629,10 +687,6 @@ await test('light mode: the app follows the system theme', async () => {
   ok(d.theme === 'dark' || (d.media && d.theme !== 'light'), 'dark again');
 });
 
-const passed = results.filter((r) => r[0]).length;
-const summary = results.map(([p, n, e]) => `${p ? 'PASS' : 'FAIL'}  ${n}${e ? '\n      ' + e : ''}`).join('\n');
-const head = passed === results.length ? 'ALL PASSED' : 'SOME FAILED';
-const errors = page ? page.errors : [];
-fs.writeFileSync(path.join(A.OUT, 'result.txt'), `${head}: ${passed}/${results.length}\n${summary}\n${errors.length ? '\npage errors:\n' + errors.slice(0, 30).join('\n') + '\n' : ''}`);
-log(`\n${summary}\n\n${head}: ${passed}/${results.length}`);
+const { summary, head } = writeResults(true);
+log(`\n${summary}\n\n${head}: ${results.filter((r) => r[0]).length}/${results.length}`);
 process.exit(0);

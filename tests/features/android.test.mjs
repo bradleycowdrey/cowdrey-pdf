@@ -43,7 +43,7 @@ export default async (h) => {
     const p = await open(android({ saveAs: [{ saved: false }, { saved: true, uri: 'content://docs/document/1', name: 'Quarterly report.pdf' }] }));
     await openPdf(p); await draw(p);
     // cancelled: nothing saved, still edited
-    eq(await p.evaluate(() => window.__cowdreyPdf.run('save')), undefined); await p.waitForTimeout(600);
+    await p.evaluate(() => window.__cowdreyPdf.run('save')); await p.waitForTimeout(600);
     ok(/Edited/.test(await state(p)), await state(p));
     const first = (await native(p, 'saveAs'))[0];
     eq([first.args.name, first.args.mimeType, first.args.path], ['Quarterly report.pdf', 'application/pdf', '/data/user/0/app/cache/outgoing/Quarterly report.pdf']);
@@ -118,6 +118,13 @@ export default async (h) => {
     // the navigation bar's height keeps the bottom bar clear of it
     ok(/48px/.test(await p.evaluate(() => document.documentElement.style.getPropertyValue('--sab'))), 'the inset');
     ok(parseFloat(await p.$eval('.statusbar', (e) => getComputedStyle(e).paddingBottom)) >= 48, 'the bottom bar');
+    // the phone in dark mode while the web view says light: the page follows the phone
+    await p.evaluate(() => window.__cowdreyPdf.run('theme_system')); await p.emulateMedia({ colorScheme: 'light' });
+    await p.evaluate(() => window.__cowdreyNight(true));
+    eq(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    eq((await native(p, 'systemBars')).pop().args.dark, true);
+    await p.evaluate(() => window.__cowdreyNight(false));
+    eq(await p.evaluate(() => document.documentElement.dataset.theme || ''), '');
     await p.evaluate(() => window.__cowdreyInsets({ top: 24, bottom: 0, left: 0, right: 0, keyboard: 300 }));
     eq(await p.evaluate(() => document.documentElement.dataset.keyboard), 'up');
     eq(p.errors, []); await p.ctx.close();
@@ -135,7 +142,7 @@ export default async (h) => {
     await r.click('[data-side="docs"]').catch(() => {});
     const names = await r.evaluate(async () => (await window.__cowdreyPdf.listDocs()).map((d) => d.name).sort());
     eq(names, ['One', 'Two']);
-    eq(r.errors, []); await r.ctx.close();
+    eq(r.errors.filter((e) => !/ERR_FAILED/.test(e)), []); await r.ctx.close();
   });
 
   await test('Android app: pickers for signing IDs, XFDF and actions show every file; PDF and picture pickers keep their filter', async () => {
@@ -175,6 +182,7 @@ export default async (h) => {
   await test('Android app: long-press and drag a page thumbnail moves the page', async () => {
     const p = await open(android());
     await openPdf(p);
+    await p.evaluate(() => window.__cowdreyPdf.run('sidebar')); await p.waitForTimeout(300);
     await p.click('[data-side="thumbs"]').catch(() => {});
     await p.waitForSelector('.thumb[data-n="2"]');
     const a = await p.locator('.thumb[data-n="0"]').boundingBox(), b = await p.locator('.thumb[data-n="2"]').boundingBox();

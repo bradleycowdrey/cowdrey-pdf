@@ -884,6 +884,7 @@ button { font: inherit; color: inherit; }
 
 /* status bar */
 .touch-drag { opacity: .5; }
+[data-android-app] [draggable="true"] { -webkit-user-drag: none; }
 .statusbar { display: flex; align-items: center; gap: 16px; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))) max(16px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mode-chip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0 2px 0 10px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: 12px; line-height: 24px; }
@@ -27343,6 +27344,7 @@ function androidStart() {
   // The system bars and the keyboard: the web view doesn't say how tall the navigation bar is, and doesn't move a
   // field above the keyboard, so the app tells the page (window.__cowdreyInsets) and the field is scrolled into view.
   const root = document.documentElement;
+  root.dataset.androidApp = ''; // (the web view's own long-press drag is off: touchDrag drags instead)
   window.__cowdreyInsets = (o) => {
     if (!o) return;
     root.style.setProperty('--sab', `max(env(safe-area-inset-bottom, 0px), ${+o.bottom || 0}px)`);

@@ -162,6 +162,7 @@ jobs:
       # The release APK is launched once; then the test build runs every scenario in tests/android/run.mjs on the
       # emulator's own web view, and saves screenshots and the files it saved.
       - name: Test it on an Android 15 emulator
+        timeout-minutes: 130
         uses: reactivecircus/android-emulator-runner@v2
         env:
           PW_CORE: ${{ runner.temp }}/driver/node_modules/playwright-core

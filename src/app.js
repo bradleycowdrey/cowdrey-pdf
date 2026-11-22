@@ -5030,6 +5030,7 @@ function androidStart() {
   // The system bars and the keyboard: the web view doesn't say how tall the navigation bar is, and doesn't move a
   // field above the keyboard, so the app tells the page (window.__cowdreyInsets) and the field is scrolled into view.
   const root = document.documentElement;
+  root.dataset.androidApp = ''; // (the web view's own long-press drag is off: touchDrag drags instead)
   window.__cowdreyInsets = (o) => {
     if (!o) return;
     root.style.setProperty('--sab', `max(env(safe-area-inset-bottom, 0px), ${+o.bottom || 0}px)`);

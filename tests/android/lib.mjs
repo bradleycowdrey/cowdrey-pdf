@@ -25,7 +25,19 @@ export function shot(name) {
   try { fs.writeFileSync(path.join(OUT, f), adbBytes('exec-out', 'screencap', '-p')); log('  screenshot', f); } catch (e) { log('  screenshot failed', e.message); }
   return f;
 }
-export function focused() { return (sh('dumpsys window | grep -E "mCurrentFocus|mFocusedApp"') || '').trim(); }
+// What has the focus on screen. A system "isn't responding" window (the emulator's own setup apps can stop responding
+// while it is busy) is closed first, so it never sits over the app or Android's windows during a scenario.
+export function focused() {
+  let f = (sh('dumpsys window | grep -E "mCurrentFocus|mFocusedApp"') || '').trim();
+  for (let i = 0; i < 3 && /Application Not Responding|Application Error|isn't responding/i.test(f); i++) { closeSystemDialog(f); f = (sh('dumpsys window | grep -E "mCurrentFocus|mFocusedApp"') || '').trim(); }
+  return f;
+}
+export function closeSystemDialog(why = '') {
+  const n = uiNodes().find((x) => /aerr_close|aerr_wait/.test(x['resource-id'] || '') || /^(Close app|Wait|OK)$/i.test(x.text || ''));
+  log('  [system dialog closed]', why.split('\n')[0].replace(/\s+/g, ' ').slice(0, 160));
+  if (n) sh(`input tap ${n.x} ${n.y}`); else sh('input keyevent KEYCODE_BACK');
+  spawnSync('sleep', ['1']);
+}
 
 /* ---- the screen, through uiautomator (for Android's own windows: the save dialog, file picker, print, share) ---- */
 export function uiNodes() {
