@@ -1488,7 +1488,7 @@ function fitScale(page, entry) {
   // Fit the width, but no larger than 150%: a page wider than that reads worse, not better.
   return Math.max(0.25, Math.min(1.5, w));
 }
-let io, layoutGen = 0;
+let io, layoutGen = 0, laidOut = { w: 0, h: 0 }; // the viewer's size the pages were last laid out for
 async function layoutPages(keep) {
   if (!doc) return;
   const gen = ++layoutGen; // a later layout (zooming quickly) replaces this one
@@ -1501,6 +1501,7 @@ async function layoutPages(keep) {
   const first = await pageOf(doc.pages[0]);
   if (gen !== layoutGen) return false;
   scale = zoomFits() ? fitScale(first, doc.pages[0]) : S.zoom / 100;
+  laidOut = { w: viewer.clientWidth, h: viewer.clientHeight };
   // Two pages side by side (the first on its own with a cover), or one page at a time.
   const two = twoUp(), cover = two && !!S.cover;
   pagesEl.classList.toggle('two', two); pagesEl.classList.toggle('single', singleUp());
@@ -1800,7 +1801,17 @@ function updateZoomLabel() {
 }
 $('#zoomRange').addEventListener('change', (e) => setZoom(+e.target.value));
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (doc && zoomFits()) layoutPages(true); }, 200); });
+// A fitted zoom follows the window. Only a change that alters the fit lays the pages out again (that redraws them and
+// closes what is being typed): not a change of height with Fit width, nor the keyboard coming up over a field (the
+// Android app's window gets shorter for it).
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!doc || !zoomFits()) return;
+    if (viewer.clientWidth === laidOut.w && (S.zoom === 'fit' || viewer.clientHeight === laidOut.h || typingIn(document.activeElement))) return;
+    layoutPages(true);
+  }, 200);
+});
 
 /* ---------------- mark-up ----------------
    Every mark lives in PDF coordinates (points, y up), converted to the screen with the page's viewport.

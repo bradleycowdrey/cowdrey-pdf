@@ -195,6 +195,35 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('Android app: the keyboard coming up (a shorter window) keeps a note being typed and a line being edited', async () => {
+    const p = await open(android());
+    await openPdf(p);
+    eq(await p.evaluate(() => document.querySelector('#zoomLabel').textContent.startsWith('Fit')), true, 'fit width');
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_note'));
+    const g = await p.locator('.page[data-n="0"]').boundingBox();
+    await p.mouse.click(g.x + 200, g.y + 120);
+    await p.waitForSelector('.page-ask textarea');
+    // the keyboard: Android makes the web view shorter
+    await p.setViewportSize({ width: 412, height: 560 }); await p.waitForTimeout(600);
+    ok(await p.$('.page-ask textarea'), 'the note is still open');
+    await p.fill('.page-ask textarea', 'Typed with the keyboard up'); await p.click('.page-ask .btn.primary');
+    eq(await p.evaluate(() => Object.values(window.__cowdreyPdf.doc.marks).flat().filter((m) => m.type === 'note').map((m) => m.text)), ['Typed with the keyboard up']);
+    await p.setViewportSize({ width: 412, height: 915 }); await p.waitForTimeout(600);
+    // a line in Edit PDF
+    await p.evaluate(() => window.__cowdreyPdf.run('tool_edit'));
+    const s = await p.locator('.page[data-n="0"] .textLayer span', { hasText: 'Cowdrey.PDF opens' }).first().boundingBox();
+    await p.mouse.click(s.x + 10, s.y + s.height / 2);
+    await p.waitForSelector('.line-editor');
+    await p.setViewportSize({ width: 412, height: 560 }); await p.waitForTimeout(600);
+    ok(await p.evaluate(() => !!document.activeElement.closest('.line-editor')), 'still editing the line');
+    // with Fit width, a wider window still lays the pages out again
+    await p.keyboard.press('Escape'); await p.evaluate(() => { window.__cowdreyPdf.run('tool_select'); window.__cowdreyPdf.run('zoomFit'); }); await p.waitForTimeout(800);
+    const w0 = await p.$eval('.page[data-n="0"]', (e) => e.offsetWidth);
+    await p.setViewportSize({ width: 560, height: 560 }); await p.waitForTimeout(800);
+    ok(await p.$eval('.page[data-n="0"]', (e) => e.offsetWidth) > w0, 'wider pages');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('Android app: Check for updates offers the APK from GitHub, but not when Google Play installed the app', async () => {
     const p = await open(android({ installer: 'com.android.vending' }));
     ok(await p.evaluate(() => !window.__cowdreyPdf.cmdHidden('checkUpdates')), 'offered');

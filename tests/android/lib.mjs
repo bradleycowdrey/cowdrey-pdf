@@ -99,10 +99,21 @@ export async function screenOf(page) {
 }
 export async function tapCss(page, x, y) { const s = await screenOf(page); const [a, b] = s.at(x, y); sh(`input tap ${a} ${b}`); await sleep(500); }
 export async function swipeCss(page, x1, y1, x2, y2, ms = 600) { const s = await screenOf(page); const [a, b] = s.at(x1, y1), [c, d] = s.at(x2, y2); sh(`input swipe ${a} ${b} ${c} ${d} ${ms}`); await sleep(600); }
+// Taps an element where it is now: the screen is measured first (that takes a moment), then the element, so a page
+// that was still settling after scrolling can't move it from under the finger.
 export async function tapEl(page, selector) {
-  const el = page.locator(selector).first(); await el.scrollIntoViewIfNeeded();
+  const el = page.locator(selector).first(); await el.scrollIntoViewIfNeeded(); await sleep(400);
+  const s = await screenOf(page);
   const r = await el.boundingBox(); if (!r) throw new Error('not on screen: ' + selector);
-  await tapCss(page, r.x + r.width / 2, r.y + r.height / 2);
+  const [a, b] = s.at(r.x + r.width / 2, r.y + r.height / 2); sh(`input tap ${a} ${b}`); await sleep(500);
+}
+// A finger drag that ends exactly where it should: down, moves, a last move onto the end point, a pause, up.
+export async function dragCss(page, x1, y1, x2, y2, steps = 12) {
+  const s = await screenOf(page); const [a, b] = s.at(x1, y1), [c, d] = s.at(x2, y2);
+  sh(`input motionevent DOWN ${a} ${b}`); await sleep(120);
+  for (let k = 1; k <= steps; k++) { sh(`input motionevent MOVE ${Math.round(a + (c - a) * k / steps)} ${Math.round(b + (d - b) * k / steps)}`); await sleep(40); }
+  sh(`input motionevent MOVE ${c} ${d}`); await sleep(250);
+  sh(`input motionevent UP ${c} ${d}`); await sleep(600);
 }
 
 /* ---- files on the device ---- */

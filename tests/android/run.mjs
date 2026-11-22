@@ -91,7 +91,8 @@ const built = async () => Buffer.from(await page.evaluate(async () => Array.from
 // A point on a page (PDF units) in the page's CSS pixels
 const at = (n, x, y) => page.evaluate(([n, x, y]) => { const v = window.__cowdreyPdf.views()[n]; v.el.scrollIntoView({ block: 'nearest' }); const [vx, vy] = v.viewport.convertToViewportPoint(x, y); const r = v.el.getBoundingClientRect(); return [r.left + vx, r.top + vy]; }, [n, x, y]);
 const pageText = (n = 0) => page.evaluate(async (n) => { const tc = await window.__cowdreyPdf.views()[n].page.getTextContent(); return tc.items.map((i) => i.str).join(' '); }, n);
-async function pushDownload(local, name) { adb('push', local, `${A.DL}/${name}`); await sleep(1500); }
+// (with the time now, so Android's picker, newest first, shows it at the top)
+async function pushDownload(local, name) { adb('push', local, `${A.DL}/${name}`); sh(`touch '${A.DL}/${name}'`); await sleep(1500); }
 // A content:// address for a file in Downloads, as a file manager would hand it over: MediaStore's, or else the app's
 // own FileProvider (filled with run-as; the test build is debuggable).
 async function contentUri(local, name) {
@@ -445,7 +446,10 @@ await test('OCR with no network: a scanned page is read with the engine and Engl
     log('  text layer:', t);
     ok(/pelican/i.test(t) && /quick brown fox/i.test(t), 'the words were read');
     shot('ocr-done');
-  } finally { sh('svc wifi enable'); sh('svc data enable'); }
+  } finally {
+    sh('svc wifi enable'); sh('svc data enable');
+    for (let i = 0; i < 20 && !/1 received|1 packets received/.test(sh('ping -c 1 -W 2 8.8.8.8')); i++) await sleep(1500);
+  }
 });
 
 await test('certificate signing: import a .p12 through the picker, sign, save; the signature verifies', async () => {
@@ -481,8 +485,14 @@ await test('certificate signing: import a .p12 through the picker, sign, save; t
 await test('timestamps: the app posts a timestamp request over https (Android\'s certificate authorities)', async () => {
   const hash = crypto.createHash('sha256').update('Cowdrey.PDF on Android').digest();
   const req = Buffer.concat([Buffer.from('3039020101303130 0d06096086480165030402010500 0420'.replace(/\s/g, ''), 'hex'), hash, Buffer.from('0101ff', 'hex')]);
-  const res = await page.evaluate(async (b) => { try { return { ok: await window.__TAURI__.core.invoke('tsa_post', { url: 'https://freetsa.org/tsr', body: b }) }; } catch (e) { return { err: String(e) }; } }, req.toString('base64'));
-  log('  ', res.err || `answer of ${Buffer.from(res.ok, 'base64').length} bytes`);
+  let res = {};
+  // (the network may still be coming back after the OCR scenario turned it off; and a public server can be slow)
+  for (let i = 0; i < 6; i++) {
+    res = await page.evaluate(async (b) => { try { return { ok: await window.__TAURI__.core.invoke('tsa_post', { url: 'https://freetsa.org/tsr', body: b }) }; } catch (e) { return { err: String(e) }; } }, req.toString('base64'));
+    log('  ', res.err || `answer of ${Buffer.from(res.ok, 'base64').length} bytes`);
+    if (res.ok) break;
+    await sleep(10000);
+  }
   ok(res.ok && Buffer.from(res.ok, 'base64')[0] === 0x30, 'a timestamp answer: ' + (res.err || ''));
 });
 
@@ -504,10 +514,10 @@ await test('compare: the other PDF from the picker; the changes are found', asyn
   await pickThroughPicker(() => run('compare'), 'Invoice v1.pdf');
   await page.waitForSelector('#dialog[open] .cmp-dlg', { timeout: 30000 });
   await answer('Compare');
-  await page.waitForFunction(() => window.__cowdreyPdf.cmpState() && document.querySelector('#cmpView .cmp-busy').hidden, null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__cowdreyPdf.cmpState() && document.querySelector('#cmpView .cmp-busy').hidden && /\d+ changes?/.test((document.querySelector('#cmpView .cmp-sum') || {}).textContent || ''), null, { timeout: 120000 });
   const s = await page.evaluate(() => window.__cowdreyPdf.cmpState());
-  log('  changes:', s.changes.map((c) => `${c.kind}:${c.old || ''}>${c.new || ''}`).join(' | '));
-  ok(s.changes.some((c) => /April/.test(c.new || '')), 'March → April found');
+  log('  changes:', s.changes.map((c) => `${c.kind}:${c.was || ''}>${c.now || ''}`).join(' | '), '·', await page.textContent('#cmpView .cmp-sum'));
+  ok(s.changes.some((c) => c.kind === 'replace' && /March/.test(c.was || '') && /April/.test(c.now || '')), 'March → April found');
   shot('compare-phone');
   await page.keyboard.press('Escape'); await sleep(500);
   if (await page.evaluate(() => document.querySelector('#app').classList.contains('cmp-on'))) await page.evaluate(() => document.querySelector('#cmpView [data-close], #cmpView .cmp-close') && document.querySelector('#cmpView [data-close], #cmpView .cmp-close').click());
@@ -516,8 +526,8 @@ await test('compare: the other PDF from the picker; the changes are found', asyn
 await test('insight: a table dragged out with a finger is saved as CSV through the save dialog', async () => {
   await openBytes(await tablesPdf(), 'Tables.pdf');
   await run('insTable');
-  const [ax, ay] = await at(0, 60, 690), [bx, by] = await at(0, 530, 570);
-  await A.swipeCss(page, ax, ay, bx, by, 600);
+  const [ax, ay] = await at(0, 60, 690), [bx, by] = await at(0, 560, 566);
+  await A.dragCss(page, ax, ay, bx, by);
   await page.waitForSelector('#dialog[open] .ins-tbl', { timeout: 20000 });
   shot('insight-table');
   const { name, bytes } = await saveThroughDialog(() => page.click('#dialog .dlg-foot button:has-text("Save CSV")'), 'csv');
