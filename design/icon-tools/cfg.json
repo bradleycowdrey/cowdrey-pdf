@@ -1,0 +1,30 @@
+[
+ {
+  "id": "cowdrey-pdf",
+  "name": "Cowdrey.PDF",
+  "text": "PDF",
+  "size": 202,
+  "track": -4,
+  "cx": 453,
+  "bold": 8,
+  "grad": [
+   "#C61F52",
+   "#7C0B31"
+  ],
+  "variants": {
+   "32": {
+    "size": 198,
+    "track": 6,
+    "cx": 452,
+    "bold": 22,
+    "sw": 116,
+    "scale": 1.08
+   },
+   "16": {
+    "letters": false,
+    "sw": 150,
+    "scale": 1.08
+   }
+  }
+ }
+]
