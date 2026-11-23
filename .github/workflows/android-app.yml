@@ -179,6 +179,7 @@ jobs:
       - name: Check the device test passed
         run: |
           cat "$RUNNER_TEMP/smoke/result.txt" 2>/dev/null || { echo "The device test did not finish"; exit 1; }
+          if grep -q 'NO' "$RUNNER_TEMP/smoke/release-launch.txt" 2>/dev/null; then echo "The release APK did not keep running"; exit 1; fi
           grep -q '^ALL PASSED' "$RUNNER_TEMP/smoke/result.txt"
 
       - uses: actions/upload-artifact@v4

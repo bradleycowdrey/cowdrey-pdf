@@ -8,6 +8,8 @@
 // - systemBars and insets: light or dark status-bar icons to match the theme; the size of the system bars and the
 //   keyboard, which the web view does not report on its own, so the page can keep clear of them.
 // - takeSharedFiles: PDFs shared several at a time (SEND_MULTIPLE), which the app's own intent handling skips.
+// - tsaPost: a trusted timestamp for a certificate signature, posted with Android's own network stack (called only
+//   by the app's tsa_post command, src-tauri/src/tsa.rs, never by the page directly).
 package app.tauri.share
 
 import android.app.Activity
@@ -389,6 +391,49 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
             val files = JSArray()
             for (u in uris) files.put(JSObject().apply { put("uri", u); put("name", name(Uri.parse(u))) })
             JSObject().apply { put("files", files) }
+        }
+    }
+
+    // ---- trusted timestamps ----
+
+    /** One https POST of a timestamp request (a few hundred bytes; src-tauri/src/tsa.rs checks it first), with
+     *  Android's own network stack: the phone's certificate authorities, its DNS and its proxy settings. */
+    fun tsaPost(invoke: Invoke) {
+        val args = invoke.getArgs()
+        background(invoke) {
+            val url = java.net.URL(args.getString("url", "") ?: "")
+            if (url.protocol != "https") throw Exception("The timestamp server must use https")
+            val body = android.util.Base64.decode(args.getString("body", "") ?: "", android.util.Base64.DEFAULT)
+            val c = url.openConnection() as javax.net.ssl.HttpsURLConnection
+            try {
+                c.requestMethod = "POST"
+                c.doOutput = true
+                c.connectTimeout = 20000
+                c.readTimeout = 30000
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("Content-Type", "application/timestamp-query")
+                c.setRequestProperty("User-Agent", "Cowdrey.PDF")
+                c.setFixedLengthStreamingMode(body.size)
+                c.outputStream.use { it.write(body) }
+                val code = c.responseCode
+                if (code !in 200..299) throw Exception("error $code")
+                val out = java.io.ByteArrayOutputStream()
+                c.inputStream.use { input ->
+                    val buf = ByteArray(8192)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        if (out.size() > (1 shl 20)) throw Exception("The answer is too large")
+                    }
+                }
+                JSObject().apply { put("body", android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)) }
+            } catch (e: java.io.IOException) {
+                // the kind of failure (no network, unknown host, certificate) as well as its message
+                throw Exception("${e.javaClass.simpleName}: ${e.message ?: ""}".trimEnd(' ', ':'))
+            } finally {
+                c.disconnect()
+            }
         }
     }
 }

@@ -373,6 +373,7 @@ async function renderView(v) {
   try {
     const tl = document.createElement('div'); tl.className = 'textLayer'; el.appendChild(tl);
     await new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: tl, viewport }).render();
+    sizeLayer(tl, viewport);
     // As pdf.js's own viewer does: while selecting, an unselectable layer under the text fills the gaps, so a drag
     // that ends past a line's last word stops there instead of reaching the next line.
     const eoc = document.createElement('div'); eoc.className = 'endOfContent'; tl.append(eoc); tl.__eoc = eoc;
@@ -395,6 +396,7 @@ async function renderView(v) {
       linkService.pagesCount = doc.pages.length;
       const layer = new pdfjs.AnnotationLayer({ div: al, page, viewport: viewport.clone({ dontFlip: true }), accessibilityManager: null, annotationCanvasMap: canvasMap, annotationEditorUIManager: null, structTreeLayer: FEATURE.structTreeLayer ? FEATURE.structTreeLayer(v, page) : null, commentManager: null, linkService, annotationStorage: pd.annotationStorage });
       await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: PDFJS_ICONS, downloadManager: null });
+      sizeLayer(al, viewport);
       al.addEventListener('input', () => setSaved(false));
       al.addEventListener('change', () => setSaved(false));
       // A field with no tooltip (/TU) is named after the field itself (/T), so a screen reader can say what it is for.
@@ -445,6 +447,15 @@ async function repaintCanvas(v) {
     v.imgSig = skip.sig; v.imgHidden = skip.hidden;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); } finally { v.repainting = false; }
   if (v.token === token) { if (imageSig(v) !== v.imgSig) repaintCanvas(v); else drawMarks(v); }
+}
+// pdf.js sizes its text and form layers with CSS round(), which Chrome (and Android's web view) only has from
+// version 125. Without it a layer has no size, so every word and form field sits in the page's top corner and a
+// tap on a field lands on another one. There, the layer gets the same size with calc() instead.
+const CSS_ROUND = (() => { try { return CSS.supports('width', 'round(down, 1.5px, 1px)'); } catch { return true; } })();
+function sizeLayer(div, viewport) {
+  if (CSS_ROUND) return;
+  const { pageWidth: w, pageHeight: h } = viewport.rawDims;
+  div.style.width = `calc(var(--total-scale-factor) * ${w}px)`; div.style.height = `calc(var(--total-scale-factor) * ${h}px)`;
 }
 // Pages far from view give their drawing back, so a long PDF does not use more memory the further you scroll:
 // pages within KEEP_NEAR pages of those in view (and within a screen or two of it) stay drawn; the rest keep only
@@ -3863,7 +3874,11 @@ async function persistNow() {
   try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
   if (S.side === 'docs') renderDocs();
 }
-function persist() { clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 300); }
+function persist() { clearTimeout(persistTimer); persistTimer = setTimeout(() => { persistTimer = null; persistNow(); }, 300); }
+// A phone can close an app soon after it leaves the screen: a change still waiting to be kept is kept at once.
+function persistPending() { if (!persistTimer) return; clearTimeout(persistTimer); persistTimer = null; persistNow().catch(() => {}); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistPending(); });
+window.addEventListener('pagehide', persistPending);
 async function listDocs() { try { return (await dbDo('readonly', (s) => s.getAll())) || []; } catch { return []; } }
 async function renderDocs() {
   const panel = $('#sidePanel');

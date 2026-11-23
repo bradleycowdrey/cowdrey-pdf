@@ -15,7 +15,8 @@ if [[ -f "$APK" ]]; then
   adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1 && echo "release APK launched"
   sleep 20
   adb exec-out screencap -p > "$OUT/00-release-launch-dark.png"
-  if adb shell pidof "$PKG" > /dev/null; then echo "release APK still running: yes"; else echo "release APK still running: NO"; fi
+  if adb shell pidof "$PKG" > /dev/null; then R=yes; else R=NO; fi
+  echo "release APK still running: $R" | tee "$OUT/release-launch.txt"
   adb uninstall "$PKG" > /dev/null && echo "release APK uninstalled (the test build uses the same package)"
 else
   echo "no release APK in this run (quick run): device test only"

@@ -386,7 +386,10 @@ await test('forms: tap a field, the keyboard comes up and the field stays in vie
   const ime = sh('dumpsys input_method | grep -m1 mInputShown').trim();
   const fit = await page.evaluate(() => { const r = document.activeElement.getBoundingClientRect(); return { name: document.activeElement.name, bottom: Math.round(r.bottom), top: Math.round(r.top), vh: Math.round(visualViewport.height), ih: innerHeight, kb: document.documentElement.dataset.keyboard }; });
   log('  keyboard:', ime, JSON.stringify(fit));
-  if (fit.name !== 'name') await focusLog();
+  if (fit.name !== 'name') {
+    await focusLog();
+    log('  layout:', JSON.stringify(await page.evaluate(() => { const box = (q) => { const e = document.querySelector(q); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; }; const n = document.querySelector('.annotationLayer input[name="name"]'), r = n && n.getBoundingClientRect(), hit = r && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { layer: box('.page[data-n="0"] .annotationLayer'), style: (document.querySelector('.page[data-n="0"] .annotationLayer') || { style: {} }).style.width, name: box('.annotationLayer input[name="name"]'), agree: box('.annotationLayer input[name="agree"]'), hit: hit && (hit.tagName + (hit.name ? '[' + hit.name + ']' : '')), round: CSS.supports('width', 'round(down, 1.5px, 1px)') }; })));
+  }
   shot('form-keyboard');
   eq(fit.name, 'name', 'the field has the focus');
   ok(fit.bottom <= fit.vh && fit.top >= 0, 'the field is above the keyboard');
@@ -482,16 +485,27 @@ await test('certificate signing: import a .p12 through the picker, sign, save; t
   shot('signed');
 });
 
-await test('timestamps: the app posts a timestamp request over https (Android\'s certificate authorities)', async () => {
+await test('timestamps: the app posts a timestamp request over https (Android\'s own network and certificate authorities)', async () => {
   const hash = crypto.createHash('sha256').update('Cowdrey.PDF on Android').digest();
   const req = Buffer.concat([Buffer.from('3039020101303130 0d06096086480165030402010500 0420'.replace(/\s/g, ''), 'hex'), hash, Buffer.from('0101ff', 'hex')]);
+  // The network first (the OCR scenario turned it off and on again): with none, this fails as "no network", not as
+  // a timestamp failure.
+  let net = null;
+  for (let i = 0; i < 12 && !(net && net.ok); i++) {
+    if (i) await sleep(5000);
+    net = await page.evaluate(async () => { try { await fetch('https://www.gstatic.com/generate_204', { mode: 'no-cors', cache: 'no-store' }); return { ok: true }; } catch (e) { return { err: String(e) }; } });
+  }
+  log('  network:', net.ok ? 'up' : net.err);
+  ok(net.ok, 'no network on the emulator: ' + net.err);
+  // A public timestamp server can be slow or down: any one of three answering is enough.
   let res = {};
-  // (the network may still be coming back after the OCR scenario turned it off; and a public server can be slow)
-  for (let i = 0; i < 6; i++) {
-    res = await page.evaluate(async (b) => { try { return { ok: await window.__TAURI__.core.invoke('tsa_post', { url: 'https://freetsa.org/tsr', body: b }) }; } catch (e) { return { err: String(e) }; } }, req.toString('base64'));
-    log('  ', res.err || `answer of ${Buffer.from(res.ok, 'base64').length} bytes`);
+  for (const url of ['https://freetsa.org/tsr', 'https://timestamp.sectigo.com', 'https://timestamp.digicert.com']) {
+    for (let i = 0; i < 2 && !res.ok; i++) {
+      if (i) await sleep(5000);
+      res = await page.evaluate(async ([u, b]) => { try { return { ok: await window.__TAURI__.core.invoke('tsa_post', { url: u, body: b }) }; } catch (e) { return { err: String(e) }; } }, [url, req.toString('base64')]);
+      log('  ', url, '→', res.err || `answer of ${Buffer.from(res.ok, 'base64').length} bytes`);
+    }
     if (res.ok) break;
-    await sleep(10000);
   }
   ok(res.ok && Buffer.from(res.ok, 'base64')[0] === 0x30, 'a timestamp answer: ' + (res.err || ''));
 });
@@ -663,12 +677,106 @@ await test('touch: long-press and drag a page thumbnail to move the page', async
   await page.evaluate(() => { if (document.querySelector('#app').dataset.sidebar === 'open') window.__cowdreyPdf.run('sidebar'); });
 });
 
+await test('comments: exported as XFDF through the save dialog, then imported into another copy through the picker', async () => {
+  await openBytes(SAMPLE, 'Comments out.pdf');
+  await run('tool_rect');
+  const [x1, y1] = await at(0, 120, 400), [x2, y2] = await at(0, 300, 330);
+  await A.swipeCss(page, x1, y1, x2, y2, 400); await run('tool_select');
+  ok((await marks()).includes('rect'), 'a box to export');
+  const { name, bytes } = await saveThroughDialog(() => run('cm_export'), 'xfdf');
+  const xml = bytes.toString('utf8');
+  log('  ', name, xml.length, 'bytes');
+  ok(/\.xfdf$/i.test(name) && /<xfdf[\s>]/.test(xml) && /<square[\s>]/.test(xml), 'an XFDF file with the box');
+  await openBytes(SAMPLE, 'Comments in.pdf');
+  ok(!(await marks()).includes('rect'), 'the other copy has no box yet');
+  await pickThroughPicker(() => run('cm_import'), name);
+  await page.waitForFunction(() => /imported/.test(document.querySelector('#toast').textContent), null, { timeout: 20000 });
+  log('  toast:', await toastText());
+  ok((await marks()).includes('rect'), 'the box came in');
+  shot('xfdf-imported');
+});
+
+await test('attachments: a file attached through the picker is kept in the saved PDF and saved back out through the save dialog', async () => {
+  await openBytes(SAMPLE, 'Attach test.pdf');
+  const NOTE = 'Notes from the phone: 3 pelicans, 2 herons.';
+  const f = path.join(A.OUT, '.push-notes.txt'); fs.writeFileSync(f, NOTE); await pushDownload(f, 'Phone notes.txt'); fs.unlinkSync(f);
+  await pickThroughPicker(() => run('vw_attach'), 'Phone notes.txt');
+  await page.waitForFunction(() => /Attached/.test(document.querySelector('#toast').textContent), null, { timeout: 20000 });
+  log('  toast:', await toastText());
+  const pdfjs = await import(path.join(NM, 'pdfjs-dist/legacy/build/pdf.mjs'));
+  const pd = await pdfjs.getDocument({ data: new Uint8Array(await built()), useSystemFonts: false }).promise, att = (await pd.getAttachments()) || {};
+  const got = []; for (const [, a] of att instanceof Map ? att : Object.entries(att)) got.push([a.filename, Buffer.from(a.content).toString('utf8')]);
+  log('  in the PDF:', JSON.stringify(got));
+  ok(got.some(([n, t]) => n === 'Phone notes.txt' && t === NOTE), 'the file is in the PDF');
+  await page.evaluate(() => { if (document.querySelector('#app').dataset.sidebar !== 'open') window.__cowdreyPdf.run('vw_files'); }); await sleep(800);
+  shot('attachments-panel');
+  const out = await saveThroughDialog(() => A.tapEl(page, '#sidePanel [aria-label="Save Phone notes.txt"]'), 'attachment');
+  eq(out.bytes.toString('utf8'), NOTE, 'the file saved back out');
+  await page.evaluate(() => { if (document.querySelector('#app').dataset.sidebar === 'open') window.__cowdreyPdf.run('sidebar'); });
+});
+
+await test('crop: a box dragged with a finger crops the page; the saved PDF has the smaller page', async () => {
+  await openBytes(SAMPLE, 'Crop test.pdf');
+  await run('tool_crop');
+  const [x1, y1] = await at(0, 60, 740), [x2, y2] = await at(0, 552, 380);
+  await A.swipeCss(page, x1, y1, x2, y2, 600);
+  await page.waitForSelector('#dialog[open]', { timeout: 10000 });
+  shot('crop-dialog');
+  await answer('Crop'); await sleep(1200);
+  const box = (await L.PDFDocument.load(await built())).getPage(0).getCropBox();
+  log('  crop box:', JSON.stringify(box));
+  ok(box.width < 560 && box.width > 400 && box.height < 420 && box.height > 300, 'the page is cropped to the box');
+  await run('tool_select');
+});
+
+await test('signature: drawn with a finger and placed on the page; it is in the saved PDF', async () => {
+  await openBytes(SAMPLE, 'Signature test.pdf');
+  const before = (await marks()).length;
+  await run('sign'); await page.waitForSelector('#dialog[open] #sigPad');
+  const pad = await page.locator('#sigPad').boundingBox();
+  await A.swipeCss(page, pad.x + pad.width * .1, pad.y + pad.height * .7, pad.x + pad.width * .5, pad.y + pad.height * .3, 400);
+  await A.swipeCss(page, pad.x + pad.width * .5, pad.y + pad.height * .3, pad.x + pad.width * .9, pad.y + pad.height * .7, 400);
+  shot('signature-drawn');
+  await answer('Place'); await sleep(800);
+  const [sx, sy] = await at(0, 360, 160); await A.tapCss(page, sx, sy); await sleep(1200);
+  const after = await marks();
+  log('  marks:', after.join(', '));
+  ok(after.length > before, 'the signature is on the page');
+  ok(after.includes('img'), 'placed as a picture');
+  const pics = async (b) => { const d = await L.PDFDocument.load(b); const r = d.getPage(0).node.Resources(); const x = r && r.lookup(L.PDFName.of('XObject')); return x ? x.keys().length : 0; };
+  const [was, now] = [await pics(SAMPLE), await pics(await built())];
+  log('  pictures on page 1:', was, '→', now);
+  ok(now > was, 'the signature is a picture on the page in the saved PDF');
+  shot('signature-placed');
+  await run('tool_select');
+});
+
 await test('memory: the app\'s memory after all of the above', async () => {
   const m = sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -2`).trim();
   log('  ', m.replace(/\s+/g, ' '));
   const kb = +((m.match(/TOTAL(?: PSS)?:?\s+(\d+)/) || [])[1] || 0);
   ok(A.pid(), 'still running');
   ok(!kb || kb < 1500000, `under 1.5 GB (${kb} KB)`);
+});
+
+await test('an edit made just before the app goes to the background and is closed by Android is kept', async () => {
+  await openBytes(SAMPLE, 'Kept edit.pdf');
+  await run('tool_rect');
+  const [x1, y1] = await at(0, 330, 520), [x2, y2] = await at(0, 500, 450);
+  await A.swipeCss(page, x1, y1, x2, y2, 300);
+  const n = (await marks()).filter((m) => m === 'rect').length;
+  // Home at once (inside the app's short wait before it keeps a change), then Android closes the app
+  sh('input keyevent KEYCODE_HOME'); await sleep(1500);
+  sh(`am kill ${PKG}`); await sleep(500); sh(`am force-stop ${PKG}`); await sleep(1500);
+  ok(!A.pid(), 'the app was closed');
+  sh(`monkey -p ${PKG} -c android.intent.category.LAUNCHER 1`);
+  page = await A.connect(90000);
+  await page.waitForFunction(() => document.querySelector('.page canvas.pdf'), null, { timeout: 45000 });
+  eq(await title(), 'Kept edit', 'the document');
+  const m = (await marks()).filter((x) => x === 'rect').length;
+  log('  boxes before:', n, 'after:', m);
+  eq(m, n, 'the box drawn just before is still there');
+  shot('kept-after-kill');
 });
 
 await test('relaunch: the library (IndexedDB) and the last document come back after the app is closed', async () => {

@@ -231,4 +231,38 @@ export default async (h) => {
     ok(/Google Play keeps Cowdrey\.PDF up to date/.test(await p.textContent('#toast')), await p.textContent('#toast'));
     await p.ctx.close();
   });
+
+  // Android's web view before Chrome 125 (the emulator has 124; phones that missed updates have older) has no CSS
+  // round(), which pdf.js sizes its layers with: the page gives them their size with calc() instead. (Here the
+  // browser has round(), so the test checks that the layers are sized with calc() when round() is said to be missing.)
+  await test('Android app: a web view without CSS round() still puts form fields and words where they are on the page', async () => {
+    const p = await open({ width: 412, height: 915, touch: true, init: () => {
+      const supports = CSS.supports.bind(CSS);
+      CSS.supports = (...x) => (/round\(/.test(x.join(' ')) ? false : supports(...x));
+    } });
+    await openPdf(p); await p.waitForSelector('.page[data-n="0"] .annotationLayer input[name="name"]');
+    const r = await p.evaluate(() => {
+      const box = (e) => { const b = e.getBoundingClientRect(); return [b.width, b.height]; };
+      const pg = document.querySelector('.page[data-n="0"]'), al = pg.querySelector('.annotationLayer'), tl = pg.querySelector('.textLayer'), f = al.querySelector('input[name="name"]');
+      const b = f.getBoundingClientRect(), hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { page: box(pg), layer: box(al), text: box(tl), field: box(f), hit: hit && hit.name, sized: [al.style.width, tl.style.width] };
+    });
+    ok(Math.abs(r.layer[0] - r.page[0]) < 2 && Math.abs(r.layer[1] - r.page[1]) < 2, 'the form layer covers the page: ' + JSON.stringify(r));
+    ok(Math.abs(r.text[0] - r.page[0]) < 2, 'the text layer covers the page: ' + JSON.stringify(r));
+    ok(r.field[0] > 60 && r.field[1] > 8, 'the field has its size: ' + JSON.stringify(r));
+    eq(r.hit, 'name', 'a tap on the field reaches it');
+    ok(r.sized.every((w) => /^calc\(/.test(w)), 'sized with calc(): ' + r.sized);
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  // Android can close an app soon after it leaves the screen: a change still waiting to be kept is kept at once.
+  await test('Android app: leaving the app keeps the last change on the device at once', async () => {
+    const p = await open(android());
+    await openPdf(p); await draw(p);
+    await p.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+    await p.waitForTimeout(150); // well inside the usual wait before a change is kept
+    const kept = await p.evaluate(async () => (await window.__cowdreyPdf.listDocs()).find((d) => d.id === window.__cowdreyPdf.doc.id));
+    ok(kept && Object.values(kept.marks).flat().some((m) => m.type === 'rect'), 'the box is kept');
+    eq(p.errors, []); await p.ctx.close();
+  });
 };
