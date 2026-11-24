@@ -281,7 +281,7 @@ jobs:
           ram-size: 2048M
           disk-size: 6000M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ env.EMU_DNS }}
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 2048 -dns-server ${{ env.EMU_DNS }}
           script: bash .github/scripts/android_e2e.sh none "$RUNNER_TEMP/main/Cowdrey.PDF-test.apk" "$RUNNER_TEMP/smoke" 2>&1 | tee "$RUNNER_TEMP/android-second.log"
 
       - name: Check the device test passed

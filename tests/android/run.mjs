@@ -974,11 +974,19 @@ await test('large file: a 12 MB PDF opened from Android and saved back through t
   await page.waitForFunction(() => document.querySelector('.page[data-n="0"] canvas.pdf'), null, { timeout: 60000 });
   log('  opened in', ((Date.now() - t0) / 1000).toFixed(1), 's ·', await page.evaluate(() => window.__cowdreyPdf.doc.pages.length), 'pages');
   shot('large-file-open');
-  // every message to the native side while saving, with its size
-  await page.evaluate(() => {
-    window.__parts = []; const core = window.__TAURI__.core;
-    if (!core.__partsWrapped) { core.__partsWrapped = true; const inv = core.invoke.bind(core); core.invoke = (cmd, a) => { if (cmd === 'write_share_file') window.__parts.push({ append: !!(a && a.append), b64: a && a.base64 ? a.base64.length : 0 }); return inv(cmd, a); }; }
+  // every file the page hands to the native side while saving, with its size (seen where every call goes:
+  // window.__TAURI_INTERNALS__.invoke; window.__TAURI__.core is a module namespace, which can't be changed)
+  const spy = await page.evaluate(() => {
+    window.__parts = [];
+    const I = window.__TAURI_INTERNALS__; if (!I) return 'no __TAURI_INTERNALS__';
+    if (I.__partsSpy) return 'on';
+    const inv = I.invoke, w = function (cmd, a, o) { if (cmd === 'write_share_file') window.__parts.push({ append: !!(a && a.append), b64: a && a.base64 ? a.base64.length : 0 }); return inv.call(this, cmd, a, o); };
+    try { I.invoke = w; } catch {}
+    if (I.invoke !== w) try { Object.defineProperty(I, 'invoke', { value: w, configurable: true, writable: true }); } catch {}
+    if (I.invoke !== w) return 'could not watch __TAURI_INTERNALS__.invoke';
+    I.__partsSpy = true; return 'on';
   });
+  log('  watching the files handed to Android:', spy);
   await run('tool_rect'); const [x1, y1] = await at(0, 100, 760), [x2, y2] = await at(0, 250, 720); await A.swipeCss(page, x1, y1, x2, y2, 400); await run('tool_select');
   const t1 = Date.now();
   const { name, bytes } = await saveThroughDialog(() => A.tapEl(page, '#saveBtn'), 'large-file');
@@ -1023,13 +1031,38 @@ await test('form data: an FDF file picked in Android\'s picker fills the form', 
   eq((await L.PDFDocument.load(await built())).getForm().getTextField('name').getText(), 'Filled from FDF', 'the field');
 });
 
-await test('pictures: a HEIC photo picked in Android\'s picker becomes a PDF (Android decodes it)', async () => {
+await test('pictures: a HEIC photo picked in Android\'s photo picker becomes a PDF (Android decodes it)', async () => {
+  // the photo picker shows every picture on the phone, newest first: the other pictures go, so the photo is the one
+  log('  pictures removed:', sh(`content delete --uri content://media/external/images/media --where "mime_type!='image/heic'" 2>&1; rm -f ${A.DL}/*.png ${A.DL}/*.jpg`).trim() || 'ok');
   await pushDownload(fixture('photo.heic'), 'Photo.heic');
-  await pickThroughPicker(() => run('crdNewPictures'), 'Photo.heic');
-  await page.waitForSelector('#dialog[open] #crdPicSize', { timeout: 20000 });
+  const before = await title();
+  await run('crdNewPictures');
+  const isPhotos = () => /photopicker|PhotoPicker/.test(A.focused());
+  for (const end = Date.now() + 30000; Date.now() < end && !isDocs() && !isPhotos(); ) await sleep(700);
+  log('  picker:', A.focused().split('\n')[0].trim());
+  await sleep(2000);
+  if (isDocs()) {
+    let n = await A.waitUi(/^Photo\.heic$/, 5000); if (!n) { await toDownloads(); n = await A.waitUi(/^Photo\.heic$/, 8000); }
+    ok(n, 'Photo.heic is listed'); shot('picker-heic'); sh(`input tap ${n.x} ${n.y}`); await sleep(1500);
+    const sel = await A.waitUi(/^(select|open|done)$/i, 3000); if (sel) { sh(`input tap ${sel.x} ${sel.y}`); await sleep(1500); }
+  } else {
+    ok(isPhotos(), 'Android\'s photo picker or file picker opens: ' + A.focused());
+    const nodes = A.uiNodes();
+    const pics = nodes.filter((x) => x.w > 80 && x.h > 80 && x.w < 700 && (/thumbnail|item_grid|image/i.test(x['resource-id'] || '') || /^(photo|image|picture)/i.test(x['content-desc'] || '')));
+    log('  pictures listed:', pics.length, pics.slice(0, 4).map((x) => `${x['resource-id'] || ''} "${x['content-desc'] || ''}" ${x.bounds}`).join(' | '));
+    if (!pics.length) log('  on screen:', nodes.map((x) => `${x['resource-id'] || ''}:${x.text || x['content-desc'] || ''}`).filter((t) => t.length > 1).join(' | ').slice(0, 900));
+    ok(pics.length, 'the photo is in the photo picker');
+    shot('photo-picker-heic');
+    const first = pics.sort((a, b) => a.y - b.y || a.x - b.x)[0];
+    sh(`input tap ${first.x} ${first.y}`); await sleep(1500);
+    const add = await A.waitUi(/^(add|done)( \(\d+\))?$/i, 5000);
+    if (add) { sh(`input tap ${add.x} ${add.y}`); await sleep(1500); }
+  }
+  await page.waitForSelector('#dialog[open] #crdPicSize', { timeout: 30000 }).catch(async (e) => { log('  toast:', await toastText(), '· focus:', A.focused().split('\n')[0]); throw e; });
   shot('heic-dialog');
   await page.selectOption('#crdPicSize', 'fit'); await page.click('#dialog .dlg-foot .btn.primary');
-  await page.waitForFunction(() => window.__cowdreyPdf.doc && /Photo/.test(document.querySelector('#docTitle').textContent) && document.querySelector('.page canvas.pdf'), null, { timeout: 30000 }).catch(async (e) => { log('  toast:', await toastText()); throw e; });
+  await page.waitForFunction((b) => window.__cowdreyPdf.doc && document.querySelector('#docTitle').textContent !== b && window.__cowdreyPdf.doc.pages.length === 1 && document.querySelector('.page canvas.pdf'), before, { timeout: 30000 }).catch(async (e) => { log('  toast:', await toastText()); throw e; });
+  log('  opened as', await title());
   await sleep(1500);
   const d = await L.PDFDocument.load(await built());
   const sz = d.getPage(0).getSize();
@@ -1041,14 +1074,24 @@ await test('pictures: a HEIC photo picked in Android\'s picker becomes a PDF (An
   ok(px.mid[0] > 150 && px.mid[1] < 90 && px.corner[0] > 200 && px.corner[1] > 150 && px.edge[2] > 130, 'the photo\'s colours');
 });
 
-await test('PDF/UA: tags added, saved as PDF/UA through the save dialog', async () => {
-  await openBytes(SAMPLE, 'Access test.pdf');
+// (tags added automatically, and polled until they are there)
+async function autoTag(min) {
   await run('acAutoTag');
   let tags = 0;
-  for (const end = Date.now() + 30000; Date.now() < end && tags < 3; await sleep(500)) tags = await page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.length);
-  ok(tags >= 3, 'tags added: ' + tags);
+  for (const end = Date.now() + 30000; Date.now() < end && tags < min; await sleep(500)) tags = await page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.length);
+  ok(tags >= min, 'tags added: ' + tags);
+}
+await test('PDF/UA: tags added, saved as PDF/UA through the save dialog', async () => {
+  // (a PDF with its fonts embedded: PDF/UA refuses sample.pdf, whose Helvetica is not)
+  await openBytes(fs.readFileSync(fixture('chrome.pdf')), 'Access test.pdf');
+  await autoTag(1);
   await page.evaluate(() => { window.__cowdreyPdf.acFixSet('lang', 'en-US'); window.__cowdreyPdf.acFixSet('dtitle', true); });
-  const { name, bytes } = await saveThroughDialog(() => run('acSaveUA'), 'pdfua');
+  const { name, bytes } = await saveThroughDialog(async () => {
+    await run('acSaveUA');
+    await sleep(2500);
+    const d = await page.evaluate(() => { const x = document.querySelector('#dialog'); return x && x.open ? x.textContent.replace(/\s+/g, ' ').trim() : ''; });
+    if (d) throw new Error('the app said: ' + d.slice(0, 200));
+  }, 'pdfua');
   const d = await L.PDFDocument.load(bytes, { updateMetadata: false });
   const md = d.catalog.lookup(L.PDFName.of('Metadata'));
   const xmp = md ? Buffer.from(md instanceof L.PDFRawStream ? L.decodePDFRawStream(md).decode() : md.getContents()).toString('utf8') : '';
@@ -1057,8 +1100,8 @@ await test('PDF/UA: tags added, saved as PDF/UA through the save dialog', async 
 });
 
 await test('reading order: a tag dragged with a finger (long press) moves to the top; the saved PDF reads in the new order', async () => {
-  // (on the tagged copy from the scenario before; tagged again when that one did not run)
-  if ((await page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.length)) < 3) { await openBytes(SAMPLE, 'Access test.pdf'); await run('acAutoTag'); await sleep(2000); }
+  await openBytes(SAMPLE, 'Reading order.pdf');
+  await autoTag(3);
   await run('acOrder'); await page.waitForSelector('#acOrder .ac-item', { timeout: 20000 }); await sleep(1000);
   const texts = () => page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.map((x) => x.text.slice(0, 30)));
   const before = await texts();
@@ -1201,14 +1244,20 @@ if (LOWRAM) await test('OCR of a 50-page scan on a phone with 2 GB of memory: ev
   log('  the scan:', bytes.length, 'bytes, 50 pages');
   await openBytes(bytes, 'Long scan.pdf');
   const p0 = A.pid();
-  let peak = 0, stop = false;
-  const watch = (async () => { while (!stop) { const m = sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -1`); const kb = +((m.match(/TOTAL(?: PSS)?:?\s+(\d+)/) || [])[1] || 0); if (kb > peak) peak = kb; await sleep(15000); } })();
+  // the web view draws and runs the OCR in its own processes (sandboxed_process): their memory counts too
+  const renderers = () => sh('ps -A -o PID,NAME').split('\n').filter((l) => /sandboxed_process|privileged_process/.test(l)).map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+  const pss = (who) => +((sh(`dumpsys meminfo ${who} | grep -E "TOTAL PSS|TOTAL:" | head -1`).match(/TOTAL(?: PSS)?:?\s+(\d+)/) || [])[1] || 0);
+  const r0 = renderers(); log('  web view processes:', r0.join(', ') || 'none found');
+  let peak = 0, peakApp = 0, stop = false;
+  const watch = (async () => { while (!stop) { const app = pss(PKG), all = app + renderers().reduce((t, x) => t + pss(x), 0); if (all > peak) peak = all; if (app > peakApp) peakApp = app; await sleep(15000); } })();
   const t0 = Date.now();
   let r;
   try { r = await page.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ pages: window.__cowdreyPdf.doc.pages.map((_, n) => n), lang: 'eng', orient: false })); }
   finally { stop = true; await watch; }
-  log('  ', JSON.stringify(r), 'in', Math.round((Date.now() - t0) / 1000), 's · peak memory', Math.round(peak / 1024), 'MB');
+  const r1 = renderers();
+  log('  ', JSON.stringify(r), 'in', Math.round((Date.now() - t0) / 1000), 's · peak memory: app', Math.round(peakApp / 1024), 'MB, app and web view', Math.round(peak / 1024), 'MB · web view processes after:', r1.join(', '));
   eq(A.pid(), p0, 'the app is still the same process');
+  ok(r0.every((x) => r1.includes(x)), 'the web view\'s processes are the same ones (none died)');
   ok(!page.isClosed(), 'the web view is still there');
   eq(r.pages, 50, 'every page read');
   const missing = await page.evaluate(async () => { const out = []; for (const [n, e] of window.__cowdreyPdf.doc.pages.entries()) { const v = window.__cowdreyPdf.views()[n]; const tc = await v.page.getTextContent(); const t = tc.items.map((x) => x.str).join(' '); if (!new RegExp(`Invoice\\s*${4401 + n}`).test(t)) out.push(n + 1); } return out; });
