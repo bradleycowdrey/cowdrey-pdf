@@ -43,7 +43,7 @@ adb shell dumpsys connectivity 2>/dev/null | grep -m3 -E 'Active default network
 if [[ -f "$APK" ]]; then
   # The release APK, as users get it: opened with a PDF, a field typed into and saved through Android's save dialog
   # (tests/android/release.mjs, with taps only: its web view can't be driven from outside). It uninstalls itself.
-  timeout 15m node tests/android/release.mjs "$APK" "$OUT"
+  timeout 15m node tests/android/release.mjs "$APK" "$OUT" "$TEST_APK"
   echo "release test exit code $?"
 else
   echo "no release APK in this run (quick run): device test only"

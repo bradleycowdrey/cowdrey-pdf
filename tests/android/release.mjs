@@ -3,13 +3,15 @@
 // pulled off the device and checked here with pdf-lib. Everything is done with real taps through adb and uiautomator,
 // which reads the web view's accessibility tree. Runs before tests/android/run.mjs (the test build has the same
 // package, so the release APK is uninstalled at the end).
-// Usage: node tests/android/release.mjs <release apk> <output dir>   (writes release-result.txt in the output dir)
+// Usage: node tests/android/release.mjs <release apk> <output dir> [test apk]   (writes release-result.txt in the output dir;
+// the test apk, a debug build, is the control for the web view debugging check: it must name the call)
 import fs from 'node:fs'; import path from 'node:path'; import { createRequire } from 'node:module';
 import * as A from './lib.mjs';
 const { adb, sh, log, shot, sleep, PKG, root } = A;
 const require = createRequire(import.meta.url);
 const L = require(path.join(root, 'desktop/node_modules/pdf-lib'));
-const [APK, OUTDIR] = process.argv.slice(2);
+const fflate = require(path.join(root, 'desktop/node_modules/fflate'));
+const [APK, OUTDIR, TEST_APK] = process.argv.slice(2);
 A.setOut(OUTDIR || '/tmp/android-e2e');
 const VERSION = JSON.parse(fs.readFileSync(path.join(root, 'desktop/src-tauri/tauri.conf.json'), 'utf8')).version;
 const NAME = 'Release test', TYPED = 'Release Tester';
@@ -40,13 +42,25 @@ async function waitApp(test, timeout = 60000) {
 }
 
 let comp = '';
-await step('installs; a release build (not debuggable, no web view debugging)', async () => {
+await step('installs; a release build (not debuggable, no web view debugging compiled in)', async () => {
   adb('uninstall', PKG);
   log(adb('install', '-r', APK).trim());
   const info = sh(`dumpsys package ${PKG}`);
   log('  ', (info.match(/versionName=\S+/) || [''])[0], (info.match(/pkgFlags=\[[^\]]*\]/) || [''])[0]);
   ok(new RegExp(`versionName=${VERSION.replace(/\./g, '\\.')}\\b`).test(info), 'version ' + VERSION);
   ok(!/DEBUGGABLE/.test((info.match(/pkgFlags=\[[^\]]*\]/) || [''])[0]), 'not debuggable');
+  // Web view debugging: the app's native library only names setWebContentsDebuggingEnabled when built with debug
+  // assertions or the devtools feature. (The web view's own debugging socket can't tell: on a debuggable system image,
+  // as the emulator's is, Android opens one for every app's web view.)
+  const libs = fflate.unzipSync(new Uint8Array(fs.readFileSync(APK)), { filter: (f) => /^lib\/[^/]+\/libcowdrey_pdf_lib\.so$/.test(f.name) });
+  log('  native libraries:', Object.keys(libs).join(', '), '· system image debuggable:', sh('getprop ro.debuggable').trim());
+  ok(Object.keys(libs).length >= 3, 'the native library for each ABI');
+  for (const [n, b] of Object.entries(libs)) ok(!Buffer.from(b).includes('setWebContentsDebuggingEnabled'), 'no web view debugging in ' + n);
+  if (TEST_APK) {
+    const dbg = fflate.unzipSync(new Uint8Array(fs.readFileSync(TEST_APK)), { filter: (f) => /^lib\/[^/]+\/libcowdrey_pdf_lib\.so$/.test(f.name) });
+    ok(Object.values(dbg).some((b) => Buffer.from(b).includes('setWebContentsDebuggingEnabled')), 'the check finds web view debugging in the test build');
+    log('  control: the test build (debug) has web view debugging; the release build has none');
+  }
   comp = A.component(); log('  launcher activity:', comp);
   ok(/cowdreypdf\//.test(comp), 'a launcher activity');
 });
@@ -74,7 +88,6 @@ await step('opens a PDF handed over by Android (VIEW, content:// from Downloads,
   ok(shown, `the title "${NAME}" shows`);
   await sleep(3000);
   ok(A.pid(), 'the app is running');
-  ok(!sh('cat /proc/net/unix').includes(`webview_devtools_remote_${A.pid()}`), 'no web view debugging socket');
   shot('release-open-dark');
 });
 
