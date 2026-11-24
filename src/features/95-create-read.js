@@ -68,7 +68,12 @@ async function crdDecode(blob) {
   catch {
     const url = URL.createObjectURL(blob);
     try { src = new Image(); src.src = url; await src.decode(); }
-    catch { throw new Error('not a picture this device can read'); }
+    catch {
+      // Android's web view can't read HEIC and HEIF photos (what many Android cameras take): Android itself can.
+      if (!ANDROID_APP) throw new Error('not a picture this device can read');
+      try { src = await createImageBitmap(await crdAndroidDecode(blob)); close = () => src.close && src.close(); }
+      catch (e) { console.warn('picture: Android could not read it either', e); throw new Error('not a picture this device can read'); }
+    }
     finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
   }
   const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
@@ -77,6 +82,19 @@ async function crdDecode(blob) {
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w0 * k)); c.height = Math.max(1, Math.round(h0 * k));
   c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); close();
   return { canvas: c, w: w0, h: h0, opaque: /jpe?g|heic|heif/i.test(blob.type || '') || /\.(jpe?g|heic|heif)$/i.test(blob.name || '') };
+}
+// A picture decoded by Android (AndroidPdf.kt decodeImage) and read back in parts of 4 MB: a JPEG, the right way up.
+async function crdAndroidDecode(blob) {
+  const ext = ((blob.name || '').match(/\.([a-z0-9]+)$/i) || [, 'heic'])[1];
+  const path = await writeOutgoing(new Uint8Array(await blob.arrayBuffer()), `picture ${uid()}.${ext}`);
+  const r = await androidCall('decodeImage', { path, max: 4000 });
+  const parts = [];
+  for (let at = 0; at < r.size;) {
+    const part = b64ToBytes((await androidCall('readPart', { path: r.path, at, length: 4 << 20 })).base64 || '');
+    if (!part.length) break;
+    parts.push(part); at += part.length;
+  }
+  return new Blob(parts, { type: 'image/jpeg' });
 }
 const crdCanvasBytes = async (c, type, q) => new Uint8Array(await (await new Promise((res, rej) => c.toBlob((b) => b ? res(b) : rej(new Error('could not encode the picture')), type, q))).arrayBuffer());
 // One picture per page, in the order given. size: fit (the page is the picture, at 96 dpi, no larger than A3) or

@@ -1,8 +1,9 @@
 # Cowdrey.PDF for Android: signing, releasing and Google Play
 
 The Android app is built by `.github/workflows/android-app.yml`. Every run builds a universal APK (phones on arm64 and
-armv7, and x86_64) and an App Bundle (.aab), then tests the app on an Android 15 emulator. Nothing in this guide needs
-a secret in the repository files: the upload key lives only in GitHub's encrypted secrets and on your own computer.
+armv7, and x86_64) and an App Bundle (.aab), then tests the app on two emulators: Android 15 with 4 GB of memory, and
+Android 16 (a newer web view) with 2 GB. Nothing in this guide needs a secret in the repository files: the upload key
+lives only in GitHub's encrypted secrets and on your own computer.
 
 ## What happens today, without the upload key
 
@@ -10,7 +11,9 @@ a secret in the repository files: the upload key lives only in GitHub's encrypte
   key, so Android makes you uninstall the old one first (which deletes its Recent list and signing IDs).
 - The App Bundle is not signed, so Google Play cannot take it.
 - Nothing is published: the APK and the AAB are only attached to the workflow run (Actions, the run, Artifacts).
-- The device test still runs in full. Its log and screenshots are on the `android-build-log` branch.
+- The device test still runs in full. Its log and screenshots are on the `android-build-log` branch: the first phone
+  at the top, the second in `second-phone/`. The branch is replaced on every run, and `screenshots.txt` lists the
+  run's screenshots.
 
 ## 1. Make the upload key (once, on your own computer)
 

@@ -25,6 +25,9 @@ export default async (h) => {
         if (m === 'ttsAvailable') return { available: !!o.tts, engines: o.tts ? 1 : 0 };
         if (m === 'speak') { window.__said.push(x.text); await new Promise((r) => setTimeout(r, 30)); return { done: true }; }
         if (m === 'appInfo') return { installer: o.installer || '' };
+        // a picture Android decodes (HEIC): a 300 x 200 JPEG, read back in parts
+        if (m === 'decodeImage') { const c = new OffscreenCanvas(300, 200), g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 300, 200); window.__jpeg = new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg' })).arrayBuffer()); return { path: '/data/user/0/app/cache/outgoing/p (decoded).jpg', size: window.__jpeg.length, width: 300, height: 200 }; }
+        if (m === 'readPart') { const b = window.__jpeg.subarray(x.at, x.at + Math.min(x.length, 100)); let t = ''; for (const c of b) t += String.fromCharCode(c); return { base64: btoa(t), size: window.__jpeg.length }; }
         return {};
       } },
       fs: { readFile: async () => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } },
@@ -272,7 +275,7 @@ export default async (h) => {
 
   // On a phone, the keyboard going down mid-tap made the web view drop the click (tests/android/run.mjs found Save PDF
   // doing nothing when tapped while typing): a button tapped while typing leaves the focus, and the keyboard, as they are.
-  await test('Android app: Save PDF tapped while typing in a field saves at once, with the typed value; the field keeps the focus', async () => {
+  await test('Android app: Save PDF tapped while typing in a field saves at once, with the typed value; the field keeps the focus until the click, then the keyboard goes down', async () => {
     const p = await open(android({ saveAs: [{ saved: true, uri: 'content://docs/document/7', name: 'Quarterly report.pdf' }] }));
     await openPdf(p);
     // (the pages are laid out again for the phone's width just after opening: the field is tapped once they settle)
@@ -283,6 +286,7 @@ export default async (h) => {
     await p.evaluate(() => { window.__focusAtClick = null; document.querySelector('#saveBtn').addEventListener('click', () => { window.__focusAtClick = document.activeElement && document.activeElement.name; }, { once: true }); });
     await p.tap('#saveBtn'); await p.waitForTimeout(800);
     eq(await p.evaluate(() => window.__focusAtClick), 'name', 'the field still has the focus when Save runs');
+    eq(await p.evaluate(() => document.activeElement && document.activeElement.name), undefined, 'then the typing ends (the keyboard goes down)');
     eq((await native(p, 'saveAs')).length, 1, 'the save dialog');
     const path = (await native(p, 'saveAs'))[0].args.path;
     const bytes = await p.evaluate((f) => Array.from(window.__files[f], (c) => c.charCodeAt(0)), path);
@@ -290,6 +294,24 @@ export default async (h) => {
     // a checkbox is not typing: the focus moves as usual
     await p.tap('.annotationLayer .checkBox input'); await p.tap('#saveBtn'); await p.waitForTimeout(600);
     eq(await p.evaluate(() => document.activeElement && document.activeElement.id), 'saveBtn');
+    // Find's arrows are next to its field: typing goes on (the keyboard stays up)
+    await p.evaluate(() => window.__cowdreyPdf.run('find')); await p.waitForSelector('#findInput:focus');
+    await p.keyboard.type('pelican'); await p.tap('#findNext'); await p.waitForTimeout(400);
+    eq(await p.evaluate(() => document.activeElement && document.activeElement.id), 'findInput', 'Find keeps the focus');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  // Android's web view can't read HEIC photos: Android decodes them, and the JPEG comes back in parts.
+  await test('Android app: a HEIC photo the web view cannot read is decoded by Android and becomes a PDF page', async () => {
+    const p = await open(android());
+    const r = await p.evaluate(async () => {
+      const heic = new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 104, 101, 105, 99, 1, 2, 3, 4])], 'Photo.heic', { type: 'image/heic' });
+      const bytes = await window.__cowdreyPdf.crdPicturesPdf([heic], 'fit');
+      return { pdf: bytes && bytes.length, parts: window.__calls.filter(([c, a]) => a && a.method === 'readPart').length, wrote: Object.keys(window.__files).filter((f) => /\.heic$/.test(f)).length };
+    });
+    ok(r.pdf > 0, 'a PDF was made'); ok(r.parts > 1, 'read back in parts: ' + r.parts); eq(r.wrote, 1, 'the photo was handed to Android');
+    const d = await h.PDFDocument.load(new Uint8Array(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.crdPicturesPdf([new File([new Uint8Array(16)], 'Photo.heic', { type: 'image/heic' })], 'fit')))));
+    eq(d.getPageCount(), 1); eq([Math.round(d.getPage(0).getWidth()), Math.round(d.getPage(0).getHeight())], [225, 150], 'the decoded size (300 x 200 px at 96 dpi)');
     eq(p.errors, []); await p.ctx.close();
   });
 

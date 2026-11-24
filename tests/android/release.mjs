@@ -133,7 +133,12 @@ await step('Save PDF: Android\'s save dialog; the file in Downloads has the type
   ok(d.getPageCount() === 3, '3 pages');
   ok(new RegExp(`^Cowdrey\\.PDF ${VERSION.replace(/\./g, '\\.')}`).test(d.getProducer() || ''), 'producer ' + d.getProducer());
   ok(d.getForm().getTextField('name').getText() === TYPED, 'the typed value is saved');
+  // the tap on Save PDF ended the typing: back in the app, the keyboard is down
+  let kb = '';
+  for (const end = Date.now() + 10000; Date.now() < end; await sleep(500)) { kb = sh('dumpsys input_method | grep -m1 mInputShown').trim(); if (/cowdreypdf/.test(A.focused()) && /mInputShown=false/.test(kb)) break; }
+  log('  keyboard after saving:', kb);
   shot('release-saved-dark');
+  ok(/mInputShown=false/.test(kb), 'the keyboard is down after saving');
 });
 
 await step('still running after all of that', async () => {

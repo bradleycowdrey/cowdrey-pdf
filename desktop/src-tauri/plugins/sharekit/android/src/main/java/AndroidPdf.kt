@@ -8,6 +8,8 @@
 // - systemBars and insets: light or dark status-bar icons to match the theme; the size of the system bars and the
 //   keyboard, which the web view does not report on its own, so the page can keep clear of them.
 // - takeSharedFiles: PDFs shared several at a time (SEND_MULTIPLE), which the app's own intent handling skips.
+// - decodeImage / readPart: a picture the web view cannot read (HEIC and HEIF photos) decoded by Android and handed
+//   back as a JPEG, read in parts so no single message is large.
 // - tsaPost: a trusted timestamp for a certificate signature, posted with Android's own network stack (called only
 //   by the app's tsa_post command, src-tauri/src/tsa.rs, never by the page directly).
 package app.tauri.share
@@ -191,6 +193,49 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
                 saved.put(name(made))
             }
             JSObject().apply { put("saved", true); put("folder", name(parent)); put("names", saved) }
+        }
+    }
+
+    // ---- pictures the web view can't read ----
+
+    /** A picture in the app's cache (HEIC, HEIF…) decoded by Android, the right way up and at most `max` pixels on
+     *  its longer side, written next to it as a JPEG: { path, size, width, height }. */
+    fun decodeImage(invoke: Invoke) {
+        val args = invoke.getArgs()
+        background(invoke) {
+            val file = cacheFile(args.getString("path", "") ?: "")
+            val max = args.optInt("max", 4000).coerceIn(64, 8000)
+            try {
+                val bmp = if (Build.VERSION.SDK_INT >= 28) {
+                    android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(file)) { d, info, _ ->
+                        val w = info.size.width; val h = info.size.height; val k = minOf(1.0, max.toDouble() / maxOf(w, h))
+                        if (k < 1.0) d.setTargetSize(maxOf(1, (w * k).toInt()), maxOf(1, (h * k).toInt()))
+                        d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                    }
+                } else {
+                    android.graphics.BitmapFactory.decodeFile(file.path) ?: throw Exception("This picture can't be read on this Android version")
+                }
+                val out = File(file.parentFile, file.nameWithoutExtension + " (decoded).jpg")
+                FileOutputStream(out).use { o -> if (!bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, o)) throw Exception("Could not convert the picture") }
+                val r = JSObject().apply { put("path", out.path); put("size", out.length()); put("width", bmp.width); put("height", bmp.height) }
+                bmp.recycle()
+                r
+            } finally { file.delete() }
+        }
+    }
+
+    /** Part of a file the app made in its cache, as base64 (at most 4 MB); the file is deleted once its end is read. */
+    fun readPart(invoke: Invoke) {
+        val args = invoke.getArgs()
+        background(invoke) {
+            val file = cacheFile(args.getString("path", "") ?: "")
+            val at = args.optLong("at", 0L).coerceAtLeast(0L)
+            val len = args.optInt("length", 4 shl 20).coerceIn(1, 4 shl 20)
+            val size = file.length()
+            val buf = ByteArray(minOf(len.toLong(), maxOf(0L, size - at)).toInt())
+            java.io.RandomAccessFile(file, "r").use { f -> f.seek(at); f.readFully(buf) }
+            if (at + buf.size >= size) file.delete()
+            JSObject().apply { put("base64", android.util.Base64.encodeToString(buf, android.util.Base64.NO_WRAP)); put("size", size) }
         }
     }
 

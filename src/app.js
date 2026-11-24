@@ -5064,8 +5064,27 @@ function androidStart() {
   // A tap on a button while typing (the keyboard up over a field): the field keeps the focus, so the keyboard stays
   // until the button has done its work. Otherwise it goes down during the tap, the web view lays out again under the
   // finger and drops the click: Save PDF did nothing until tapped again.
+  // Once the click has come, a button away from the field (Save PDF after a form field) ends the typing, so the
+  // keyboard goes down. A button next to the field (Find's arrows, a dialog's buttons) and any button while a line of
+  // the PDF is being edited (the ribbon formats it) leave it up.
   const keyboardIn = (el) => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|file|range|color|image)$/i.test(el.type)));
-  document.addEventListener('mousedown', (e) => { const b = e.target.closest && e.target.closest('button'); if (b && !b.disabled && keyboardIn(document.activeElement) && !b.contains(document.activeElement)) e.preventDefault(); }, true);
+  const keepTyping = (field, b) => {
+    if (field.closest('.line-editor, .txt-editor')) return true;
+    const near = field.closest('dialog, [role="dialog"], .find-dock, .page-ask, .popover, #sidePanel');
+    return !!near && near.contains(b);
+  };
+  let typingTap = null;
+  document.addEventListener('mousedown', (e) => {
+    typingTap = null;
+    const b = e.target.closest && e.target.closest('button'), field = document.activeElement;
+    if (!b || b.disabled || !keyboardIn(field) || b.contains(field)) return;
+    e.preventDefault();
+    if (!keepTyping(field, b)) typingTap = { field, b };
+  }, true);
+  document.addEventListener('click', (e) => {
+    const t = typingTap; typingTap = null;
+    if (t && t.b.contains(e.target)) setTimeout(() => { if (document.activeElement === t.field) t.field.blur(); }, 0);
+  }, true);
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
   window.__cowdreyNight = (night) => { androidNight = !!night; applyTheme(); };
   androidCall('appInfo').then((r) => { if (r && typeof r.night === 'boolean') window.__cowdreyNight(r.night); }, () => {});

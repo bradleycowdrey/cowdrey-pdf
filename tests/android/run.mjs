@@ -21,6 +21,8 @@ A.setOut(OUTDIR || '/tmp/android-e2e');
 const results = [];
 let page = null;
 const only = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
+// A phone with little memory (the second emulator: 2 GB): the long OCR scenario runs there.
+const LOWRAM = process.env.LOWRAM === '1';
 // The results so far are written after every scenario, so a run that is stopped still says how far it got.
 function writeResults(done) {
   const passed = results.filter((r) => r[0]).length;
@@ -126,6 +128,36 @@ async function contentUri(local, name) {
 }
 const startView = (c, action = 'VIEW') => sh(`am start -W -a android.intent.action.${action} -t application/pdf ${action === 'VIEW' ? `-d '${c.uri}'` : `--eu android.intent.extra.STREAM '${c.uri}'`} ${c.grant ? '--grant-read-uri-permission' : ''} -n ${comp}`).trim().replace(/\s+/g, ' ');
 async function pushBytes(bytes, name) { const f = path.join(A.OUT, '.push-' + name.replace(/[^\w.]+/g, '_')); fs.writeFileSync(f, bytes); await pushDownload(f, name); fs.unlinkSync(f); }
+
+/* ---- the network ---- */
+// Off (Wi-Fi and mobile data), for the scenarios that check what the app does with no network
+async function netOff() { sh('svc wifi disable'); sh('svc data disable'); await sleep(3000); }
+async function netOn() {
+  sh('svc wifi enable'); sh('svc data enable');
+  for (let i = 0; i < 20 && !/1 received|1 packets received/.test(sh('ping -c 1 -W 2 8.8.8.8')); i++) await sleep(1500);
+}
+// The web view can reach the internet (a scenario that needs it fails as "no network", not as something else)
+async function ensureNetwork() {
+  let net = null;
+  for (let i = 0; i < 24 && !(net && net.ok); i++) {
+    if (i) await sleep(5000);
+    if (i === 8 || i === 16) { // the emulator's radio, started again (it can stay down after a scenario turned it off)
+      log('  network:', (sh('dumpsys connectivity | grep -m1 "Active default network"') || '').trim(), '- airplane mode on and off');
+      adb('emu', 'gsm', 'voice', 'home'); adb('emu', 'gsm', 'data', 'home');
+      sh('cmd connectivity airplane-mode enable'); await sleep(3000); sh('cmd connectivity airplane-mode disable'); sh('svc wifi enable'); sh('svc data enable'); await sleep(2000);
+      sh('cmd wifi connect-network AndroidWifi open'); await sleep(5000);
+    }
+    net = await page.evaluate(async () => { try { await fetch('https://www.gstatic.com/generate_204', { mode: 'no-cors', cache: 'no-store' }); return { ok: true }; } catch (e) { return { err: String(e) }; } });
+  }
+  log('  network:', net.ok ? 'up' : net.err);
+  ok(net.ok, 'no network on the emulator: ' + net.err);
+}
+// The keyboard is down (it can take a moment after the app comes back to the front)
+async function keyboardDown(timeout = 8000) {
+  let st = '';
+  for (const end = Date.now() + timeout; Date.now() < end; await sleep(500)) { st = sh('dumpsys input_method | grep -m1 mInputShown').trim(); if (/mInputShown=false/.test(st)) return true; }
+  log('  keyboard:', st); return false;
+}
 
 /* ---- Android's own windows ---- */
 // Picks a file in Android's file picker (opened by trigger), by its name in Downloads.
@@ -252,6 +284,42 @@ async function tablesPdf() {
   for (const y of ys) p1.drawLine({ start: { x: xs[0], y }, end: { x: xs[3], y }, thickness: 1, color: L.rgb(0, 0, 0) });
   for (const x of xs) p1.drawLine({ start: { x, y: ys[0] }, end: { x, y: ys[4] }, thickness: 1, color: L.rgb(0, 0, 0) });
   RULED.forEach((row, r) => row.forEach((t, c) => p1.drawText(t, { x: xs[c] + 6, y: ys[r] - 17, size: 11, font: r ? f : b })));
+  return Buffer.from(await d.save());
+}
+
+// A large PDF: page 1 has a picture of random pixels (it can't be compressed), so the file is about `mb` MB.
+async function bigPdf(mb) {
+  const d = await L.PDFDocument.create(), f = await d.embedFont(L.StandardFonts.Helvetica);
+  const W = 2000, H = Math.ceil(mb * 1048576 / (W * 3)), px = crypto.randomBytes(W * H * 3);
+  const img = d.context.register(d.context.stream(px, { Type: 'XObject', Subtype: 'Image', Width: W, Height: H, ColorSpace: 'DeviceRGB', BitsPerComponent: 8 }));
+  const p1 = d.addPage([612, 792]);
+  p1.drawText('Big scan, page 1', { x: 72, y: 740, size: 18, font: f });
+  const nm = p1.node.newXObject('BigPic', img);
+  p1.pushOperators(L.pushGraphicsState(), L.concatTransformationMatrix(500, 0, 0, Math.round(500 * H / W), 56, 80), L.drawObject(nm), L.popGraphicsState());
+  d.addPage([612, 792]).drawText('Big scan, page 2', { x: 72, y: 740, size: 18, font: f });
+  return { bytes: Buffer.from(await d.save({ useObjectStreams: false })), sha: crypto.createHash('sha256').update(px).digest('hex') };
+}
+// The sha256 of the pixels of the large picture on page 1 of a saved PDF
+function imageSha(d) {
+  const xo = d.getPage(0).node.Resources().lookup(L.PDFName.of('XObject'));
+  for (const k of xo ? xo.keys() : []) {
+    const st = xo.lookup(k);
+    if (!(st instanceof L.PDFRawStream) || String(st.dict.get(L.PDFName.of('Subtype'))) !== '/Image') continue;
+    const raw = st.dict.get(L.PDFName.of('Filter')) ? L.decodePDFRawStream(st).decode() : st.contents;
+    return crypto.createHash('sha256').update(Buffer.from(raw)).digest('hex');
+  }
+  return null;
+}
+// A scanned PDF: each page a picture of its lines of text (drawn by the web view, 150 dpi)
+async function scanPdf(pages) {
+  const pngs = await page.evaluate((pages) => pages.map((lines) => {
+    const c = document.createElement('canvas'); c.width = 1275; c.height = 1650; const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.fillStyle = '#111'; x.font = 'bold 44px sans-serif';
+    lines.forEach((l, k) => x.fillText(l, 120, 240 + k * 100));
+    return c.toDataURL('image/png').split(',')[1];
+  }), pages);
+  const d = await L.PDFDocument.create();
+  for (const b of pngs) { const img = await d.embedPng(Buffer.from(b, 'base64')); d.addPage([612, 792]).drawImage(img, { x: 0, y: 0, width: 612, height: 792 }); }
   return Buffer.from(await d.save());
 }
 
@@ -477,6 +545,14 @@ await test('forms: Save PDF tapped while typing in a field (keyboard up), on a P
   const got = await A.waitNewDownload(before, 30000); ok(got.length, 'a new file in Downloads');
   const bytes = A.pullDownload(got[got.length - 1]);
   eq((await L.PDFDocument.load(bytes)).getForm().getTextField('name').getText(), 'Typed then saved', 'the typed value is in the saved file');
+  // back in the app after saving: the typing is over, so the keyboard is down
+  await page.waitForFunction(() => /Saved/.test(document.querySelector('#saveState').textContent), null, { timeout: 20000 });
+  await sleep(1500);
+  const down = await keyboardDown();
+  const active = await page.evaluate(() => { const a = document.activeElement; return a ? `${a.tagName}${a.name ? '[' + a.name + ']' : ''}` : ''; });
+  log('  after saving: keyboard', down ? 'down' : 'still up', '· focus', active);
+  shot('typing-saved-keyboard-down');
+  ok(down, 'the keyboard went down after Save PDF');
 });
 
 await test('forms designer: a new text field drawn with a finger is saved as a real field', async () => {
@@ -514,7 +590,7 @@ await test('OCR with no network: a scanned page is read with the engine and Engl
   const d = await L.PDFDocument.create(); const img = await d.embedPng(Buffer.from(png, 'base64'));
   d.addPage([612, 792]).drawImage(img, { x: 0, y: 0, width: 612, height: 792 });
   await openBytes(Buffer.from(await d.save()), 'Scan.pdf');
-  sh('svc wifi disable'); sh('svc data disable'); await sleep(3000);
+  await netOff();
   try {
     const direct = await page.evaluate(() => window.__cowdreyPdf.ocrAndroidPaths ? window.__cowdreyPdf.ocrAndroidPaths() : 'n/a');
     log('  the worker needed blob addresses:', direct);
@@ -528,10 +604,7 @@ await test('OCR with no network: a scanned page is read with the engine and Engl
     log('  text layer:', t);
     ok(/pelican/i.test(t) && /quick brown fox/i.test(t), 'the words were read');
     shot('ocr-done');
-  } finally {
-    sh('svc wifi enable'); sh('svc data enable');
-    for (let i = 0; i < 20 && !/1 received|1 packets received/.test(sh('ping -c 1 -W 2 8.8.8.8')); i++) await sleep(1500);
-  }
+  } finally { await netOn(); }
 });
 
 await test('certificate signing: import a .p12 through the picker, sign, save; the signature verifies', async () => {
@@ -567,19 +640,7 @@ await test('certificate signing: import a .p12 through the picker, sign, save; t
 await test('timestamps: a timestamp server typed in Signing IDs; the signature saved with its timestamp from it (Android\'s network and certificate authorities)', async () => {
   // The network first (the OCR scenario turned it off and on again): with none, this fails as "no network", not as
   // a timestamp failure.
-  let net = null;
-  for (let i = 0; i < 24 && !(net && net.ok); i++) {
-    if (i) await sleep(5000);
-    if (i === 8 || i === 16) { // the emulator's radio, started again (it can stay down after the OCR scenario turned it off)
-      log('  network:', (sh('dumpsys connectivity | grep -m1 "Active default network"') || '').trim(), '- airplane mode on and off');
-      adb('emu', 'gsm', 'voice', 'home'); adb('emu', 'gsm', 'data', 'home');
-      sh('cmd connectivity airplane-mode enable'); await sleep(3000); sh('cmd connectivity airplane-mode disable'); sh('svc wifi enable'); sh('svc data enable'); await sleep(2000);
-      sh('cmd wifi connect-network AndroidWifi open'); await sleep(5000);
-    }
-    net = await page.evaluate(async () => { try { await fetch('https://www.gstatic.com/generate_204', { mode: 'no-cors', cache: 'no-store' }); return { ok: true }; } catch (e) { return { err: String(e) }; } });
-  }
-  log('  network:', net.ok ? 'up' : net.err);
-  ok(net.ok, 'no network on the emulator: ' + net.err);
+  await ensureNetwork();
   await openBytes(SAMPLE, 'Timestamped.pdf');
   // A public timestamp server can be slow or down: any one of three answering is enough.
   let done = null;
@@ -631,6 +692,31 @@ await test('timestamps: a timestamp server typed in Signing IDs; the signature s
   shot('timestamped');
 });
 
+await test('signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password', async () => {
+  await pushBytes(makeP12('PFX Signer', 'pw5678'), 'Second signer.pfx');
+  await run('sgIds'); await page.waitForSelector('#dialog[open] #sgImport');
+  await pickThroughPicker(() => A.tapEl(page, '#sgImport'), 'Second signer.pfx');
+  await page.waitForSelector('#dialog[open] #dlgInput', { timeout: 20000 });
+  await page.fill('#dlgInput', 'pw5678'); await page.click('#dialog .dlg-foot .btn.primary');
+  await page.waitForFunction(() => /Signing ID for PFX Signer added/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  await page.waitForSelector('#dialog[open] #sgImport', { timeout: 20000 });
+  ok(/PFX Signer/.test(await page.textContent('#dialog #sgIdList')), 'the .pfx ID is listed');
+  const id = (name) => page.evaluate((n) => { const r = [...document.querySelectorAll('#dialog .sg-id')].find((x) => x.querySelector('strong') && x.querySelector('strong').textContent === n); return r && r.dataset.sgId; }, name);
+  const androidId = await id('Android Signer'); ok(androidId, 'the Android Signer ID is listed');
+  const { name, bytes } = await saveThroughDialog(() => A.tapEl(page, `#dialog [data-sg-export="${androidId}"]`), 'p12-export');
+  ok(/\.p12$/.test(name), name);
+  const p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(bytes.toString('binary')), 'pw1234');
+  const certs = (p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []).map((b) => b.cert.subject.getField('CN').value);
+  const keys = (p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []).length;
+  log('  saved', name, bytes.length, 'bytes · certificates', certs.join(', '), '· keys', keys);
+  ok(certs.includes('Android Signer') && keys === 1, 'the saved .p12 has the certificate and its key');
+  // the .pfx ID goes again, so the other scenarios sign with the one they expect
+  await backToApp(); await page.waitForSelector('#dialog[open] #sgImport', { timeout: 10000 });
+  const pfxId = await id('PFX Signer'); if (pfxId) await A.tapEl(page, `#dialog [data-sg-del="${pfxId}"]`);
+  await sleep(800); shot('signing-ids-p12');
+  await answer('Close');
+});
+
 await test('PDF/A: saved through the save dialog, with its PDF/A-2b identification', async () => {
   await openBytes(SAMPLE, 'Quarterly report.pdf');
   const { name, bytes } = await saveThroughDialog(async () => {
@@ -642,7 +728,7 @@ await test('PDF/A: saved through the save dialog, with its PDF/A-2b identificati
   ok(/<pdfaid:part>2<\/pdfaid:part>/.test(s) && /OutputIntent/.test(s), 'pdfaid and an output intent');
 });
 
-await test('compare: the other PDF from the picker; the changes are found', async () => {
+await test('compare: the other PDF from the picker; the changes are found; the compare report saved through the save dialog', async () => {
   const { oldPdf, newPdf } = await twoVersions();
   await openBytes(newPdf, 'Invoice v2.pdf');
   await pushBytes(oldPdf, 'Invoice v1.pdf');
@@ -654,6 +740,13 @@ await test('compare: the other PDF from the picker; the changes are found', asyn
   log('  changes:', s.changes.map((c) => `${c.kind}:${c.was || ''}>${c.now || ''}`).join(' | '), '·', await page.textContent('#cmpView .cmp-sum'));
   ok(s.changes.some((c) => c.kind === 'replace' && /March/.test(c.was || '') && /April/.test(c.now || '')), 'March → April found');
   shot('compare-phone');
+  // the compare report: a PDF with a cover page and the changes as comments, through the save dialog
+  const rep = await saveThroughDialog(async () => { await A.tapEl(page, '#cmpView [data-c="report"]'); await answer('Save report'); }, 'compare-report');
+  ok(/compared\.pdf$/.test(rep.name), rep.name);
+  const rd = await L.PDFDocument.load(rep.bytes, { updateMetadata: false });
+  const notes = rd.getPages().slice(1).flatMap((pg) => (pg.node.Annots() ? pg.node.Annots().asArray() : []));
+  log('  report:', rd.getPageCount(), 'pages,', notes.length, 'comments');
+  ok(rd.getPageCount() >= 2 && notes.length >= 2, 'a cover page and the changes as comments');
   await page.keyboard.press('Escape'); await sleep(500);
   if (await page.evaluate(() => document.querySelector('#app').classList.contains('cmp-on'))) await page.evaluate(() => document.querySelector('#cmpView [data-close], #cmpView .cmp-close') && document.querySelector('#cmpView [data-close], #cmpView .cmp-close').click());
 });
@@ -869,6 +962,260 @@ await test('signature: drawn with a finger and placed on the page; it is in the 
   shot('signature-placed');
   await run('tool_select');
 });
+
+await test('large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file', async () => {
+  const big = await bigPdf(12);
+  log('  the PDF:', big.bytes.length, 'bytes');
+  const f = path.join(A.OUT, '.push-big.pdf'); fs.writeFileSync(f, big.bytes);
+  const c = await contentUri(f, 'Big scan.pdf'); fs.unlinkSync(f);
+  const t0 = Date.now();
+  log('  am start:', startView(c).slice(0, 160));
+  await page.waitForFunction(() => document.querySelector('#docTitle').textContent === 'Big scan', null, { timeout: 120000 });
+  await page.waitForFunction(() => document.querySelector('.page[data-n="0"] canvas.pdf'), null, { timeout: 60000 });
+  log('  opened in', ((Date.now() - t0) / 1000).toFixed(1), 's ·', await page.evaluate(() => window.__cowdreyPdf.doc.pages.length), 'pages');
+  shot('large-file-open');
+  // every message to the native side while saving, with its size
+  await page.evaluate(() => {
+    window.__parts = []; const core = window.__TAURI__.core;
+    if (!core.__partsWrapped) { core.__partsWrapped = true; const inv = core.invoke.bind(core); core.invoke = (cmd, a) => { if (cmd === 'write_share_file') window.__parts.push({ append: !!(a && a.append), b64: a && a.base64 ? a.base64.length : 0 }); return inv(cmd, a); }; }
+  });
+  await run('tool_rect'); const [x1, y1] = await at(0, 100, 760), [x2, y2] = await at(0, 250, 720); await A.swipeCss(page, x1, y1, x2, y2, 400); await run('tool_select');
+  const t1 = Date.now();
+  const { name, bytes } = await saveThroughDialog(() => A.tapEl(page, '#saveBtn'), 'large-file');
+  const parts = await page.evaluate(() => window.__parts.splice(0));
+  log('  saved', name, bytes.length, 'bytes in', ((Date.now() - t1) / 1000).toFixed(1), 's · parts sent:', parts.map((p) => `${p.append ? '+' : ''}${(p.b64 * 3 / 4 / 1048576).toFixed(1)} MB`).join(' '));
+  ok(parts.length >= 3 && parts.every((p) => p.b64 * 3 / 4 <= (4 << 20) + 4) && parts.slice(1).every((p) => p.append), 'sent in parts of at most 4 MB');
+  const check = async (b) => { const d = await L.PDFDocument.load(b, { updateMetadata: false }); const sha = imageSha(d); const subs = (d.getPage(0).node.Annots() ? d.getPage(0).node.Annots().asArray() : []).map((r) => String(d.context.lookup(r).get(L.PDFName.of('Subtype')))); return { pages: d.getPageCount(), sha, subs }; };
+  let r = await check(bytes);
+  log('  ', JSON.stringify({ pages: r.pages, imageIntact: r.sha === big.sha, comments: r.subs }));
+  ok(r.pages === 2 && r.sha === big.sha && r.subs.includes('/Square'), 'the whole picture and the box are in the saved file');
+  await page.waitForFunction(() => /Saved/.test(document.querySelector('#saveState').textContent), null, { timeout: 20000 });
+  // Save again: no dialog, the same file
+  await run('tool_rect'); const [a1, b1] = await at(0, 300, 760), [a2, b2] = await at(0, 450, 720); await A.swipeCss(page, a1, b1, a2, b2, 400); await run('tool_select');
+  const before = A.listDownloads();
+  await A.tapEl(page, '#saveBtn');
+  await page.waitForFunction(() => /Saved/.test(document.querySelector('#saveState').textContent), null, { timeout: 60000 });
+  ok(!isDocs(), 'no dialog the second time'); eq(A.listDownloads(), before, 'no new file');
+  r = await check(A.pullDownload(name));
+  log('  saved again:', JSON.stringify({ pages: r.pages, imageIntact: r.sha === big.sha, comments: r.subs }));
+  ok(r.sha === big.sha && r.subs.filter((x) => x === '/Square').length === 2, 'the same file, with both boxes and the whole picture');
+  log('  memory:', sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -1`).trim().replace(/\s+/g, ' '));
+}, 600000);
+
+await test('export: the text (.txt) and the page as a picture (.png) through the save dialog', async () => {
+  await openBytes(SAMPLE, 'Quarterly report.pdf');
+  const t = await saveThroughDialog(() => run('exportText'), 'export-text');
+  const txt = t.bytes.toString('utf8');
+  log('  ', t.name, JSON.stringify(txt.slice(0, 100)));
+  ok(/\.txt$/.test(t.name) && /Cowdrey\.PDF/.test(txt) && /pelican/i.test(txt), 'the text of the PDF');
+  const p = await saveThroughDialog(() => run('exportImage'), 'export-png');
+  const sig = p.bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), w = p.bytes.readUInt32BE(16), h = p.bytes.readUInt32BE(20);
+  log('  ', p.name, p.bytes.length, 'bytes', w + 'x' + h);
+  ok(/\.png$/.test(p.name) && sig && w >= 1000 && h >= 1000, 'a PNG of the page');
+});
+
+await test('form data: an FDF file picked in Android\'s picker fills the form', async () => {
+  await openBytes(SAMPLE, 'Quarterly report.pdf');
+  await pushBytes(Buffer.from('%FDF-1.2\n1 0 obj\n<< /FDF << /Fields [ << /T (name) /V (Filled from FDF) >> ] >> >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n', 'latin1'), 'Form data.fdf');
+  await pickThroughPicker(() => run('ffd_importData'), 'Form data.fdf');
+  await page.waitForFunction(() => /filled in|not a form data|No fields/.test(document.querySelector('#toast').textContent), null, { timeout: 20000 });
+  log('  toast:', await toastText());
+  eq((await L.PDFDocument.load(await built())).getForm().getTextField('name').getText(), 'Filled from FDF', 'the field');
+});
+
+await test('pictures: a HEIC photo picked in Android\'s picker becomes a PDF (Android decodes it)', async () => {
+  await pushDownload(fixture('photo.heic'), 'Photo.heic');
+  await pickThroughPicker(() => run('crdNewPictures'), 'Photo.heic');
+  await page.waitForSelector('#dialog[open] #crdPicSize', { timeout: 20000 });
+  shot('heic-dialog');
+  await page.selectOption('#crdPicSize', 'fit'); await page.click('#dialog .dlg-foot .btn.primary');
+  await page.waitForFunction(() => window.__cowdreyPdf.doc && /Photo/.test(document.querySelector('#docTitle').textContent) && document.querySelector('.page canvas.pdf'), null, { timeout: 30000 }).catch(async (e) => { log('  toast:', await toastText()); throw e; });
+  await sleep(1500);
+  const d = await L.PDFDocument.load(await built());
+  const sz = d.getPage(0).getSize();
+  // the photo's colours, where they are in it: yellow outside the circle, red in the middle
+  const px = await page.evaluate(() => { const c = document.querySelector('.page[data-n="0"] canvas.pdf'), g = c.getContext('2d'); const at = (fx, fy) => Array.from(g.getImageData(Math.round(c.width * fx), Math.round(c.height * fy), 1, 1).data.slice(0, 3)); return { mid: at(.5, .5), corner: at(.125, .1875), edge: at(.03, .03) }; });
+  log('  page', Math.round(sz.width) + 'x' + Math.round(sz.height), 'colours', JSON.stringify(px));
+  shot('heic-pdf');
+  ok(Math.abs(sz.width / sz.height - 1.5) < .01, 'the photo\'s shape (1200 x 800)');
+  ok(px.mid[0] > 150 && px.mid[1] < 90 && px.corner[0] > 200 && px.corner[1] > 150 && px.edge[2] > 130, 'the photo\'s colours');
+});
+
+await test('PDF/UA: tags added, saved as PDF/UA through the save dialog', async () => {
+  await openBytes(SAMPLE, 'Access test.pdf');
+  await run('acAutoTag');
+  let tags = 0;
+  for (const end = Date.now() + 30000; Date.now() < end && tags < 3; await sleep(500)) tags = await page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.length);
+  ok(tags >= 3, 'tags added: ' + tags);
+  await page.evaluate(() => { window.__cowdreyPdf.acFixSet('lang', 'en-US'); window.__cowdreyPdf.acFixSet('dtitle', true); });
+  const { name, bytes } = await saveThroughDialog(() => run('acSaveUA'), 'pdfua');
+  const d = await L.PDFDocument.load(bytes, { updateMetadata: false });
+  const md = d.catalog.lookup(L.PDFName.of('Metadata'));
+  const xmp = md ? Buffer.from(md instanceof L.PDFRawStream ? L.decodePDFRawStream(md).decode() : md.getContents()).toString('utf8') : '';
+  log('  ', name, bytes.length, 'bytes · StructTreeRoot', !!d.catalog.get(L.PDFName.of('StructTreeRoot')));
+  ok(/PDF-UA/.test(name) && /<pdfuaid:part>1<\/pdfuaid:part>/.test(xmp) && d.catalog.get(L.PDFName.of('StructTreeRoot')), 'PDF/UA identification and tags');
+});
+
+await test('reading order: a tag dragged with a finger (long press) moves to the top; the saved PDF reads in the new order', async () => {
+  // (on the tagged copy from the scenario before; tagged again when that one did not run)
+  if ((await page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.length)) < 3) { await openBytes(SAMPLE, 'Access test.pdf'); await run('acAutoTag'); await sleep(2000); }
+  await run('acOrder'); await page.waitForSelector('#acOrder .ac-item', { timeout: 20000 }); await sleep(1000);
+  const texts = () => page.evaluate(async () => (await window.__cowdreyPdf.acOrderModel(0)).items.map((x) => x.text.slice(0, 30)));
+  const before = await texts();
+  log('  before:', JSON.stringify(before));
+  const from = page.locator('#acOrder .ac-item').nth(2).locator('.ac-txt'), to = page.locator('#acOrder .ac-item').nth(0).locator('.ac-txt');
+  await from.scrollIntoViewIfNeeded(); await sleep(500);
+  const s = await A.screenOf(page), ra = await from.boundingBox(), rb = await to.boundingBox();
+  const [x1, y1] = s.at(ra.x + Math.min(40, ra.width / 2), ra.y + ra.height / 2), [x2, y2] = s.at(rb.x + Math.min(40, rb.width / 2), rb.y + rb.height * .3);
+  sh(`input motionevent DOWN ${x1} ${y1}`); await sleep(900);
+  for (let k = 1; k <= 10; k++) { sh(`input motionevent MOVE ${x1} ${Math.round(y1 + (y2 - y1) * k / 10)}`); await sleep(80); }
+  sh(`input motionevent MOVE ${x2} ${y2}`); await sleep(300); sh(`input motionevent UP ${x2} ${y2}`); await sleep(1500);
+  const after = await texts();
+  log('  after:', JSON.stringify(after));
+  shot('reading-order-dragged');
+  eq(after[0], before[2], 'the third tag is first now');
+  await run('acOrder');
+  await openBytes(await built(), 'Reading order check.pdf');
+  const saved = await texts();
+  log('  in the saved PDF:', JSON.stringify(saved));
+  eq(saved.slice(0, 3), after.slice(0, 3), 'the saved PDF reads in the new order');
+});
+
+await test('fonts: Japanese typed in Edit PDF says it needs a download when there is no network; online the fonts download and the saved PDF has the words', async () => {
+  await openBytes(fs.readFileSync(fixture('word.pdf')), 'Fonts test.pdf');
+  const editLine = async (find, typed) => {
+    const b = await page.locator('.page[data-n="0"] .textLayer span', { hasText: find }).first().boundingBox();
+    await A.tapCss(page, b.x + 10, b.y + b.height / 2);
+    await page.waitForSelector('.line-editor', { timeout: 15000 });
+    await page.waitForFunction(() => document.activeElement && document.activeElement.closest('.line-editor'), null, { timeout: 10000 });
+    await sleep(1200);
+    await page.evaluate(() => { const ed = document.activeElement.closest('.line-editor'); const r = document.createRange(); r.selectNodeContents(ed); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+    await page.keyboard.insertText(typed); await sleep(300); await page.keyboard.press('Enter'); await sleep(800);
+  };
+  await netOff();
+  let editTool = '';
+  try {
+    await run('tool_edit'); editTool = await page.evaluate(() => document.querySelector('#app').dataset.tool);
+    await editLine('Budget', '予算は承認されました');
+    await page.waitForSelector('#dialog[open]', { timeout: 15000 });
+    const ask = await page.textContent('#dialog h2'); log('  asked:', ask);
+    ok(/Japanese letters need a font/.test(ask), ask);
+    shot('font-ask');
+    await answer('Download');
+    await page.waitForFunction(() => /could not be downloaded/.test(document.querySelector('#toast').textContent), null, { timeout: 60000 });
+    log('  with no network:', await toastText());
+    shot('font-offline');
+  } finally { await netOn(); }
+  await ensureNetwork();
+  if (await page.evaluate(() => document.querySelector('#app').dataset.tool) !== editTool) await run('tool_edit');
+  await editLine('second phase', 'ประเทศไทย');
+  await page.waitForSelector('#dialog[open]', { timeout: 15000 }); log('  asked:', await page.textContent('#dialog h2'));
+  await answer('Download');
+  await page.waitForFunction(() => /Thai font ready/.test(document.querySelector('#toast').textContent), null, { timeout: 120000 });
+  await run('tool_select');
+  const { bytes } = await saveThroughDialog(async () => {
+    await A.tapEl(page, '#saveBtn');
+    // Save asks for the Japanese font again (it could not be downloaded before), then downloads it
+    for (const end = Date.now() + 120000; Date.now() < end && !isDocs(); await sleep(700)) {
+      const q = await page.evaluate(() => { const d = document.querySelector('#dialog'); return d && d.open ? d.querySelector('h2').textContent : ''; }).catch(() => '');
+      if (/letters need a font/.test(q)) { log('  asked on save:', q); await answer('Download'); }
+    }
+  }, 'font-save');
+  const t = (await pdfText(bytes)).replace(/\s+/g, ' ');
+  log('  text:', t.slice(0, 200));
+  ok(t.includes('予算は承認されました'), 'the Japanese line'); ok(t.includes('ประเทศไทย'), 'the Thai line');
+}, 600000);
+
+await test('OCR in French: the language is downloaded once; with no network, a language not downloaded yet says why', async () => {
+  await ensureNetwork();
+  await openBytes(await scanPdf([['Le château de la reine', 'Facture numéro 4471', 'Merci beaucoup']]), 'Scan FR.pdf');
+  await run('ocr'); await page.waitForSelector('#dialog[open] .ocr-dlg');
+  await page.selectOption('#ocrLang', 'fra'); await sleep(1500);
+  log('  download note:', await page.textContent('#ocrSize'));
+  shot('ocr-french-dialog');
+  await page.click('#dialog .dlg-foot .btn.primary');
+  await page.waitForFunction(() => !document.querySelector('#dialog[open] .ocr-prog') && /recognized|could not|Could not/i.test(document.querySelector('#toast').textContent + (document.querySelector('#dialog[open] h2') || {}).textContent), null, { timeout: 300000 });
+  log('  toast:', await toastText());
+  await page.waitForSelector('.page[data-n="0"] .textLayer span', { timeout: 20000 }).catch(() => {});
+  const t = (await page.$$eval('.page[data-n="0"] .textLayer span', (s) => s.map((x) => x.textContent).join(' '))).replace(/\s+/g, ' ');
+  log('  text layer:', t);
+  ok(/château/i.test(t) && /Facture/.test(t) && /numéro/.test(t), 'French words with their accents');
+  // German, never downloaded, with no network
+  await openBytes(await scanPdf([['Die Rechnung ist bezahlt']]), 'Scan DE.pdf');
+  await netOff();
+  try {
+    await run('ocr'); await page.waitForSelector('#dialog[open] .ocr-dlg');
+    await page.selectOption('#ocrLang', 'deu'); await sleep(800);
+    await page.click('#dialog .dlg-foot .btn.primary');
+    await page.waitForFunction(() => { const d = document.querySelector('#dialog'); return d.open && /could not start/.test(d.querySelector('h2').textContent); }, null, { timeout: 180000 });
+    log('  with no network:', (await page.textContent('#dialog')).replace(/\s+/g, ' ').trim());
+    shot('ocr-offline-message');
+    await answer('OK');
+  } finally { await netOn(); await page.evaluate(() => window.__cowdreyPdf.ocrPrefs({ lang: 'eng' })); }
+}, 600000);
+
+await test('update check (an APK not installed from Google Play): Check for updates asks GitHub; a newer release offers its APK, which Android opens', async () => {
+  const info = await page.evaluate(() => window.__TAURI__.core.invoke('plugin:sharekit|native', { method: 'appInfo', args: {} }));
+  log('  installed by:', JSON.stringify(info.installer));
+  ok(info.installer !== 'com.android.vending', 'not from Google Play');
+  ok(!(await page.evaluate(() => window.__cowdreyPdf.cmdHidden('checkUpdates'))), 'Check for updates is offered');
+  await ensureNetwork();
+  // GitHub's real answer (1.0.0 is the latest release, with no APK on it)
+  await page.evaluate(() => {
+    window.__gh = []; if (!window.__ghFetch) { const f = window.fetch.bind(window); window.__ghFetch = f; window.fetch = (u, o) => { const p = (window.__fakeRelease && /api\.github\.com\/repos\/[^/]+\/[^/]+\/releases\/latest/.test(String(u))) ? Promise.resolve(new Response(JSON.stringify(window.__fakeRelease), { status: 200, headers: { 'Content-Type': 'application/json' } })) : f(u, o); p.then((r) => window.__gh.push([String(u), r.status]), (e) => window.__gh.push([String(u), String(e)])); return p; }; }
+    document.querySelector('#toast').textContent = '';
+  });
+  await run('checkUpdates');
+  await page.waitForFunction(() => /latest version|Could not check/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  log('  GitHub:', JSON.stringify(await page.evaluate(() => window.__gh)), '· toast:', await toastText());
+  ok(/You have the latest version \(1\.1\.0\)/.test(await toastText()) || /api\.github\.com.*",403\]/.test(JSON.stringify(await page.evaluate(() => window.__gh))), 'GitHub answered, and 1.1.0 is not older than its latest release');
+  // a newer release with an APK (GitHub's answer replaced): the app offers it, and Download hands the link to Android
+  await page.evaluate(() => { window.__fakeRelease = { tag_name: 'v99.0.0', html_url: 'https://github.com/bradleycowdrey/cowdrey-pdf/releases', assets: [{ name: 'Cowdrey.PDF.dmg', browser_download_url: 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg' }, { name: 'Cowdrey.PDF.apk', browser_download_url: 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.apk' }] }; });
+  try {
+    await run('checkUpdates');
+    await page.waitForFunction(() => { const d = document.querySelector('#dialog'); return d.open && /99\.0\.0 is available/.test(d.querySelector('h2').textContent); }, null, { timeout: 30000 });
+    log('  dialog:', (await page.textContent('#dialog')).replace(/\s+/g, ' ').trim().slice(0, 200));
+    shot('update-available');
+    adb('logcat', '-c');
+    await A.tapEl(page, '#dialog .dlg-foot .btn.primary');
+    let left = false, started = '';
+    for (const end = Date.now() + 20000; Date.now() < end && !left && !started; await sleep(1000)) {
+      left = !/cowdreypdf/.test(A.focused());
+      started = (adb('logcat', '-d', '-s', 'ActivityTaskManager:I').split('\n').find((l) => /START .*act=android\.intent\.action\.VIEW.*dat=https:\/\/github\.com/.test(l)) || '').trim();
+    }
+    log('  after Download:', left ? 'left the app: ' + A.focused().split('\n')[0] : 'still in the app', '·', started.slice(0, 240) || 'no VIEW intent logged');
+    await sleep(2000); shot('update-download');
+    ok(left || started, 'Android was asked to open the APK\'s address');
+  } finally {
+    await page.evaluate(() => { window.__fakeRelease = null; }).catch(() => {});
+    for (const pkg of ['com.android.chrome', 'org.chromium.webview_shell', 'com.android.browser']) sh(`am force-stop ${pkg}`);
+    await frontApp();
+  }
+});
+
+if (LOWRAM) await test('OCR of a 50-page scan on a phone with 2 GB of memory: every page read, the app still running', async () => {
+  const total = +(sh('cat /proc/meminfo').match(/MemTotal:\s+(\d+)/) || [])[1];
+  log('  device memory:', Math.round(total / 1024), 'MB · low-RAM device:', sh('getprop ro.config.low_ram').trim() || 'false');
+  const pages = []; for (let k = 1; k <= 50; k++) pages.push([`Page ${k} of the long scan`, `Invoice ${4400 + k} for the pelican survey`, 'The quick brown fox jumps over the lazy dog']);
+  const bytes = await scanPdf(pages);
+  log('  the scan:', bytes.length, 'bytes, 50 pages');
+  await openBytes(bytes, 'Long scan.pdf');
+  const p0 = A.pid();
+  let peak = 0, stop = false;
+  const watch = (async () => { while (!stop) { const m = sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -1`); const kb = +((m.match(/TOTAL(?: PSS)?:?\s+(\d+)/) || [])[1] || 0); if (kb > peak) peak = kb; await sleep(15000); } })();
+  const t0 = Date.now();
+  let r;
+  try { r = await page.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ pages: window.__cowdreyPdf.doc.pages.map((_, n) => n), lang: 'eng', orient: false })); }
+  finally { stop = true; await watch; }
+  log('  ', JSON.stringify(r), 'in', Math.round((Date.now() - t0) / 1000), 's · peak memory', Math.round(peak / 1024), 'MB');
+  eq(A.pid(), p0, 'the app is still the same process');
+  ok(!page.isClosed(), 'the web view is still there');
+  eq(r.pages, 50, 'every page read');
+  const missing = await page.evaluate(async () => { const out = []; for (const [n, e] of window.__cowdreyPdf.doc.pages.entries()) { const v = window.__cowdreyPdf.views()[n]; const tc = await v.page.getTextContent(); const t = tc.items.map((x) => x.str).join(' '); if (!new RegExp(`Invoice\\s*${4401 + n}`).test(t)) out.push(n + 1); } return out; });
+  log('  pages without their invoice number:', JSON.stringify(missing));
+  ok(missing.length <= 2, 'the words of (nearly) every page: ' + missing.join(', '));
+  shot('ocr-50-pages');
+}, 2400000);
 
 await test('memory: the app\'s memory after all of the above', async () => {
   const m = sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -2`).trim();

@@ -34,6 +34,8 @@ jobs:
     name: Build Cowdrey.PDF for Android and try it on an emulator
     runs-on: ubuntu-latest
     timeout-minutes: 200
+    outputs:
+      test_apk: ${{ steps.testapk.outputs.built }}
     env:
       # Upload key for Google Play (base64 .jks or .keystore), its password and alias. Without them the APK is
       # signed with a throwaway key: fine for trying it, but each build then needs uninstalling the last one.
@@ -141,6 +143,7 @@ jobs:
       # A separate debug build for the device test only: same app, with its web view open to the test driver (Chrome
       # DevTools protocol) and its files readable with run-as. It is never signed for release, uploaded or published.
       - name: Build the test app (debug, x86_64, for the emulator only)
+        id: testapk
         working-directory: desktop
         run: |
           set -o pipefail
@@ -148,6 +151,7 @@ jobs:
           T=$(find src-tauri/gen/android/app/build/outputs/apk -name '*debug*.apk' | head -1)
           echo "Test APK: $T" | tee -a "$RUNNER_TEMP/android-build.log"
           cp "$T" "$RUNNER_TEMP/Cowdrey.PDF-test.apk"
+          echo "built=yes" >> "$GITHUB_OUTPUT"
 
       # The release build leaves Gradle and Kotlin daemons and gigabytes of build files behind; on full runs the
       # emulator then came up without any network (runs 21 and 22; quick runs 20 and 23 had one). The APKs are
@@ -212,25 +216,138 @@ jobs:
             ${{ runner.temp }}/Cowdrey.PDF.aab
           if-no-files-found: ignore
 
-      # The test build and what the device test saved: kept with the run only, never on a release.
+      # The test build, the build log and what the device test saved: kept with the run only, never on a release.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Cowdrey.PDF-Android-test
           path: |
             ${{ runner.temp }}/Cowdrey.PDF-test.apk
+            ${{ runner.temp }}/android-build.log
             ${{ runner.temp }}/smoke
           if-no-files-found: ignore
           retention-days: 14
 
-      # The log and emulator screenshots go on the android-build-log branch, readable without signing in.
-      - name: Publish the build log and screenshots
+  # The same test build on a second phone: a newer Android (16) with a newer web view, and only 2 GB of memory, as
+  # on low-cost phones. It runs the everyday scenarios and a 50-page OCR (tests/android/run.mjs, LOWRAM).
+  android-second:
+    name: Try it on a second phone (Android 16, 2 GB)
+    needs: android
+    if: ${{ !cancelled() && needs.android.outputs.test_apk == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install the libraries the device test checks files with
+        working-directory: desktop
+        run: npm ci --ignore-scripts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Cowdrey.PDF-Android-test
+          path: ${{ runner.temp }}/main
+
+      - name: Install the device test driver
+        run: |
+          mkdir -p "$RUNNER_TEMP/driver" && cd "$RUNNER_TEMP/driver" && npm init -y > /dev/null
+          npm install --no-save --no-audit --no-fund playwright-core@1.56.1 > /dev/null && echo "playwright-core installed"
+
+      - name: Allow the emulator to use hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          D=$(resolvectl dns 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | grep -v '^127\.' | sort -u | head -2 | paste -sd, -)
+          echo "EMU_DNS=${D:+$D,}8.8.8.8" >> "$GITHUB_ENV"; echo "emulator DNS: ${D:+$D,}8.8.8.8"
+
+      - name: Test it on an Android 16 emulator with 2 GB of memory
+        timeout-minutes: 100
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          PW_CORE: ${{ runner.temp }}/driver/node_modules/playwright-core
+          LOWRAM: '1'
+          ONLY: "open with: a VIEW|own worker|mark up with a finger|^Save PDF|^Save again|^Edit PDF|^forms: (tap|Save PDF)|^large file|HEIC|OCR with no network|50-page|phone layout|^memory|light mode"
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          ram-size: 2048M
+          disk-size: 6000M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ env.EMU_DNS }}
+          script: bash .github/scripts/android_e2e.sh none "$RUNNER_TEMP/main/Cowdrey.PDF-test.apk" "$RUNNER_TEMP/smoke" 2>&1 | tee "$RUNNER_TEMP/android-second.log"
+
+      - name: Check the device test passed
+        run: |
+          cat "$RUNNER_TEMP/smoke/result.txt" 2>/dev/null || { echo "The device test did not finish"; exit 1; }
+          grep -q '^ALL PASSED' "$RUNNER_TEMP/smoke/result.txt"
+
+      - uses: actions/upload-artifact@v4
         if: always()
+        with:
+          name: Cowdrey.PDF-Android-second-test
+          path: |
+            ${{ runner.temp }}/android-second.log
+            ${{ runner.temp }}/smoke
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The logs and emulator screenshots of this run go on the android-build-log branch, readable without signing in:
+  # the first phone (Android 15, 4 GB) at the top, the second (Android 16, 2 GB) in second-phone/. The branch is made
+  # new each time, so it only ever holds this run's files; screenshots.txt lists them.
+  log:
+    name: Publish the build log and screenshots
+    needs: [android, android-second]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: Cowdrey.PDF-Android-test
+          path: ${{ runner.temp }}/main
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: Cowdrey.PDF-Android-second-test
+          path: ${{ runner.temp }}/second
+      - name: Push the android-build-log branch
         run: |
           D=$(mktemp -d); cd "$D" && git init -q -b android-build-log
-          [[ -f "$RUNNER_TEMP/android-build.log" ]] && tail -c 300000 "$RUNNER_TEMP/android-build.log" > android-build.log
-          [[ -d "$RUNNER_TEMP/smoke" ]] && cp "$RUNNER_TEMP"/smoke/*.png "$RUNNER_TEMP"/smoke/*.txt . 2>/dev/null
-          echo "${{ job.status }} · run ${{ github.run_number }} (${{ github.run_id }}) · branch ${{ github.ref_name }} · ${{ github.sha }}" > status.txt
+          [[ -f "$RUNNER_TEMP/main/android-build.log" ]] && tail -c 300000 "$RUNNER_TEMP/main/android-build.log" > android-build.log
+          cp "$RUNNER_TEMP"/main/smoke/*.png "$RUNNER_TEMP"/main/smoke/*.txt . 2>/dev/null
+          if [[ -d "$RUNNER_TEMP/second/smoke" ]]; then
+            mkdir -p second-phone
+            [[ -f "$RUNNER_TEMP/second/android-second.log" ]] && tail -c 300000 "$RUNNER_TEMP/second/android-second.log" > second-phone/android-test.log
+            cp "$RUNNER_TEMP"/second/smoke/*.png "$RUNNER_TEMP"/second/smoke/*.txt second-phone/ 2>/dev/null
+          fi
+          # Only the screenshots this run's test log names, so no picture can pass for one of this run's by mistake.
+          for dir in . second-phone; do
+            [[ -d "$dir" ]] || continue
+            for f in "$dir"/*.png; do
+              [[ -e "$f" ]] || continue
+              grep -qF "screenshot $(basename "$f")" "$dir/e2e-log.txt" 2>/dev/null || { echo "not in this run's log, left out: $f"; rm -f "$f"; }
+            done
+          done
+          {
+            echo "Run ${{ github.run_number }} (${{ github.run_id }}) · branch ${{ github.ref_name }} · ${{ github.sha }}"
+            echo "First phone (Android 15, 4 GB): ${{ needs.android.result }} · files at the top"
+            echo "Second phone (Android 16, 2 GB): ${{ needs.android-second.result }} · files in second-phone/"
+            echo
+            echo "Screenshots of this run, in the order they were taken:"
+            ls -1 *.png 2>/dev/null | sed 's/^/  /'
+            if [[ -d second-phone ]]; then ls -1 second-phone/*.png 2>/dev/null | sed 's/^/  /'; fi
+          } > screenshots.txt
+          R="${{ needs.android.result }}"
+          if [[ "$R" == "success" && "${{ needs.android-second.result }}" != "success" ]]; then R="${{ needs.android-second.result }}"; fi
+          echo "$R · run ${{ github.run_number }} (${{ github.run_id }}) · branch ${{ github.ref_name }} · ${{ github.sha }}" > status.txt
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Android build log, run ${{ github.run_number }}"
           # (github.com can be out of reach for a minute: run 29's push failed after every test had passed)
