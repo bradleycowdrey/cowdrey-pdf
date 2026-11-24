@@ -124,6 +124,9 @@ cannot call those two directly: they are not in the plugin's list of methods the
 - **Revocation checks** send an OCSP request (a POST of at most 8 KB, `application/ocsp-request` only) or fetch a
   revocation list (a GET); answers over 32 MB are refused, and a list may move (at most 5 redirects, GET only) only to
   another http or https address. https goes through Android's own network stack, as timestamps do.
+- Each timestamp request, and each revocation check with all its redirects, must finish within 60 seconds: besides the
+  per-read timeouts, the connection is closed at that deadline, so a server that sends a byte now and then can't hold
+  the app's background thread.
 
 **Plain http, and why the app still allows no cleartext traffic.** Most OCSP responders and CRLs are plain http, which
 is safe for them: every answer is signed by the certificate's issuer, and the page checks that signature, the nonce
@@ -139,7 +142,20 @@ runs the same code as the release app, because `pkiFetch` never relies on the de
 The device test checks this end to end: it makes a small certificate authority with openssl on the runner
 (`tests/android/pki.mjs`), runs `openssl ocsp` and a tiny http server for its revocation list there, reached from the
 emulator at `10.0.2.2`, signs with a certificate that names both, and checks revocation from the Signatures panel: not
-revoked, then revoked (a new OCSP request, not a kept answer), then revoked from the CRL once the OCSP responder is gone.
+revoked, then revoked (a new OCSP request, not a kept answer), then revoked from the CRL once the OCSP responder is gone. The release
+APK test (`tests/android/release.mjs`) does the same with taps on the release build itself, whose cleartext traffic is
+off: a PDF signed on the runner (with `openssl cms`) is opened from Android and checked from the Signatures panel.
+
+## When the device test loses its connection
+
+The device test drives the debug build's web view through Playwright, which watches the device's web views with an
+adb command every half second; one such command failing on a busy emulator closes Playwright's connection, although
+the app and its page are still running (run 38, on the 2 GB phone, as OCR started). `tests/android/run.mjs` then
+connects again and checks that the app's process is the same and that its page is the same page (a mark the test set
+in it is still there). Only then is the scenario run once more, and `result.txt` lists it under "run again after the
+test lost its connection". If the app's process or its page is gone (a crash, the web view's renderer killed for
+memory, a reload), the scenario fails as before, with the phone's free memory and Android's lines about killed or
+dead processes in the log.
 
 ## What only you can do
 

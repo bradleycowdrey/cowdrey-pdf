@@ -3,7 +3,7 @@
 // (openssl ocsp, run here) and a revocation list (a tiny http server here, a new list on each request). Both listen on
 // this machine; the emulator reaches it at 10.0.2.2. Plain http, as most real OCSP and CRL servers are.
 import fs from 'node:fs'; import path from 'node:path'; import http from 'node:http'; import net from 'node:net';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module'; import { fileURLToPath } from 'node:url';
 
 const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.on('error', rej); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -58,7 +58,29 @@ export async function startPki(dir, host = '10.0.2.2') {
   const stopOcsp = async () => { if (!ocsp || ocsp.exitCode !== null || ocsp.signalCode !== null) return; const p = ocsp; p.kill(); await new Promise((r) => p.once('exit', r)); };
   await startOcsp();
   const ocspHits = () => (ocspLog.match(/OCSP Request Data:/g) || []).length;
+  // A PDF signed here with the signer's certificate (a detached CMS signature made by openssl cms, its chain in it):
+  // for the release APK, whose web view the test can't drive to sign (tests/android/release.mjs).
+  const signPdf = async (pdf) => {
+    const L = createRequire(fileURLToPath(import.meta.url))(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../desktop/node_modules/pdf-lib'));
+    const d = await L.PDFDocument.load(pdf), SIG = 16384, RANGE = [0, 1111111111, 2222222222, 3333333333];
+    const sig = d.context.register(d.context.obj({ Type: 'Sig', Filter: 'Adobe.PPKLite', SubFilter: 'adbe.pkcs7.detached', ByteRange: RANGE, Contents: L.PDFHexString.of('0'.repeat(SIG * 2)), M: L.PDFString.fromDate(new Date()) }));
+    const pg = d.getPage(0);
+    const w = d.context.register(d.context.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Sig', T: L.PDFString.of('Signature1'), Rect: [0, 0, 0, 0], F: 132, P: pg.ref, V: sig }));
+    pg.node.addAnnot(w);
+    const af = d.catalog.getOrCreateAcroForm(); af.addField(w); af.dict.set(L.PDFName.of('SigFlags'), L.PDFNumber.of(3));
+    let s = Buffer.from(await d.save({ useObjectStreams: false })).toString('latin1');
+    const holder = `<${'0'.repeat(SIG * 2)}>`, a = s.indexOf(holder), b = a + holder.length;
+    const rx = /\/ByteRange\s*\[\s*0 1111111111 2222222222 3333333333\s*\]/, m = s.match(rx);
+    if (a < 0 || !m || s.indexOf(holder, b) >= 0) throw new Error('the signature placeholder');
+    const br = `/ByteRange [0 ${a} ${b} ${s.length - b}]`; s = s.replace(rx, br.padEnd(m[0].length, ' '));
+    fs.writeFileSync(f('content.bin'), Buffer.from(s.slice(0, a) + s.slice(b), 'latin1'));
+    ossl('cms', '-sign', '-binary', '-in', f('content.bin'), '-signer', f('leaf.pem'), '-inkey', f('leaf.key'), '-certfile', f('chain.pem'), '-md', 'sha256', '-nosmimecap', '-outform', 'DER', '-out', f('sig.der'));
+    const hex = fs.readFileSync(f('sig.der')).toString('hex');
+    if (hex.length > SIG * 2) throw new Error('the signature is larger than its place');
+    return Buffer.from(s.slice(0, a + 1) + hex.padEnd(SIG * 2, '0') + s.slice(b - 1), 'latin1');
+  };
   return {
+    signPdf,
     p12: fs.readFileSync(f('leaf.p12')), password, name: 'Device Test Signer', ocsp: OCSP, crl: CRL, ocspPort, crlPort,
     ocspHits, crlHits: () => crlHits, ocspLog: () => ocspLog,
     revoke: async () => { ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('leaf.pem'), '-crl_reason', 'keyCompromise'); await stopOcsp(); await startOcsp(); },

@@ -7,6 +7,7 @@
 // the test apk, a debug build, is the control for the web view debugging check: it must name the call)
 import fs from 'node:fs'; import path from 'node:path'; import { createRequire } from 'node:module';
 import * as A from './lib.mjs';
+import { startPki } from './pki.mjs';
 const { adb, sh, log, shot, sleep, PKG, root } = A;
 const require = createRequire(import.meta.url);
 const L = require(path.join(root, 'desktop/node_modules/pdf-lib'));
@@ -17,6 +18,7 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(root, 'desktop/src-tauri/ta
 const NAME = 'Release test', TYPED = 'Release Tester';
 const results = [];
 const ok = (v, m) => { if (!v) throw new Error(m || 'not ok'); };
+const eq2 = (a, b, m = '') => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const write = (done) => {
   const passed = results.filter((r) => r[0]).length;
   const head = !done ? 'RELEASE NOT FINISHED' : passed === results.length ? 'RELEASE PASSED' : 'RELEASE FAILED';
@@ -147,6 +149,49 @@ await step('still running after all of that', async () => {
   await sleep(3000);
   ok(A.pid(), 'the app is running');
   ok(/cowdreypdf/.test(A.focused()), 'the app is in front: ' + A.focused());
+});
+
+// Revocation in the release build, where cleartext traffic is off (usesCleartextTraffic false): a PDF signed here with
+// a certificate whose OCSP responder and revocation list are plain http on this machine (tests/android/pki.mjs, reached
+// from the emulator at 10.0.2.2), opened from Android, and checked from the Signatures panel with taps. The app's
+// pkiFetch speaks http on a socket of its own, so the release app reaches them all the same (docs/android.md).
+await step('revocation over plain http in the release build: not revoked (OCSP), revoked (OCSP), revoked (CRL)', async () => {
+  const pki = await startPki(path.join(A.OUT, '.pki-release-' + Date.now()), '10.0.2.2');
+  try {
+    const RNAME = 'Release revocation';
+    log('  the release app\'s flags:', (sh(`dumpsys package ${PKG}`).match(/^\s*flags=\[[^\]]*\]/m) || [''])[0].trim(), '(the workflow\'s build log shows usesCleartextTraffic false for it)');
+    log('  OCSP responder', pki.ocsp, '· revocation list', pki.crl);
+    const f = path.join(A.OUT, '.push-release-revocation.pdf');
+    fs.writeFileSync(f, await pki.signPdf(fs.readFileSync(path.join(root, 'tests/fixtures/sample.pdf'))));
+    sh(`rm -f '${A.DL}/${RNAME}.pdf'`); adb('push', f, `${A.DL}/${RNAME}.pdf`); fs.unlinkSync(f);
+    sh(`am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://${A.DL}/${encodeURIComponent(RNAME)}.pdf' > /dev/null`);
+    let id = '';
+    for (let i = 0; i < 10 && !id; i++) { await sleep(1500); id = (sh(`content query --uri content://media/external/downloads --projection _id --where "_display_name='${RNAME}.pdf'"`).match(/_id=(\d+)/) || [])[1] || ''; }
+    ok(id, 'the signed PDF is in the media store');
+    log('  am start:', sh(`am start -W -a android.intent.action.VIEW -t application/pdf -d content://media/external/downloads/${id} --grant-read-uri-permission -n ${comp}`).trim().replace(/\s+/g, ' ').slice(0, 200));
+    const label = (n) => (n.text || n['content-desc'] || '').trim();
+    const tapLabel = async (re, what, timeout = 60000) => { const n = await waitApp((x) => re.test(label(x)) && x.w > 0, timeout); ok(n, what); sh(`input tap ${n.x} ${n.y}`); await sleep(1500); };
+    await tapLabel(/^View signatures$/, 'the signature bar\'s View signatures', 90000);
+    eq2([pki.ocspHits(), pki.crlHits()], [0, 0], 'nothing asked before the person asks');
+    const check = async (re, shotName) => {
+      await tapLabel(/^Check revocation (online|again)$/, 'a Check revocation button in the Signatures panel');
+      let all = '';
+      for (const end = Date.now() + 60000; Date.now() < end; await sleep(1000)) { all = appNodes().map(label).filter(Boolean).join(' ').replace(/\s+/g, ' '); if (re.test(all) && !/Checking…/.test(all)) break; }
+      const m = all.match(/(Not revoked|Revoked|Not checked)[^()]*\([^)]*\)/);
+      log(`  ${shotName}:`, m ? m[0] : all.slice(0, 600));
+      ok(re.test(all), 'the panel says ' + re);
+      shot('release-' + shotName);
+    };
+    await check(/Not revoked: “Device Test Signer” \(OCSP from 10\.0\.2\.2:\d+\)/, 'not-revoked');
+    eq2(pki.ocspHits(), 1, 'one OCSP request');
+    await pki.revoke();
+    await check(/Revoked: “Device Test Signer” was revoked .*key compromise.*\(OCSP from 10\.0\.2\.2:\d+\)/, 'revoked-ocsp');
+    eq2(pki.ocspHits(), 2, 'asked again');
+    await pki.stopOcsp();
+    await check(/Revoked: “Device Test Signer” was revoked .*\(CRL from 10\.0\.2\.2:\d+\)/, 'revoked-crl');
+    eq2(pki.crlHits(), 1, 'the revocation list was fetched');
+    log('  the release app made these plain http requests itself, with cleartext traffic off');
+  } finally { await pki.close(); }
 });
 
 if (!fs.existsSync(path.join(A.OUT, 'release-logcat.txt'))) fs.writeFileSync(path.join(A.OUT, 'release-logcat.txt'), adb('logcat', '-d').split('\n').filter((l) => /chromium|Console|Tauri|cowdrey|AndroidRuntime|FATAL|RustStdoutStderr/i.test(l)).slice(-400).join('\n'));

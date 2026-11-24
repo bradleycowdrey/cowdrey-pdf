@@ -510,17 +510,19 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
                 c.setRequestProperty("Content-Type", "application/timestamp-query")
                 c.setRequestProperty("User-Agent", "Cowdrey.PDF")
                 c.setFixedLengthStreamingMode(body.size)
-                c.outputStream.use { it.write(body) }
-                val code = c.responseCode
-                if (code !in 200..299) throw Exception("error $code")
                 val out = java.io.ByteArrayOutputStream()
-                c.inputStream.use { input ->
-                    val buf = ByteArray(8192)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        if (out.size() > (1 shl 20)) throw Exception("The answer is too large")
+                withDeadline(System.nanoTime() + NET_DEADLINE_MS * 1_000_000L, { c.disconnect() }) {
+                    c.outputStream.use { it.write(body) }
+                    val code = c.responseCode
+                    if (code !in 200..299) throw Exception("error $code")
+                    c.inputStream.use { input ->
+                        val buf = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            if (out.size() > (1 shl 20)) throw Exception("The answer is too large")
+                        }
                     }
                 }
                 JSObject().apply { put("body", android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)) }
@@ -556,10 +558,13 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
             var url = try { java.net.URL(args.getString("url", "") ?: "") } catch (_: Exception) { throw Exception("That is not a web address") }
             var hops = 0
             var answer: ByteArray? = null
+            // one deadline for the whole check, every redirect included: the per-read timeouts alone would let a
+            // server that sends a byte now and then hold this thread for as long as it likes
+            val deadline = System.nanoTime() + NET_DEADLINE_MS * 1_000_000L
             while (answer == null) {
                 if (url.protocol != "http" && url.protocol != "https") throw Exception("Revocation servers are reached over http or https only")
                 if (url.host.isNullOrEmpty()) throw Exception("That is not a web address")
-                val got = try { if (url.protocol == "https") pkiHttps(url, body) else pkiHttp(url, body) }
+                val got = try { if (url.protocol == "https") pkiHttps(url, body, deadline) else pkiHttp(url, body, deadline) }
                     catch (e: java.io.IOException) { throw Exception("${e.javaClass.simpleName}: ${e.message ?: ""}".trimEnd(' ', ':')) }
                 val (code, location, data) = got
                 if (code in 300..399 && location != null && body == null && hops < 5) {
@@ -577,10 +582,33 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
     private val PKI_REQUEST_MAX = 8192
     private val PKI_ANSWER_MAX = 32 shl 20
 
-    /** https, with Android's own network stack. (status, Location, answer) */
-    private fun pkiHttps(url: java.net.URL, body: ByteArray?): Triple<Int, String?, ByteArray> {
-        val c = url.openConnection() as javax.net.ssl.HttpsURLConnection
+    /** The longest a timestamp request or a revocation check (all its redirects together) may take, in ms. */
+    private val NET_DEADLINE_MS = 60_000L
+    private val deadlines = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "net-deadline").apply { isDaemon = true } }
+
+    /** Runs `block` (blocking network I/O); at `deadline` (System.nanoTime) `stop` closes its connection, so a read
+     *  that is waiting fails at once, and the failure is reported as the server taking too long. */
+    private fun <T> withDeadline(deadline: Long, stop: () -> Unit, block: () -> T): T {
+        val left = (deadline - System.nanoTime()) / 1_000_000L
+        if (left <= 0) throw java.io.IOException("the server took too long (over ${NET_DEADLINE_MS / 1000} s)")
+        val expired = java.util.concurrent.atomic.AtomicBoolean(false)
+        val timer = deadlines.schedule({ expired.set(true); try { stop() } catch (_: Exception) {} }, left, java.util.concurrent.TimeUnit.MILLISECONDS)
         try {
+            val r = block()
+            if (expired.get()) throw java.io.IOException("the server took too long (over ${NET_DEADLINE_MS / 1000} s)")
+            return r
+        } catch (e: Exception) {
+            if (expired.get()) throw java.io.IOException("the server took too long (over ${NET_DEADLINE_MS / 1000} s)")
+            throw e
+        } finally {
+            timer.cancel(false)
+        }
+    }
+
+    /** https, with Android's own network stack. (status, Location, answer) */
+    private fun pkiHttps(url: java.net.URL, body: ByteArray?, deadline: Long): Triple<Int, String?, ByteArray> {
+        val c = url.openConnection() as javax.net.ssl.HttpsURLConnection
+        try { return withDeadline(deadline, { c.disconnect() }) {
             c.connectTimeout = 20000
             c.readTimeout = 30000
             c.instanceFollowRedirects = false
@@ -594,26 +622,26 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
                 c.outputStream.use { it.write(body) }
             }
             val code = c.responseCode
-            if (code !in 200..299) return Triple(code, c.getHeaderField("Location"), ByteArray(0))
+            if (code !in 200..299) return@withDeadline Triple(code, c.getHeaderField("Location"), ByteArray(0))
             if (c.contentLengthLong > PKI_ANSWER_MAX) throw Exception("The answer is too large")
             val out = java.io.ByteArrayOutputStream()
             c.inputStream.use { pkiCopy(it, out, -1) }
-            return Triple(code, null, out.toByteArray())
-        } finally {
+            Triple(code, null, out.toByteArray())
+        } } finally {
             c.disconnect()
         }
     }
 
     /** Plain http/1.1 on a socket: one request, "Connection: close", the answer read by its length, in chunks, or to
      *  the end. (status, Location, answer) */
-    private fun pkiHttp(url: java.net.URL, body: ByteArray?): Triple<Int, String?, ByteArray> {
+    private fun pkiHttp(url: java.net.URL, body: ByteArray?, deadline: Long): Triple<Int, String?, ByteArray> {
         val host = url.host
         val port = if (url.port > 0) url.port else 80
         val proxy = try {
             java.net.ProxySelector.getDefault()?.select(url.toURI())?.firstOrNull { it.type() == java.net.Proxy.Type.HTTP }?.address() as? java.net.InetSocketAddress
         } catch (_: Exception) { null }
         val s = java.net.Socket()
-        try {
+        try { return withDeadline(deadline, { s.close() }) {
             s.connect(proxy ?: java.net.InetSocketAddress(host, port), 20000)
             s.soTimeout = 30000
             val target = if (proxy != null) url.toExternalForm().substringBefore('#') else url.file.ifEmpty { "/" }
@@ -648,7 +676,7 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
                     }
                 }
             } while (code in 100..199)
-            if (code !in 200..299) return Triple(code, location, ByteArray(0))
+            if (code !in 200..299) return@withDeadline Triple(code, location, ByteArray(0))
             val data = java.io.ByteArrayOutputStream()
             if (chunked) {
                 while (true) {
@@ -658,8 +686,8 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
                     pkiLine(input)
                 }
             } else pkiCopy(input, data, length)
-            return Triple(code, null, data.toByteArray())
-        } finally {
+            Triple(code, null, data.toByteArray())
+        } } finally {
             try { s.close() } catch (_: Exception) {}
         }
     }

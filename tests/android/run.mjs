@@ -20,6 +20,9 @@ if (!Promise.withResolvers) Promise.withResolvers = function () { let resolve, r
 const [APK, OUTDIR] = process.argv.slice(2);
 A.setOut(OUTDIR || '/tmp/android-e2e');
 const results = [];
+// Scenarios run a second time because only the test's connection to the web view was lost (see test()): listed in
+// result.txt, so a run that needed it says so.
+const retriedNames = [];
 let page = null;
 const only = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
 // A phone with little memory (the second emulator: 2 GB): the long OCR scenario runs there.
@@ -30,7 +33,8 @@ function writeResults(done) {
   const summary = results.map(([p, n, e]) => `${p ? 'PASS' : 'FAIL'}  ${n}${e ? '\n      ' + e : ''}`).join('\n');
   const head = !done ? 'NOT FINISHED' : passed === results.length ? 'ALL PASSED' : 'SOME FAILED';
   const errors = page && !page.isClosed() ? page.errors : [];
-  fs.writeFileSync(path.join(A.OUT, 'result.txt'), `${head}: ${passed}/${results.length}\n${summary}\n${errors.length ? '\npage errors:\n' + errors.slice(0, 30).join('\n') + '\n' : ''}`);
+  const retried = retriedNames.length ? `\nrun again after the test lost its connection to the web view (the app and its page still running):\n${retriedNames.map((n) => '  ' + n).join('\n')}\n` : '';
+  fs.writeFileSync(path.join(A.OUT, 'result.txt'), `${head}: ${passed}/${results.length}\n${summary}\n${retried}${errors.length ? '\npage errors:\n' + errors.slice(0, 30).join('\n') + '\n' : ''}`);
   return { passed, summary, head };
 }
 // Back to the app in front, with none of Android's windows over it (a test that failed can leave one open).
@@ -38,23 +42,53 @@ async function frontApp() {
   for (let i = 0; i < 4 && !/cowdreypdf\/.*Activity/.test(A.focused()); i++) { A.back(); await sleep(1000); }
   if (!/cowdreypdf\/.*Activity/.test(A.focused()) && A.pid()) { sh(`am start -n ${comp}`); await sleep(2000); }
 }
-async function test(name, fn, limit = /OCR|batch|compare|sign/i.test(name) ? 420000 : 240000) {
+async function test(name, fn, limit = /OCR|batch|compare|sign/i.test(name) ? 420000 : 240000, retried = false) {
   if (only && !only.test(name)) return;
   const t0 = Date.now(); log(`\n== ${name}`);
-  let timer;
+  let timer, before = null;
   try {
     await frontApp();
     if ((!page || page.isClosed()) && A.pid()) page = await A.connect();
+    // the app's process and a mark in its page, to tell a lost connection from a page that died or reloaded
+    before = { pid: A.pid(), mark: await page.evaluate(() => window.__e2eMark || (window.__e2eMark = String(Math.random()))) };
     // A scenario never runs on for ever: one that takes too long fails, and the next one starts.
     await Promise.race([fn(), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`took longer than ${limit / 1000} s`)), limit); })]);
     results.push([true, name]); log(`PASS ${name} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   } catch (e) {
+    clearTimeout(timer);
+    // The test's connection to the web view lost (Playwright's adb watch failed, lib.mjs), while the app went on
+    // running the same page: not something the app did, so the scenario runs once more on a new connection. A page
+    // that is gone (the app or its web view's renderer died, or the page reloaded) is a failure, never run again.
+    if (before && page && page.isClosed() && !retried) {
+      const why = await lostConnectionOnly(before);
+      log(`  the connection to the web view closed during the scenario: ${why.text}`);
+      if (why.only) {
+        log(`RETRY ${name}: the app and its page were still running`); retriedNames.push(name);
+        await frontApp(); await withLimit(closeDialogs(), 20000).catch(() => {});
+        return test(name, fn, limit, true);
+      }
+    }
     results.push([false, name, (e && e.message || String(e)).split('\n')[0]]); log(`FAIL ${name}: ${e && e.stack || e}`);
     shot('fail-' + name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40));
     // leave Android's own windows and the app's dialogs for the next scenario
     await frontApp();
     await withLimit(closeDialogs(), 20000).catch(() => {});
   } finally { clearTimeout(timer); writeResults(false); }
+}
+// After the page closed under the test: was it only the test's connection? The same app process, and the same page
+// (its mark still there) when connected again. Logs the memory and what Android said about the web view's processes.
+async function lostConnectionOnly(before) {
+  const pidNow = A.pid();
+  const died = (sh(`logcat -d -t 400 ActivityManager:I lowmemorykiller:I lmkd:I *:S | grep -iE "has died|Kill '|lowmemorykiller|sandboxed_process"`) || '').trim().split('\n').filter(Boolean).slice(-5);
+  log('  memory:', sh('grep -E "MemAvailable|SwapFree" /proc/meminfo').trim().replace(/\s+/g, ' '), '·', sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -1`).trim().replace(/\s+/g, ' '));
+  if (died.length) log('  Android:', died.join(' | '));
+  if (!pidNow || pidNow !== before.pid) return { only: false, text: `the app process ${before.pid} is ${pidNow ? 'now ' + pidNow : 'gone'}` };
+  try {
+    page = await A.connect(60000);
+    const mark = await page.evaluate(() => window.__e2eMark || null);
+    if (mark !== before.mark) return { only: false, text: 'the app is running, but its page is a new one (the web view\'s renderer died or the page reloaded)' };
+    return { only: true, text: `the app (pid ${pidNow}) and its page are still running (connections lost so far: ${A.connectionLost})` };
+  } catch (e) { return { only: false, text: 'no new connection to the web view: ' + (e && e.message || e).split('\n')[0] }; }
 }
 const withLimit = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timed out')), ms))]);
 // Closes the app's dialogs the way Escape or Back does (cancel), so the app's own dialog code finishes them. It keeps
@@ -595,6 +629,8 @@ await test('OCR with no network: a scanned page is read with the engine and Engl
   try {
     const direct = await page.evaluate(() => window.__cowdreyPdf.ocrAndroidPaths ? window.__cowdreyPdf.ocrAndroidPaths() : 'n/a');
     log('  the worker needed blob addresses:', direct);
+    const mem = () => sh('grep -E "MemAvailable" /proc/meminfo').trim().replace(/\s+/g, ' ') + ' · app ' + sh(`dumpsys meminfo ${PKG} | grep -E "TOTAL PSS|TOTAL:" | head -1`).trim().replace(/\s+/g, ' ');
+    log('  memory before OCR:', mem());
     await run('ocr'); await page.waitForSelector('#dialog[open] .ocr-dlg');
     shot('ocr-dialog');
     await page.click('#dialog .dlg-foot .btn.primary');
@@ -603,6 +639,7 @@ await test('OCR with no network: a scanned page is read with the engine and Engl
     await page.waitForSelector('.page[data-n="0"] .textLayer span', { timeout: 20000 }).catch(() => {});
     const t = (await page.$$eval('.page[data-n="0"] .textLayer span', (s) => s.map((x) => x.textContent).join(' '))).replace(/\s+/g, ' ');
     log('  text layer:', t);
+    log('  memory after OCR:', mem());
     ok(/pelican/i.test(t) && /quick brown fox/i.test(t), 'the words were read');
     shot('ocr-done');
   } finally { await netOn(); }
@@ -1036,11 +1073,13 @@ await test('large file: a 12 MB PDF opened from Android and saved back through t
   await run('tool_rect'); const [x1, y1] = await at(0, 100, 760), [x2, y2] = await at(0, 250, 720); await A.swipeCss(page, x1, y1, x2, y2, 400); await run('tool_select');
   const t1 = Date.now();
   // The copy the app writes in its cache for Android's save dialog, watched as it grows (run-as: the test build is
-  // debuggable): it arrives in parts of 4 MB, so its size steps through 4 and 8 MB before the whole file.
+  // debuggable): it arrives in parts of 4 MB, so its size stops at 4 and 8 MB (while the page sends the next part)
+  // before the whole file. A sample can also land while a part is being written (run 38: 3543040 bytes), so the
+  // check is that the copy stopped at 4 and 8 MB, only ever grew, and never went past the saved file.
   // (a loop on the device itself, every 50 ms: from here, one adb call can take longer than a part)
-  const sizes = new Set();
+  const samples = []; let rest = '';
   const watcher = spawn('adb', ['shell', `run-as ${PKG} sh -c 'for i in $(seq 1 1200); do stat -c %s "cache/outgoing/Big scan.pdf" 2>/dev/null; sleep 0.05; done'`]);
-  watcher.stdout.on('data', (d) => { for (const x of String(d).split(/\s+/)) if (/^\d+$/.test(x)) sizes.add(+x); });
+  watcher.stdout.on('data', (d) => { const parts = (rest + String(d)).split(/\s+/); rest = parts.pop(); for (const x of parts) if (/^\d+$/.test(x)) samples.push(+x); });
   let saved;
   try {
     saved = await saveThroughDialog(async () => {
@@ -1049,9 +1088,12 @@ await test('large file: a 12 MB PDF opened from Android and saved back through t
     }, 'large-file');
   } finally { watcher.kill(); }
   const { name, bytes } = saved;
-  const seen = [...sizes].sort((a, b) => a - b);
+  if (/^\d+$/.test(rest)) samples.push(+rest);
+  const seen = [...new Set(samples)];
   log('  saved', name, bytes.length, 'bytes in', ((Date.now() - t1) / 1000).toFixed(1), 's · sizes of the copy in the cache as it was written:', seen.join(', '));
-  ok(seen.includes(4 << 20) && seen.includes(8 << 20) && seen.every((x) => x % (4 << 20) === 0 || x === bytes.length), 'handed to Android in parts of 4 MB');
+  const grew = samples.every((x, k) => !k || x >= samples[k - 1]);
+  ok(seen.includes(4 << 20) && seen.includes(8 << 20), 'handed to Android in parts of 4 MB (stopped at 4 and 8 MB)');
+  ok(grew && seen.every((x) => x <= bytes.length), 'the copy only grew, up to the size of the saved file: ' + seen.join(', '));
   const check = async (b) => { const d = await L.PDFDocument.load(b, { updateMetadata: false }); const sha = imageSha(d); const subs = (d.getPage(0).node.Annots() ? d.getPage(0).node.Annots().asArray() : []).map((r) => String(d.context.lookup(r).get(L.PDFName.of('Subtype')))); return { pages: d.getPageCount(), sha, subs }; };
   let r = await check(bytes);
   log('  ', JSON.stringify({ pages: r.pages, imageIntact: r.sha === big.sha, comments: r.subs }));

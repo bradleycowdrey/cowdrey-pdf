@@ -72,15 +72,33 @@ export function component() { return (sh(`cmd package resolve-activity --brief $
 
 // Playwright's Android support finds the app's web view by its devtools socket (webview_devtools_remote_<pid>) and
 // connects to it as Chrome on Android; no driver app is installed (only the web view is driven this way).
+// Playwright watches the device's web views by running `cat /proc/net/unix` over adb every 500 ms, and one of those adb
+// calls failing (it can, on a busy emulator: run 38, as the OCR scenario started on the 2 GB phone) closes its whole
+// device object, and with it the page, although the app and its web view are still running. A closed device then
+// keeps handing back the closed page, so it is dropped here and a new one made on the next connect.
 let device = null;
+export let connectionLost = 0;
+async function getDevice() {
+  if (device) return device;
+  const [d] = await pw._android.devices({ omitDriverInstall: true });
+  if (!d) throw new Error('no device');
+  d.on('close', () => { if (device === d) { device = null; connectionLost++; log('  [playwright lost its adb connection to the device; the next scenario connects again]'); } });
+  return (device = d);
+}
 export async function connect(timeout = 60000) {
   const end = Date.now() + timeout; let p = '';
   while (Date.now() < end && !(p = pid())) await sleep(1000);
   if (!p) throw new Error('the app is not running');
-  if (!device) [device] = await pw._android.devices({ omitDriverInstall: true });
-  if (!device) throw new Error('no device');
-  const wv = await device.webView({ pkg: PKG, socketName: `webview_devtools_remote_${p}` }, { timeout: Math.max(5000, end - Date.now()) });
-  const page = await wv.page();
+  let page;
+  for (let attempt = 0; ; attempt++) {
+    const d = await getDevice();
+    const wv = await d.webView({ pkg: PKG, socketName: `webview_devtools_remote_${p}` }, { timeout: Math.max(5000, end - Date.now()) });
+    page = await wv.page();
+    if (!page.isClosed() || attempt) break;
+    // a page from a device object that has since closed: a fresh device object
+    if (device === d) device = null;
+    await d.close().catch(() => {});
+  }
   page.errors = [];
   page.on('pageerror', (e) => { page.errors.push(e.message); log('  [page error]', e.message); });
   page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' || m.type() === 'warning' || /fake worker|OCR:/i.test(t)) log(`  [console.${m.type()}]`, t.slice(0, 400)); if (m.type() === 'error') page.errors.push(t); });
