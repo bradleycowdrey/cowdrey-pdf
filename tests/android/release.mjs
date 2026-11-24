@@ -177,7 +177,7 @@ await step('revocation over plain http in the release build: not revoked (OCSP),
       await tapLabel(/^Check revocation (online|again)$/, 'a Check revocation button in the Signatures panel');
       let all = '';
       for (const end = Date.now() + 60000; Date.now() < end; await sleep(1000)) { all = appNodes().map(label).filter(Boolean).join(' ').replace(/\s+/g, ' '); if (re.test(all) && !/Checking…/.test(all)) break; }
-      const m = all.match(/(Not revoked|Revoked|Not checked)[^()]*\([^)]*\)/);
+      const m = all.match(/(Not revoked|Revoked|Not checked): [^()]*\(\w+ from [^)]*\)/);
       log(`  ${shotName}:`, m ? m[0] : all.slice(0, 600));
       ok(re.test(all), 'the panel says ' + re);
       shot('release-' + shotName);

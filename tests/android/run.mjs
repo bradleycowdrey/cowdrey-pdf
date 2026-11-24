@@ -50,7 +50,8 @@ async function test(name, fn, limit = /OCR|batch|compare|sign/i.test(name) ? 420
     await frontApp();
     if ((!page || page.isClosed()) && A.pid()) page = await A.connect();
     // the app's process and a mark in its page, to tell a lost connection from a page that died or reloaded
-    before = { pid: A.pid(), mark: await page.evaluate(() => window.__e2eMark || (window.__e2eMark = String(Math.random()))) };
+    // (none before the first scenario, which connects itself)
+    if (page && !page.isClosed()) before = { pid: A.pid(), mark: await page.evaluate(() => window.__e2eMark || (window.__e2eMark = String(Math.random()))) };
     // A scenario never runs on for ever: one that takes too long fails, and the next one starts.
     await Promise.race([fn(), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`took longer than ${limit / 1000} s`)), limit); })]);
     results.push([true, name]); log(`PASS ${name} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
