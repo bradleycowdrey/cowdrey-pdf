@@ -3,9 +3,9 @@
   "id": "cowdrey-pdf",
   "name": "Cowdrey.PDF",
   "text": "PDF",
-  "size": 202,
-  "track": -4,
-  "cx": 453,
+  "size": 190,
+  "track": 0,
+  "cx": 640,
   "bold": 8,
   "grad": [
    "#C61F52",
@@ -13,18 +13,20 @@
   ],
   "variants": {
    "32": {
-    "size": 198,
-    "track": 6,
-    "cx": 452,
+    "size": 192,
+    "track": 10,
+    "cx": 644,
     "bold": 22,
     "sw": 116,
-    "scale": 1.08
+    "scale": 0.97
    },
    "16": {
     "letters": false,
     "sw": 150,
     "scale": 1.08
    }
-  }
+  },
+  "open": true,
+  "scale": 0.86
  }
 ]
