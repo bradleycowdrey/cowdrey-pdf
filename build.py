@@ -27,8 +27,12 @@ app_js = app_js.replace('/*FEATURES*/', '\n'.join(f'// ---- src/features/{f.name
 html = html.replace('/*APP_JS*/', app_js)
 # The app icon (made from desktop/src-tauri/icons/ios-source.png at 144 px), embedded for the title bar and About.
 html = html.replace('__APP_ICON__', 'data:image/png;base64,' + base64.b64encode((root / 'desktop/src-tauri/icons/about-icon.png').read_bytes()).decode())
+# Favicon (the Mac-grid icon at 64 px) and home-screen icon (full-bleed, 144 px), embedded so the page loads nothing.
+favicon = 'data:image/png;base64,' + base64.b64encode((root / 'desktop/src-tauri/icons/64x64.png').read_bytes()).decode()
+touch_icon = 'data:image/png;base64,' + base64.b64encode((root / 'desktop/src-tauri/icons/about-icon.png').read_bytes()).decode()
 doc = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
        '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
-       '<link rel="icon" href="data:,">\n</head>\n<body>\n' + html + '\n</body>\n</html>\n')
+       '<link rel="icon" type="image/png" href="' + favicon + '">\n'
+       '<link rel="apple-touch-icon" href="' + touch_icon + '">\n</head>\n<body>\n' + html + '\n</body>\n</html>\n')
 (root / 'index.html').write_text(doc)
 print(f'index.html written ({len(doc)/1024:.0f} KB)')

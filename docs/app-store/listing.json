@@ -21,17 +21,19 @@
   "screenshots": {
     "APP_IPHONE_67": [
       "iphone-01-edit-text.png",
-      "iphone-02-comments.png",
-      "iphone-03-organize-pages.png",
-      "iphone-04-fill-and-sign.png",
-      "iphone-05-redact.png"
+      "iphone-02-scans-to-text.png",
+      "iphone-03-fill-and-sign.png",
+      "iphone-04-comments.png",
+      "iphone-05-redact.png",
+      "iphone-06-organize-pages.png"
     ],
     "APP_IPAD_PRO_3GEN_129": [
       "ipad-01-edit-text.png",
-      "ipad-02-comments.png",
-      "ipad-03-organize-pages.png",
-      "ipad-04-fill-and-sign.png",
-      "ipad-05-redact.png"
+      "ipad-02-scans-to-text.png",
+      "ipad-03-fill-and-sign.png",
+      "ipad-04-comments.png",
+      "ipad-05-redact.png",
+      "ipad-06-organize-pages.png"
     ]
   },
   "whatsNew": "Share Cowdrey.PDF from the title bar or the More menu, share a PDF from the share sheet, and fixes to redaction, OCR and highlighting.",
@@ -49,11 +51,12 @@
     },
     "screenshots": {
       "APP_DESKTOP": [
-        "mac-01-edit-text.png",
-        "mac-02-comments.png",
-        "mac-03-organize-pages.png",
-        "mac-04-fill-and-sign.png",
-        "mac-05-redact.png"
+        "mac-01-fill-and-sign.png",
+        "mac-02-edit-text.png",
+        "mac-03-scans-to-text.png",
+        "mac-04-comments.png",
+        "mac-05-redact.png",
+        "mac-06-organize-pages.png"
       ]
     }
   }
