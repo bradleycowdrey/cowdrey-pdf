@@ -534,7 +534,7 @@ async function sgReadCms(der) {
 
 /* ---- RFC 3161 timestamps ---- */
 async function sgTsaPost(url, body) {
-  if (NATIVE && !ANDROID_APP) {
+  if (NATIVE) { // on Android too: tsa_post makes the POST with Android's own network stack (desktop/src-tauri/src/tsa.rs)
     try { return b64ToBytes(await NATIVE.core.invoke('tsa_post', { url, body: bytesToB64(body) })); }
     catch (e) { throw new SgError(`The timestamp server could not be reached (${e && e.message ? e.message : e}).`); }
   }
@@ -1711,7 +1711,7 @@ async function sgSignWith({ id, place, box, look, o }) {
   const path = typeof where === 'string' ? where : undefined;
   await serial(async () => openBytes(signed, path ? path.split('/').pop() : name, path, path ? await fileTime(path) : 0));
   window.__lastSignedShown = signed.length;
-  if (!MAC_APP) toast('Signed. The signed PDF is in your downloads.');
+  if (!MAC_APP) toast(NATIVE ? 'Signed.' : 'Signed. The signed PDF is in your downloads.');
   return true;
 }
 

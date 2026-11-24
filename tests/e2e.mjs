@@ -6,7 +6,8 @@ async function open(o = {}) { const p = await openApp(o); if (!o.askName) await 
 const require = createRequire(import.meta.url);
 const { PDFDocument } = require('../desktop/node_modules/pdf-lib');
 const results = [];
-async function test(name, fn) { try { await fn(); results.push([true, name]); } catch (e) { results.push([false, name, e.message.split('\n')[0]]); } }
+// ONLY="some words" node tests/e2e.mjs runs just the tests whose names contain those words.
+async function test(name, fn) { if (process.env.ONLY && !name.includes(process.env.ONLY)) return; try { await fn(); results.push([true, name]); } catch (e) { results.push([false, name, e.message.split('\n')[0]]); } }
 const eq = (a, b, m = '') => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m} expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m || 'not ok'); };
 const saved = async (p) => PDFDocument.load(Buffer.from(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.buildPdf()))));
@@ -319,7 +320,10 @@ await test('phone apps: Print uses the system print dialog; Android "Open with" 
   await waitPages(p); await p.waitForTimeout(400);
   eq(await p.textContent('#docTitle'), 'Lease agreement');
   await p.evaluate(() => window.__cowdreyPdf.run('print')); await p.waitForTimeout(400);
-  eq((await calls(p, /sharekit\|native/)).map(([, a]) => a.method), ['displayName', 'printPage']);
+  // Android prints the PDF itself (tests/features/android.test.mjs has the rest of the Android app)
+  const native = (await calls(p, /sharekit\|native/)).map(([, a]) => a).filter((a) => !['systemBars', 'insets', 'takeSharedFiles', 'ttsAvailable', 'appInfo'].includes(a.method));
+  eq(native.map((a) => a.method), ['displayName', 'printPdf']);
+  eq([native[1].args.name, native[1].args.pages], ['Lease agreement.pdf', 3]);
   eq(p.errors, []); await p.ctx.close();
 });
 await test('sample PDF: Try a sample opens a two-page guide with a form and a pelican to find', async () => {

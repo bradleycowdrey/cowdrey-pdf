@@ -34,7 +34,8 @@ tauri-plugin-fs = "2"
 tauri-plugin-sharekit = { path = "plugins/sharekit" }
 
 # Timestamps for certificate signatures (src/tsa.rs): one https POST of a fingerprint, only when the person asks for
-# one. The same reqwest and rustls as the updater uses. Not on Android (see src/tsa.rs).
+# one. The same reqwest and rustls as the updater uses. Not on Android: there the POST is made with Android's own
+# network stack (plugins/sharekit/android/src/main/java/AndroidPdf.kt, tsaPost).
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

@@ -18,6 +18,47 @@ const MAC_APP = NATIVE && !MOBILE_APP ? NATIVE : null;
 // The Mac App Store build (its Rust side sets this flag before the page loads): the App Store updates it, so it has no
 // Check for updates and never offers a download.
 const APP_STORE_BUILD = !!MAC_APP && window.__COWDREY_APP_STORE__ === true;
+// The Android app's own native features (desktop/src-tauri/plugins/sharekit/android/.../AndroidPdf.kt).
+const androidCall = (method, args = {}) => NATIVE.core.invoke('plugin:sharekit|native', { method, args });
+// Read aloud in the Android app: its web view has no working speech, so speechSynthesis is Android's text-to-speech.
+// Only what the Read aloud bar uses: speak (one sentence at a time), cancel, speaking/pending and the utterance's
+// start, end and error. The command is hidden when the phone has no speech engine (see the end of this file).
+if (ANDROID_APP) (() => {
+  let queue = [], gen = 0;
+  const synth = {
+    speaking: false, pending: false, paused: false, onvoiceschanged: null,
+    getVoices: () => [], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
+    speak(u) { queue.push(u); synth.pending = true; pump(); },
+    cancel() { queue = []; gen++; synth.pending = false; if (synth.speaking) androidCall('stopSpeaking').catch(() => {}); synth.speaking = false; },
+  };
+  function pump() {
+    if (synth.speaking || !queue.length) { synth.pending = queue.length > 0; return; }
+    const u = queue.shift(), g = gen; synth.speaking = true; synth.pending = queue.length > 0;
+    setTimeout(() => { if (g === gen && u.onstart) u.onstart({ utterance: u }); }, 0);
+    androidCall('speak', { text: u.text, rate: u.rate || 1, lang: u.lang || '' }).then((r) => {
+      if (g !== gen) return; synth.speaking = false;
+      if (r && r.error) { if (u.onerror) u.onerror({ error: r.error, utterance: u }); } else if (!(r && r.stopped) && u.onend) u.onend({ utterance: u });
+      pump();
+    }, () => { if (g !== gen) return; synth.speaking = false; if (u.onerror) u.onerror({ error: 'synthesis-unavailable', utterance: u }); pump(); });
+  }
+  class Utterance { constructor(text) { Object.assign(this, { text: String(text || ''), rate: 1, pitch: 1, volume: 1, lang: '', voice: null, onstart: null, onend: null, onerror: null, onboundary: null }); } }
+  try { Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true }); Object.defineProperty(window, 'SpeechSynthesisUtterance', { value: Utterance, configurable: true }); } catch {}
+})();
+// File pickers in the Android app: Android's picker filters by the type the file's app reports, and many report
+// signing IDs (.p12, .pfx), form data (.xfdf, .fdf) and actions (.json) as plain data, so those files would be greyed
+// out. A picker for anything but PDFs and pictures shows every file; the feature checks what it was given.
+const ANDROID_ACCEPT_OK = /^(application\/pdf|\.pdf|image\/[\w.+*-]+|\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|svg)|video\/[\w.+*-]+|audio\/[\w.+*-]+)$/i;
+function androidAccept(input) {
+  if (!(input instanceof HTMLInputElement) || input.type !== 'file' || !input.accept) return;
+  const parts = input.accept.split(',').map((x) => x.trim()).filter(Boolean);
+  if (parts.some((x) => !ANDROID_ACCEPT_OK.test(x)) && !parts.includes('*/*')) input.accept = [...parts, '*/*'].join(',');
+}
+if (ANDROID_APP) {
+  const click = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () { androidAccept(this); return click.call(this); };
+  if (HTMLInputElement.prototype.showPicker) { const sp = HTMLInputElement.prototype.showPicker; HTMLInputElement.prototype.showPicker = function () { androidAccept(this); return sp.call(this); }; }
+  document.addEventListener('click', (e) => androidAccept(e.target), true);
+}
 const b64ToBytes = (b) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
 const bytesToB64 = (u) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 const $ = (s, r = document) => r.querySelector(s);
@@ -236,7 +277,7 @@ document.fonts && document.fonts.ready.then(() => fitTitle());
 function setSaved(saved, opened) {
   if (doc) doc.dirty = !saved;
   const kept = opened && doc && Object.values(doc.marks).some((l) => l && l.length);
-  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Recent' : saved ? `${ic('check')} Saved` : (doc.path ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
+  $('#saveState').innerHTML = !doc || (opened && !kept) ? '' : opened ? 'Changes kept in Recent' : saved ? `${ic('check')} Saved` : (doc.path || doc.saUri ? 'Edited · Save to update the file' : 'Edited · Save PDF to keep a copy');
   icons();
 }
 
@@ -257,7 +298,7 @@ function fitScale(page, entry) {
   // Fit the width, but no larger than 150%: a page wider than that reads worse, not better.
   return Math.max(0.25, Math.min(1.5, w));
 }
-let io, layoutGen = 0;
+let io, layoutGen = 0, laidOut = { w: 0, h: 0 }; // the viewer's size the pages were last laid out for
 async function layoutPages(keep) {
   if (!doc) return;
   const gen = ++layoutGen; // a later layout (zooming quickly) replaces this one
@@ -270,6 +311,7 @@ async function layoutPages(keep) {
   const first = await pageOf(doc.pages[0]);
   if (gen !== layoutGen) return false;
   scale = zoomFits() ? fitScale(first, doc.pages[0]) : S.zoom / 100;
+  laidOut = { w: viewer.clientWidth, h: viewer.clientHeight };
   // Two pages side by side (the first on its own with a cover), or one page at a time.
   const two = twoUp(), cover = two && !!S.cover;
   pagesEl.classList.toggle('two', two); pagesEl.classList.toggle('single', singleUp());
@@ -331,6 +373,7 @@ async function renderView(v) {
   try {
     const tl = document.createElement('div'); tl.className = 'textLayer'; el.appendChild(tl);
     await new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: tl, viewport }).render();
+    sizeLayer(tl, viewport);
     // As pdf.js's own viewer does: while selecting, an unselectable layer under the text fills the gaps, so a drag
     // that ends past a line's last word stops there instead of reaching the next line.
     const eoc = document.createElement('div'); eoc.className = 'endOfContent'; tl.append(eoc); tl.__eoc = eoc;
@@ -353,6 +396,7 @@ async function renderView(v) {
       linkService.pagesCount = doc.pages.length;
       const layer = new pdfjs.AnnotationLayer({ div: al, page, viewport: viewport.clone({ dontFlip: true }), accessibilityManager: null, annotationCanvasMap: canvasMap, annotationEditorUIManager: null, structTreeLayer: FEATURE.structTreeLayer ? FEATURE.structTreeLayer(v, page) : null, commentManager: null, linkService, annotationStorage: pd.annotationStorage });
       await layer.render({ annotations: annots, viewport: viewport.clone({ dontFlip: true }), page, linkService, renderForms: true, annotationStorage: pd.annotationStorage, enableScripting: false, hasJSActions: false, fieldObjects: null, imageResourcesPath: PDFJS_ICONS, downloadManager: null });
+      sizeLayer(al, viewport);
       al.addEventListener('input', () => setSaved(false));
       al.addEventListener('change', () => setSaved(false));
       // A field with no tooltip (/TU) is named after the field itself (/T), so a screen reader can say what it is for.
@@ -403,6 +447,15 @@ async function repaintCanvas(v) {
     v.imgSig = skip.sig; v.imgHidden = skip.hidden;
   } catch (e) { if (!/cancel/i.test(String(e))) console.warn(e); } finally { v.repainting = false; }
   if (v.token === token) { if (imageSig(v) !== v.imgSig) repaintCanvas(v); else drawMarks(v); }
+}
+// pdf.js sizes its text and form layers with CSS round(), which Chrome (and Android's web view) only has from
+// version 125. Without it a layer has no size, so every word and form field sits in the page's top corner and a
+// tap on a field lands on another one. There, the layer gets the same size with calc() instead.
+const CSS_ROUND = (() => { try { return CSS.supports('width', 'round(down, 1.5px, 1px)'); } catch { return true; } })();
+function sizeLayer(div, viewport) {
+  if (CSS_ROUND) return;
+  const { pageWidth: w, pageHeight: h } = viewport.rawDims;
+  div.style.width = `calc(var(--total-scale-factor) * ${w}px)`; div.style.height = `calc(var(--total-scale-factor) * ${h}px)`;
 }
 // Pages far from view give their drawing back, so a long PDF does not use more memory the further you scroll:
 // pages within KEEP_NEAR pages of those in view (and within a screen or two of it) stay drawn; the rest keep only
@@ -569,7 +622,17 @@ function updateZoomLabel() {
 }
 $('#zoomRange').addEventListener('change', (e) => setZoom(+e.target.value));
 let resizeTimer;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (doc && zoomFits()) layoutPages(true); }, 200); });
+// A fitted zoom follows the window. Only a change that alters the fit lays the pages out again (that redraws them and
+// closes what is being typed): not a change of height with Fit width, nor the keyboard coming up over a field (the
+// Android app's window gets shorter for it).
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!doc || !zoomFits()) return;
+    if (viewer.clientWidth === laidOut.w && (S.zoom === 'fit' || viewer.clientHeight === laidOut.h || typingIn(document.activeElement))) return;
+    layoutPages(true);
+  }, 200);
+});
 
 /* ---------------- mark-up ----------------
    Every mark lives in PDF coordinates (points, y up), converted to the screen with the page's viewport.
@@ -1038,8 +1101,9 @@ function placeImage(v, px, py) {
   pendingImage = null; drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
 /* Selecting text, as pdf.js's viewer does it (TextLayerBuilder): while a selection is made, each text layer's
-   endOfContent covers the layer, and (in browsers that need it: Safari, Chromium before 148) it is moved right after
-   the span the selection ends in, so the gap past a line's last word selects nothing more. */
+   endOfContent covers the layer, and (in every browser but Firefox) it is moved right after the span the selection
+   ends in, so the gap past a line's last word selects up to that word and nothing more. pdf.js skips the move from
+   Chromium 148, but there a drag that leaves the line between two pointer events stops short (on 3 M, not 3 March). */
 const TL = { down: false, prev: null, modern: undefined };
 function tlReset(tl) { const end = tl.__eoc; if (!end) return; if (tl.lastChild !== end) tl.append(end); end.style.width = end.style.height = end.style.userSelect = ''; tl.classList.remove('selecting'); }
 const tlResetAll = () => $$('.page .textLayer').forEach(tlReset);
@@ -1053,11 +1117,7 @@ document.addEventListener('selectionchange', () => {
   if (!sel || !sel.rangeCount) { layers.forEach(tlReset); TL.prev = null; return; }
   const range = sel.getRangeAt(0);
   for (const t of layers) { if (range.intersectsNode(t)) t.classList.add('selecting'); else tlReset(t); }
-  if (TL.modern === undefined && layers.length) {
-    const ff = getComputedStyle(layers[0]).getPropertyValue('-moz-user-select') === 'none';
-    const v = navigator.userAgentData && navigator.userAgentData.brands ? (navigator.userAgentData.brands.find((b) => b.brand === 'Chromium') || {}).version : (/\bChrome\/(\d+)\b/.exec(navigator.userAgent) || [])[1];
-    TL.modern = ff || (!!v && parseInt(v, 10) >= 148);
-  }
+  if (TL.modern === undefined && layers.length) TL.modern = getComputedStyle(layers[0]).getPropertyValue('-moz-user-select') === 'none';
   if (TL.modern || !layers.length) return;
   const prev = TL.prev, modifyStart = !!prev && (range.compareBoundaryPoints(Range.END_TO_END, prev) === 0 || range.compareBoundaryPoints(Range.START_TO_END, prev) === 0);
   let anchor = modifyStart ? range.startContainer : range.endContainer;
@@ -1815,7 +1875,7 @@ function phoneZoomBack() {
   if (!phoneZoom || phoneZoom.timer) return;
   // A moment later, unless another line or form field is opened in the meantime (it keeps this zoom).
   phoneZoom.timer = setTimeout(async () => {
-    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input, textarea, select'));
+    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, select')); // (a tick box or a button: no typing, so the zoom goes back)
     const pz = phoneZoom; phoneZoom = null; if (!pz || keep) { if (pz && keep) phoneZoom = { ...pz, timer: 0 }; return; }
     await setZoom(pz.zoom); viewer.scrollTop = pz.top; viewer.scrollLeft = pz.left;
   }, 350);
@@ -3212,15 +3272,49 @@ function shareAnchor() {
   const b = $('#saveBtn'); const r = b ? b.getBoundingClientRect() : { left: innerWidth / 2, bottom: 0, width: 0 };
   return { x: r.left + r.width / 2, y: r.bottom, preferredEdge: 'bottom' };
 }
+// Writes a file into the app's temporary folder (the share sheet, Android's save dialog and print read it there) and
+// returns its path. Android gets it in parts of 4 MB, so a large PDF is never one huge message.
+async function writeOutgoing(data, name) {
+  const bytes = toBytes(data), PART = ANDROID_APP ? 4 << 20 : Infinity;
+  let path = '';
+  for (let at = 0; at === 0 || at < bytes.length; at += PART) {
+    path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(bytes.subarray(at, at + PART)), append: at > 0 });
+    if (!isFinite(PART)) break;
+  }
+  return path;
+}
+// Android's save dialog: the person picks where (Downloads, Drive, a folder) and the name. { saved, uri, name };
+// saved is false when they cancelled.
+async function androidSaveAs(data, name, type) {
+  name = safeName(name);
+  const path = await writeOutgoing(data, name);
+  const r = await androidCall('saveAs', { path, name, mimeType: type || 'application/octet-stream' });
+  return r && r.saved ? r : { saved: false };
+}
+// Several new files at once (Split into files): one folder for all of them in the Android app, one save each elsewhere.
+// files: [{ data, name, type }]. Returns how many were saved.
+async function saveFiles(files) {
+  if (ANDROID_APP && files.length > 1) {
+    const list = [];
+    for (const f of files) list.push({ path: await writeOutgoing(f.data, safeName(f.name)), name: safeName(f.name), mimeType: f.type || 'application/octet-stream' });
+    const r = await androidCall('saveToFolder', { files: list });
+    if (!r || !r.saved) return 0;
+    toast(`Saved ${r.names.length} files in ${r.folder}`);
+    return r.names.length;
+  }
+  let n = 0;
+  for (const f of files) { if (!(await saveFile(f.data, f.name, f.type))) break; n++; }
+  return n;
+}
 // The share sheet (iPhone, iPad, Android) or share menu (Mac): Save to Files, Drive, Mail, AirDrop, Messages, Print.
 async function shareFile(data, name, type) {
   name = safeName(name);
-  const path = await NATIVE.core.invoke('write_share_file', { name, contents: '', base64: bytesToB64(toBytes(data)) });
+  const path = await writeOutgoing(data, name);
   const url = MAC_APP ? path : 'file://' + (ANDROID_APP ? path : encodeURI(path));
   await NATIVE.core.invoke('plugin:sharekit|share_file', { url, mimeType: type, title: name, ...(MAC_APP ? { position: shareAnchor() } : {}) });
 }
-// Saves a new file (an export, extracted pages, a copy): a save dialog on the Mac, the share sheet on phones,
-// a download on the web. Returns the Mac path, true, or false when cancelled.
+// Saves a new file (an export, extracted pages, a copy): a save dialog on the Mac and Android, the share sheet on the
+// iPhone and iPad, a download on the web. Returns the Mac path, true, or false when cancelled.
 async function saveFile(data, name, type) {
   const ext = (name.match(/\.([a-z0-9]+)$/i) || [, 'pdf'])[1];
   if (MAC_APP) {
@@ -3229,6 +3323,12 @@ async function saveFile(data, name, type) {
     await MAC_APP.core.invoke('write_binary_file', { path: target, base64: bytesToB64(toBytes(data)) });
     toast(`Saved ${target.split('/').pop()}`);
     return target;
+  }
+  if (ANDROID_APP) {
+    const r = await androidSaveAs(data, name, type);
+    if (!r.saved) return false;
+    toast(`Saved ${r.name || safeName(name)}`);
+    return true;
   }
   if (NATIVE) { await shareFile(data, name, type); return true; }
   download(toBytes(data), name, type);
@@ -3255,7 +3355,20 @@ async function nativeSave(bytes, copy) {
     toast(`Saved ${target.split('/').pop()}`);
     return true;
   }
-  // iPhone, iPad and Android: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
+  // Android: the save dialog, then saving again goes to the same file (until it can't be written any more).
+  if (ANDROID_APP) {
+    let r = null;
+    if (!copy && doc.saUri) {
+      try { r = await androidCall('writeTo', { uri: doc.saUri, path: await writeOutgoing(bytes, name) }); }
+      catch (e) { console.warn(e); r = null; doc.saUri = null; }
+    }
+    if (!r) r = await androidSaveAs(bytes, name, 'application/pdf');
+    if (!r || !r.saved) return false;
+    if (!copy) { doc.saUri = r.uri; if (r.name) { doc.name = r.name.replace(/\.pdf$/i, ''); setTitle(); } persist(); }
+    toast(`Saved ${r.name || safeName(name)}`);
+    return true;
+  }
+  // iPhone and iPad: the share sheet offers Save to Files, Drive, Mail, AirDrop and the rest.
   await shareFile(bytes, name, 'application/pdf');
   return true;
 }
@@ -3326,6 +3439,15 @@ async function exportText() {
   catch (e) { console.error(e); toast(`Could not export the text: ${e.message || e}`); }
 }
 async function printDoc() {
+  // Android prints the PDF itself, sharp at the printer's resolution, with nothing to draw first.
+  if (ANDROID_APP) {
+    try {
+      const bytes = await buildPdf(); if (!bytes) return;
+      const name = safeName(doc.name + '.pdf');
+      await androidCall('printPdf', { path: await writeOutgoing(bytes, name), name, pages: doc.pages.length });
+    } catch (e) { if (!e || e.name !== 'FontsError') toast(`Could not print: ${e.message || e}`); }
+    return;
+  }
   keepPages = true; // every page stays drawn until printing is done
   for (const v of views) await renderView(v);
   try {
@@ -3745,11 +3867,15 @@ async function persistNow() {
   if (!doc) return;
   doc.updated = Date.now();
   // Passwords are never written to this device: a protected PDF asks for its password again when reopened.
-  const rec = { id: doc.id, name: doc.name, path: doc.path || null, mtime: doc.mtime || 0, sources: doc.sources, pages: doc.pages, marks: doc.marks, updated: doc.updated };
+  const rec = { id: doc.id, name: doc.name, path: doc.path || null, saUri: doc.saUri || null, mtime: doc.mtime || 0, sources: doc.sources, pages: doc.pages, marks: doc.marks, updated: doc.updated };
   try { await dbDo('readwrite', (s) => s.put(rec)); } catch (e) { console.warn('could not keep the PDF on this device', e); }
   if (S.side === 'docs') renderDocs();
 }
-function persist() { clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 300); }
+function persist() { clearTimeout(persistTimer); persistTimer = setTimeout(() => { persistTimer = null; persistNow(); }, 300); }
+// A phone can close an app soon after it leaves the screen: a change still waiting to be kept is kept at once.
+function persistPending() { if (!persistTimer) return; clearTimeout(persistTimer); persistTimer = null; persistNow().catch(() => {}); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistPending(); });
+window.addEventListener('pagehide', persistPending);
 async function listDocs() { try { return (await dbDo('readonly', (s) => s.getAll())) || []; } catch { return []; } }
 async function renderDocs() {
   const panel = $('#sidePanel');
@@ -3799,7 +3925,7 @@ async function openStored(id) {
   // The file it came from is linked again only if it still exists; Save checks it hasn't changed since.
   let path = rec.path || null;
   if (path && MAC_APP && !(await fileTime(path))) path = null;
-  return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0 });
+  return showDoc({ id: rec.id, name: rec.name, sources, pages: rec.pages, marks: rec.marks || {}, updated: rec.updated, handle: null, path, mtime: path ? rec.mtime || 0 : 0, saUri: ANDROID_APP ? rec.saUri || null : null });
 }
 
 /* ---------------- the sample PDF ----------------
@@ -4025,7 +4151,7 @@ function shortcutsDialog() {
 cmd('legal', { label: 'Terms of Use and Privacy', icon: 'scale', run: () => openExternal('https://bradcowdrey.com/legal') });
 cmd('share', { label: 'Share…', icon: 'share', enabled: has, get hidden() { return !NATIVE && !webCanSharePdf(); }, run: sharePdf });
 cmd('shareApp', { label: 'Share Cowdrey.PDF…', icon: 'heart', run: () => openShareApp() });
-cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !MAC_APP || APP_STORE_BUILD, run: () => checkForUpdates(true) });
+cmd('checkUpdates', { label: 'Check for updates…', icon: 'refresh-cw', hidden: !(MAC_APP || ANDROID_APP) || APP_STORE_BUILD, run: () => checkForUpdates(true) });
 
 const fmtKey = (k) => k ? k.split(/-(?=.)/).map((p) => isMac ? ({ Mod: '⌘', Shift: '⇧', Alt: '⌥' }[p] || p.toUpperCase()) : ({ Mod: 'Ctrl', Shift: 'Shift', Alt: 'Alt' }[p] || p.toUpperCase())).join(isMac ? '' : '+') : '';
 const MENUS = [
@@ -4771,15 +4897,20 @@ if (ANDROID) {
 }
 
 /* ---------------- theme ---------------- */
+var androidNight = null; // Android app: whether the phone is in dark mode (var: applyTheme can run before this line)
 function applyTheme() {
   scheduleMacMenu();
   const root = document.documentElement;
   if (S.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
+  // Android's web view can miss the phone's dark mode (prefers-color-scheme stays light): the app says which it is.
+  if (S.theme === 'system' && androidNight != null && androidNight !== matchMedia('(prefers-color-scheme: dark)').matches) root.setAttribute('data-theme', androidNight ? 'dark' : 'light');
   app.dataset.darkpage = S.darkPage ? 'on' : 'off';
   $('#themeBtn').innerHTML = ic({ system: 'sun-moon', light: 'sun', dark: 'moon' }[S.theme]);
   $('#themeBtn').title = { system: 'Theme: match system', light: 'Theme: light', dark: 'Theme: dark' }[S.theme];
   $('#themeBtn').setAttribute('aria-label', $('#themeBtn').title); // its name says the theme now
   icons();
+  // Android: light status-bar icons on the dark theme, dark ones on the light theme.
+  if (ANDROID_APP) androidCall('systemBars', { dark: S.theme === 'dark' || (S.theme === 'system' && (androidNight != null ? androidNight : matchMedia('(prefers-color-scheme: dark)').matches)) }).catch(() => {});
 }
 $('#themeBtn').onclick = () => { S.theme = { system: 'light', light: 'dark', dark: 'system' }[S.theme]; saveSettings(); applyTheme(); toast($('#themeBtn').title); };
 window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.handle) { e.preventDefault(); e.returnValue = ''; } });
@@ -4792,10 +4923,14 @@ window.addEventListener('beforeunload', (e) => { if (doc && doc.dirty && doc.han
 async function takeOpened() {
   let files = [], opened = 0;
   try { files = await NATIVE.core.invoke('take_opened_files'); } catch {}
+  if (ANDROID_APP) {
+    try { const r = await androidCall('takeSharedFiles'); for (const x of (r && r.files) || []) files.push({ name: x.name, path: x.uri, content: '' }); } catch {}
+  }
   for (const f of files || []) {
+    if (f.error) { toast(f.error === 'link' ? 'Cowdrey.PDF can only open PDF files on this device. Download the PDF first, then open it.' : `Could not open ${f.name || 'that file'}. Open it from Files or with Open instead.`); continue; }
     try {
       if (f.content) { if (await openBytes(b64ToBytes(f.content), f.name, MAC_APP ? f.path : null, MAC_APP ? await fileTime(f.path) : 0)) opened++; }
-      else if (f.path.includes('://') && NATIVE.fs) { if (await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), await contentName(f.path))) opened++; }
+      else if (f.path.includes('://') && NATIVE.fs) { if (await openBytes(new Uint8Array(await NATIVE.fs.readFile(f.path)), f.name || await contentName(f.path))) opened++; }
     } catch (e) { toast(`Could not open that file: ${e}`); }
   }
   return opened;
@@ -4813,6 +4948,7 @@ const RELEASES_PAGE = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/la
 const RELEASES_API = 'https://api.github.com/repos/bradleycowdrey/cowdrey-pdf/releases/latest';
 const isNewer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
 async function checkForUpdates(manual) {
+  if (ANDROID_APP) return androidUpdates(manual);
   if (!MAC_APP || APP_STORE_BUILD) return;
   if (manual) toast('Checking for updates…');
   if (MAC_APP.updater) {
@@ -4846,6 +4982,117 @@ async function checkForUpdates(manual) {
   const a = await dialog(`Cowdrey.PDF ${latest} is available`, `<p>You have version ${esc(VERSION)}. Download the new version, open it, and drag Cowdrey.PDF into Applications to replace this one. Your documents are kept.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Download', value: 'go', primary: true }]);
   if (a === 'skip') store.set('skipVersion', latest);
   if (a === 'go') { openExternal(file ? file.browser_download_url : (rel.html_url || RELEASES_PAGE)); toast('Downloading in your browser'); }
+}
+// The Android app installed from the APK on GitHub: a newer release with an APK is offered as a download.
+async function androidUpdates(manual) {
+  let info = null; try { info = await androidCall('appInfo'); } catch {}
+  if (info && info.installer === 'com.android.vending') { if (manual) toast('Google Play keeps Cowdrey.PDF up to date.'); return; }
+  if (manual) toast('Checking for updates…');
+  let rel;
+  try { const r = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }); if (!r.ok) throw new Error(`GitHub answered ${r.status}`); rel = await r.json(); }
+  catch (e) { if (manual) toast('Could not check for updates. Check your internet connection.'); return; }
+  store.set('updateChecked', Date.now());
+  const latest = String(rel.tag_name || '').replace(/^v/i, '');
+  const apk = (rel.assets || []).find((x) => /\.apk$/i.test(x.name));
+  if (!latest || !apk || !isNewer(latest, VERSION)) { if (manual) toast(`You have the latest version (${VERSION}).`); return; }
+  if (!manual && store.get('skipVersion', '') === latest) return;
+  const a = await dialog(`Cowdrey.PDF ${latest} is available`, `<p>You have version ${esc(VERSION)}. Download the new version and open it to install it. Your documents are kept.</p>`, [{ label: 'Skip this version', value: 'skip' }, { label: 'Later' }, { label: 'Download', value: 'go', primary: true }]);
+  if (a === 'skip') store.set('skipVersion', latest);
+  if (a === 'go') openExternal(apk.browser_download_url);
+}
+/* ---------------- the Android app ---------------- */
+// Long-press and drag on touch screens, for the lists reordered by dragging (page thumbnails, Organize pages,
+// bookmarks, tab order, reading order): Android's web view doesn't drag with a finger, so the same drag events are
+// sent here. A finger that moves before the long press scrolls as usual.
+function touchDrag() {
+  // A long press arms the drag; moving the finger then drags (a long press held still opens the item's menu, as before).
+  let timer = 0, src = null, dt = null, start = null, over = null, armed = false, active = false;
+  const fire = (el, type, t) => { try { el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: t.clientX, clientY: t.clientY, dataTransfer: dt })); } catch {} };
+  const reset = () => { clearTimeout(timer); if (src) src.classList.remove('touch-drag'); src = null; over = null; armed = active = false; };
+  document.addEventListener('touchstart', (e) => {
+    reset();
+    const el = e.touches.length === 1 && e.target.closest && e.target.closest('[draggable="true"]'); if (!el) return;
+    const t = e.touches[0]; start = { x: t.clientX, y: t.clientY }; src = el;
+    timer = setTimeout(() => { if (!src) return; armed = true; src.classList.add('touch-drag'); if (navigator.vibrate) try { navigator.vibrate(12); } catch {} }, 400);
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!src) return; const t = e.touches[0], moved = Math.hypot(t.clientX - start.x, t.clientY - start.y);
+    if (!armed) { if (moved > 10) reset(); return; }
+    e.preventDefault();
+    if (!active) {
+      if (moved < 8) return;
+      active = true; dt = new DataTransfer();
+      if (!pop.hidden) closePopover(); // the menu a long press opened gives way to the drag
+      fire(src, 'dragstart', start);
+    }
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    if (el !== over) { if (over) fire(over, 'dragleave', t); over = el; if (el) fire(el, 'dragenter', t); }
+    if (el) fire(el, 'dragover', t);
+    // near the top or bottom of the list, it scrolls
+    let sc = src.parentElement; while (sc && sc !== document.body && !(sc.scrollHeight > sc.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement;
+    if (sc && sc !== document.body) { const r = sc.getBoundingClientRect(); if (t.clientY < r.top + 40) sc.scrollTop -= 12; else if (t.clientY > r.bottom - 40) sc.scrollTop += 12; }
+  }, { capture: true, passive: false });
+  const end = (e, cancelled) => {
+    if (active && src) {
+      const t = e.changedTouches[0], el = document.elementFromPoint(t.clientX, t.clientY);
+      if (el && !cancelled) fire(el, 'drop', t);
+      fire(src, 'dragend', t);
+      const stop = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+      document.addEventListener('click', stop, { capture: true, once: true }); setTimeout(() => document.removeEventListener('click', stop, true), 400);
+    }
+    reset();
+  };
+  document.addEventListener('touchend', (e) => end(e, false), true);
+  document.addEventListener('touchcancel', (e) => end(e, true), true);
+  document.addEventListener('contextmenu', (e) => { if (active) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  // If the web view starts a drag of its own, it takes over.
+  document.addEventListener('dragstart', (e) => { if (e.isTrusted && src) reset(); }, true);
+}
+TEST_HOOKS.touchDrag = touchDrag; TEST_HOOKS.writeOutgoing = writeOutgoing; TEST_HOOKS.listDocs = listDocs; TEST_HOOKS.cmdHidden = (id) => !!(C[id] && C[id].hidden);
+function androidStart() {
+  // The system bars and the keyboard: the web view doesn't say how tall the navigation bar is, and doesn't move a
+  // field above the keyboard, so the app tells the page (window.__cowdreyInsets) and the field is scrolled into view.
+  const root = document.documentElement;
+  root.dataset.androidApp = ''; // (the web view's own long-press drag is off: touchDrag drags instead)
+  window.__cowdreyInsets = (o) => {
+    if (!o) return;
+    root.style.setProperty('--sab', `max(env(safe-area-inset-bottom, 0px), ${+o.bottom || 0}px)`);
+    root.dataset.keyboard = o.keyboard > 0 ? 'up' : '';
+    if (o.keyboard > 0) setTimeout(() => { const a = document.activeElement; if (a && a !== document.body && (/INPUT|TEXTAREA|SELECT/.test(a.tagName) || a.isContentEditable)) a.scrollIntoView({ block: 'center' }); }, 150);
+  };
+  androidCall('insets').then(window.__cowdreyInsets, () => {});
+  // A tap on a button while typing (the keyboard up over a field): the field keeps the focus, so the keyboard stays
+  // until the button has done its work. Otherwise it goes down during the tap, the web view lays out again under the
+  // finger and drops the click: Save PDF did nothing until tapped again.
+  // Once the click has come, a button away from the field (Save PDF after a form field) ends the typing, so the
+  // keyboard goes down. A button next to the field (Find's arrows, a dialog's buttons) and any button while a line of
+  // the PDF is being edited (the ribbon formats it) leave it up.
+  const keyboardIn = (el) => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|file|range|color|image)$/i.test(el.type)));
+  const keepTyping = (field, b) => {
+    if (field.closest('.line-editor, .txt-editor')) return true;
+    const near = field.closest('dialog, [role="dialog"], .find-dock, .page-ask, .popover, #sidePanel');
+    return !!near && near.contains(b);
+  };
+  let typingTap = null;
+  document.addEventListener('mousedown', (e) => {
+    typingTap = null;
+    const b = e.target.closest && e.target.closest('button'), field = document.activeElement;
+    if (!b || b.disabled || !keyboardIn(field) || b.contains(field)) return;
+    e.preventDefault();
+    if (!keepTyping(field, b)) typingTap = { field, b };
+  }, true);
+  document.addEventListener('click', (e) => {
+    const t = typingTap; typingTap = null;
+    if (t && t.b.contains(e.target)) setTimeout(() => { if (document.activeElement === t.field) t.field.blur(); }, 0);
+  }, true);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
+  window.__cowdreyNight = (night) => { androidNight = !!night; applyTheme(); };
+  androidCall('appInfo').then((r) => { if (r && typeof r.night === 'boolean') window.__cowdreyNight(r.night); }, () => {});
+  // PDFs shared several at a time (Files, Gmail): Android tells the page, which opens them.
+  window.__cowdreyShared = () => serial(takeOpened);
+  touchDrag();
+  // Read aloud needs a speech engine on the phone: without one, the command is not offered.
+  setTimeout(() => androidCall('ttsAvailable').then((r) => { if (r && !r.available && C.crdReadAloud) { C.crdReadAloud.hidden = true; renderRibbon(); } }, () => {}), 4000);
 }
 // Quitting with changes not yet saved to the file they came from: ask first (the app waits for the answer).
 let quitAsked = false;
@@ -4940,6 +5187,7 @@ serial(async () => {
   if (last && !doc) { try { await openStored(last); } catch (e) { console.warn(e); } }
   sideNoDoc();
 });
-if (MAC_APP && !APP_STORE_BUILD && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
+if ((MAC_APP || ANDROID_APP) && !APP_STORE_BUILD && Date.now() - (store.get('updateChecked', 0) || 0) > 864e5) setTimeout(() => checkForUpdates(false), 8000);
+if (ANDROID_APP) androidStart();
 // For tests and automation
 window.__cowdreyPdf = { ...TEST_HOOKS, get doc() { return doc; }, openBytes, buildPdf, run, setTool, views: () => views, highlightSelection, get current() { return current; }, contentMap: (n) => contentMap(views[n].page), tokenize: (t) => tokenizeContent(t).length };

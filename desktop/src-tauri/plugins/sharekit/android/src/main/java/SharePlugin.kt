@@ -1,4 +1,6 @@
-// Native features of Cowdrey.MD on Android, adapted from tauri-plugin-sharekit 0.3.1 (MIT, see LICENSE).
+// Native features of Cowdrey.MD and Cowdrey.PDF on Android, adapted from tauri-plugin-sharekit 0.3.1 (MIT, see LICENSE).
+// Cowdrey.PDF (AndroidPdf.kt has the details): saving through Android's save dialog, several files into a folder,
+// printing a PDF, reading aloud, the system bars' look, the screen insets, and PDFs shared several at a time.
 // - Sharing text and files through the Android share sheet.
 // - Printing through the Android print dialog, and making a PDF to send through the share sheet.
 // - Files edited in place: a file chosen in the system picker keeps a lasting permission, so changes are saved back to it.
@@ -47,9 +49,48 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
     private val markdown = setOf("md", "markdown", "mdown", "mkd", "mkdn", "txt")
     private val rw = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
+    internal val pdf = AndroidPdf(this, activity)
+
     override fun load(webView: WebView) {
         this.webView = webView
+        pdf.load(webView)
     }
+
+    override fun onNewIntent(intent: Intent) {
+        pdf.onNewIntent(intent)
+    }
+
+    override fun onDestroy() {
+        pdf.destroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        pdf.onConfigurationChanged(newConfig)
+    }
+
+    // ---- Cowdrey.PDF (see AndroidPdf.kt) ----
+
+    @Command fun saveAs(invoke: Invoke) = pdf.saveAs(invoke)
+    @ActivityCallback private fun saveAsResult(invoke: Invoke, result: ActivityResult) = pdf.saveAsResult(invoke, result)
+    @Command fun writeTo(invoke: Invoke) = pdf.writeTo(invoke)
+    @Command fun saveToFolder(invoke: Invoke) = pdf.saveToFolder(invoke)
+    @ActivityCallback private fun saveToFolderResult(invoke: Invoke, result: ActivityResult) = pdf.saveToFolderResult(invoke, result)
+    @Command fun printPdf(invoke: Invoke) = pdf.printPdf(invoke)
+    @Command fun speak(invoke: Invoke) = pdf.speak(invoke)
+    @Command fun stopSpeaking(invoke: Invoke) = pdf.stopSpeaking(invoke)
+    @Command fun ttsAvailable(invoke: Invoke) = pdf.ttsAvailable(invoke)
+    @Command fun systemBars(invoke: Invoke) = pdf.systemBars(invoke)
+    @Command fun insets(invoke: Invoke) = pdf.insets(invoke)
+    @Command fun takeSharedFiles(invoke: Invoke) = pdf.takeSharedFiles(invoke)
+    @Command fun appInfo(invoke: Invoke) = pdf.appInfo(invoke)
+    @Command fun tsaPost(invoke: Invoke) = pdf.tsaPost(invoke)
+    @Command fun decodeImage(invoke: Invoke) = pdf.decodeImage(invoke)
+    @Command fun pickImages(invoke: Invoke) = pdf.pickImages(invoke)
+    @ActivityCallback private fun pickImagesResult(invoke: Invoke, result: ActivityResult) = pdf.pickImagesResult(invoke, result)
+    @Command fun readPart(invoke: Invoke) = pdf.readPart(invoke)
+
+    /** Starts an activity for a result, for AndroidPdf (the callback must be a method of the plugin). */
+    internal fun startForResult(invoke: Invoke, intent: Intent, callback: String) = startActivityForResult(invoke, intent, callback)
 
     /** Runs file work off the main thread and answers with its result or its error. */
     private fun background(invoke: Invoke, work: () -> JSObject) {

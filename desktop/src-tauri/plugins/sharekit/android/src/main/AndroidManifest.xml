@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Read aloud: lets the app find the phone's text-to-speech engine (Android 11 and later hide other apps). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
     <application>
         <provider
             android:name="androidx.core.content.FileProvider"

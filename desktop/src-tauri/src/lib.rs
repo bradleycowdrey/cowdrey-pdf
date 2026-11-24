@@ -43,6 +43,9 @@ struct OpenedFile {
     name: String,
     path: String,
     content: String,
+    /// Set when the file could not be opened (Android: a file:// address the app may not read, or a web link).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 /// A PDF is bytes, so it travels to the page as base64.
@@ -53,14 +56,25 @@ fn load(path: &Path) -> Option<OpenedFile> {
         name: path.file_name()?.to_string_lossy().into_owned(),
         path: path.to_string_lossy().into_owned(),
         content,
+        error: None,
     })
 }
 
 /// A file path is read here. Android hands over a content:// address instead: that comes back with no
 /// content, and the page reads it through the file system plugin, which can open such addresses.
 fn opened(p: &str) -> Option<OpenedFile> {
+    if let Some(link) = p.strip_prefix("unsupported:") {
+        return Some(OpenedFile { name: String::new(), path: link.to_string(), content: String::new(), error: Some("link".into()) });
+    }
     if p.contains("://") {
-        return Some(OpenedFile { name: String::new(), path: p.to_string(), content: String::new() });
+        return Some(OpenedFile { name: String::new(), path: p.to_string(), content: String::new(), error: None });
+    }
+    // Android: a file:// address from an old file manager, which the app has no permission to read, is reported
+    // to the page instead of being dropped without a word.
+    #[cfg(target_os = "android")]
+    if load(Path::new(p)).is_none() {
+        let name = Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        return Some(OpenedFile { name, path: p.to_string(), content: String::new(), error: Some("unreadable".into()) });
     }
     load(Path::new(p))
 }
@@ -197,7 +211,7 @@ fn print_page(window: tauri::WebviewWindow) -> Result<(), String> {
 /// Writes a copy to share into the app's temporary folder and returns its path, for the share sheet
 /// (iPhone, iPad and Android) or the share menu (Mac).
 #[tauri::command]
-fn write_share_file(app: AppHandle, name: String, contents: String, base64: Option<String>) -> Result<String, String> {
+fn write_share_file(app: AppHandle, name: String, contents: String, base64: Option<String>, append: Option<bool>) -> Result<String, String> {
     use base64::Engine;
     let name: String = name.chars().map(|c| if matches!(c, '/' | '\\' | ':') { '-' } else { c }).collect();
     // Android has no usable temporary folder of its own: use a folder in the app's cache, which the share sheet can
@@ -208,9 +222,16 @@ fn write_share_file(app: AppHandle, name: String, contents: String, base64: Opti
     let dir = { let _ = &app; std::env::temp_dir() };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(if name.trim().is_empty() { "Document.pdf".into() } else { name });
-    match base64 {
-        Some(b) => std::fs::write(&path, base64::engine::general_purpose::STANDARD.decode(b).map_err(|e| e.to_string())?),
-        None => std::fs::write(&path, contents),
+    let bytes = match base64 {
+        Some(b) => base64::engine::general_purpose::STANDARD.decode(b).map_err(|e| e.to_string())?,
+        None => contents.into_bytes(),
+    };
+    // A large file comes in several parts (Android), so no single message holds all of it.
+    if append.unwrap_or(false) {
+        use std::io::Write;
+        std::fs::OpenOptions::new().append(true).open(&path).and_then(|mut f| f.write_all(&bytes))
+    } else {
+        std::fs::write(&path, bytes)
     }
     .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
@@ -477,6 +498,8 @@ pub fn run() {
                     .filter_map(|u| match u.to_file_path() {
                         Ok(p) => Some(p.to_string_lossy().into_owned()),
                         Err(_) if u.scheme() == "content" => Some(u.to_string()),
+                        // a PDF link from a web page (Android): the page says to download it first
+                        Err(_) if cfg!(target_os = "android") && matches!(u.scheme(), "http" | "https") => Some(format!("unsupported:{u}")),
                         Err(_) => None,
                     })
                     .collect();

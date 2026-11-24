@@ -13,7 +13,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 | **Use it on the web** | [bradcowdrey.com/cowdrey-pdf/app](https://bradcowdrey.com/cowdrey-pdf/app) |
 | **Mac** | [Download Cowdrey.PDF.dmg](https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg) · signed and notarized by Apple · the Mac App Store version is coming |
 | **iPhone and iPad** | [Install with TestFlight](https://testflight.apple.com/join/tr4eD534) · the App Store version is on its way |
-| **Android** | Coming soon |
+| **Android** | In testing · see [docs/android.md](docs/android.md) |
 | **Product page** | [bradcowdrey.com/cowdrey-pdf](https://bradcowdrey.com/cowdrey-pdf) |
 
 ![Cowdrey.PDF in dark mode, with the sample PDF open and a line highlighted](docs/screenshot-dark.png)
@@ -40,7 +40,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 
 ## Apps
 
-The same app runs on the web and, wrapped with Tauri 2, as apps for Mac, iPhone, iPad and Android, built by GitHub Actions (`.github/workflows`). The workflows produce a signed, notarized Mac DMG and TestFlight builds for iPhone and iPad; with the updater key they also add in-place Mac updates, and with the Android upload key a signed APK. Each platform opens PDFs from its file manager (Finder, Files, Android's Open with). On the Mac, Save writes back to the same file; on iPhone, iPad and Android, Save PDF opens the share sheet (Save to Files, Drive, Mail, AirDrop).
+The same app runs on the web and, wrapped with Tauri 2, as apps for Mac, iPhone, iPad and Android, built by GitHub Actions (`.github/workflows`). The workflows produce a signed, notarized Mac DMG and TestFlight builds for iPhone and iPad; with the updater key they also add in-place Mac updates, and with the Android upload key a signed APK. Each platform opens PDFs from its file manager (Finder, Files, Android's Open with). On the Mac, Save writes back to the same file; on iPhone and iPad, Save PDF opens the share sheet (Save to Files, Drive, Mail, AirDrop); on Android it opens Android's save dialog, and saving again updates that file. The Android build is tested on an emulator by a device test (`tests/android/run.mjs`).
 
 ## Built with
 

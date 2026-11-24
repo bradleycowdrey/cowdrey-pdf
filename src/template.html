@@ -268,7 +268,9 @@ button { font: inherit; color: inherit; }
 .app[data-dragging="on"] .viewer { outline: 3px dashed var(--accent); outline-offset: -8px; }
 
 /* status bar */
-.statusbar { display: flex; align-items: center; gap: 16px; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+.touch-drag { opacity: .5; }
+[data-android-app] [draggable="true"] { -webkit-user-drag: none; }
+.statusbar { display: flex; align-items: center; gap: 16px; padding: 4px max(16px, env(safe-area-inset-right, 0px)) calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))) max(16px, env(safe-area-inset-left, 0px)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mode-chip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; padding: 0 2px 0 10px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: 12px; line-height: 24px; }
 .mode-chip[hidden] { display: none; }
@@ -429,7 +431,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
     .tb-actions .btn, .tb-actions .icon-btn, .sb-pages { width: 44px; height: 44px; }
     .sb-zoom .icon-btn, #zoomLabel { min-width: 44px; height: 44px; }
   }
-  .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+  .dlg-foot { border-top: 1px solid var(--line); padding-bottom: max(14px, var(--sab, env(safe-area-inset-bottom, 0px))); }
 }
 /* a phone on its side: the bars get thinner and the ribbon shows icons only (the names stay for screen readers and
    tooltips), so the document keeps more than half of the height */
@@ -439,7 +441,7 @@ dialog::backdrop { background: rgba(18, 12, 15, .35); backdrop-filter: blur(6px)
   .ribbon-body { height: 52px; padding-top: 2px; padding-bottom: 2px; }
   .rb { justify-content: center; align-self: center; position: relative; }
   .rb > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .statusbar { padding-top: 2px; padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px)); }
+  .statusbar { padding-top: 2px; padding-bottom: calc(2px + var(--sab, env(safe-area-inset-bottom, 0px))); }
 }
 /* Touch: iOS zooms the whole app into any field with text under 16px, so fields are 16px there (not the text
    editors on the page, which follow the page's size). Without a keyboard, menus show no shortcuts. */

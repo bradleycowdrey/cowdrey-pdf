@@ -76,14 +76,13 @@ export default async (h) => {
     await paste(); await answer(p, 'New page');
     await p.waitForFunction(() => document.querySelector('#pageCount').textContent === '4');
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.src)), [0, 1, 0, 0], 'after page 1');
+    // the viewer scrolls (smoothly) to the new page: the picture is placed on it once it is there, as a user would
+    await p.waitForFunction(() => { const v = document.querySelector('#viewer'), pg = document.querySelector('.page[data-n="1"]'); return pg && Math.abs(v.scrollTop - Math.min(pg.offsetTop - 16, v.scrollHeight - v.clientHeight)) < 2; }, null, { timeout: 10000 });
     await paste(); await answer(p, 'Place on page');
     await p.waitForFunction(() => document.querySelector('#app').dataset.tool === 'image');
-    // "New page" scrolled to the new page 2: bring page 1 back into view and click on a part of it that shows
-    await p.locator('.page[data-n="0"]').scrollIntoViewIfNeeded();
-    await p.waitForFunction(() => { const r = document.querySelector('.page[data-n="0"]').getBoundingClientRect(); const e = document.elementFromPoint(r.x + 200, r.y + r.height / 2); return e && e.closest('.page[data-n="0"]'); });
-    const g = await p.locator('.page[data-n="0"]').boundingBox(); await p.mouse.click(g.x + 200, g.y + g.height / 2);
-    for (let t = 0; t < 20 && !(await h.marks(p)).length; t++) await p.waitForTimeout(100);
+    const g = await p.locator('.page[data-n="1"]').boundingBox(); await p.mouse.click(g.x + 200, g.y + 200);
     eq(await h.marks(p), ['img']);
+    eq(await p.evaluate(() => { const d = window.__cowdreyPdf.doc; return d.pages.map((e) => (d.marks[`${e.src}:${e.i}`] || []).length); }), [0, 1, 0, 0], 'on the new page');
     // From clipboard: waits for a paste in its box
     await p.evaluate(() => window.__cowdreyPdf.run('crdClip'));
     await p.waitForSelector('#dialog[open] #crdPasteZone');
