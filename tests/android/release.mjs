@@ -42,6 +42,7 @@ async function waitApp(test, timeout = 60000) {
 }
 
 let comp = '';
+adb('logcat', '-c');
 await step('installs; a release build (not debuggable, no web view debugging compiled in)', async () => {
   adb('uninstall', PKG);
   log(adb('install', '-r', APK).trim());
@@ -106,9 +107,26 @@ await step('a form field: tapped, typed into with the keyboard', async () => {
 let saved = null;
 await step('Save PDF: Android\'s save dialog; the file in Downloads has the typed value', async () => {
   saved = await A.saveThroughDialog(async () => {
-    const b = await waitApp((n) => /^Save PDF$/.test(n.text || '') || /^Save PDF$/.test(n['content-desc'] || ''), 15000);
-    ok(b, 'a Save PDF button');
+    // tapped once the screen has settled (the page zooms back when the keyboard goes down)
+    let b = null, last = '';
+    for (const end = Date.now() + 20000; Date.now() < end; await sleep(1500)) {
+      const nodes = appNodes(), n = nodes.find((x) => /^Save PDF$/.test(x.text || '') || /^Save PDF$/.test(x['content-desc'] || ''));
+      const now = nodes.map((x) => `${x.text || ''}${x.bounds}`).join('|');
+      if (n && now === last) { b = n; break; }
+      last = now;
+    }
+    ok(b, 'a Save PDF button, on a settled screen');
     sh(`input tap ${b.x} ${b.y}`);
+    // what the app says if no save dialog comes (a toast lasts a few seconds)
+    const seen = new Set();
+    for (const end = Date.now() + 20000; Date.now() < end && !A.isDocs(); await sleep(1000)) {
+      for (const n of appNodes()) { const t = n.text || n['content-desc'] || ''; if (/sav|could not|error|fail/i.test(t) && t !== 'Save PDF') seen.add(t.slice(0, 200)); }
+    }
+    if (!A.isDocs()) {
+      shot('release-after-save');
+      fs.writeFileSync(path.join(A.OUT, 'release-logcat.txt'), adb('logcat', '-d').split('\n').filter((l) => /chromium|Console|Tauri|cowdrey|AndroidRuntime|FATAL|RustStdoutStderr|sharekit|SharePlugin|AndroidPdf/i.test(l)).slice(-400).join('\n'));
+      throw new Error(`no save dialog after tapping Save PDF; the app showed: ${[...seen].join(' / ') || 'nothing'}`);
+    }
   }, 'release-save');
   const d = await L.PDFDocument.load(saved.bytes, { updateMetadata: false });
   log('  pages', d.getPageCount(), '· producer', d.getProducer(), '· name', d.getForm().getTextField('name').getText());
@@ -124,6 +142,7 @@ await step('still running after all of that', async () => {
   ok(/cowdreypdf/.test(A.focused()), 'the app is in front: ' + A.focused());
 });
 
+if (!fs.existsSync(path.join(A.OUT, 'release-logcat.txt'))) fs.writeFileSync(path.join(A.OUT, 'release-logcat.txt'), adb('logcat', '-d').split('\n').filter((l) => /chromium|Console|Tauri|cowdrey|AndroidRuntime|FATAL|RustStdoutStderr/i.test(l)).slice(-400).join('\n'));
 adb('uninstall', PKG); log('release APK uninstalled (the test build uses the same package)');
 write(true);
 log(fs.readFileSync(path.join(A.OUT, 'release-result.txt'), 'utf8'));
