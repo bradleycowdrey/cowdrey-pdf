@@ -93,8 +93,10 @@ await step('opens a PDF handed over by Android (VIEW, content:// from Downloads,
 });
 
 await step('a form field: tapped, typed into with the keyboard', async () => {
-  // the sample's Name field is the only text box on the page (an EditText in the web view's accessibility tree)
-  const field = await waitApp((n) => /EditText/.test(n.class || '') && n.w > 20 && n.h > 10 && n.y > 300, 20000);
+  // the sample's Name field is the only text box on the page (an EditText in the web view's accessibility tree). The
+  // page number box at the bottom is an EditText too, holding the page number: it is not the field (run 3f2b77c typed
+  // into it when it was listed before the page's form fields had come up)
+  const field = await waitApp((n) => /EditText/.test(n.class || '') && n.w > 20 && n.h > 10 && n.y > 300 && !/^\d+$/.test((n.text || '').trim()), 20000);
   ok(field, 'the Name field is on screen');
   sh(`input tap ${field.x} ${field.y}`); await sleep(1500);
   sh(`input text '${TYPED.replace(/ /g, '%s')}'`); await sleep(1500);

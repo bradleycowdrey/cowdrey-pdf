@@ -55,7 +55,7 @@ export async function startPki(dir, host = '10.0.2.2') {
     for (let i = 0; i < 100 && !ready(); i++) await sleep(100);
     if (!ready()) throw new Error('openssl ocsp did not start: ' + ocspLog.slice(mark, mark + 400));
   };
-  const stopOcsp = async () => { if (!ocsp || ocsp.exitCode !== null) return; const p = ocsp; p.kill(); await new Promise((r) => p.once('exit', r)); };
+  const stopOcsp = async () => { if (!ocsp || ocsp.exitCode !== null || ocsp.signalCode !== null) return; const p = ocsp; p.kill(); await new Promise((r) => p.once('exit', r)); };
   await startOcsp();
   const ocspHits = () => (ocspLog.match(/OCSP Request Data:/g) || []).length;
   return {

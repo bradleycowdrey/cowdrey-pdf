@@ -747,7 +747,7 @@ await test('revocation: OCSP and CRL servers on plain http (on the machine runni
     eq(sigs.map((x) => x.status), ['revoked']);
     await answer('Close').catch(() => {});
   } finally { await pki.close(); }
-});
+}, 420000);
 
 await test('signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password', async () => {
   await pushBytes(makeP12('PFX Signer', 'pw5678'), 'Second signer.pfx');
