@@ -215,6 +215,25 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('Android: a tick box tapped after a zoomed form field brings the zoom back (it takes no typing)', async () => {
+    const p = await open({ width: 390, height: 844, touch: true, ua: ANDROID }); await openPdf(p);
+    const w = () => p.evaluate(() => window.__cowdreyPdf.views()[0].el.getBoundingClientRect().width);
+    const z0 = await w();
+    const f = p.locator('.annotationLayer input[name="name"]');
+    const b = await f.boundingBox(); await p.touchscreen.tap(b.x + 20, b.y + b.height / 2);
+    await p.waitForFunction(() => { const a = document.activeElement; return a && a.name === 'name' && parseFloat(getComputedStyle(a).fontSize) >= 16; }, null, { timeout: 5000 });
+    await p.keyboard.type('Ada');
+    ok((await w()) > z0 + 20, 'zoomed in');
+    const c = p.locator('.annotationLayer input[name="agree"]'); await c.scrollIntoViewIfNeeded();
+    const cb = await c.boundingBox(); await p.touchscreen.tap(cb.x + cb.width / 2, cb.y + cb.height / 2);
+    await p.waitForTimeout(1200);
+    eq(await p.$eval('.annotationLayer input[name="agree"]', (e) => e.checked), true, 'ticked');
+    const z1 = await w();
+    ok(Math.abs(z1 - z0) < 2, `zoom back ${z0} ${z1}`);
+    eq(await p.$eval('.annotationLayer input[name="name"]', (e) => e.value), 'Ada');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   await test('Android: Back closes the top thing first (dialog, sidebar, tool) and leaves only when nothing is open', async () => {
     const p = await open({ width: 390, height: 844, touch: true, ua: ANDROID }); await openPdf(p);
     const st = () => p.evaluate(() => ({ ours: !!(history.state && history.state.cowdreyBack), tool: document.querySelector('#app, .app').dataset.tool, side: document.querySelector('.app').dataset.sidebar, dlg: document.querySelector('#dialog').open }));

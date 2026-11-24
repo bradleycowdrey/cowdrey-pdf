@@ -89,10 +89,23 @@ async function openBytes(bytes, name) {
 }
 const built = async () => Buffer.from(await page.evaluate(async () => Array.from(await window.__cowdreyPdf.buildPdf())));
 // A point on a page (PDF units) in the page's CSS pixels
-const at = (n, x, y) => page.evaluate(([n, x, y]) => { const v = window.__cowdreyPdf.views()[n]; v.el.scrollIntoView({ block: 'nearest' }); const [vx, vy] = v.viewport.convertToViewportPoint(x, y); const r = v.el.getBoundingClientRect(); return [r.left + vx, r.top + vy]; }, [n, x, y]);
+// (scrolled into the viewer first when it is off screen, as on a page zoomed in)
+const at = (n, x, y) => page.evaluate(([n, x, y]) => {
+  const v = window.__cowdreyPdf.views()[n]; v.el.scrollIntoView({ block: 'nearest' });
+  const [vx, vy] = v.viewport.convertToViewportPoint(x, y), vw = document.querySelector('#viewer'), w = vw.getBoundingClientRect();
+  let r = v.el.getBoundingClientRect();
+  if (r.top + vy < w.top + 40 || r.top + vy > w.bottom - 40) vw.scrollTop += r.top + vy - (w.top + w.height / 2);
+  if (r.left + vx < w.left + 20 || r.left + vx > w.right - 20) vw.scrollLeft += r.left + vx - (w.left + w.width / 2);
+  r = v.el.getBoundingClientRect(); return [r.left + vx, r.top + vy];
+}, [n, x, y]);
 const pageText = (n = 0) => page.evaluate(async (n) => { const tc = await window.__cowdreyPdf.views()[n].page.getTextContent(); return tc.items.map((i) => i.str).join(' '); }, n);
 // (with the time now, so Android's picker, newest first, shows it at the top)
-async function pushDownload(local, name) { adb('push', local, `${A.DL}/${name}`); sh(`touch '${A.DL}/${name}'`); await sleep(1500); }
+async function pushDownload(local, name) {
+  adb('push', local, `${A.DL}/${name}`); sh(`touch '${A.DL}/${name}'`);
+  // (so the picker's Recent and Downloads list it: they come from the media store)
+  sh(`am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://${A.DL}/${encodeURIComponent(name).replace(/'/g, '%27')}' > /dev/null`);
+  await sleep(1500);
+}
 // A content:// address for a file in Downloads, as a file manager would hand it over: MediaStore's, or else the app's
 // own FileProvider (filled with run-as; the test build is debuggable).
 async function contentUri(local, name) {
@@ -120,6 +133,14 @@ async function toDownloads() {
   const d = await A.waitUi(/^Downloads?$/, 5000);
   if (d) { sh(`input tap ${d.x} ${d.y}`); await sleep(1500); }
 }
+// The save dialog opens in the folder used last (Split's folder, say): the test saves in Downloads itself.
+async function inDownloads() {
+  const nodes = A.uiNodes();
+  if (A.findUi(/^Files in Downloads$/, nodes)) return;
+  const crumb = nodes.find((n) => /^Download$/.test(n.text || '') && n.w > 0);
+  if (crumb) { sh(`input tap ${crumb.x} ${crumb.y}`); await sleep(1500); if (A.findUi(/^Files in Download/)) return; }
+  await toDownloads();
+}
 // Starts something that opens Android's save dialog, saves into Downloads, and returns the file there.
 async function saveThroughDialog(trigger, label) {
   const before = A.listDownloads();
@@ -128,6 +149,7 @@ async function saveThroughDialog(trigger, label) {
   while (Date.now() < end && !isDocs()) await sleep(700);
   ok(isDocs(), 'the save dialog is open: ' + A.focused());
   await sleep(1500);
+  await inDownloads();
   shot((label || 'save') + '-dialog');
   let save = await A.waitUi(/^save$/i, 10000);
   if (!save || save.enabled === 'false') { await toDownloads(); save = await A.waitUi(/^save$/i, 10000); }
@@ -153,6 +175,8 @@ async function pickThroughPicker(trigger, names) {
   const re = (n) => new RegExp('^' + n.replace(/[.()]/g, '\\$&') + '$');
   let n = await A.waitUi(re(list[0]), 5000);
   if (!n) { await toDownloads(); n = await A.waitUi(re(list[0]), 8000); }
+  if (!n && list.length === 1) n = await searchPicker(list[0], re(list[0]));
+  if (!n) log('  on screen:', A.uiNodes().map((x) => x.text || x['content-desc']).filter(Boolean).join(' | ').slice(0, 600));
   ok(n, `${list[0]} is listed (and not greyed out)`);
   shot('picker-' + list[0].replace(/[^a-z0-9]+/gi, '-'));
   if (list.length === 1) { sh(`input tap ${n.x} ${n.y}`); await sleep(1500); return; }
@@ -160,6 +184,14 @@ async function pickThroughPicker(trigger, names) {
   for (const other of list.slice(1)) { const m = await A.waitUi(re(other), 5000); ok(m, other + ' listed'); sh(`input tap ${m.x} ${m.y}`); await sleep(700); }
   await A.tapUi(/^(select|open|done)$/i, 5000);
   await sleep(1500);
+}
+// The picker's own search, for a file it doesn't list where it opened
+async function searchPicker(name, re) {
+  const s = await A.waitUi(/^Search$/i, 3000); if (!s) return null;
+  sh(`input tap ${s.x} ${s.y}`); await sleep(1200);
+  sh(`input text '${name.replace(/\.[^.]+$/, '').replace(/ /g, '%s').replace(/'/g, '')}'`); sh('input keyevent KEYCODE_ENTER'); await sleep(2500);
+  const all = A.uiNodes().filter((x) => re.test(x.text || '') && x.w > 0 && x.y > 300);
+  return all[0] || null;
 }
 async function backToApp() {
   for (let i = 0; i < 4 && !/cowdreypdf/.test(A.focused()); i++) { A.back(); await sleep(1000); }
@@ -402,6 +434,7 @@ await test('forms: tap a field, the keyboard comes up and the field stays in vie
 });
 
 await test('forms designer: a new text field drawn with a finger is saved as a real field', async () => {
+  await run('zoomFit'); await sleep(800);
   await run('ff_text');
   const [x1, y1] = await at(0, 80, 160), [x2, y2] = await at(0, 280, 130);
   await A.swipeCss(page, x1, y1, x2, y2, 500); await sleep(800);

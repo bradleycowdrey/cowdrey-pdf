@@ -3068,7 +3068,7 @@ function phoneZoomBack() {
   if (!phoneZoom || phoneZoom.timer) return;
   // A moment later, unless another line or form field is opened in the meantime (it keeps this zoom).
   phoneZoom.timer = setTimeout(async () => {
-    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input, textarea, select'));
+    const a = document.activeElement, keep = lineEditor || (a && viewer.contains(a) && a.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, select')); // (a tick box or a button: no typing, so the zoom goes back)
     const pz = phoneZoom; phoneZoom = null; if (!pz || keep) { if (pz && keep) phoneZoom = { ...pz, timer: 0 }; return; }
     await setZoom(pz.zoom); viewer.scrollTop = pz.top; viewer.scrollLeft = pz.left;
   }, 350);

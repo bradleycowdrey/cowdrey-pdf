@@ -9,6 +9,11 @@ adb shell settings put global hide_error_dialogs 1 2>/dev/null
 # would cover the app, so it is turned off.
 adb shell pm disable-user --user 0 com.google.android.googlesdksetup 2>&1 | tail -1
 adb shell cmd uimode night yes
+# The network, logged for the timestamp scenario (ping may be blocked by the emulator even when https works)
+for i in 1 2; do
+  if adb shell ping -c 1 -W 3 freetsa.org 2>&1 | grep -q '1 received'; then echo "network: freetsa.org answers"; break; fi
+  echo "network: not yet ($(adb shell ping -c 1 -W 3 freetsa.org 2>&1 | head -1))"; sleep 5
+done
 if [[ -f "$APK" ]]; then
   adb install -r "$APK" > /dev/null && echo "release APK installed"
   adb shell dumpsys package "$PKG" | grep -m1 versionName | sed 's/^ */release version: /'
