@@ -32,7 +32,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 - **Compare two PDFs:** side by side, scrolled together, with added, removed and changed text, formatting and pictures; save a compare report.
 - **Insight, on the device:** extract tables to CSV or Excel, summarize a document from its own sentences, and ask the document to find the passages that best answer a question. Nothing is sent anywhere, and no AI model writes the answers.
 - **Accessibility:** tags are kept through page changes and added for new content; Add tags automatically, Alt text, Reading order, an Accessibility check with fixes, Save as PDF/UA, and bookmarks from headings.
-- **Archive and metadata:** Save as PDF/A (2b, 2u or 3b) with a built-in check (not a certified validator); Document properties edits title, author, keywords, language, dates, custom properties and how the PDF opens.
+- **Archive, print and metadata:** Save as PDF/A (1b, 2b, 2u, 3b or 3u, with screen or print colours) and Save as PDF/X (X-1a, X-3, X-4, for coated paper, FOGRA39), each with a built-in check (not a certified validator); what a kind can't keep is refused with the reason, never saved half-right. Document properties edits title, author, keywords, creator, producer, language, dates, custom properties, page numbers (i, ii, iii then 1, 2, 3), the XMP metadata as text, and how the PDF opens.
 - **Actions and Optimize:** run the same steps on many PDFs at once (Bates numbers across files, OCR, PDF/A, watermark, password, optimize and more); Optimize makes files smaller and never bigger.
 - **Export and share:** a page as an image, all the text, print, or share the PDF.
 - **Save:** Save PDF writes your changes into a PDF. With the pages unchanged, the original is kept (bookmarks, forms, links) and the mark-up is added; otherwise a new PDF is assembled. A signed PDF is saved so its signatures stay valid when only form values changed, and you are warned before a save would break them.
@@ -44,7 +44,7 @@ The same app runs on the web and, wrapped with Tauri 2, as apps for Mac, iPhone,
 
 ## Built with
 
-pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web views work too), @cantoo/pdf-lib 2.11.1 (MIT; pdf-lib with password support), @pdf-lib/fontkit (MIT), Tesseract.js (Apache 2.0), PKI.js and asn1js (BSD-3-Clause), node-forge (BSD-3-Clause or GPL-2.0), fflate (MIT) and Lucide (ISC). Fonts: Noto Sans, Noto Serif, Noto Sans Mono and Noto Sans Symbols, and Arimo, Tinos and Cousine for PDF/A, all under the SIL Open Font License 1.1 (shipped with the apps as `vendor/@expo-google-fonts/*/LICENSE_FONT.txt`).
+pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web views work too), @cantoo/pdf-lib 2.11.1 (MIT; pdf-lib with password support), @pdf-lib/fontkit (MIT), Tesseract.js (Apache 2.0), PKI.js and asn1js (BSD-3-Clause), node-forge (BSD-3-Clause or GPL-2.0), fflate (MIT) and Lucide (ISC). Fonts: Noto Sans, Noto Serif, Noto Sans Mono and Noto Sans Symbols, and Arimo, Tinos and Cousine for PDF/A, all under the SIL Open Font License 1.1 (shipped with the apps as `vendor/@expo-google-fonts/*/LICENSE_FONT.txt`). The CMYK printing condition for PDF/X and PDF/A print colours is colord's FOGRA39L Coated ICC profile (CC0 1.0, see `src/icc/README.md`).
 
 ## Where it lives
 

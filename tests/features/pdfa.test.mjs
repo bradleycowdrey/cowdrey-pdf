@@ -19,12 +19,13 @@ export default async (h) => {
     await d.loadingTask.destroy(); return out;
   };
   // Save as PDF/A…: choose the level, then the file comes as a download (the web app) when every check passes.
-  async function savePdfa(p, level = '2b', { expectProblems = false, attachments } = {}) {
+  async function savePdfa(p, level = '2b', { expectProblems = false, attachments, scripts } = {}) {
     await run(p, 'savePdfa'); await p.waitForSelector('#dialog[open] .pdfa-levels');
     await p.check(`#dialog [name="pdfaLevel"][value="${level}"]`);
-    const dl = p.waitForEvent('download', { timeout: 30000 });
+    const dl = p.waitForEvent('download', { timeout: 30000 }); dl.catch(() => {});
     await p.click('#dialog .dlg-foot .btn.primary');
     if (attachments) { await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Use PDF/A-3b")', { timeout: 30000 }); await p.click('#dialog .dlg-foot button:has-text("Use PDF/A-3b")'); }
+    if (scripts) { await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Remove and save")', { timeout: 30000 }); await p.click('#dialog .dlg-foot button:has-text("Remove and save")'); }
     if (expectProblems) return null;
     const winner = await Promise.race([dl.then((d) => ['dl', d]), p.waitForSelector('#dialog[open] .pdfa-probs', { timeout: 30000 }).then(() => ['probs'])]);
     if (winner[0] === 'probs') throw new Error('PDF/A check found problems: ' + (await p.textContent('#dialog .pdfa-sum')) + ' ' + (await p.textContent('#dialog .pdfa-probs')));
@@ -339,6 +340,11 @@ export default async (h) => {
     ok(new RegExp(`^${ck.passed.length} checks passed\\. 1 problem: font Wingdings-Regular is not embedded on page 1\\.$`).test(ck.summary), ck.summary);
     // through the menu: the results dialog, then Save anyway (not PDF/A)
     await savePdfa(p, '2b', { expectProblems: true });
+    // scripts are not taken out without asking
+    await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Remove and save")', { timeout: 30000 });
+    eq(await p.textContent('#dialog h2'), 'Scripts and actions');
+    ok(/This PDF has JavaScript \(\d scripts?\), Launch actions, actions that run by themselves\./.test(await p.textContent('#dialog .dlg-body')), await p.textContent('#dialog .dlg-body'));
+    await answer(p, 'Remove and save');
     await p.waitForSelector('#dialog[open] .pdfa-probs', { timeout: 30000 });
     eq(await p.textContent('#dialog h2'), 'Not PDF/A-2b yet');
     ok((await p.textContent('#dialog .pdfa-sum')).endsWith('1 problem: font Wingdings-Regular is not embedded on page 1.'), await p.textContent('#dialog .pdfa-sum'));
@@ -354,7 +360,7 @@ export default async (h) => {
   await test('PDF/A-2u: every font has a Unicode mapping; PDF/A-3b keeps an attachment (described), PDF/A-2b offers 3b for it', async () => {
     const p = await open();
     await openBytes(p, await messyPdf({ wingdings: false }), 'Clean.pdf');
-    const r = await savePdfa(p, '2u');
+    const r = await savePdfa(p, '2u', { scripts: true });
     const d = await L.PDFDocument.load(r.bytes, { updateMetadata: false });
     ok(/<pdfaid:conformance>U<\/pdfaid:conformance>/.test(xmpOf(d).text), '2u claimed');
     const ck = await check(p, r.bytes);
@@ -364,7 +370,7 @@ export default async (h) => {
     await openBytes(p, await messyPdf({ wingdings: false, attach: true }), 'With data.pdf');
     const blocked = await p.evaluate(async () => { const b = await window.__cowdreyPdf.buildPdf(); const r = await window.__cowdreyPdf.pdfaConvert(b, { part: 2 }); return [r.blocked, r.names]; });
     eq(blocked, ['attachments', ['counts.csv']]);
-    const r3 = await savePdfa(p, '2b', { attachments: true });
+    const r3 = await savePdfa(p, '2b', { attachments: true, scripts: true });
     const d3 = await L.PDFDocument.load(r3.bytes, { updateMetadata: false });
     ok(/<pdfaid:part>3<\/pdfaid:part>/.test(xmpOf(d3).text), 'PDF/A-3');
     const af = d3.catalog.lookup(N('AF')); ok(af instanceof PDFArray && af.size() === 1, 'catalog /AF');
@@ -466,6 +472,71 @@ export default async (h) => {
     await run(p, 'docProps'); await p.waitForSelector('#dialog[open] .di');
     await p.fill('#dialog [data-di="author"]', 'Third'); await answer(p, 'Done'); await p.waitForTimeout(200);
     ok(xmpOf(await L.PDFDocument.load(await savedOf(p), { updateMetadata: false })).text.includes('<dc:creator><rdf:Seq><rdf:li>Third</rdf:li></rdf:Seq></dc:creator>'), 'edited author');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('PDF/A and X-4 metadata: no pdf:Trapped in a PDF/A packet; X-4 has VersionID and RenditionClass; a form font with /Differences is symbolic in PDF/A-1; a ligature gets its Unicode in 2u', async () => {
+    // a form as reportlab writes one: Helvetica (not embedded) with /Differences, and Info /Trapped /False
+    const d = await L.PDFDocument.create(); const pg = d.addPage([400, 300]), ctx = d.context;
+    const helv = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: ctx.obj({ Type: 'Encoding', Differences: [PDFNumber.of(128), N('bullet'), N('dagger')] }) }));
+    const ap = ctx.register(ctx.flateStream(Buffer.from('/Tx BMC BT /Helv 12 Tf 2 5 Td (Ada \\200 L) Tj ET EMC', 'latin1'), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 20], Resources: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    const w = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: PDFString.of('name'), V: PDFString.of('Ada'), DA: PDFString.of('/Helv 12 Tf 0 g'), Rect: [50, 200, 250, 220], F: 4, P: pg.ref, AP: ctx.obj({ N: ap }) }));
+    pg.node.set(N('Annots'), ctx.obj([w])); d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [w], DR: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    d.setTitle('Form'); d.getInfoDict().set(N('Trapped'), N('False'));
+    const bytes = Array.from(await d.save());
+    const p = await open();
+    const r = await p.evaluate(async ([b, word]) => {
+      const H = window.__cowdreyPdf, o = {};
+      for (const [k, opts] of [['a1b', { part: 1, conformance: 'B' }], ['a2b', { part: 2, conformance: 'B' }], ['x4', { pdfx: '4' }]]) {
+        const c = await H.pdfaConvert(new Uint8Array(b), opts); if (!c.bytes) return { blocked: k + ' ' + JSON.stringify(c) };
+        o[k] = { bytes: Array.from(c.bytes), problems: (await (opts.pdfx ? H.pdfxCheck : H.pdfaCheck)(c.bytes, opts)).filter((x) => x.severity === 'error').map((x) => x.rule + ': ' + x.text) };
+      }
+      const w2 = await H.pdfaConvert(new Uint8Array(word), { part: 2, conformance: 'U' });
+      o.word = { before: (await H.pdfaCheck(new Uint8Array(word), { part: 2, conformance: 'U' })).filter((x) => x.rule === 'tounicode').map((x) => x.text), after: (await H.pdfaCheck(w2.bytes, { part: 2, conformance: 'U' })).filter((x) => x.severity === 'error').map((x) => x.rule + ': ' + x.text) };
+      return o;
+    }, [bytes, Array.from(Buffer.from(fixture('word.pdf'), 'base64'))]);
+    ok(!r.blocked, r.blocked); for (const k of ['a1b', 'a2b', 'x4']) eq(r[k].problems, [], k);
+    const xmpOf = async (b) => { const x = await L.PDFDocument.load(new Uint8Array(b), { updateMetadata: false }); return [x, streamBytes(x.catalog.lookup(N('Metadata'))).toString('utf8')]; };
+    const [a1, x1] = await xmpOf(r.a1b.bytes), [, x2] = await xmpOf(r.a2b.bytes), [, x4] = await xmpOf(r.x4.bytes);
+    ok(!x1.includes('pdf:Trapped') && !x2.includes('pdf:Trapped'), 'no pdf:Trapped in the PDF/A packets');
+    eq(nameOf(a1.getInfoDict().get(N('Trapped'))), 'False', 'Info keeps Trapped');
+    ok(x4.includes('<pdf:Trapped>False</pdf:Trapped>') && x4.includes('<xmpMM:VersionID>1</xmpMM:VersionID>') && x4.includes('<xmpMM:RenditionClass>default</xmpMM:RenditionClass>'), x4);
+    // the stand-in for Helvetica: symbolic, no Encoding, in PDF/A-1
+    const f1 = a1.context.lookup(a1.catalog.lookup(N('AcroForm')).lookup(N('DR')).lookup(N('Font')).get(N('Helv')));
+    ok(!f1.get(N('Encoding')) && f1.lookup(N('FontDescriptor')).lookup(N('Flags')).asNumber() & 4, 'symbolic, no Encoding');
+    ok(r.word.before.some((t) => /Carlito-Regular.*code 005B/.test(t)), JSON.stringify(r.word.before));
+    eq(r.word.after, [], 'word.pdf as 2u');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('PDF/A: one base font under two encodings gets two font programs; a shared one is flagged and split', async () => {
+    // page text in Helvetica (WinAnsi) and a form field in Helvetica with /Differences, neither embedded
+    const d = await L.PDFDocument.create(); const pg = d.addPage([400, 300]), ctx = d.context;
+    const win = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: 'WinAnsiEncoding' }));
+    const helv = ctx.register(ctx.obj({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica', Encoding: ctx.obj({ Type: 'Encoding', BaseEncoding: 'WinAnsiEncoding', Differences: [PDFNumber.of(128), N('bullet'), PDFNumber.of(140), N('quotesinglbase')] }) }));
+    pg.node.set(N('Resources'), ctx.obj({ Font: ctx.obj({ F1: win }) }));
+    pg.node.set(N('Contents'), ctx.register(ctx.flateStream(Buffer.from('BT /F1 12 Tf 20 260 Td (\\214uvre \\200 12) Tj ET', 'latin1'))));
+    const ap = ctx.register(ctx.flateStream(Buffer.from('/Tx BMC BT /Helv 12 Tf 2 5 Td (Ada \\200 \\214 L) Tj ET EMC', 'latin1'), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 200, 20], Resources: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    const w = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Widget', FT: 'Tx', T: PDFString.of('name'), V: PDFString.of('Ada'), DA: PDFString.of('/Helv 12 Tf 0 g'), Rect: [50, 200, 250, 220], F: 4, P: pg.ref, AP: ctx.obj({ N: ap }) }));
+    pg.node.set(N('Annots'), ctx.obj([w])); d.catalog.set(N('AcroForm'), ctx.obj({ Fields: [w], DR: ctx.obj({ Font: ctx.obj({ Helv: helv }) }) }));
+    const p = await open();
+    const conv = (b, opts) => p.evaluate(async ([x, o]) => { const H = window.__cowdreyPdf, c = await H.pdfaConvert(new Uint8Array(x), o); return c.bytes ? { bytes: Array.from(c.bytes), problems: (await H.pdfaCheck(c.bytes, o)).filter((y) => y.severity === 'error').map((y) => y.rule + ': ' + y.text) } : { blocked: JSON.stringify(c) }; }, [Array.from(b), opts]);
+    const fontsOf = async (b) => { const x = await L.PDFDocument.load(new Uint8Array(b), { updateMetadata: false }); const tt = [...x.context.enumerateIndirectObjects()].map(([, o]) => o).filter((o) => o instanceof PDFDict && nameOf(o.get(N('Subtype'))) === 'TrueType' && /Arimo/.test(nameOf(o.get(N('BaseFont'))))); return { x, win: tt.find((o) => o.get(N('Encoding')) instanceof PDFName), dif: tt.find((o) => o.lookup(N('Encoding')) instanceof PDFDict) }; };
+    const r = await conv(await d.save(), { part: 2, conformance: 'B' });
+    ok(!r.blocked, r.blocked); eq(r.problems, [], '2b check');
+    const a = await fontsOf(r.bytes);
+    ok(a.win && a.dif, 'two Arimo fonts');
+    const prog = (x, f) => x.context.lookup(f.get(N('FontDescriptor'))).get(N('FontFile2')).toString();
+    ok(a.win.get(N('FontDescriptor')).toString() !== a.dif.get(N('FontDescriptor')).toString() && prog(a.x, a.win) !== prog(a.x, a.dif), 'each encoding has its own descriptor and program');
+    // the same file with the WinAnsi font pointed at the other's program: flagged, then split on export
+    a.win.set(N('FontDescriptor'), a.dif.get(N('FontDescriptor')));
+    const shared = await a.x.save({ useObjectStreams: false });
+    const ck = await check(p, shared, { part: 2, conformance: 'B' });
+    ok(ck.list.some((x) => x.rule === 'font-sharing' && /shares one font program between 2 different encodings/.test(x.text)), JSON.stringify(ck.list));
+    const r2 = await conv(shared, { part: 2, conformance: 'B' });
+    ok(!r2.blocked, r2.blocked); ok(!r2.problems.some((t) => t.startsWith('font-sharing')), JSON.stringify(r2.problems));
+    const b = await fontsOf(r2.bytes);
+    ok(prog(b.x, b.win) !== prog(b.x, b.dif), 'split into two programs');
     eq(p.errors, []); await p.ctx.close();
   });
 
