@@ -148,11 +148,12 @@ button { font: inherit; color: inherit; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .swatch { --sw-edge: rgb(255 255 255 / .34); } }
 :root[data-theme="dark"] .swatch { --sw-edge: rgb(255 255 255 / .34); }
 /* compact ribbon groups (wide screens): small buttons with their names, in two rows (r-icons too, where there is room
-   for their names; on a phone those fold into one button that shows the tool in use) */
+   for their names; on a phone those fold into one button that shows the tool in use). Their padding is kept tight so
+   the Comment tab, shapes named, fits a 1440 window with room to spare (on Linux CI it measured 6px too wide before). */
 @media (min-width: 761px) {
   .r-rows .r-items, .r-icons .r-items { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, 26px); gap: 2px 2px; align-content: center; }
   .r-rows, .r-icons { padding: 0 7px; }
-  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 6px 0 5px; gap: 5px; align-items: center; }
+  .r-rows .rb, .r-icons .rb { flex-direction: row; align-self: auto; height: 26px; min-width: 0; max-width: none; padding: 0 5px 0 4px; gap: 4px; align-items: center; }
   .r-rows .rb > span, .r-icons .rb > span { -webkit-line-clamp: 1; white-space: nowrap; }
   .r-swatches .r-items { display: grid; grid-template-columns: repeat(4, 18px); grid-template-rows: repeat(2, 18px); gap: 8px 6px; align-content: center; padding: 0 2px; }
 }
