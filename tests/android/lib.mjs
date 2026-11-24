@@ -129,3 +129,46 @@ export async function waitNewDownload(before, timeout = 30000) {
   }
   return [];
 }
+
+/* ---- Android's save dialog (DocumentsUI) ---- */
+const must = (v, m) => { if (!v) throw new Error(m || 'not ok'); };
+// The system file window
+export const isDocs = () => /documentsui|DocumentsUI|com\.google\.android\.documentsui/.test(focused());
+// Into Downloads in the system file window, when it opened somewhere else (Recent can't take a new file).
+export async function toDownloads() {
+  const roots = await waitUi(/Show roots|Navigate up|Open navigation/i, 3000);
+  if (roots) { sh(`input tap ${roots.x} ${roots.y}`); await sleep(1200); }
+  const d = await waitUi(/^Downloads?$/, 5000);
+  if (d) { sh(`input tap ${d.x} ${d.y}`); await sleep(1500); }
+}
+// The save dialog opens in the folder used last (Split's folder, say): the test saves in Downloads itself.
+export async function inDownloads() {
+  const nodes = uiNodes();
+  if (findUi(/^Files in Downloads$/, nodes)) return;
+  const crumb = nodes.find((n) => /^Download$/.test(n.text || '') && n.w > 0);
+  if (crumb) { sh(`input tap ${crumb.x} ${crumb.y}`); await sleep(1500); if (findUi(/^Files in Download/)) return; }
+  await toDownloads();
+}
+// Starts something that opens Android's save dialog, saves into Downloads, and returns the file there.
+export async function saveThroughDialog(trigger, label) {
+  const before = listDownloads();
+  await trigger();
+  const end = Date.now() + 60000;
+  while (Date.now() < end && !isDocs()) await sleep(700);
+  must(isDocs(), 'the save dialog is open: ' + focused());
+  await sleep(1500);
+  await inDownloads();
+  shot((label || 'save') + '-dialog');
+  let save = await waitUi(/^save$/i, 10000);
+  if (!save || save.enabled === 'false') { await toDownloads(); save = await waitUi(/^save$/i, 10000); }
+  must(save, 'a Save button');
+  sh(`input tap ${save.x} ${save.y}`);
+  const got = await waitNewDownload(before, 30000);
+  must(got.length, 'a new file in Downloads');
+  const name = got[got.length - 1];
+  await sleep(1500);
+  const bytes = pullDownload(name);
+  fs.writeFileSync(path.join(OUT, 'saved-' + name.replace(/[^\w.() -]+/g, '_')), bytes);
+  log(`  saved ${name} (${bytes.length} bytes)`);
+  return { name, bytes };
+}

@@ -5,7 +5,7 @@
 // Usage: node tests/android/run.mjs <test apk> <output dir>
 import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module';
 import * as A from './lib.mjs';
-const { adb, adbBytes, sh, log, shot, sleep, PKG, root } = A;
+const { adb, adbBytes, sh, log, shot, sleep, PKG, root, isDocs, toDownloads, saveThroughDialog } = A;
 const require = createRequire(import.meta.url);
 const NM = path.join(root, 'desktop/node_modules');
 const L = require(path.join(NM, 'pdf-lib'));
@@ -127,45 +127,6 @@ const startView = (c, action = 'VIEW') => sh(`am start -W -a android.intent.acti
 async function pushBytes(bytes, name) { const f = path.join(A.OUT, '.push-' + name.replace(/[^\w.]+/g, '_')); fs.writeFileSync(f, bytes); await pushDownload(f, name); fs.unlinkSync(f); }
 
 /* ---- Android's own windows ---- */
-const isDocs = () => /documentsui|DocumentsUI|com\.google\.android\.documentsui/.test(A.focused());
-// Into Downloads in the system file window, when it opened somewhere else (Recent can't take a new file).
-async function toDownloads() {
-  const roots = await A.waitUi(/Show roots|Navigate up|Open navigation/i, 3000);
-  if (roots) { sh(`input tap ${roots.x} ${roots.y}`); await sleep(1200); }
-  const d = await A.waitUi(/^Downloads?$/, 5000);
-  if (d) { sh(`input tap ${d.x} ${d.y}`); await sleep(1500); }
-}
-// The save dialog opens in the folder used last (Split's folder, say): the test saves in Downloads itself.
-async function inDownloads() {
-  const nodes = A.uiNodes();
-  if (A.findUi(/^Files in Downloads$/, nodes)) return;
-  const crumb = nodes.find((n) => /^Download$/.test(n.text || '') && n.w > 0);
-  if (crumb) { sh(`input tap ${crumb.x} ${crumb.y}`); await sleep(1500); if (A.findUi(/^Files in Download/)) return; }
-  await toDownloads();
-}
-// Starts something that opens Android's save dialog, saves into Downloads, and returns the file there.
-async function saveThroughDialog(trigger, label) {
-  const before = A.listDownloads();
-  await trigger();
-  const end = Date.now() + 60000;
-  while (Date.now() < end && !isDocs()) await sleep(700);
-  ok(isDocs(), 'the save dialog is open: ' + A.focused());
-  await sleep(1500);
-  await inDownloads();
-  shot((label || 'save') + '-dialog');
-  let save = await A.waitUi(/^save$/i, 10000);
-  if (!save || save.enabled === 'false') { await toDownloads(); save = await A.waitUi(/^save$/i, 10000); }
-  ok(save, 'a Save button');
-  sh(`input tap ${save.x} ${save.y}`);
-  const got = await A.waitNewDownload(before, 30000);
-  ok(got.length, 'a new file in Downloads');
-  const name = got[got.length - 1];
-  await sleep(1500);
-  const bytes = A.pullDownload(name);
-  fs.writeFileSync(path.join(A.OUT, 'saved-' + name.replace(/[^\w.() -]+/g, '_')), bytes);
-  log(`  saved ${name} (${bytes.length} bytes)`);
-  return { name, bytes };
-}
 // Picks a file in Android's file picker (opened by trigger), by its name in Downloads.
 async function pickThroughPicker(trigger, names) {
   await trigger();
@@ -241,6 +202,28 @@ function nodeVerify(buf, [, b, c, d]) {
   const hash = { '2.16.840.1.101.3.4.2.1': 'sha256', '2.16.840.1.101.3.4.2.2': 'sha384' }[digestAlg];
   const content = Buffer.concat([buf.subarray(0, b), buf.subarray(c, c + d)]);
   return { digestOk: crypto.createHash(hash).update(content).digest().equals(md), sigOk: !!signer && crypto.verify(hash, saDer, signer.publicKey, sig), signer: signer && signer.subject };
+}
+// The RFC 3161 timestamp token in a signature (its unsigned attribute id-aa-timeStampToken), read with asn1js: the
+// time it gives and whether its message imprint is the hash of this signature's value (as RFC 3161 and PAdES ask).
+function nodeTimestamp(buf, [, b, c]) {
+  const der = Buffer.from(buf.subarray(b + 1, c - 1).toString('latin1'), 'hex');
+  const ci = asn1js.fromBER(new Uint8Array(der).buffer).result;
+  const parts = ci.valueBlock.value[1].valueBlock.value[0].valueBlock.value;
+  const sp = parts[parts.length - 1].valueBlock.value[0].valueBlock.value;
+  const sig = Buffer.from(sp.find((x, k) => k > 3 && x.idBlock.tagClass === 1 && x.idBlock.tagNumber === 4).valueBlock.valueHexView);
+  const ua = sp.find((x) => x.idBlock.tagClass === 3 && x.idBlock.tagNumber === 1);
+  const attr = ua && ua.valueBlock.value.find((x) => x.valueBlock.value[0].valueBlock.toString() === '1.2.840.113549.1.9.16.2.14');
+  if (!attr) return { token: false };
+  const token = attr.valueBlock.value[1].valueBlock.value[0];
+  const sd = token.valueBlock.value[1].valueBlock.value[0].valueBlock.value;
+  const eci = sd.find((x) => x.idBlock.tagClass === 1 && x.idBlock.tagNumber === 16 && x.valueBlock.value[0] && x.valueBlock.value[0].idBlock.tagNumber === 6);
+  const os = eci.valueBlock.value[1].valueBlock.value[0];
+  const tstDer = os.idBlock.isConstructed ? Buffer.concat(os.valueBlock.value.map((x) => Buffer.from(x.valueBlock.valueHexView))) : Buffer.from(os.valueBlock.valueHexView);
+  const tst = asn1js.fromBER(new Uint8Array(tstDer).buffer).result.valueBlock.value;
+  const mi = tst[2].valueBlock.value, alg = mi[0].valueBlock.value[0].valueBlock.toString();
+  const hash = { '2.16.840.1.101.3.4.2.1': 'sha256', '2.16.840.1.101.3.4.2.2': 'sha384', '2.16.840.1.101.3.4.2.3': 'sha512', '1.3.14.3.2.26': 'sha1' }[alg];
+  const imprint = Buffer.from(mi[1].valueBlock.valueHexView);
+  return { token: true, eContentType: eci.valueBlock.value[0].valueBlock.toString(), hash: hash || alg, imprintOk: !!hash && crypto.createHash(hash).update(sig).digest().equals(imprint), genTime: tst[4].toDate().toISOString() };
 }
 // A signing ID made here for the test: RSA, self-signed, in a PKCS#12 file
 function makeP12(cn, password) {
@@ -536,9 +519,7 @@ await test('certificate signing: import a .p12 through the picker, sign, save; t
   shot('signed');
 });
 
-await test('timestamps: the app posts a timestamp request over https (Android\'s own network and certificate authorities)', async () => {
-  const hash = crypto.createHash('sha256').update('Cowdrey.PDF on Android').digest();
-  const req = Buffer.concat([Buffer.from('3039020101303130 0d06096086480165030402010500 0420'.replace(/\s/g, ''), 'hex'), hash, Buffer.from('0101ff', 'hex')]);
+await test('timestamps: a timestamp server typed in Signing IDs; the signature saved with its timestamp from it (Android\'s network and certificate authorities)', async () => {
   // The network first (the OCR scenario turned it off and on again): with none, this fails as "no network", not as
   // a timestamp failure.
   let net = null;
@@ -554,17 +535,55 @@ await test('timestamps: the app posts a timestamp request over https (Android\'s
   }
   log('  network:', net.ok ? 'up' : net.err);
   ok(net.ok, 'no network on the emulator: ' + net.err);
+  await openBytes(SAMPLE, 'Timestamped.pdf');
   // A public timestamp server can be slow or down: any one of three answering is enough.
-  let res = {};
+  let done = null;
   for (const url of ['https://freetsa.org/tsr', 'https://timestamp.sectigo.com', 'https://timestamp.digicert.com']) {
-    for (let i = 0; i < 2 && !res.ok; i++) {
-      if (i) await sleep(5000);
-      res = await page.evaluate(async ([u, b]) => { try { return { ok: await window.__TAURI__.core.invoke('tsa_post', { url: u, body: b }) }; } catch (e) { return { err: String(e) }; } }, [url, req.toString('base64')]);
-      log('  ', url, '→', res.err || `answer of ${Buffer.from(res.ok, 'base64').length} bytes`);
+    // typed with the on-screen keyboard into Signing IDs' Timestamp server field, kept when the dialog closes
+    await run('sgIds'); await page.waitForSelector('#dialog[open] #sgTsa');
+    await A.tapEl(page, '#sgTsa'); await page.evaluate(() => document.querySelector('#sgTsa').select());
+    sh(`input text '${url}'`); await sleep(800);
+    eq(await page.inputValue('#sgTsa'), url, 'typed');
+    if (/mInputShown=true/.test(sh('dumpsys input_method | grep -m1 mInputShown'))) { A.back(); await sleep(800); }
+    shot('timestamp-server');
+    await A.tapEl(page, '#dialog .dlg-foot .btn.primary');
+    await page.waitForFunction(() => !document.querySelector('#dialog').open, null, { timeout: 10000 });
+    try {
+      const host = new URL(url).host;
+      done = await saveThroughDialog(async () => {
+        await run('sgSign'); await page.waitForSelector('#dialog[open] #sgPlace');
+        const ts = await page.evaluate(() => { const c = document.querySelector('#sgTs'); return c ? [c.checked, c.parentElement.textContent.trim()] : null; });
+        log('  sign dialog:', JSON.stringify(ts));
+        ok(ts && ts[0] && ts[1].includes(host), 'Add a timestamp from ' + host + ', ticked');
+        if (await page.$('#sgPw:visible')) await page.fill('#sgPw', 'pw1234');
+        await page.selectOption('#sgPlace', 'draw'); await page.selectOption('#sgLook', 'text');
+        shot('sign-with-timestamp');
+        await page.click('#dialog .dlg-foot .btn.primary');
+        await page.waitForFunction(() => document.querySelector('#app').dataset.tool === 'sgbox');
+        const [x1, y1] = await at(0, 320, 200), [x2, y2] = await at(0, 540, 140);
+        await A.swipeCss(page, x1, y1, x2, y2, 500);
+      }, 'timestamp');
+      log('  signed with a timestamp from', url);
+      break;
+    } catch (e) {
+      const why = await page.evaluate(() => { const d = document.querySelector('#dialog'); return d && d.open ? d.textContent.replace(/\s+/g, ' ').trim().slice(0, 200) : document.querySelector('#toast').textContent; }).catch(() => '');
+      log('  ', url, 'did not give a signed PDF:', e.message, '|', why);
+      await backToApp(); await closeDialogs();
     }
-    if (res.ok) break;
   }
-  ok(res.ok && Buffer.from(res.ok, 'base64')[0] === 0x30, 'a timestamp answer: ' + (res.err || ''));
+  ok(done, 'a PDF signed with a timestamp from one of the servers');
+  const r = ranges(done.bytes); ok(r.length === 1, 'one signature');
+  const v = nodeVerify(done.bytes, r[0]), t = nodeTimestamp(done.bytes, r[0]);
+  log('  signature:', JSON.stringify(v), 'timestamp:', JSON.stringify(t));
+  ok(v.digestOk && v.sigOk, 'the signature verifies');
+  ok(t.token && t.eContentType === '1.2.840.113549.1.9.16.1.4' && t.imprintOk, 'the timestamp token is in the signature and is for its value');
+  ok(Math.abs(Date.parse(t.genTime) - Date.now()) < 3600000, 'the timestamp is from now: ' + t.genTime);
+  // and the app itself, opening the saved file, shows the timestamp as good
+  await openBytes(done.bytes, 'Timestamped check.pdf');
+  const sigs = await page.evaluate(() => window.__cowdreyPdf.sgSignatures());
+  log('  the app reads:', JSON.stringify(sigs.map((x) => ({ status: x.status, ts: x.ts }))));
+  ok(sigs.length === 1 && sigs[0].ts && sigs[0].ts.ok, 'the app checks the timestamp');
+  shot('timestamped');
 });
 
 await test('PDF/A: saved through the save dialog, with its PDF/A-2b identification', async () => {

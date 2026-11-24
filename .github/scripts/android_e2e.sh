@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# On an Android emulator: launch the release APK once (when this run built one), then run the device test
-# (tests/android/run.mjs) on the test build. Usage: android_e2e.sh <release apk> <test apk> <output dir>
+# On an Android emulator: test the release APK (when this run built one) with tests/android/release.mjs, then run
+# the device test (tests/android/run.mjs) on the test build. Usage: android_e2e.sh <release apk> <test apk> <output dir>
 set -u
 APK="$1"; TEST_APK="$2"; OUT="$3"; PKG=com.bradcowdrey.cowdreypdf
 mkdir -p "$OUT"
@@ -41,14 +41,10 @@ echo "network: by address: $(adb shell ping -c 1 -W 3 8.8.8.8 2>&1 | sed -n 2p)"
 echo "network: dns $(adb shell getprop net.dns1) / $(adb shell dumpsys connectivity 2>/dev/null | grep -m2 -oE 'DnsAddresses: \[[^]]*\]' | tr '\n' ' ')"
 adb shell dumpsys connectivity 2>/dev/null | grep -m3 -E 'Active default network|NetworkAgentInfo\{' | cut -c1-300
 if [[ -f "$APK" ]]; then
-  adb install -r "$APK" > /dev/null && echo "release APK installed"
-  adb shell dumpsys package "$PKG" | grep -m1 versionName | sed 's/^ */release version: /'
-  adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1 && echo "release APK launched"
-  sleep 20
-  adb exec-out screencap -p > "$OUT/00-release-launch-dark.png"
-  if adb shell pidof "$PKG" > /dev/null; then R=yes; else R=NO; fi
-  echo "release APK still running: $R" | tee "$OUT/release-launch.txt"
-  adb uninstall "$PKG" > /dev/null && echo "release APK uninstalled (the test build uses the same package)"
+  # The release APK, as users get it: opened with a PDF, a field typed into and saved through Android's save dialog
+  # (tests/android/release.mjs, with taps only: its web view can't be driven from outside). It uninstalls itself.
+  timeout 15m node tests/android/release.mjs "$APK" "$OUT"
+  echo "release test exit code $?"
 else
   echo "no release APK in this run (quick run): device test only"
 fi
