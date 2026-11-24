@@ -59,6 +59,6 @@ pdf.js 6.4.299 (Apache 2.0, its legacy build, so older iPhones and Android web v
 (cd desktop && npm ci)
 python3 build.py          # src/ -> index.html
 node tests/sample.mjs     # makes the test PDFs in tests/fixtures
-node tests/e2e.mjs        # about 480 end-to-end tests in Chromium, including the Mac and phone app paths
+node tests/e2e.mjs        # about 540 end-to-end tests in Chromium, including the Mac and phone app paths
 (cd desktop && node build.mjs) && node tests/bundle.mjs   # the copy the apps ship, offline
 ```
