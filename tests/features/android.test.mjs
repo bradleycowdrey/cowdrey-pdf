@@ -26,7 +26,9 @@ export default async (h) => {
         if (m === 'speak') { window.__said.push(x.text); await new Promise((r) => setTimeout(r, 30)); return { done: true }; }
         if (m === 'appInfo') return { installer: o.installer || '' };
         // a picture Android decodes (HEIC): a 300 x 200 JPEG, read back in parts
-        if (m === 'decodeImage') { const c = new OffscreenCanvas(300, 200), g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 300, 200); window.__jpeg = new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg' })).arrayBuffer()); return { path: '/data/user/0/app/cache/outgoing/p (decoded).jpg', size: window.__jpeg.length, width: 300, height: 200 }; }
+        const jpeg = async () => { const c = new OffscreenCanvas(300, 200), g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 300, 200); window.__jpeg = new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg' })).arrayBuffer()); return window.__jpeg; };
+        if (m === 'decodeImage') { await jpeg(); return { path: '/data/user/0/app/cache/outgoing/p (decoded).jpg', size: window.__jpeg.length, width: 300, height: 200, type: 'image/jpeg' }; }
+        if (m === 'pickImages') { await jpeg(); return { files: [{ path: '/data/user/0/app/cache/outgoing/picked 1 0.jpg', size: window.__jpeg.length, name: 'Beach.heic', type: 'image/jpeg', width: 300, height: 200 }, { name: 'Broken.heic', error: 'unreadable' }] }; }
         if (m === 'readPart') { const b = window.__jpeg.subarray(x.at, x.at + Math.min(x.length, 100)); let t = ''; for (const c of b) t += String.fromCharCode(c); return { base64: btoa(t), size: window.__jpeg.length }; }
         return {};
       } },
@@ -312,6 +314,19 @@ export default async (h) => {
     ok(r.pdf > 0, 'a PDF was made'); ok(r.parts > 1, 'read back in parts: ' + r.parts); eq(r.wrote, 1, 'the photo was handed to Android');
     const d = await h.PDFDocument.load(new Uint8Array(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.crdPicturesPdf([new File([new Uint8Array(16)], 'Photo.heic', { type: 'image/heic' })], 'fit')))));
     eq(d.getPageCount(), 1); eq([Math.round(d.getPage(0).getWidth()), Math.round(d.getPage(0).getHeight())], [225, 150], 'the decoded size (300 x 200 px at 96 dpi)');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
+  await test('Android app: New PDF from pictures uses Android\'s photo picker, Android reads the photos; one it can\'t read is named', async () => {
+    const p = await open(android());
+    await p.evaluate(() => window.__cowdreyPdf.run('crdNewPictures'));
+    await p.waitForSelector('#dialog[open] #crdPicSize');
+    ok(/Could not read Broken\.heic/.test(await p.textContent('#toast')), await p.textContent('#toast'));
+    eq((await native(p, 'pickImages')).length, 1, 'the photo picker, once');
+    await p.click('#dialog .dlg-foot .btn.primary');
+    await p.waitForFunction(() => window.__cowdreyPdf.doc && window.__cowdreyPdf.doc.pages.length === 1);
+    eq(await p.textContent('#docTitle'), 'Beach');
+    eq(await p.evaluate(() => document.querySelector('#crdPicInput').value), '', 'the web view\'s own picker was not used');
     eq(p.errors, []); await p.ctx.close();
   });
 

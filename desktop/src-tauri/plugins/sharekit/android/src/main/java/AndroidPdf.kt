@@ -8,8 +8,9 @@
 // - systemBars and insets: light or dark status-bar icons to match the theme; the size of the system bars and the
 //   keyboard, which the web view does not report on its own, so the page can keep clear of them.
 // - takeSharedFiles: PDFs shared several at a time (SEND_MULTIPLE), which the app's own intent handling skips.
-// - decodeImage / readPart: a picture the web view cannot read (HEIC and HEIF photos) decoded by Android and handed
-//   back as a JPEG, read in parts so no single message is large.
+// - pickImages / decodeImage / readPart: pictures picked in Android's photo picker, and pictures the web view cannot
+//   read (HEIC and HEIF photos), decoded by Android and handed back as JPEG or PNG, read in parts so no single message
+//   is large.
 // - tsaPost: a trusted timestamp for a certificate signature, posted with Android's own network stack (called only
 //   by the app's tsa_post command, src-tauri/src/tsa.rs, never by the page directly).
 package app.tauri.share
@@ -198,29 +199,77 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
 
     // ---- pictures the web view can't read ----
 
-    /** A picture in the app's cache (HEIC, HEIF…) decoded by Android, the right way up and at most `max` pixels on
-     *  its longer side, written next to it as a JPEG: { path, size, width, height }. */
+    /** A picture decoded by Android (any kind it reads: JPEG, PNG, HEIC, HEIF, WebP…), the right way up, at most `max`
+     *  pixels on its longer side. */
+    private fun decodeBitmap(max: Int, file: File?, uri: Uri?): android.graphics.Bitmap =
+        if (Build.VERSION.SDK_INT >= 28) {
+            val source = if (file != null) android.graphics.ImageDecoder.createSource(file) else android.graphics.ImageDecoder.createSource(activity.contentResolver, uri!!)
+            android.graphics.ImageDecoder.decodeBitmap(source) { d, info, _ ->
+                val w = info.size.width; val h = info.size.height; val k = minOf(1.0, max.toDouble() / maxOf(w, h))
+                if (k < 1.0) d.setTargetSize(maxOf(1, (w * k).toInt()), maxOf(1, (h * k).toInt()))
+                d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        } else {
+            (if (file != null) file.inputStream() else activity.contentResolver.openInputStream(uri!!))?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                ?: throw Exception("This picture can't be read on this Android version")
+        }
+
+    /** A bitmap written to the app's cache: PNG when it has see-through parts, JPEG otherwise. */
+    private fun writePicture(bmp: android.graphics.Bitmap, base: String): JSObject {
+        val png = bmp.hasAlpha()
+        val dir = File(activity.cacheDir, "outgoing").apply { mkdirs() }
+        val out = File(dir, base + if (png) ".png" else ".jpg")
+        FileOutputStream(out).use { o ->
+            if (!bmp.compress(if (png) android.graphics.Bitmap.CompressFormat.PNG else android.graphics.Bitmap.CompressFormat.JPEG, if (png) 100 else 92, o)) throw Exception("Could not convert the picture")
+        }
+        val r = JSObject().apply { put("path", out.path); put("size", out.length()); put("width", bmp.width); put("height", bmp.height); put("type", if (png) "image/png" else "image/jpeg") }
+        bmp.recycle()
+        return r
+    }
+
+    /** A picture in the app's cache (HEIC, HEIF…) decoded by Android and written next to it: { path, size, width,
+     *  height, type }. */
     fun decodeImage(invoke: Invoke) {
         val args = invoke.getArgs()
         background(invoke) {
             val file = cacheFile(args.getString("path", "") ?: "")
             val max = args.optInt("max", 4000).coerceIn(64, 8000)
             try {
-                val bmp = if (Build.VERSION.SDK_INT >= 28) {
-                    android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(file)) { d, info, _ ->
-                        val w = info.size.width; val h = info.size.height; val k = minOf(1.0, max.toDouble() / maxOf(w, h))
-                        if (k < 1.0) d.setTargetSize(maxOf(1, (w * k).toInt()), maxOf(1, (h * k).toInt()))
-                        d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
-                    }
-                } else {
-                    android.graphics.BitmapFactory.decodeFile(file.path) ?: throw Exception("This picture can't be read on this Android version")
-                }
-                val out = File(file.parentFile, file.nameWithoutExtension + " (decoded).jpg")
-                FileOutputStream(out).use { o -> if (!bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, o)) throw Exception("Could not convert the picture") }
-                val r = JSObject().apply { put("path", out.path); put("size", out.length()); put("width", bmp.width); put("height", bmp.height) }
-                bmp.recycle()
-                r
+                writePicture(decodeBitmap(max, file, null), file.nameWithoutExtension + " (decoded)")
             } finally { file.delete() }
+        }
+    }
+
+    /** Pictures for a new PDF, picked in Android's photo picker and read here. (The web view can't read a photo the
+     *  picker hands over once the picker has taken its location out, which changes its size: Chrome then refuses the
+     *  file. Android reads it as it is.) { files: [{ path, size, name, type, width, height } or { name, error }] } */
+    fun pickImages(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, invoke.getArgs().optBoolean("multiple", true))
+        }
+        plugin.startForResult(invoke, intent, "pickImagesResult")
+    }
+
+    fun pickImagesResult(invoke: Invoke, result: ActivityResult) {
+        val data = result.data
+        if (result.resultCode != Activity.RESULT_OK || data == null) { invoke.resolve(JSObject().apply { put("files", JSArray()) }); return }
+        val uris = ArrayList<Uri>()
+        data.clipData?.let { c -> for (i in 0 until c.itemCount) c.getItemAt(i).uri?.let { uris.add(it) } }
+        if (uris.isEmpty()) data.data?.let { uris.add(it) }
+        background(invoke) {
+            val files = JSArray()
+            for ((k, uri) in uris.withIndex()) {
+                val label = name(uri)
+                try {
+                    val bmp = decodeBitmap(4000, null, uri)
+                    files.put(writePicture(bmp, "picked ${System.nanoTime()} $k").apply { put("name", label) })
+                } catch (e: Exception) {
+                    files.put(JSObject().apply { put("name", label); put("error", e.message ?: "unreadable") })
+                }
+            }
+            JSObject().apply { put("files", files) }
         }
     }
 

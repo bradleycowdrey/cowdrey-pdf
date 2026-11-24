@@ -85,6 +85,8 @@ class SharePlugin(private val activity: Activity) : Plugin(activity) {
     @Command fun appInfo(invoke: Invoke) = pdf.appInfo(invoke)
     @Command fun tsaPost(invoke: Invoke) = pdf.tsaPost(invoke)
     @Command fun decodeImage(invoke: Invoke) = pdf.decodeImage(invoke)
+    @Command fun pickImages(invoke: Invoke) = pdf.pickImages(invoke)
+    @ActivityCallback private fun pickImagesResult(invoke: Invoke, result: ActivityResult) = pdf.pickImagesResult(invoke, result)
     @Command fun readPart(invoke: Invoke) = pdf.readPart(invoke)
 
     /** Starts an activity for a result, for AndroidPdf (the callback must be a method of the plugin). */

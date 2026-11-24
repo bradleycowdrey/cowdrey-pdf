@@ -88,14 +88,32 @@ async function crdAndroidDecode(blob) {
   const ext = ((blob.name || '').match(/\.([a-z0-9]+)$/i) || [, 'heic'])[1];
   const path = await writeOutgoing(new Uint8Array(await blob.arrayBuffer()), `picture ${uid()}.${ext}`);
   const r = await androidCall('decodeImage', { path, max: 4000 });
+  return new Blob(await crdAndroidRead(r.path, r.size), { type: r.type || 'image/jpeg' });
+}
+// A file Android wrote in the app's cache, read in parts of 4 MB (the file goes once read)
+async function crdAndroidRead(path, size) {
   const parts = [];
-  for (let at = 0; at < r.size;) {
-    const part = b64ToBytes((await androidCall('readPart', { path: r.path, at, length: 4 << 20 })).base64 || '');
+  for (let at = 0; at < size;) {
+    const part = b64ToBytes((await androidCall('readPart', { path, at, length: 4 << 20 })).base64 || '');
     if (!part.length) break;
     parts.push(part); at += part.length;
   }
-  return new Blob(parts, { type: 'image/jpeg' });
+  return parts;
 }
+// Pictures in the Android app: Android's photo picker, with Android reading the photos (the web view can't read some
+// photos it hands over, and none in HEIC), then the same steps as everywhere.
+async function crdAndroidPick() {
+  let r;
+  try { r = await androidCall('pickImages', { multiple: true }); } catch (e) { toast(`Could not open the pictures: ${e.message || e}`); return; }
+  const files = [], failed = [];
+  for (const f of (r && r.files) || []) {
+    if (f.error || !f.path) { failed.push(f.name || 'a picture'); continue; }
+    files.push(new File(await crdAndroidRead(f.path, f.size), crdBase(f.name || 'Picture') + (f.type === 'image/png' ? '.png' : '.jpg'), { type: f.type || 'image/jpeg' }));
+  }
+  if (failed.length) toast(`Could not read ${failed.length === 1 ? failed[0] : failed.length + ' pictures'}: this device can't open that kind of picture.`);
+  if (files.length) crdPicturesChosen(files);
+}
+const crdPickPictures = () => (ANDROID_APP ? crdAndroidPick() : crdPicInput.click());
 const crdCanvasBytes = async (c, type, q) => new Uint8Array(await (await new Promise((res, rej) => c.toBlob((b) => b ? res(b) : rej(new Error('could not encode the picture')), type, q))).arrayBuffer());
 // One picture per page, in the order given. size: fit (the page is the picture, at 96 dpi, no larger than A3) or
 // letter / a4 (turned to match the picture, 0.5 inch margins, never enlarged past its own size).
@@ -515,10 +533,10 @@ async function crdExportRun({ format = 'png', dpi = 150, range } = {}) {
 
 /* ---- commands, menus, ribbon, the empty screen ---- */
 cmd('crdNewBlank', { label: 'New blank PDF…', icon: 'file-plus', run: crdNewBlank });
-cmd('crdNewPictures', { label: 'New PDF from pictures…', icon: 'images', run: () => crdPicInput.click() });
+cmd('crdNewPictures', { label: 'New PDF from pictures…', icon: 'images', run: crdPickPictures });
 cmd('crdNewClip', { label: 'New PDF from clipboard…', icon: 'clipboard-paste', run: crdFromClipboard });
 cmd('crdBlank', { label: 'Blank PDF…', icon: 'file-plus', run: crdNewBlank });
-cmd('crdPictures', { label: 'From pictures…', icon: 'images', run: () => crdPicInput.click() });
+cmd('crdPictures', { label: 'From pictures…', icon: 'images', run: crdPickPictures });
 cmd('crdClip', { label: 'From clipboard…', icon: 'clipboard-paste', run: crdFromClipboard });
 cmd('crdReadAloud', { label: 'Read aloud', icon: 'volume-2', enabled: has, pressed: () => crdSay.on, hidden: !('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function', run: () => (crdSay.on ? crdSayStop() : crdSayStart()) });
 cmd('crdReadMode', { label: 'Read mode', icon: 'book-open-text', key: 'Mod-Shift-r', enabled: () => has() || crdReading(), pressed: crdReading, run: () => crdReadMode() });
