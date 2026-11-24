@@ -31,8 +31,8 @@ const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1
 const DEVICES = {
   iphone: { w: 440, h: 956, scale: 3, touch: true, ua: IPHONE_UA, safe: { top: 62, bottom: 34 }, out: [1320, 2868] },
   ipad: { w: 1032, h: 1376, scale: 2, touch: true, ua: IPAD_UA, safe: { top: 24, bottom: 20 }, out: [2064, 2752] },
-  // The Mac window: 1280 x 800 points with the 28-point macOS title bar drawn by the template above it.
-  mac: { w: 1280, h: 772, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
+  // The Mac window: 1180 x 728 points with the 28-point macOS title bar drawn by the template above it.
+  mac: { w: 1180, h: 700, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
 };
 
 // The app's native side, as far as the page asks at start: nothing opened from Files or Finder.
@@ -305,6 +305,16 @@ async function centerOn(p, n, text, f = .5) {
   }, [n, text, f, findSpan.toString()]);
   await p.waitForTimeout(700);
 }
+// Scroll so the top of page n sits just under the floating search bar: the letterhead is whole and in view, and no
+// line of the page is cut by the bar's edge.
+async function belowFind(p, n) {
+  await p.evaluate((n) => {
+    const v = document.querySelector('#viewer'), el = document.querySelector(`.page[data-n="${n}"]`), bar = document.querySelector('#findbar');
+    v.scrollTop += el.getBoundingClientRect().top - (bar.getBoundingClientRect().bottom + 6);
+    v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2;
+  }, n);
+  await p.waitForTimeout(700);
+}
 // Drag across the words from one to another (the first of them after it), as a finger or the mouse selects text.
 async function selectWords(p, n, from, to) {
   const [a, b] = await p.evaluate(([n, from, to]) => {
@@ -319,7 +329,7 @@ async function selectWords(p, n, from, to) {
 }
 
 const STORIES = [
-  { slug: 'edit-text', title: 'Edit any PDF', sub: 'Tap a line and type. The words keep the PDF’s own font.', subMac: 'Click a line and type. The words keep the PDF’s own font.',
+  { slug: 'edit-text', title: 'Edit any PDF', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
     async shoot(p, docs) {
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
@@ -331,13 +341,25 @@ const STORIES = [
         await p.keyboard.type('Year in Review', { delay: 20 });
       } else {
         await goPage(p, 1);
+        if (p.kind === 'mac') {
+          // Close in on the line (180%), so the edit box and the format bar read at thumbnail size.
+          await p.evaluate(() => { const r = document.querySelector('#zoomRange'); r.value = 180; r.dispatchEvent(new Event('change')); });
+          await p.waitForTimeout(1500);
+          await centerOn(p, 1, 'Average delay down', .5);
+          await p.evaluate(() => {
+            const el = [...document.querySelectorAll('.page[data-n="1"] .textLayer span')].find((s) => s.textContent.includes('Average delay down'));
+            const v = document.querySelector('#viewer'), vr = v.getBoundingClientRect();
+            v.scrollLeft += el.getBoundingClientRect().left - (vr.left + vr.width * .1);
+          });
+          await p.waitForTimeout(700);
+        }
         await tapLine(p, 1, 'Average delay down');
         await p.keyboard.press('End'); for (let i = 0; i < 11; i++) await p.keyboard.press('Backspace');
         await p.keyboard.type('1.8 minutes', { delay: 20 });
       }
       await p.waitForTimeout(400);
     } },
-  { slug: 'scans-to-text', title: 'Scans become text', sub: 'Search, select and copy the words on scanned pages.',
+  { slug: 'scans-to-text', title: 'Scans become text', sub: 'Search and copy words on scanned pages.',
     async shoot(p, docs) {
       await openDoc(p, docs.scan, 'Garden letter.pdf');
       await onePage(p);
@@ -349,8 +371,9 @@ const STORIES = [
       // list selected, as you would to copy it: what was a picture of a page is text now. (The selection's own
       // toolbar opens under it, clear of the list.)
       await phoneZoom(p);
-      await centerOn(p, 0, 'Plot', p.kind === 'mac' ? .5 : .4);
-      await selectWords(p, 0, 'Water', 'Please');
+      // (On the Mac the selection's toolbar opens above it and would cover the list: the hits alone tell it there.)
+      if (p.kind === 'mac') await centerOn(p, 0, 'Dear', .09);
+      else { await belowFind(p, 0); await selectWords(p, 0, 'Water', 'Please'); }
     } },
   { slug: 'fill-and-sign', title: 'Fill in and sign', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
     async shoot(p, docs) {
@@ -366,14 +389,14 @@ const STORIES = [
         await p.mouse.up();
       }
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(400);
-      if (p.kind === 'mac') await pageAt(p, 0, .445); else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
+      if (p.kind === 'mac') await pageAt(p, 0, .5); else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
       const [sx, sy] = docs.form.sigLine;
       const [x, y] = await at(p, 0, sx + 120, sy + 22);
       await p.mouse.click(x, y); await p.waitForTimeout(500);
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'comments', title: 'Mark it up', sub: 'Highlight, comment and reply, as real PDF comments.',
+  { slug: 'comments', title: 'Mark it up', sub: 'Highlight, comment and reply.',
     async shoot(p, docs) {
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Comment'); await goPage(p, 1);
@@ -388,7 +411,7 @@ const STORIES = [
       await goPage(p, 1);
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'redact', title: 'Redact for real', sub: 'Private details are taken out of the file, not just covered.',
+  { slug: 'redact', title: 'Redact for real', sub: 'Private details are removed, not covered.',
     async shoot(p, docs) {
       await openDoc(p, docs.letter, 'Tenant reference.pdf');
       await onePage(p);
@@ -400,10 +423,10 @@ const STORIES = [
       }
       await run(p, 'protRedApply'); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .dlg-foot button:has-text("Apply")'); await p.waitForTimeout(800);
       // the redacted contact details in the middle of the view
-      if (p.kind === 'mac') await pageAt(p, 0, .19);
+      if (p.kind === 'mac') await pageAt(p, 0, .13);
       if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Contact details we hold', .45); }
     } },
-  { slug: 'organize-pages', title: 'Pages in order', sub: 'Move, turn, combine and split pages in one view.',
+  { slug: 'organize-pages', title: 'Pages in order', sub: 'Move, turn, combine and split pages.',
     async shoot(p, docs) {
       // A board pack of twelve pages, so the grid fills the screen, with two pages picked to move together.
       await openDoc(p, docs.pack, 'Board pack 2027.pdf');

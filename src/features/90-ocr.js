@@ -291,8 +291,12 @@ function ocrPlace(lines, vp, widthOf) {
     const tall = words.map((w) => by((w.bbox.x0 + w.bbox.x1) / 2) - w.bbox.y0).filter((h) => h > 0).sort((a, b) => a - b);
     const hpx = tall.length ? tall[Math.min(tall.length - 1, Math.floor(tall.length * .8))] : (words[0].bbox.y1 - words[0].bbox.y0) * .8;
     const size = Math.max(1, hpx / .72 / vp.scale); // Helvetica's capitals and tall letters are about .72 of its size
+    // A space as wide as the font's own, in the scan's pixels. Across a wider gap (a tab, a column: "Full plot   $48")
+    // a word runs on by just that much, so it is not stretched over the gap and found or selected as a long bar.
+    const space = widthOf(' ') * hpx / .72;
     words.forEach((w, j) => {
-      const last = j === words.length - 1, x0 = w.bbox.x0, x1 = last ? w.bbox.x1 : Math.max(w.bbox.x1, words[j + 1].bbox.x0);
+      const last = j === words.length - 1, x0 = w.bbox.x0;
+      const x1 = last ? w.bbox.x1 : Math.max(w.bbox.x1, Math.min(words[j + 1].bbox.x0, w.bbox.x1 + 1.5 * space));
       const p0 = vp.convertToPdfPoint(x0, by(x0)), p1 = vp.convertToPdfPoint(x1, by(x1));
       const dx = p1[0] - p0[0], dy = p1[1] - p0[1], len = Math.hypot(dx, dy) || 1, u = [dx / len, dy / len];
       const text = w.text + (last ? '' : ' '), n = [...text].length;
