@@ -6,6 +6,7 @@
 import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module';
 import * as A from './lib.mjs';
 const { adb, adbBytes, sh, log, shot, sleep, PKG, root, isDocs, toDownloads, saveThroughDialog } = A;
+const inDownloadsHere = A.inDownloads;
 const require = createRequire(import.meta.url);
 const NM = path.join(root, 'desktop/node_modules');
 const L = require(path.join(NM, 'pdf-lib'));
@@ -432,6 +433,49 @@ await test('forms: tap a field, the keyboard comes up and the field stays in vie
   await sleep(500);
   const f = (await L.PDFDocument.load(await built())).getForm();
   eq([f.getTextField('name').getText(), f.getCheckBox('agree').isChecked()], ['Bradley Cowdrey', true]);
+});
+
+await test('forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved', async () => {
+  // as tests/android/release.mjs does it on the release APK: opened with a VIEW intent, typed with the keyboard, then
+  // Save PDF tapped with the keyboard still up
+  const c = await contentUri(fixture('sample.pdf'), 'Typing save.pdf');
+  log('  am start:', startView(c).slice(0, 160));
+  await page.waitForFunction(() => document.querySelector('#docTitle').textContent === 'Typing save', null, { timeout: 30000 });
+  await page.waitForSelector('.annotationLayer input[name="name"]', { timeout: 20000 }); await sleep(1500);
+  await run('tool_select');
+  // every call to the native side, and what the save does, for when no dialog comes
+  await page.evaluate(() => {
+    window.__inv = []; const core = window.__TAURI__.core, inv = core.invoke.bind(core);
+    if (!core.__wrapped) { core.__wrapped = true; core.invoke = (c, a) => { window.__inv.push(c + (a && a.method ? ':' + a.method : '')); return inv(c, a); }; }
+    window.__clicks = []; document.addEventListener('click', (e) => window.__clicks.push((e.target.closest('button') || e.target).id || e.target.tagName), true);
+  });
+  for (let i = 0; i < 3; i++) {
+    await A.tapEl(page, '.annotationLayer input[name="name"]');
+    if (await page.waitForFunction(() => document.activeElement && document.activeElement.name === 'name', null, { timeout: 6000 }).catch(() => null)) break;
+  }
+  await sleep(1500);
+  sh(`input text 'Typed%sthen%ssaved'`); await sleep(1500);
+  eq(await page.inputValue('.annotationLayer input[name="name"]'), 'Typed then saved', 'typed');
+  log('  keyboard before Save:', sh('dumpsys input_method | grep -m1 mInputShown').trim());
+  const before = A.listDownloads();
+  const s0 = await A.screenOf(page), r = await page.locator('#saveBtn').boundingBox(), [x, y] = s0.at(r.x + r.width / 2, r.y + r.height / 2);
+  sh(`input tap ${x} ${y}`);
+  for (let end = Date.now() + 20000; Date.now() < end && !isDocs(); ) await sleep(700);
+  if (!isDocs()) {
+    const st = await page.evaluate(() => ({ calls: window.__inv, clicks: window.__clicks, toast: document.querySelector('#toast').textContent, state: document.querySelector('#saveState').textContent, active: document.activeElement && (document.activeElement.id || document.activeElement.tagName) }));
+    log('  no save dialog:', JSON.stringify(st));
+    const sig = await withLimit(page.evaluate(() => window.__cowdreyPdf.sgSignatures().then((x) => 'checked ' + x.length)), 5000).catch((e) => 'signature check: ' + e.message);
+    const b = await withLimit(page.evaluate(() => window.__cowdreyPdf.buildPdf().then((x) => 'built ' + (x && x.length))), 15000).catch((e) => 'build: ' + e.message);
+    log('  ', sig, '·', b);
+    shot('typing-save-none');
+    throw new Error('no save dialog after tapping Save PDF while typing: ' + JSON.stringify(st));
+  }
+  await sleep(1500); await inDownloadsHere();
+  shot('typing-save-dialog');
+  const save = await A.waitUi(/^save$/i, 10000); ok(save, 'a Save button'); sh(`input tap ${save.x} ${save.y}`);
+  const got = await A.waitNewDownload(before, 30000); ok(got.length, 'a new file in Downloads');
+  const bytes = A.pullDownload(got[got.length - 1]);
+  eq((await L.PDFDocument.load(bytes)).getForm().getTextField('name').getText(), 'Typed then saved', 'the typed value is in the saved file');
 });
 
 await test('forms designer: a new text field drawn with a finger is saved as a real field', async () => {
