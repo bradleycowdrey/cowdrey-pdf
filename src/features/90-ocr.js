@@ -377,12 +377,22 @@ function ocrStripInvisible(L, out, p) {
   const bytes = new Uint8Array(src.length); for (let i = 0; i < src.length; i++) bytes[i] = src.charCodeAt(i) & 255;
   node.set(PDFName.of('Contents'), out.context.register(out.context.flateStream(bytes)));
 }
+// PDF/A forbids a password (pdf-lib refuses to encrypt a file that claims it): the claim is dropped first, a PDF/UA
+// claim kept, as saving does (12-docinfo.js).
+function ocrDropPdfaClaim(L, out) {
+  if (typeof pdfaXmpOf !== 'function' || typeof pdfaWriteXmp !== 'function') return;
+  let xml = '', x = {}; try { xml = pdfaXmpOf(L, out) || ''; x = pdfaReadXmp(xml).props || {}; } catch {}
+  if (x['pdfaid:part'] || /pdfaid|www\.aiim\.org\/pdfa\/ns\/id/.test(xml)) {
+    try { pdfaWriteXmp(L, out, { keepClaims: false, pdfua: x['pdfuaid:part'] ? { part: x['pdfuaid:part'] } : null }); } catch (e) { console.warn('Could not write the XMP metadata', e); }
+  }
+}
 // The copy of a protected source keeps its password and restrictions.
-async function ocrProtectLike(out, k, ownerOnly) {
+async function ocrProtectLike(L, out, k, ownerOnly) {
   const s = doc.sources[k]; if ((!s.password && !ownerOnly) || !out.encrypt) return;
   let flags = null; try { const f = await pdfDocs.get(k).getPermissions(); flags = f ? [...f] : null; } catch {}
   const F = pdfjs.PermissionFlag || {}, can = (f) => !flags || flags.includes(f);
   const permissions = { printing: can(F.PRINT) ? (can(F.PRINT_HIGH_QUALITY) ? 'highResolution' : 'lowResolution') : false, modifying: can(F.MODIFY_CONTENTS), copying: can(F.COPY), annotating: can(F.MODIFY_ANNOTATIONS), fillingForms: can(F.FILL_INTERACTIVE_FORMS), contentAccessibility: can(F.COPY_FOR_ACCESSIBILITY), documentAssembly: can(F.ASSEMBLE) };
+  ocrDropPdfaClaim(L, out);
   if (s.password) out.encrypt({ userPassword: s.password, ownerPassword: flags ? uid() + uid() : s.password, permissions });
   else if (flags) out.encrypt({ userPassword: '', ownerPassword: uid() + uid(), permissions });
 }
@@ -416,7 +426,7 @@ async function ocrCopySource(L, k, results, redo) {
     words += await ocrWritePage(L, out, p, r.lines, r.vp, ctx);
   }
   if (ctx.t3) ctx.t3.finish();
-  await ocrProtectLike(out, k, ownerOnly);
+  await ocrProtectLike(L, out, k, ownerOnly);
   const bytes = await out.save();
   if (s.password) bytes.password = s.password;
   return { bytes, words };
