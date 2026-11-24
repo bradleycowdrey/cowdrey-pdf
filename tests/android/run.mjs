@@ -3,7 +3,7 @@
 // dialog, the file picker, print, the share sheet) are driven with adb and uiautomator, and what the app saved is
 // pulled off the device and checked here with pdf-lib, asn1js and Node's crypto.
 // Usage: node tests/android/run.mjs <test apk> <output dir>
-import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module';
+import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module'; import { spawn } from 'node:child_process';
 import * as A from './lib.mjs';
 const { adb, adbBytes, sh, log, shot, sleep, PKG, root, isDocs, toDownloads, saveThroughDialog } = A;
 const inDownloadsHere = A.inDownloads;
@@ -978,14 +978,18 @@ await test('large file: a 12 MB PDF opened from Android and saved back through t
   const t1 = Date.now();
   // The copy the app writes in its cache for Android's save dialog, watched as it grows (run-as: the test build is
   // debuggable): it arrives in parts of 4 MB, so its size steps through 4 and 8 MB before the whole file.
+  // (a loop on the device itself, every 50 ms: from here, one adb call can take longer than a part)
   const sizes = new Set();
-  const { name, bytes } = await saveThroughDialog(async () => {
-    await A.tapEl(page, '#saveBtn');
-    for (const end = Date.now() + 60000; Date.now() < end && !isDocs(); await sleep(100)) {
-      const m = sh(`run-as ${PKG} ls -l cache/outgoing/ 2>/dev/null`).match(/\s(\d+)\s+\S+\s+\S+\s+Big scan\.pdf/);
-      if (m) sizes.add(+m[1]);
-    }
-  }, 'large-file');
+  const watcher = spawn('adb', ['shell', `run-as ${PKG} sh -c 'for i in $(seq 1 1200); do stat -c %s "cache/outgoing/Big scan.pdf" 2>/dev/null; sleep 0.05; done'`]);
+  watcher.stdout.on('data', (d) => { for (const x of String(d).split(/\s+/)) if (/^\d+$/.test(x)) sizes.add(+x); });
+  let saved;
+  try {
+    saved = await saveThroughDialog(async () => {
+      await A.tapEl(page, '#saveBtn');
+      for (const end = Date.now() + 60000; Date.now() < end && !isDocs(); ) await sleep(300);
+    }, 'large-file');
+  } finally { watcher.kill(); }
+  const { name, bytes } = saved;
   const seen = [...sizes].sort((a, b) => a - b);
   log('  saved', name, bytes.length, 'bytes in', ((Date.now() - t1) / 1000).toFixed(1), 's · sizes of the copy in the cache as it was written:', seen.join(', '));
   ok(seen.includes(4 << 20) && seen.includes(8 << 20) && seen.every((x) => x % (4 << 20) === 0 || x === bytes.length), 'handed to Android in parts of 4 MB');
