@@ -974,25 +974,21 @@ await test('large file: a 12 MB PDF opened from Android and saved back through t
   await page.waitForFunction(() => document.querySelector('.page[data-n="0"] canvas.pdf'), null, { timeout: 60000 });
   log('  opened in', ((Date.now() - t0) / 1000).toFixed(1), 's ·', await page.evaluate(() => window.__cowdreyPdf.doc.pages.length), 'pages');
   shot('large-file-open');
-  // every file the page hands to the native side while saving, with its size (seen where every call goes:
-  // window.__TAURI_INTERNALS__.invoke; window.__TAURI__.core is a module namespace, which can't be changed)
-  const spy = await page.evaluate(() => {
-    window.__parts = [];
-    const I = window.__TAURI_INTERNALS__; if (!I) return 'no __TAURI_INTERNALS__';
-    if (I.__partsSpy) return 'on';
-    const inv = I.invoke, w = function (cmd, a, o) { if (cmd === 'write_share_file') window.__parts.push({ append: !!(a && a.append), b64: a && a.base64 ? a.base64.length : 0 }); return inv.call(this, cmd, a, o); };
-    try { I.invoke = w; } catch {}
-    if (I.invoke !== w) try { Object.defineProperty(I, 'invoke', { value: w, configurable: true, writable: true }); } catch {}
-    if (I.invoke !== w) return 'could not watch __TAURI_INTERNALS__.invoke';
-    I.__partsSpy = true; return 'on';
-  });
-  log('  watching the files handed to Android:', spy);
   await run('tool_rect'); const [x1, y1] = await at(0, 100, 760), [x2, y2] = await at(0, 250, 720); await A.swipeCss(page, x1, y1, x2, y2, 400); await run('tool_select');
   const t1 = Date.now();
-  const { name, bytes } = await saveThroughDialog(() => A.tapEl(page, '#saveBtn'), 'large-file');
-  const parts = await page.evaluate(() => window.__parts.splice(0));
-  log('  saved', name, bytes.length, 'bytes in', ((Date.now() - t1) / 1000).toFixed(1), 's · parts sent:', parts.map((p) => `${p.append ? '+' : ''}${(p.b64 * 3 / 4 / 1048576).toFixed(1)} MB`).join(' '));
-  ok(parts.length >= 3 && parts.every((p) => p.b64 * 3 / 4 <= (4 << 20) + 4) && parts.slice(1).every((p) => p.append), 'sent in parts of at most 4 MB');
+  // The copy the app writes in its cache for Android's save dialog, watched as it grows (run-as: the test build is
+  // debuggable): it arrives in parts of 4 MB, so its size steps through 4 and 8 MB before the whole file.
+  const sizes = new Set();
+  const { name, bytes } = await saveThroughDialog(async () => {
+    await A.tapEl(page, '#saveBtn');
+    for (const end = Date.now() + 60000; Date.now() < end && !isDocs(); await sleep(100)) {
+      const m = sh(`run-as ${PKG} ls -l cache/outgoing/ 2>/dev/null`).match(/\s(\d+)\s+\S+\s+\S+\s+Big scan\.pdf/);
+      if (m) sizes.add(+m[1]);
+    }
+  }, 'large-file');
+  const seen = [...sizes].sort((a, b) => a - b);
+  log('  saved', name, bytes.length, 'bytes in', ((Date.now() - t1) / 1000).toFixed(1), 's · sizes of the copy in the cache as it was written:', seen.join(', '));
+  ok(seen.includes(4 << 20) && seen.includes(8 << 20) && seen.every((x) => x % (4 << 20) === 0 || x === bytes.length), 'handed to Android in parts of 4 MB');
   const check = async (b) => { const d = await L.PDFDocument.load(b, { updateMetadata: false }); const sha = imageSha(d); const subs = (d.getPage(0).node.Annots() ? d.getPage(0).node.Annots().asArray() : []).map((r) => String(d.context.lookup(r).get(L.PDFName.of('Subtype')))); return { pages: d.getPageCount(), sha, subs }; };
   let r = await check(bytes);
   log('  ', JSON.stringify({ pages: r.pages, imageIntact: r.sha === big.sha, comments: r.subs }));
@@ -1048,7 +1044,8 @@ await test('pictures: a HEIC photo picked in Android\'s photo picker becomes a P
   } else {
     ok(isPhotos(), 'Android\'s photo picker or file picker opens: ' + A.focused());
     const nodes = A.uiNodes();
-    const pics = nodes.filter((x) => x.w > 80 && x.h > 80 && x.w < 700 && (/thumbnail|item_grid|image/i.test(x['resource-id'] || '') || /^(photo|image|picture)/i.test(x['content-desc'] || '')));
+    // (the grid's pictures: "Photo taken on …", or their thumbnail; not the Photos and Albums tabs)
+    const pics = nodes.filter((x) => x.w > 80 && x.h > 80 && x.w < 700 && x.y > 520 && (/icon_thumbnail|item_grid|thumbnail/i.test(x['resource-id'] || '') || /taken on|^(photo|image|picture) /i.test(x['content-desc'] || '')));
     log('  pictures listed:', pics.length, pics.slice(0, 4).map((x) => `${x['resource-id'] || ''} "${x['content-desc'] || ''}" ${x.bounds}`).join(' | '));
     if (!pics.length) log('  on screen:', nodes.map((x) => `${x['resource-id'] || ''}:${x.text || x['content-desc'] || ''}`).filter((t) => t.length > 1).join(' | ').slice(0, 900));
     ok(pics.length, 'the photo is in the photo picker');
