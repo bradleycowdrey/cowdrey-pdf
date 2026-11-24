@@ -147,7 +147,7 @@ Cowdrey.PDF 1.1, still entirely on your iPhone or iPad:
 - More thorough redaction, accessibility tags and a new app icon
 ```
 
-## App Review notes (1753/4000)
+## App Review notes (1803/4000)
 
 ```
 No sign-in is needed. The app has no accounts, no in-app purchases and no server: all PDF processing happens on the device.
@@ -159,7 +159,7 @@ How to try it:
 
 You can also open any PDF from the Files app.
 
-Network use: the app does not send documents anywhere. It goes online only for these optional steps, each started by the user: OCR language data for languages other than English, fetched the first time a user picks that language in Recognize text (OCR) (English OCR works offline); a font for Chinese, Japanese, Korean, Hindi or Thai, downloaded once after asking, the first time such text is saved; when signing with a certificate, a request to the timestamp server the user enters, which receives only a SHA-256 fingerprint of the signature; and, when the user asks to check a signature's revocation, requests to the OCSP or CRL servers named in the signer's certificate (an OCSP server receives only the certificate's serial number; a CRL is a plain download).
+Network use: the app does not send documents anywhere. It goes online only for these optional steps, each started by the user: OCR language data for languages other than English, fetched the first time a user picks that language in Recognize text (OCR) (English OCR works offline); a font for Chinese, Japanese, Korean, Hindi or Thai, downloaded once after asking, the first time such text is saved; when signing with a certificate, a request to the timestamp server the user enters, which receives only a SHA-256 fingerprint of the signature; and, when the user asks to check a signature's revocation, requests to the OCSP or CRL servers named in the signer's certificate (an OCSP server receives only the certificate's serial number and its issuer's fingerprints, never the document; a CRL is a plain download).
 
 No accounts, login, user-generated content shared with others, paid content, in-app purchases, advertising, analytics or AI services. Bundled open-source libraries (pdf.js, pdf-lib, fontkit, Tesseract.js, Lucide) are used under their licenses (Apache 2.0, MIT). The app works the same in all regions; the interface is in English.
 ```
@@ -285,7 +285,7 @@ Cowdrey.PDF 1.1, still entirely on your Mac:
 - More thorough redaction, accessibility tags and a new app icon
 ```
 
-## App Review notes (1971/4000)
+## App Review notes (2021/4000)
 
 ```
 No sign-in is needed. The app has no accounts, no in-app purchases and no server: all PDF processing happens on the Mac.
@@ -297,7 +297,7 @@ How to try it:
 
 You can also open any PDF with File > Open or from Finder (Open With > Cowdrey.PDF).
 
-Sandbox: the app reads and writes only files the user chooses in Open and Save panels or opens from Finder, and keeps security-scoped bookmarks so recent documents can be reopened. Network use: the app does not send documents anywhere. It goes online only for these optional steps, each started by the user: OCR language data for languages other than English, fetched the first time a user picks that language in Recognize text (OCR) (English OCR works offline); a font for Chinese, Japanese, Korean, Hindi or Thai, downloaded once after asking, the first time such text is saved; when signing with a certificate, a request to the timestamp server the user enters, which receives only a SHA-256 fingerprint of the signature; and, when the user asks to check a signature's revocation, requests to the OCSP or CRL servers named in the signer's certificate (an OCSP server receives only the certificate's serial number; a CRL is a plain download).
+Sandbox: the app reads and writes only files the user chooses in Open and Save panels or opens from Finder, and keeps security-scoped bookmarks so recent documents can be reopened. Network use: the app does not send documents anywhere. It goes online only for these optional steps, each started by the user: OCR language data for languages other than English, fetched the first time a user picks that language in Recognize text (OCR) (English OCR works offline); a font for Chinese, Japanese, Korean, Hindi or Thai, downloaded once after asking, the first time such text is saved; when signing with a certificate, a request to the timestamp server the user enters, which receives only a SHA-256 fingerprint of the signature; and, when the user asks to check a signature's revocation, requests to the OCSP or CRL servers named in the signer's certificate (an OCSP server receives only the certificate's serial number and its issuer's fingerprints, never the document; a CRL is a plain download).
 
 No accounts, login, user-generated content shared with others, paid content, in-app purchases, advertising, analytics or AI services. Bundled open-source libraries (pdf.js, pdf-lib, fontkit, Tesseract.js, Lucide) are used under their licenses (Apache 2.0, MIT). The interface is in English.
 ```

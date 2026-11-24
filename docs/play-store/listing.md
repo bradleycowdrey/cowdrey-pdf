@@ -120,7 +120,7 @@ The first Cowdrey.PDF for Android: edit text in any language, sign with a certif
   Chinese, Japanese, Korean, Hindi or Thai, downloaded once from jsDelivr when asked; a certificate timestamp, which
   sends only a SHA-256 fingerprint of the signature to the timestamp server the person sets; a revocation check the
   person asks for, to the OCSP or CRL servers named in the signer's certificate (OCSP is sent only the certificate's
-  serial number; a CRL is a plain download); and, in the copy from GitHub only, a check of GitHub's latest release for
+  serial number and its issuer's fingerprints, never the document; a CRL is a plain download); and, in the copy from GitHub only, a check of GitHub's latest release for
   an update. None of these is "collection" under Play's definitions, as nothing is sent to the developer and nothing
   identifies the person.
 - Is all of the user data collected by your app encrypted in transit? Not applicable (none is collected).
