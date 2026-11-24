@@ -163,6 +163,8 @@ const LEAF = {
   late: issue(INTER, 'leaf-late', 'Pkg4 Revoked Later Signer', 'rsa2048', 'ext_leaf'),
   rogue: issue(INTER, 'leaf-rogue', 'Pkg4 Rogue-Stamped Signer', 'rsa2048', 'ext_leaf'),
   swap: issue(INTER, 'leaf-swap', 'Pkg4 Swap-Stamped Signer', 'rsa2048', 'ext_leaf'),
+  meanwhile: issue(INTER, 'leaf-meanwhile', 'Pkg4 Revoked Meanwhile Signer', 'rsa2048', 'ext_leaf'),
+  meanwhileCrl: issue(INTER, 'leaf-meanwhile-crl', 'Pkg4 Revoked Meanwhile CRL Signer', 'p256', 'ext_leaf_crl'),
   future: issue(INTER, 'leaf-future', 'Pkg4 Future Signer', 'rsa2048', 'ext_leaf', new Date(Date.now() + 2 * DAY), new Date(Date.now() + 400 * DAY)),
   underExpired: issue(EXPIRED, 'leaf-underx', 'Pkg4 Signer Under Expired CA', 'rsa2048', 'ext_plain', new Date(Date.now() - 300 * DAY), new Date(Date.now() + 300 * DAY)),
   untrusted: issue(UNTRUSTED, 'leaf-untrusted', 'Pkg4 Untrusted Signer', 'rsa2048', 'ext_plain'),
@@ -210,7 +212,7 @@ open(sys.argv[2], 'wb').write(r.dump())
 `);
 
 /* ---------------- the servers: TSA, OCSP and CRLs, over http ---------------- */
-let tsaHits = 0, n = 0, ocspHits = 0;
+let tsaHits = 0, n = 0, ocspHits = 0, crlHits = 0;
 const server = http.createServer((rq, rs) => {
   const chunks = []; rq.on('data', (c) => chunks.push(c));
   rq.on('end', () => {
@@ -228,7 +230,7 @@ const server = http.createServer((rq, rs) => {
         rs.writeHead(200, { 'content-type': 'application/ocsp-response' }); return rs.end(fs.readFileSync(file(`o${n}.resp`)));
       }
       const m = /^\/crl\/([\w-]+)\.crl$/.exec(u.pathname), ca = m && [ROOT, INTER, EXPIRED, UNTRUSTED].find((c) => c.name === m[1]);
-      if (ca) { rs.writeHead(200, { 'content-type': 'application/pkix-crl' }); return rs.end(crlDer(ca)); }
+      if (ca) { crlHits++; rs.writeHead(200, { 'content-type': 'application/pkix-crl' }); return rs.end(crlDer(ca)); }
       rs.writeHead(404); rs.end();
     } catch (e) { console.error(e.message); rs.writeHead(500); rs.end(String(e.message)); }
   });
@@ -524,13 +526,17 @@ await step('T2', 'Timestamped signature with a future-dated certificate (valid f
 await step('T3', 'Certificate revoked after the TSA date: signature valid, revocation warning shown, signature not failed', async () => {
   await openPdf(app, TEXT1, 'Revoked later.pdf');
   const out = await signUi(app, LEAF.late.cn, { ts: true });
+  // checked once while still good, in this same session: a later check must ask again, not reuse that answer
+  await openBuf(app, out, 'Revoked later (signed).pdf');
+  const before = await checkRevocation(app), s0 = (await sigs(app))[0];
   await new Promise((r) => setTimeout(r, 1500));
   revoke(LEAF.late);
+  const h0 = ocspHits;
   await openBuf(app, out, 'Revoked later (signed).pdf');
   const text = await checkRevocation(app);
-  const s = (await sigs(app))[0];
+  const s = (await sigs(app))[0], asked = ocspHits - h0;
   const oc = await ocspClient(LEAF.late);
-  const ok = s.status === 'trusted' && s.rev && s.rev.verdict === 'revokedAfter' && /after the timestamp/.test(text) && /revoked/i.test(oc);
+  const ok = s0.status === 'trusted' && s0.rev && s0.rev.verdict === 'good' && /Not revoked/.test(before) && asked >= 1 && s.status === 'trusted' && s.rev && s.rev.verdict === 'revokedAfter' && /after the timestamp/.test(text) && /As of /.test(text) && /revoked/i.test(oc);
   // the same, stamped by a timestamp server that is not trusted: its time is not relied on, so the signature is Revoked
   await settings(app, { tsa: `${BASE}/rogue-tsa` });
   await openPdf(app, TEXT1, 'Rogue stamp.pdf');
@@ -554,7 +560,7 @@ await step('T3', 'Certificate revoked after the TSA date: signature valid, revoc
   await checkRevocation(app);
   const w = (await sigs(app))[0], wts = w.checks.find((k) => k[0] === 'Timestamp'), wph = pyh(wout, [ROOT.pem, TSAROOT.pem])[0];
   const swapOk = w.status === 'revoked' && w.rev && w.rev.verdict === 'revoked' && w.ts && w.ts.ok && !w.ts.trusted && w.ts.tsa === 'Pkg4 Swap TSA' && wts[1] === 'warn' && !/\.\./.test(w.notes.join(' ')) && (!HAS.pyhanko || (wph.ts && wph.ts.trusted === false));
-  return [ok && rogueOk && swapOk ? 'pass' : 'fail', `app: ${s.statusText}; revocation: ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}. Untrusted TSA (“Pkg4 Rogue TSA”), revoked after its stamp: app ${g.statusText}; Timestamp: ${gts[1]} (${gts[2]}); revocation: ${g.rev && g.rev.text}; pyHanko timestamp trusted=${gph.ts && gph.ts.trusted}. Look-alike TSA (“Pkg4 Swap TSA”, the trusted authority’s serial number and certificate placed first in its token): app ${w.statusText}; Timestamp: ${wts[1]} (${wts[2]}); pyHanko timestamp trusted=${wph.ts && wph.ts.trusted}`];
+  return [ok && rogueOk && swapOk ? 'pass' : 'fail', `checked before revoking, same session: ${s0.statusText}; ${s0.rev && s0.rev.text}. After revoking, same session (${asked} new OCSP request(s)): app ${s.statusText}; revocation: ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}. Untrusted TSA (“Pkg4 Rogue TSA”), revoked after its stamp: app ${g.statusText}; Timestamp: ${gts[1]} (${gts[2]}); revocation: ${g.rev && g.rev.text}; pyHanko timestamp trusted=${gph.ts && gph.ts.trusted}. Look-alike TSA (“Pkg4 Swap TSA”, the trusted authority’s serial number and certificate placed first in its token): app ${w.statusText}; Timestamp: ${wts[1]} (${wts[2]}); pyHanko timestamp trusted=${wph.ts && wph.ts.trusted}`];
 });
 
 // Chain and revocation
@@ -577,7 +583,18 @@ await step('R2', 'Revoked leaf (reachable OCSP and CRL): signature flagged revok
   const oc = await ocspClient(LEAF.revoked);
   const item = s.rev && s.rev.items[0];
   const ok = s.status === 'revoked' && item && item.status === 'revoked' && item.via === 'OCSP' && item.reason === 'key compromise' && /Revoked: “Pkg4 Revoked Signer” was revoked/.test(text) && /: revoked/.test(oc);
-  return [ok ? 'pass' : 'fail', `app: ${s.statusText}; ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}`];
+  // checked while good, revoked, then the same certificate signs a new document in the same session (no timestamp)
+  await openPdf(app, TEXT1, 'Meanwhile.pdf');
+  await signUi(app, LEAF.meanwhile.cn);
+  await checkRevocation(app); const m0 = (await sigs(app))[0];
+  revoke(LEAF.meanwhile);
+  const h0 = ocspHits;
+  await openPdf(app, TEXT1, 'Meanwhile 2.pdf');
+  await signUi(app, LEAF.meanwhile.cn);
+  const mtext = await checkRevocation(app), m = (await sigs(app))[0], asked = ocspHits - h0;
+  const moc = await ocspClient(LEAF.meanwhile);
+  const mOk = m0.rev && m0.rev.verdict === 'good' && m.status === 'revoked' && m.rev && m.rev.verdict === 'revoked' && /Revoked: “Pkg4 Revoked Meanwhile Signer” was revoked/.test(mtext) && asked >= 1 && /: revoked/.test(moc);
+  return [ok && mOk ? 'pass' : 'fail', `app: ${s.statusText}; ${s.rev && s.rev.text}; openssl ocsp (external): ${oc.trim().split('\n').find((l) => /: /.test(l))}. Checked while good (${m0.rev && m0.rev.verdict}), then revoked, then a new signature in the same session: app ${m.statusText}; ${m.rev && m.rev.text} (${asked} new OCSP request(s)); openssl ocsp (external): ${moc.trim().split('\n').find((l) => /: /.test(l))}`];
 });
 await step('R2b', 'Revoked leaf found through its CRL only (no OCSP in the certificate): flagged revoked', async () => {
   await openPdf(app, TEXT1, 'Revoked CRL.pdf');
@@ -587,7 +604,17 @@ await step('R2b', 'Revoked leaf found through its CRL only (no OCSP in the certi
   const crlText = run('openssl', ['crl', '-inform', 'DER', '-in', file('inter.crl'), '-noout', '-text'], { ok: true }).stdout;
   const serial = run('openssl', ['x509', '-in', LEAF.revokedCrl.pem, '-noout', '-serial'], { ok: true }).stdout.trim().split('=')[1];
   const ok = s.status === 'revoked' && item && item.via === 'CRL' && crlText.includes(serial);
-  return [ok ? 'pass' : 'fail', `app: ${s.statusText}; ${s.rev && s.rev.text}; openssl crl lists serial ${serial}: ${crlText.includes(serial)}`];
+  // a CRL answer is not kept either: checked while good, revoked, re-opened and checked again in the same session
+  await openPdf(app, TEXT1, 'Meanwhile CRL.pdf');
+  const mout = await signUi(app, LEAF.meanwhileCrl.cn);
+  await openBuf(app, mout, 'Meanwhile CRL (signed).pdf');
+  await checkRevocation(app); const m0 = (await sigs(app))[0];
+  revoke(LEAF.meanwhileCrl);
+  const h0 = crlHits;
+  await openBuf(app, mout, 'Meanwhile CRL (signed).pdf');
+  await checkRevocation(app); const m = (await sigs(app))[0], asked = crlHits - h0;
+  const mOk = m0.rev && m0.rev.verdict === 'good' && m.status === 'revoked' && m.rev && m.rev.items[0].via === 'CRL' && asked >= 1;
+  return [ok && mOk ? 'pass' : 'fail', `app: ${s.statusText}; ${s.rev && s.rev.text}; openssl crl lists serial ${serial}: ${crlText.includes(serial)}. Checked while good (${m0.rev && m0.rev.verdict}), revoked, checked again in the same session: app ${m.statusText}; ${m.rev && m.rev.text} (${asked} new CRL download(s))`];
 });
 await step('R3', 'Intermediate expired, leaf still in date: signature fails with a clear reason', async () => {
   await openPdf(app, TEXT1, 'Expired CA.pdf');

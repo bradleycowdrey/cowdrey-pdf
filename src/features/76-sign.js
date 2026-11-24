@@ -842,7 +842,7 @@ async function sgVerifyAll(bytes, password, opts = {}) {
   if (!s.includes('/ByteRange')) return cut ? [cut] : [];
   await sgLoadLibs();
   const trust = await sgTrustRecs();
-  const revocation = opts.revocation ?? !!sgPrefs().revocation;
+  const revocation = opts.revocation ?? !!sgPrefs().revocation, revPass = new Map(); // revocation answers: for this check only
   let pdf = null, fields = [];
   try {
     pdf = await L.PDFDocument.load(bytes, { ...(password ? { password } : { ignoreEncryption: true }), updateMetadata: false, throwOnInvalidObject: false });
@@ -853,7 +853,7 @@ async function sgVerifyAll(bytes, password, opts = {}) {
   let now = null; try { now = await sgRevision(bytes, s, sgStartXref(s)); } catch (e) { console.warn(e); }
   const out = [];
   for (const f of fields) {
-    try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation)); }
+    try { out.push(await sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation, revPass)); }
     catch (e) { console.warn(e); out.push(sgBroken({ field: f.name, page: f.widgets[0] ? f.widgets[0].page : -1, rect: f.widgets[0] && f.widgets[0].rect }, 'This signature could not be read: ' + (e.message || e))); }
   }
   // a signature cut off before its byte range: in place of what was read of it
@@ -892,7 +892,7 @@ function sgDamaged(s, bytes) {
   }
   return out;
 }
-async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
+async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation, revPass) {
   const { PDFName, PDFArray } = L, N = (n) => PDFName.of(n), ctx = pdf.context, V = f.sig;
   const w = f.widgets.find((x) => x.page >= 0) || f.widgets[0] || {};
   const r = { field: f.name, page: w.page ?? -1, rect: w.rect, notes: [], name: 'Unknown', status: 'invalid', checks: [] };
@@ -997,7 +997,7 @@ async function sgVerifyOne(L, pdf, bytes, s, f, now, trust, revocation) {
     Object.assign(r, { name: info.name, cert: { subject: sgNameText(info.subject), issuer: sgNameText(info.issuer), email: info.subject.email || '', o: info.subject.o || '', serial: info.serial, notBefore: info.notBefore, notAfter: info.notAfter, fp: info.fp, selfSigned: info.selfSigned, key: x0.key } });
     if (chain.problems.length) r.certExpired = true;
     r.revHosts = sgRevHosts(chain.certs);
-    if (revocation && r.sigOk) r.rev = await sgRevocation(chain.certs, r.when, r.stamped);
+    if (revocation && r.sigOk) r.rev = await sgRevocation(chain.certs, r.when, r.stamped, revPass);
   } else r.notes.push('The signer’s certificate is not in the signature.');
   // changes after this signature
   if (!/^\s*$/.test(s.slice(end))) r.changes = await sgLaterChanges(bytes, s, end, rev, now);
@@ -1364,7 +1364,7 @@ function sgItemHtml(x) {
   const sigBox = `<details class="sg-sigd"><summary>Signature</summary><dl>${dt('Format', x.subFilter)}${dt('Algorithm', x.alg)}${dt('Field', x.field)}${dt('Name in the PDF', x.pdfName)}${dt('Contact', x.contact)}${dt('Signer’s clock', x.claimed ? sgWhen(x.claimed) : '')}</dl></details>`;
   const top = x.chain && x.chain.certs[x.chain.certs.length - 1];
   const trustLabel = !top ? '' : top.trusted || x.trusted ? 'Stop trusting this certificate' : top.info.name === x.name ? 'Trust this certificate on this device' : `Trust “${top.info.name}” on this device`;
-  const revBtn = x.chain && !x.rev && x.sigOk && (x.revHosts || []).length ? `<button type="button" class="btn" data-sg-rev="${x.n}">Check revocation online</button>` : '';
+  const revBtn = x.chain && x.sigOk && (x.revHosts || []).length ? `<button type="button" class="btn" data-sg-rev="${x.n}">${x.rev ? 'Check revocation again' : 'Check revocation online'}</button>` : '';
   return `<div class="sg-item" data-sg-n="${x.n}">
     <div class="sg-head"><span class="sg-ic sg-${tone}" title="${esc(label)}">${ic(icon)}</span><span>${esc(x.name)}</span></div>
     <div class="sg-sub"><p class="sg-status"><strong class="sg-${tone}">${esc(x.statusText || label)}</strong>${x.certify ? ' · Certified' : ''}</p>
@@ -1751,7 +1751,7 @@ const sgPlain = (x) => ({
   trusted: !!x.trusted, changes: x.changes || null, changeText: x.changeText || '', field: x.field, page: x.page, reason: x.reason, location: x.location, contact: x.contact, pdfName: x.pdfName, subFilter: x.subFilter, alg: x.alg || '', certify: x.certify || 0, notes: x.notes,
   cert: x.cert ? { subject: x.cert.subject, issuer: x.cert.issuer, fp: x.cert.fp, key: x.cert.key, notAfter: x.cert.notAfter.toISOString() } : null,
   chain: x.chain ? { complete: x.chain.complete, trusted: x.chain.trusted, problems: x.chain.problems, certs: x.chain.certs.map((y) => ({ name: y.info.name, subject: sgNameText(y.info.subject), issuer: sgNameText(y.info.issuer), notBefore: y.info.notBefore.toISOString(), notAfter: y.info.notAfter.toISOString(), key: y.key, trusted: y.trusted, at: y.at, fp: y.info.fp })) } : null,
-  rev: x.rev ? { verdict: x.rev.verdict, text: sgRevText(x.rev, x.when), items: x.rev.items.map((i) => ({ name: i.name, status: i.status, via: i.via || '', host: i.host || '', at: i.at ? i.at.toISOString() : null, reason: i.reason || '', error: i.error || '' })) } : null,
+  rev: x.rev ? { verdict: x.rev.verdict, text: sgRevText(x.rev, x.when), checkedAt: x.rev.checkedAt.toISOString(), items: x.rev.items.map((i) => ({ name: i.name, status: i.status, via: i.via || '', host: i.host || '', at: i.at ? i.at.toISOString() : null, reason: i.reason || '', error: i.error || '' })) } : null,
   revHosts: x.revHosts || [], checks: x.checks || [],
 });
 TEST_HOOKS.sgSignatures = async () => { if (sgState.checking) await sgState.checking; return (sgState.sigs || []).map(sgPlain); };

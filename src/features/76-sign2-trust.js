@@ -15,6 +15,7 @@
    certificate's serial number and its issuer's fingerprints, never the document. In the apps the requests go through a
    native call (pki_fetch), so the servers need no CORS. A certificate revoked before the document was signed makes the
    signature Revoked; revoked after its timestamp, the signature still counts and a warning says when.
+   Answers are never kept: each check asks again (one request per certificate per check), and says when it asked.
 
    Ed25519 (RFC 8419): pkijs has no Ed25519, so its CMS signatures are made and checked here with WebCrypto
    (Chromium 137+, Safari 17+). A device without it says so. */
@@ -192,12 +193,13 @@ async function sgCrl(url, cert, issuer) {
   if (rc) try { const { asn1js } = await sgLoadLibs(); out.reason = SG_REASONS[asn1js.fromBER(rc.extnValue.valueBlock.valueHexView).result.valueBlock.valueDec] || ''; } catch {}
   return out;
 }
-const sgRevCache = new Map();
+// Answers are never kept between checks: a certificate can be revoked at any time, so each check asks again. Within
+// one check (one pass over a file's signatures) the same certificate is asked about once: `pass` is that check's map.
 // The hosts a revocation check would ask, for the chain of a checked signature
 const sgRevHosts = (chain) => [...new Set((chain || []).slice(0, -1).flatMap((x) => [...x.ext.ocsp.slice(0, 1), ...(x.ext.ocsp.length ? [] : x.ext.crl.slice(0, 1))]).map((u) => { try { return new URL(u).host; } catch { return ''; } }).filter(Boolean))];
 // Checks every certificate of a chain that has an issuer above it: OCSP first, then the CRL.
 // { verdict: 'good'|'revoked'|'revokedAfter'|'unknown'|'none', items: [{ name, status, via, host, at, reason, error }] }
-async function sgRevocation(chain, when, stamped) {
+async function sgRevocation(chain, when, stamped, pass = new Map()) {
   const items = [];
   for (let k = 0; k < chain.length; k++) {
     const x = chain[k], up = chain[k + 1];
@@ -208,11 +210,11 @@ async function sgRevocation(chain, when, stamped) {
     for (const [via, url] of tries) {
       const key = via + ' ' + url + ' ' + x.info.serial;
       try {
-        if (!sgRevCache.has(key)) sgRevCache.set(key, via === 'OCSP' ? sgOcsp(url, x.c, up.c) : sgCrl(url, x.c, up.c));
-        res = { ...(await sgRevCache.get(key)), host: new URL(url).host, url };
+        if (!pass.has(key)) pass.set(key, (via === 'OCSP' ? sgOcsp(url, x.c, up.c) : sgCrl(url, x.c, up.c)).then((a) => ({ ...a, fetched: new Date() })));
+        res = { ...(await pass.get(key)), host: new URL(url).host, url };
         if (res.status === 'unknown' && via === 'OCSP') { errors.push(`${res.host}: does not know this certificate`); res = null; continue; }
         break;
-      } catch (e) { sgRevCache.delete(key); errors.push(e.message || String(e)); }
+      } catch (e) { pass.delete(key); errors.push(e.message || String(e)); }
     }
     items.push(res ? { name: x.info.name, ...res } : { name: x.info.name, status: 'unknown', error: errors.join('; ') });
   }
@@ -225,6 +227,10 @@ async function sgRevocation(chain, when, stamped) {
 }
 function sgRevText(rev, when) {
   if (!rev) return 'Not checked';
+  const t = sgRevText1(rev, when);
+  return rev.verdict === 'none' ? t : `${t} As of ${sgWhenS(rev.checkedAt)}.`;
+}
+function sgRevText1(rev, when) {
   const r = rev.items.find((i) => i.status === 'revoked');
   const why = (i) => i.reason ? ` (${i.reason})` : '';
   if (rev.verdict === 'revoked') return `Revoked: “${r.name}” was revoked${r.at ? ' on ' + sgWhenS(r.at) : ''}${why(r)}${when && r.at && r.at > when ? ', and the signing time is not proven by a timestamp' : ''} (${r.via} from ${r.host}).`;
@@ -294,4 +300,3 @@ async function sgTokenDetails(tst, sd, trust, signer) {
   } catch (e) { console.warn(e); }
   return out;
 }
-TEST_HOOKS.sgRevCacheClear = () => { sgRevCache.clear(); return true; };

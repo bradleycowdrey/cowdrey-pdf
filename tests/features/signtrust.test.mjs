@@ -70,6 +70,7 @@ export default async (h) => {
   issue('ca', 'gonecrl', 'Trust Test Revoked CRL', 'crlonly', new Date(now - DAY), new Date(now + 300 * DAY));
   issue('ca', 'late', 'Trust Test Revoked Later', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
   issue('ca', 'replay', 'Trust Test Replayed', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
+  issue('ca', 'turn', 'Trust Test Revoked Meanwhile', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
   issue('oldca', 'under', 'Trust Test Under Expired', 'crlonly', new Date(now - 30 * DAY), new Date(now + 300 * DAY));
   ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('gone.pem'), '-crl_reason', 'keyCompromise');
   ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('gonecrl.pem'), '-crl_reason', 'superseded');
@@ -78,7 +79,7 @@ export default async (h) => {
   const p12 = (n, chain) => { const extra = chain ? ['-certfile', chain] : []; ossl('pkcs12', '-export', '-inkey', f(n + '.key'), '-in', f(n + '.pem'), ...extra, '-passout', 'pass:pw', '-out', f(n + '.p12')); return fs.readFileSync(f(n + '.p12')); };
   fs.writeFileSync(f('chain.pem'), fs.readFileSync(f('inter.pem'), 'utf8') + fs.readFileSync(f('root.pem'), 'utf8'));
   fs.writeFileSync(f('oldchain.pem'), fs.readFileSync(f('old.pem'), 'utf8') + fs.readFileSync(f('root.pem'), 'utf8'));
-  const IDS = { leaf: p12('leaf', f('chain.pem')), gone: p12('gone', f('chain.pem')), gonecrl: p12('gonecrl', f('chain.pem')), late: p12('late', f('chain.pem')), replay: p12('replay', f('chain.pem')), under: p12('under', f('oldchain.pem')), p384: p12('p384'), ed: p12('ed') };
+  const IDS = { leaf: p12('leaf', f('chain.pem')), gone: p12('gone', f('chain.pem')), gonecrl: p12('gonecrl', f('chain.pem')), late: p12('late', f('chain.pem')), replay: p12('replay', f('chain.pem')), turn: p12('turn', f('chain.pem')), under: p12('under', f('oldchain.pem')), p384: p12('p384'), ed: p12('ed') };
 
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' };
   const route = (p) => p.ctx.route(BASE + '/**', async (r) => {
@@ -134,18 +135,38 @@ export default async (h) => {
     await p.click('#dialog [data-sg-rev]'); await p.waitForFunction(() => /Revoked: “Trust Test Revoked CRL” was revoked/.test(document.querySelector('#dialog .sg-list').textContent));
     eq(p.errors, []); await p.ctx.close();
   });
+  await test('revocation: each check asks again, so a certificate revoked since the last check shows as revoked', async () => {
+    const p = await open(); await route(p); await openPdf(p);
+    let hits = 0; p.on('request', (r) => { if (r.url().startsWith(BASE + '/ocsp')) hits++; });
+    const first = await sign(p, 'turn');
+    const [a] = await details(p, first, { revocation: true });
+    eq([a.status, a.rev.verdict, hits], ['valid', 'good', 1]);
+    ok(/Not revoked: .* As of /.test(a.rev.text), a.rev.text);
+    ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('turn.pem'), '-crl_reason', 'keyCompromise');
+    // the same file, checked again in the same session: asked again, now revoked
+    const [b] = await details(p, first, { revocation: true });
+    eq([b.status, b.rev.verdict, hits], ['revoked', 'revoked', 2]);
+    ok(+new Date(b.rev.checkedAt) >= +new Date(a.rev.checkedAt), 'when it was checked');
+    // a new signature with the now revoked certificate, checked from the panel's button
+    await openPdf(p); await sign(p, 'turn');
+    await p.evaluate(() => window.__cowdreyPdf.run('sgPanel')); await p.waitForSelector('#dialog[open] [data-sg-rev]');
+    await p.click('#dialog [data-sg-rev]'); await p.waitForFunction(() => /Revoked: “Trust Test Revoked Meanwhile” was revoked/.test(document.querySelector('#dialog .sg-list').textContent));
+    eq(hits, 3, 'the button asked the server');
+    ok(/Check revocation again/.test(await p.textContent('#dialog .sg-list')), 'it can be checked again');
+    eq(p.errors, []); await p.ctx.close();
+  });
   await test('revocation: an old OCSP answer (another nonce, or out of date) is not taken; the CRL is asked instead', async () => {
     const p = await open(); await route(p); await openPdf(p);
     const good = await sign(p, 'leaf'); await openPdf(p);
     const later = await sign(p, 'replay');
-    await p.evaluate(() => window.__cowdreyPdf.sgRevCacheClear());
+   
     ocspMode = 'ok'; const [g0] = await details(p, later, { revocation: true }); // the "good" answer a replay sends
     eq([g0.status, g0.rev.verdict, g0.rev.items[0].via], ['valid', 'good', 'OCSP']);
     ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('replay.pem'), '-crl_reason', 'keyCompromise');
-    ocspMode = 'replay'; await p.evaluate(() => window.__cowdreyPdf.sgRevCacheClear());
+    ocspMode = 'replay';
     const [g] = await details(p, later, { revocation: true });
     eq([g.status, g.rev.items[0].via], ['revoked', 'CRL'], 'a replayed "good" answer is not taken');
-    ocspMode = 'stale'; await p.evaluate(() => window.__cowdreyPdf.sgRevCacheClear());
+    ocspMode = 'stale';
     const [a] = await details(p, good, { revocation: true });
     eq([a.status, a.rev.verdict, a.rev.items[0].via], ['valid', 'good', 'CRL'], 'an out-of-date answer is not taken');
     ocspMode = 'ok';
@@ -158,7 +179,7 @@ export default async (h) => {
     eq(tsaN, n0 + 1, 'one timestamp asked for');
     await new Promise((r) => setTimeout(r, 1500));
     ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('late.pem'), '-crl_reason', 'keyCompromise');
-    await p.evaluate(() => window.__cowdreyPdf.sgRevCacheClear());
+   
     let [s] = await details(p, out, { revocation: true });
     eq([s.status, s.rev.verdict, s.ts.ok, s.ts.trusted, s.checks.find((k) => k[0] === 'Timestamp')[1]], ['revoked', 'revoked', true, false, 'warn'], 'an untrusted timestamp does not settle when it was signed');
     ok(/Not relied on, timestamp authority not trusted/.test(s.checks.find((k) => k[0] === 'Timestamp')[2]), s.checks.join(' | '));
@@ -166,7 +187,7 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('sgPanel')); await p.waitForSelector('#dialog[open] .sg-tsd');
     await p.click('#dialog .sg-tsd summary'); await p.click('#dialog [data-sg-trustts]');
     await p.waitForFunction(() => /Stop trusting this timestamp authority/.test(document.querySelector('#dialog .sg-list').textContent));
-    await p.evaluate(() => window.__cowdreyPdf.sgRevCacheClear());
+   
     [s] = await details(p, out, { revocation: true });
     eq([s.status, s.rev.verdict, s.ts.trusted, s.checks.find((k) => k[0] === 'Timestamp')[1], s.when], ['trusted', 'revokedAfter', true, 'ok', s.ts.time]);
     ok(/after the timestamp/.test(s.rev.text), s.rev.text);
