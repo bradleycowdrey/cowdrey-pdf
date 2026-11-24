@@ -110,8 +110,9 @@ export default async (h) => {
     await p.evaluate(() => window.__cowdreyPdf.run('batch')); await p.waitForSelector('#dialog[open] .batch-acts');
     // file-picker interception is turned on asynchronously: give it a moment before the click (as in media.test.mjs)
     const choosing = p.waitForEvent('filechooser'); await p.waitForTimeout(500); await answer(p, 'Import…'); const chooser = await choosing;
-    await chooser.setFiles(f); fs.unlinkSync(f);
-    await p.waitForFunction(() => [...document.querySelectorAll('#dialog .batch-act strong')].some((s) => s.textContent === 'Review'), null, { timeout: 5000 });
+    // (the file is removed only once it has been read: the page reads it after the change event)
+    await chooser.setFiles(f);
+    await p.waitForFunction(() => [...document.querySelectorAll('#dialog .batch-act strong')].some((s) => s.textContent === 'Review'), null, { timeout: 5000 }).finally(() => fs.unlinkSync(f));
     eq((await p.evaluate(() => window.__cowdreyPdf.batchSaved())).map((a) => [a.name, a.steps]), [['Review', ACTION.steps]], 'kept in settings');
     const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#dialog .batch-act:has(strong:text-is("Review")) [data-do="export"]')]);
     eq(dl.suggestedFilename(), 'Review.json');

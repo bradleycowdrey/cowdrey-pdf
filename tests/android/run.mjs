@@ -200,6 +200,22 @@ async function backToApp() {
 }
 
 /* ---- checks on saved files ---- */
+// The files embedded in a PDF (its EmbeddedFiles name tree), read with pdf-lib: [[name, text]]
+async function embeddedFiles(bytes) {
+  const d = await L.PDFDocument.load(bytes), out = [];
+  const names = d.catalog.lookupMaybe(L.PDFName.of('Names'), L.PDFDict), tree = names && names.lookupMaybe(L.PDFName.of('EmbeddedFiles'), L.PDFDict);
+  const walk = (node) => {
+    const kids = node.lookupMaybe(L.PDFName.of('Kids'), L.PDFArray); if (kids) for (let i = 0; i < kids.size(); i++) walk(kids.lookup(i, L.PDFDict));
+    const arr = node.lookupMaybe(L.PDFName.of('Names'), L.PDFArray); if (!arr) return;
+    for (let i = 0; i + 1 < arr.size(); i += 2) {
+      const spec = arr.lookup(i + 1, L.PDFDict), ef = spec.lookupMaybe(L.PDFName.of('EF'), L.PDFDict), st = ef && ef.lookup(L.PDFName.of('F'));
+      const fname = spec.lookup(L.PDFName.of('UF')) || spec.lookup(L.PDFName.of('F')) || arr.lookup(i);
+      out.push([fname.decodeText(), st ? Buffer.from(L.decodePDFRawStream(st).decode()).toString('utf8') : null]);
+    }
+  };
+  if (tree) walk(tree);
+  return out;
+}
 // The text of a saved PDF, read by opening it in the app (its own pdf.js)
 async function pdfText(bytes) {
   await openBytes(bytes, 'Check.pdf');
@@ -738,9 +754,7 @@ await test('attachments: a file attached through the picker is kept in the saved
   await pickThroughPicker(() => run('vw_attach'), 'Phone notes.txt');
   await page.waitForFunction(() => /Attached/.test(document.querySelector('#toast').textContent), null, { timeout: 20000 });
   log('  toast:', await toastText());
-  const pdfjs = await import(path.join(NM, 'pdfjs-dist/legacy/build/pdf.mjs'));
-  const pd = await pdfjs.getDocument({ data: new Uint8Array(await built()), useSystemFonts: false }).promise, att = (await pd.getAttachments()) || {};
-  const got = []; for (const [, a] of att instanceof Map ? att : Object.entries(att)) got.push([a.filename, Buffer.from(a.content).toString('utf8')]);
+  const got = await embeddedFiles(await built());
   log('  in the PDF:', JSON.stringify(got));
   ok(got.some(([n, t]) => n === 'Phone notes.txt' && t === NOTE), 'the file is in the PDF');
   await page.evaluate(() => { if (document.querySelector('#app').dataset.sidebar !== 'open') window.__cowdreyPdf.run('vw_files'); }); await sleep(800);
