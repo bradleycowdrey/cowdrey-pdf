@@ -31,8 +31,9 @@ const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1
 const DEVICES = {
   iphone: { w: 440, h: 956, scale: 3, touch: true, ua: IPHONE_UA, safe: { top: 62, bottom: 34 }, out: [1320, 2868] },
   ipad: { w: 1032, h: 1376, scale: 2, touch: true, ua: IPAD_UA, safe: { top: 24, bottom: 20 }, out: [2064, 2752] },
-  // The Mac window: 1180 x 728 points with the 28-point macOS title bar drawn by the template above it.
-  mac: { w: 1180, h: 700, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
+  // The Mac window: 1380 x 851 points with the 28-point macOS title bar drawn by the template above it. At this width
+  // the ribbon of every tab the stories use fits the window (the window is drawn 2280 px wide, as Cowdrey.MD's is).
+  mac: { w: 1380, h: 823, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
 };
 
 // The app's native side, as far as the page asks at start: nothing opened from Files or Finder.
@@ -283,6 +284,16 @@ async function onePage(p) {
 // Scroll so that a point a fraction of the way down page n is at the top of the view.
 const pageAt = async (p, n, f) => { await p.evaluate(([n, f]) => { const v = document.querySelector('#viewer'), el = document.querySelector(`.page[data-n="${n}"]`); v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * f; }, [n, f]); await p.waitForTimeout(500); };
 const zoom = (p, z) => p.evaluate((z) => window.__cowdreyPdf.run(z), z);
+const setZoom = async (p, z) => { await p.evaluate((z) => { const r = document.querySelector('#zoomRange'); r.value = z; r.dispatchEvent(new Event('change')); }, z); await p.waitForTimeout(1500); };
+// Scroll so the top of the line with this text on page n sits `gap` points under the top of the view.
+async function lineTo(p, n, text, gap) {
+  await p.waitForFunction(findSpan, [n, text], { timeout: 15000 });
+  await p.evaluate(([n, text, gap, fs]) => {
+    const el = eval(fs)([n, text]), v = document.querySelector('#viewer');
+    v.scrollTop += el.getBoundingClientRect().top - (v.getBoundingClientRect().top + gap);
+  }, [n, text, gap, findSpan.toString()]);
+  await p.waitForTimeout(700);
+}
 // On the iPhone, Fit width leaves a page's margins and a lot of grey around a small page. Zoom in two steps (to
 // about 87%), so the page's text runs from edge to edge of the screen, and keep the page centred across.
 async function phoneZoom(p) {
@@ -353,15 +364,24 @@ const STORIES = [
           });
           await p.waitForTimeout(700);
         }
-        await tapLine(p, 1, 'Average delay down');
-        await p.keyboard.press('End'); for (let i = 0; i < 11; i++) await p.keyboard.press('Backspace');
-        await p.keyboard.type('1.8 minutes', { delay: 20 });
+        if (p.kind === 'ipad') {
+          // The last line of the page's text, so the format bar opens over the empty foot of the page and no
+          // line is cut by its edge.
+          await tapLine(p, 1, 'quieter timetable');
+          await p.keyboard.press('End'); for (let i = 0; i < 12; i++) await p.keyboard.press('Backspace');
+          await p.keyboard.type('fifth year.', { delay: 20 });
+        } else {
+          await tapLine(p, 1, 'Average delay down');
+          await p.keyboard.press('End'); for (let i = 0; i < 11; i++) await p.keyboard.press('Backspace');
+          await p.keyboard.type('1.8 minutes', { delay: 20 });
+        }
       }
       await p.waitForTimeout(400);
     } },
   { slug: 'scans-to-text', title: 'Scans become text', sub: 'Search and copy words on scanned pages.',
     async shoot(p, docs) {
       await openDoc(p, docs.scan, 'Garden letter.pdf');
+      if (p.kind === 'mac') await tab(p, 'Edit'); // where Recognize text is
       await onePage(p);
       const r = await p.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ lang: 'eng' }));
       if (!r.words) throw new Error('OCR found no words: ' + JSON.stringify(r));
@@ -380,6 +400,7 @@ const STORIES = [
       await openDoc(p, docs.form.bytes, 'Membership 2027.pdf');
       await onePage(p);
       await p.waitForSelector('.annotationLayer input');
+      if (p.kind === 'mac') await tab(p, 'Protect'); // its first tool is Signature
       await run(p, 'sign'); await p.waitForSelector('#dialog[open] #sigPad');
       const pad = await (await p.$('#sigPad')).boundingBox();
       for (const stroke of SIGNATURE) {
@@ -389,7 +410,9 @@ const STORIES = [
         await p.mouse.up();
       }
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(400);
-      if (p.kind === 'mac') await pageAt(p, 0, .5); else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
+      // The Mac at 100%: the form from "About you", 24 points under the ribbon, to the signature and date, so the
+      // first line in view is a heading and none is cut.
+      if (p.kind === 'mac') { await setZoom(p, 100); await lineTo(p, 0, 'About you', 24); } else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
       const [sx, sy] = docs.form.sigLine;
       const [x, y] = await at(p, 0, sx + 120, sy + 22);
       await p.mouse.click(x, y); await p.waitForTimeout(500);
@@ -477,7 +500,9 @@ const FONTS = { fraunces: b64('design/app-store/fraunces.woff2'), instrument: b6
 // The headline is a picture's first words: one or two lines, kept short enough to read in a search result.
 async function compose(kind, story, raw, file) {
   const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
-  return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file }, THEMES.pdf, FONTS);
+  // Every headline in the set is one line, so the iPhone sits higher with the copy hung just above it.
+  const screen = kind === 'mac' ? [DEVICES.mac.w, DEVICES.mac.h] : undefined;
+  return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 1, screen }, THEMES.pdf, FONTS);
 }
 
 // The organize story's document: the review, the form, the letter and the scan in one file, with three of the
