@@ -729,8 +729,10 @@ await test('revocation: OCSP and CRL servers on plain http (on the machine runni
       await A.tapEl(page, '#dialog [data-sg-rev]');
       try { await page.waitForFunction((src) => new RegExp(src).test(document.querySelector('#dialog .sg-list').textContent), re.source, { timeout: 60000 }); }
       catch (e) { log('  the panel says:', (await listText()).slice(0, 600)); throw e; }
-      const m = (await listText()).match(/(Not revoked|Revoked|Not checked)[^.]*\./); log(`  ${label}:`, m ? m[0] : '');
-      shot('revocation-' + label);
+      const m = (await listText()).match(/(Not revoked|Revoked|Not checked): [^\n]*?\(\w+ from [^)]*\)/); log(`  ${label}:`, m ? m[0] : '');
+      // (the screen a moment later: the panel has drawn its answer, not "Checking…")
+      await page.waitForFunction(() => !/Checking…/.test(document.querySelector('#dialog').textContent), null, { timeout: 10000 }).catch(() => {});
+      await sleep(1000); shot('revocation-' + label);
     };
     await check(/Not revoked: “Device Test Signer” \(OCSP from 10\.0\.2\.2:\d+\)/, 'not-revoked');
     eq(pki.ocspHits(), 1, 'one OCSP request');
