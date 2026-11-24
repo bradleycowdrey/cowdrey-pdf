@@ -16,7 +16,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 | **Android** | Coming soon |
 | **Product page** | [bradcowdrey.com/cowdrey-pdf](https://bradcowdrey.com/cowdrey-pdf) |
 
-![Cowdrey.PDF in dark mode, with the sample PDF open and a line highlighted](docs/screenshot-dark.png)
+![Cowdrey.PDF on the Mac in dark mode, changing a line of a PDF in its own font](docs/screenshot-dark.png)
 
 ## What it does
 

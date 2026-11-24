@@ -1039,8 +1039,8 @@ addStyle(`
 @media (pointer: fine) { .txt-bar .sw-row .swatch { width: 20px; height: 20px; } .txt-bar .sw-more svg { width: 12px; height: 12px; } }
 .txt-sel { gap: 4px; color: var(--ink-2); }
 .txt-sel svg { width: 15px; height: 15px; flex: none; }
-.txt-sel select { max-width: 150px; }
-@media (max-width: 760px) { .txt-sel select { max-width: 112px; } }
+.txt-sel select { max-width: 160px; text-overflow: ellipsis; }
+@media (max-width: 760px) { .txt-sel select { max-width: 140px; } } /* room for a name like "Helvetica Bold" next to its arrow */
 .txt-bar select { font: inherit; color: var(--ink); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; height: 30px; padding: 0 6px; }
 .txt-editor { position: absolute; z-index: 6; margin: 0; padding: 0 1px; border: 0; resize: none; overflow: hidden; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 1px; caret-color: currentColor; box-shadow: 0 4px 18px rgba(0,0,0,.18); white-space: pre-wrap; overflow-wrap: break-word; color-scheme: light; }
 .txt-editor[wrap="off"] { white-space: pre; }

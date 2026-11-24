@@ -51,9 +51,9 @@
     },
     "screenshots": {
       "APP_DESKTOP": [
-        "mac-01-edit-text.png",
-        "mac-02-scans-to-text.png",
-        "mac-03-fill-and-sign.png",
+        "mac-01-fill-and-sign.png",
+        "mac-02-edit-text.png",
+        "mac-03-scans-to-text.png",
         "mac-04-comments.png",
         "mac-05-redact.png",
         "mac-06-organize-pages.png"

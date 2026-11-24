@@ -1,6 +1,6 @@
 // App Store screenshots for iPhone 6.9" (1320 x 2868), iPad 13" (2064 x 2752) and Mac (2880 x 1800), all from the
-// real app in dark mode, in one template: a deep raspberry background, a Fraunces headline, one line in the system
-// font, and a plain device frame with the app inside.
+// real app in dark mode, on the family template shared with Cowdrey.MD (tests/store-frame.mjs, the same file in both
+// repos): a deep raspberry ground, a Fraunces headline, one line in Instrument Sans, and a plain device with the app.
 //
 // Run: python3 build.py && (cd desktop && npm ci) && npm install --no-save playwright@1.56.1 &&
 //      node tests/app-store-screens.mjs [--only=iphone,ipad,mac] [--shots=1,2] [--raw=dir] [--docs=dir]
@@ -9,8 +9,9 @@
 // Every document is fictional and made here with pdf-lib (or drawn in the page, for the scan). The phone and tablet
 // are the iPhone and iPad app (touch, their user agent, the safe areas of the real screens); the Mac is the Mac App
 // Store build in a window with the macOS title bar.
-import fs from 'node:fs'; import path from 'node:path'; import zlib from 'node:zlib';
+import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module'; import { fileURLToPath } from 'node:url';
+import { compose as frame, THEMES } from './store-frame.mjs';
 const require = createRequire(import.meta.url);
 let pw; try { pw = require('playwright'); } catch { try { pw = require(path.join(process.cwd(), 'node_modules/playwright')); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); } }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -282,6 +283,40 @@ async function onePage(p) {
 // Scroll so that a point a fraction of the way down page n is at the top of the view.
 const pageAt = async (p, n, f) => { await p.evaluate(([n, f]) => { const v = document.querySelector('#viewer'), el = document.querySelector(`.page[data-n="${n}"]`); v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * f; }, [n, f]); await p.waitForTimeout(500); };
 const zoom = (p, z) => p.evaluate((z) => window.__cowdreyPdf.run(z), z);
+// On the iPhone, Fit width leaves a page's margins and a lot of grey around a small page. Zoom in two steps (to
+// about 87%), so the page's text runs from edge to edge of the screen, and keep the page centred across.
+async function phoneZoom(p) {
+  if (p.kind !== 'iphone') return;
+  await run(p, 'zoomIn'); await p.waitForTimeout(300); await run(p, 'zoomIn'); await p.waitForTimeout(1200);
+}
+// Scroll so the line with this text on page n sits at fraction f of the view's height, the page centred across.
+// (A span that is exactly the text wins over one that only contains it: recognized text comes word by word.)
+const findSpan = ([n, text]) => {
+  const all = [...document.querySelectorAll(`.page[data-n="${n}"] .textLayer span`)];
+  return all.find((s) => s.textContent.trim() === text) || all.find((s) => s.textContent.includes(text));
+};
+async function centerOn(p, n, text, f = .5) {
+  await p.waitForFunction(findSpan, [n, text], { timeout: 15000 });
+  await p.evaluate(([n, text, f, fs]) => {
+    const el = eval(fs)([n, text]);
+    const v = document.querySelector('#viewer'), vr = v.getBoundingClientRect(), r = el.getBoundingClientRect();
+    v.scrollTop += r.top + r.height / 2 - (vr.top + vr.height * f);
+    v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2;
+  }, [n, text, f, findSpan.toString()]);
+  await p.waitForTimeout(700);
+}
+// Drag across the words from one to another (the first of them after it), as a finger or the mouse selects text.
+async function selectWords(p, n, from, to) {
+  const [a, b] = await p.evaluate(([n, from, to]) => {
+    const all = [...document.querySelectorAll(`.page[data-n="${n}"] .textLayer span`)];
+    const i = all.findIndex((s) => s.textContent.trim() === from), j = all.findIndex((s, k) => k > i && s.textContent.trim() === to);
+    const r = (el) => { const q = el.getBoundingClientRect(); return [q.left, q.top, q.width, q.height]; };
+    return [r(all[i]), r(all[j])];
+  }, [n, from, to]);
+  await p.mouse.move(a[0] + 1, a[1] + a[3] / 2); await p.mouse.down();
+  await p.mouse.move(b[0] + b[2] - 1, b[1] + b[3] / 2, { steps: 10 }); await p.mouse.up();
+  await p.waitForTimeout(300);
+}
 
 const STORIES = [
   { slug: 'edit-text', title: 'Edit any PDF', sub: 'Tap a line and type. The words keep the PDF’s own font.', subMac: 'Click a line and type. The words keep the PDF’s own font.',
@@ -289,7 +324,8 @@ const STORIES = [
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
       if (p.kind === 'iphone') {
-        // The cover's title: large enough to type into at this zoom, so the whole page stays in view.
+        // The cover's title, zoomed in so the text runs across the screen, in the middle of the view.
+        await phoneZoom(p); await centerOn(p, 0, '2026 Service Review', .42);
         await tapLine(p, 0, '2026 Service Review');
         await p.keyboard.press('End'); for (let i = 0; i < 14; i++) await p.keyboard.press('Backspace');
         await p.keyboard.type('Year in Review', { delay: 20 });
@@ -309,7 +345,12 @@ const STORIES = [
       if (!r.words) throw new Error('OCR found no words: ' + JSON.stringify(r));
       await p.waitForTimeout(600);
       await run(p, 'find'); await p.fill('#findInput', 'plot'); await p.waitForTimeout(900);
-      await p.evaluate(() => { document.querySelector('#viewer').scrollTop = 0; }); await p.waitForTimeout(400);
+      // The fees paragraph and the price list (three of the hits) in the middle of the view, and the line under the
+      // list selected, as you would to copy it: what was a picture of a page is text now. (The selection's own
+      // toolbar opens under it, clear of the list.)
+      await phoneZoom(p);
+      await centerOn(p, 0, 'Plot', p.kind === 'mac' ? .5 : .4);
+      await selectWords(p, 0, 'Water', 'Please');
     } },
   { slug: 'fill-and-sign', title: 'Fill in and sign', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
     async shoot(p, docs) {
@@ -325,7 +366,7 @@ const STORIES = [
         await p.mouse.up();
       }
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(400);
-      if (p.kind === 'mac') await pageAt(p, 0, .445); else await goPage(p, 0, 'end');
+      if (p.kind === 'mac') await pageAt(p, 0, .445); else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
       const [sx, sy] = docs.form.sigLine;
       const [x, y] = await at(p, 0, sx + 120, sy + 22);
       await p.mouse.click(x, y); await p.waitForTimeout(500);
@@ -360,12 +401,14 @@ const STORIES = [
       await run(p, 'protRedApply'); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .dlg-foot button:has-text("Apply")'); await p.waitForTimeout(800);
       // the redacted contact details in the middle of the view
       if (p.kind === 'mac') await pageAt(p, 0, .19);
+      if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Contact details we hold', .45); }
     } },
   { slug: 'organize-pages', title: 'Pages in order', sub: 'Move, turn, combine and split pages in one view.',
     async shoot(p, docs) {
-      await openDoc(p, docs.review, 'Service review 2026.pdf');
-      await tab(p, 'Pages'); await run(p, 'pg60_organize'); await p.waitForTimeout(1500);
-      await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([2])); await p.waitForTimeout(400);
+      // A board pack of twelve pages, so the grid fills the screen, with two pages picked to move together.
+      await openDoc(p, docs.pack, 'Board pack 2027.pdf');
+      await tab(p, 'Pages'); await run(p, 'pg60_organize'); await p.waitForTimeout(2500);
+      await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([2, 3])); await p.waitForTimeout(600);
     } },
 ];
 // A handwritten "Alex Morgan", as strokes in the signature pad (fractions of its width and height).
@@ -393,6 +436,8 @@ async function capture(kind, story, docs) {
   await p.evaluate(() => document.querySelectorAll('.ribbon-body').forEach((r) => { if (!r.dataset.keepScroll) r.scrollLeft = 0; }));
   // the tab strip from its start, so "Home" is never cut off, with the chosen tab still in view
   await p.evaluate(() => document.querySelectorAll('.ribbon-tabs').forEach((t) => { const a = t.querySelector('[aria-selected="true"], .on, .active'); t.scrollLeft = 0; if (a && a.offsetLeft + a.offsetWidth > t.clientWidth) t.scrollLeft = a.offsetLeft + a.offsetWidth - t.clientWidth + 8; }));
+  // the rows that scroll sideways fade at the edge with more to see, as they do in the app after any scroll
+  await p.evaluate(() => { const b = document.querySelector('#ribbonBody'); b && b.dispatchEvent(new Event('scroll')); });
   if (kind === 'mac') await p.mouse.move(DEVICES.mac.w - 6, DEVICES.mac.h - 6);
   // what happened is shown in a toast for a moment: wait for it to go, so it covers nothing
   await p.waitForFunction(() => !document.querySelector('#toast.show'), null, { timeout: 15000 }).catch(() => {});
@@ -403,90 +448,25 @@ async function capture(kind, story, docs) {
 }
 
 /* ---------------- the template ---------------- */
-// One look for every device: a deep raspberry ground (the icon's #C61F52 to #7C0B31, taken down to near black), the
-// headline in Fraunces (SIL Open Font License, design/app-store/), one line in the system font, and a plain device.
-const FRAUNCES = fs.readFileSync(path.join(root, 'design/app-store/fraunces.woff2')).toString('base64');
-// Layout per device, in CSS pixels of a canvas at half the output size (drawn at 2x).
-const LAYOUT = {
-  iphone: { cw: 660, ch: 1434, head: 60, top: 92, subTop: 22, devW: 504, devTop: 316, bezel: 11, radius: 62, h1: 64, sub: 27, subW: 560 },
-  ipad: { cw: 1032, ch: 1376, head: 68, top: 84, subTop: 22, devW: 790, devTop: 262, bezel: 20, radius: 26, h1: 76, sub: 32, subW: 960 },
-  mac: { cw: 1440, ch: 900, head: 50, top: 62, subTop: 14, devW: 1000, devTop: 186, bezel: 14, radius: 14, h1: 58, sub: 26, subW: 1100 },
-};
-function composeHtml(kind, story, rawB64) {
-  const d = DEVICES[kind], l = LAYOUT[kind];
-  const sw = l.devW - 2 * l.bezel, k = sw / d.w; // screen width in canvas px, and points to canvas px
-  const tb = d.titlebar ? d.titlebar * k : 0;
-  const sh = (d.h * k) + tb, devH = sh + 2 * l.bezel;
+// The family template (tests/store-frame.mjs, the same file in Cowdrey.MD) in Cowdrey.PDF's raspberry.
+const b64 = (f) => fs.readFileSync(path.join(root, f)).toString('base64');
+const FONTS = { fraunces: b64('design/app-store/fraunces.woff2'), instrument: b64('fonts/instrument-sans-latin-wght-normal.woff2') };
+// The headline is a picture's first words: one or two lines, kept short enough to read in a search result.
+async function compose(kind, story, raw, file) {
   const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
-  const island = kind === 'iphone' ? `<div class="island" style="width:${125 * k}px;height:${37 * k}px;top:${11 * k}px;border-radius:${19 * k}px"></div>` : '';
-  const camera = kind === 'ipad' ? `<div class="cam" style="top:${l.bezel / 2 - 3}px"></div>` : kind === 'mac' ? `<div class="cam" style="top:${l.bezel / 2 - 2.5}px;width:5px;height:5px"></div>` : '';
-  const titlebar = tb ? `<div class="tb" style="height:${tb}px;font-size:${13 * k}px"><span class="lights">${['#FF5F57', '#FEBC2E', '#28C840'].map((c) => `<i style="background:${c};width:${12 * k}px;height:${12 * k}px;margin-right:${8 * k}px"></i>`).join('')}</span><span>Cowdrey.PDF</span></div>` : '';
-  const base = kind === 'mac' ? `<div class="base" style="top:${l.devTop + devH}px;left:${(l.cw - l.devW * 1.16) / 2}px;width:${l.devW * 1.16}px"></div>` : '';
-  const sr = kind === 'iphone' ? l.radius * k * (440 / 440) : kind === 'ipad' ? 18 * k : 6;
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-@font-face { font-family: Fraunces; src: url(data:font/woff2;base64,${FRAUNCES}) format("woff2"); font-weight: 100 900; }
-html, body { margin: 0; width: ${l.cw}px; height: ${l.ch}px; overflow: hidden; }
-body { background: #12060B; position: relative; -webkit-font-smoothing: antialiased; }
-.bg { position: absolute; inset: 0; background:
-  radial-gradient(90% 55% at 50% ${kind === 'mac' ? 105 : 62}%, rgba(198, 31, 82, .42), rgba(198, 31, 82, 0) 70%),
-  radial-gradient(120% 70% at 50% -10%, #5A1028 0%, rgba(90, 16, 40, 0) 70%),
-  linear-gradient(180deg, #3A0B1D 0%, #1C0710 55%, #12060B 100%); }
-h1 { position: absolute; left: 0; right: 0; top: ${l.top}px; margin: 0; text-align: center; color: #FFF7F4;
-  font: 600 ${l.h1}px/1.04 Fraunces, Georgia, serif; font-variation-settings: "opsz" 144; letter-spacing: -.015em; }
-p { position: absolute; left: ${(l.cw - l.subW) / 2}px; width: ${l.subW}px; top: ${l.top + l.h1 * 1.04 + l.subTop}px; margin: 0; text-align: center;
-  color: rgba(255, 236, 241, .74); font: 400 ${l.sub}px/1.3 -apple-system, "SF Pro Display", Inter, system-ui, sans-serif; letter-spacing: -.005em; text-wrap: balance; }
-.dev { position: absolute; left: ${(l.cw - l.devW) / 2}px; top: ${l.devTop}px; width: ${l.devW}px; height: ${devH}px; box-sizing: border-box;
-  border-radius: ${kind === 'mac' ? `${l.radius}px ${l.radius}px 4px 4px` : (sr + l.bezel) + 'px'}; background: #050505;
-  box-shadow: 0 0 0 ${kind === 'mac' ? 1.5 : 2}px #3C3A3D, 0 0 0 ${kind === 'mac' ? 2.5 : 3.5}px #1A1819, 0 30px 80px rgba(0, 0, 0, .55), 0 8px 24px rgba(0, 0, 0, .35); }
-.screen { position: absolute; left: ${l.bezel}px; top: ${l.bezel}px; width: ${sw}px; height: ${sh}px; border-radius: ${sr}px; overflow: hidden; background: #000; }
-.screen img { position: absolute; left: 0; top: ${tb}px; width: ${sw}px; height: ${d.h * k}px; }
-.island { position: absolute; left: 50%; transform: translateX(-50%); background: #000; z-index: 2; }
-.cam { position: absolute; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; border-radius: 50%; background: #1E2228; box-shadow: inset 0 0 1px #3A4450; }
-.tb { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; justify-content: center; background: #2C2A2B; border-bottom: 1px solid #000;
-  color: rgba(255, 255, 255, .78); font-family: -apple-system, "SF Pro Text", Inter, system-ui, sans-serif; font-weight: 600; }
-.lights { position: absolute; left: ${13 * k}px; top: 50%; transform: translateY(-50%); display: flex; }
-.lights i { display: block; border-radius: 50%; }
-.base { position: absolute; height: 16px; border-radius: 2px 2px 14px 14px / 2px 2px 10px 10px; background: linear-gradient(#5A595C, #2E2D30 40%, #1C1B1D); box-shadow: 0 20px 40px rgba(0, 0, 0, .5); }
-.base::before { content: ""; position: absolute; left: 50%; top: 0; width: 15%; height: 6px; transform: translateX(-50%); border-radius: 0 0 8px 8px; background: #19181A; }
-</style></head><body><div class="bg"></div>
-<h1>${story.title}</h1><p>${sub}</p>
-<div class="dev">${camera}<div class="screen">${titlebar}<img src="data:image/png;base64,${rawB64}">${island}</div></div>${base}
-</body></html>`;
+  return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file }, THEMES.pdf, FONTS);
 }
-// The composed picture, at the exact App Store size, as an RGB PNG (no alpha channel).
-async function compose(kind, story, raw) {
-  const l = LAYOUT[kind];
-  const ctx = await browser.newContext({ viewport: { width: l.cw, height: l.ch }, deviceScaleFactor: 2, colorScheme: 'dark' });
-  const p = await ctx.newPage();
-  await p.setContent(composeHtml(kind, story, raw.toString('base64')));
-  await p.evaluate(() => document.fonts.ready); await p.waitForTimeout(200);
-  const png = await p.screenshot({ type: 'png' });
-  await ctx.close();
-  return rgbPng(png);
-}
-// Chromium's PNG is already opaque; it is written again as colour type 2 (RGB), so no alpha channel is left at all.
-function rgbPng(buf) {
-  const sig = buf.subarray(0, 8); let o = 8, ihdr, idat = [];
-  while (o < buf.length) { const n = buf.readUInt32BE(o), t = buf.toString('latin1', o + 4, o + 8), d = buf.subarray(o + 8, o + 8 + n); if (t === 'IHDR') ihdr = d; if (t === 'IDAT') idat.push(d); o += 12 + n; }
-  const w = ihdr.readUInt32BE(0), h = ihdr.readUInt32BE(4), depth = ihdr[8], type = ihdr[9];
-  if (type === 2 && depth === 8) return buf;
-  if (depth !== 8 || type !== 6 || ihdr[12]) throw new Error('unexpected PNG ' + type + '/' + depth);
-  const raw = zlib.inflateSync(Buffer.concat(idat)), bpp = 4, stride = w * bpp, out = Buffer.alloc(h * (w * 3 + 1));
-  let prev = Buffer.alloc(stride), cur = Buffer.alloc(stride);
-  for (let y = 0; y < h; y++) {
-    const f = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
-    for (let i = 0; i < stride; i++) {
-      const a = i >= bpp ? cur[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
-      const pr = (() => { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; })();
-      cur[i] = (line[i] + [0, a, b, (a + b) >> 1, pr][f]) & 255;
-    }
-    const q = y * (w * 3 + 1); out[q] = 0;
-    for (let x = 0; x < w; x++) { const al = cur[x * 4 + 3] / 255; for (let c = 0; c < 3; c++) out[q + 1 + x * 3 + c] = Math.round(cur[x * 4 + c] * al + 0x12 * (1 - al)); }
-    [prev, cur] = [cur, prev];
+
+// The organize story's document: the review, the form, the letter and the scan in one file, with three of the
+// review's pages again at the back as an appendix (twelve pages).
+async function pack(d) {
+  const out = await PDFDocument.create();
+  for (const [bytes, idx] of [[d.review, null], [d.form.bytes, null], [d.letter, null], [d.scan, null], [d.review, [2, 3, 4]]]) {
+    const src = await PDFDocument.load(bytes);
+    for (const pg of await out.copyPages(src, idx || src.getPageIndices())) out.addPage(pg);
   }
-  const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t, 'latin1'), d]); const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td) >>> 0); return Buffer.concat([len, td, crc]); };
-  const hd = Buffer.alloc(13); hd.writeUInt32BE(w, 0); hd.writeUInt32BE(h, 4); hd[8] = 8; hd[9] = 2;
-  return Buffer.concat([sig, chunk('IHDR', hd), chunk('IDAT', zlib.deflateSync(out, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
+  out.setTitle('Board pack 2027');
+  return out.save();
 }
 
 // A scanned letter: typed, printed, signed and scanned at 200 dpi (drawn here in the browser, so the PDF has only a
@@ -539,14 +519,19 @@ if (ARG.docs) {
   fs.writeFileSync(path.join(ARG.docs, 'scan.pdf'), await scan()); await browser.close();
 } else {
   const docs = { review: await review(), form: await form(), letter: await letter(), scan: await scan() };
-  for (const [k, story] of STORIES.entries()) {
-    if (SHOTS && !SHOTS.includes(k + 1)) continue;
-    for (const kind of ONLY) {
-      const raw = ARG.reuse ? fs.readFileSync(path.join(RAW, `${kind}-${k + 1}.png`)) : await capture(kind, story, docs);
-      if (RAW && !ARG.reuse) fs.writeFileSync(path.join(RAW, `${kind}-${k + 1}.png`), raw);
+  docs.pack = await pack(docs);
+  // The Mac leads with Fill in and sign: Edit text outlines every line on the page, busy as a first picture.
+  const ORDER = { mac: ['fill-and-sign', 'edit-text', 'scans-to-text', 'comments', 'redact', 'organize-pages'] };
+  for (const kind of ONLY) {
+    const order = (ORDER[kind] || STORIES.map((s) => s.slug)).map((slug) => STORIES.find((s) => s.slug === slug));
+    for (const [k, story] of order.entries()) {
+      if (SHOTS && !SHOTS.includes(k + 1)) continue;
+      const rawFile = RAW && path.join(RAW, `${kind}-${story.slug}.png`);
+      const raw = ARG.reuse ? fs.readFileSync(rawFile) : await capture(kind, story, docs);
+      if (RAW && !ARG.reuse) fs.writeFileSync(rawFile, raw);
       await launch();
       const file = `${kind}-${String(k + 1).padStart(2, '0')}-${story.slug}.png`;
-      fs.writeFileSync(path.join(OUT, file), await compose(kind, story, raw)); console.log('wrote docs/app-store/' + file);
+      fs.writeFileSync(path.join(OUT, file), await compose(kind, story, raw, file)); console.log('wrote docs/app-store/' + file);
     }
   }
   await browser.close();
