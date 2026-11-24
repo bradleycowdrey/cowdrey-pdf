@@ -411,7 +411,7 @@ pub fn run() {
     };
     #[cfg(desktop)]
     let builder = builder
-        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, set_menu_enabled, hold_quit, tsa::tsa_post])
+        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, list_folder, write_in_folder, remove_file, print_page, write_share_file, quit_app, allow_exit, set_menu, set_menu_enabled, hold_quit, tsa::tsa_post, tsa::pki_fetch])
         .on_menu_event(|app, event| {
             if event.id().0 == "app:quit" || event.id().0 == "app:closeWindow" {
                 flush_then_quit(app);
@@ -429,7 +429,7 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder
         .plugin(tauri_plugin_sharekit::init())
-        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, write_share_file, quit_app, allow_exit, hold_quit, tsa::tsa_post]);
+        .invoke_handler(tauri::generate_handler![take_opened_files, read_text_file, file_modified, write_text_file, write_binary_file, write_share_file, quit_app, allow_exit, hold_quit, tsa::tsa_post, tsa::pki_fetch]);
     // Automated checks in the iPhone Simulator (see .github/workflows/ios-qa.yml): with COWDREY_QA set, the page
     // opens that panel a few seconds after launch, so the check can photograph it. Nothing happens otherwise.
     #[cfg(mobile)]

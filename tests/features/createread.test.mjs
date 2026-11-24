@@ -78,8 +78,10 @@ export default async (h) => {
     eq(await p.evaluate(() => window.__cowdreyPdf.doc.pages.map((e) => e.src)), [0, 1, 0, 0], 'after page 1');
     await paste(); await answer(p, 'Place on page');
     await p.waitForFunction(() => document.querySelector('#app').dataset.tool === 'image');
-    // the new page's own scroll (goPage) can still be moving the pages: click once page 1 has stopped moving
-    await p.locator('.page[data-n="0"]').click({ position: { x: 200, y: 200 } });
+    // "New page" scrolled to the new page 2: bring page 1 back into view and click on a part of it that shows
+    await p.locator('.page[data-n="0"]').scrollIntoViewIfNeeded();
+    await p.waitForFunction(() => { const r = document.querySelector('.page[data-n="0"]').getBoundingClientRect(); const e = document.elementFromPoint(r.x + 200, r.y + r.height / 2); return e && e.closest('.page[data-n="0"]'); });
+    const g = await p.locator('.page[data-n="0"]').boundingBox(); await p.mouse.click(g.x + 200, g.y + g.height / 2);
     for (let t = 0; t < 20 && !(await h.marks(p)).length; t++) await p.waitForTimeout(100);
     eq(await h.marks(p), ['img']);
     // From clipboard: waits for a paste in its box
