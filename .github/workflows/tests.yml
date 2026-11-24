@@ -47,6 +47,9 @@ jobs:
           L="$RUNNER_TEMP/tests.log"
           {
             echo "== PDF/A and PDF/X conformance (tests/conformance/pkg3.mjs)"
+            # In a virtual environment of its own: pkg3 runs its helpers with python3 -I, which skips the user site
+            # where a plain pip install lands on the runner (run 28: No module named 'fontTools').
+            python3 -m venv "$RUNNER_TEMP/py3" && export PATH="$RUNNER_TEMP/py3/bin:$PATH"
             pip install --quiet fonttools==4.68.0 pillow==12.3.0 pikepdf==10.18.2
             J=tests/conformance/.cache/verapdf-cli-1.30.4.jar; mkdir -p tests/conformance/.cache
             curl -fsSL -o "$J" https://repo1.maven.org/maven2/org/verapdf/apps/cli/1.30.4/cli-1.30.4.jar
