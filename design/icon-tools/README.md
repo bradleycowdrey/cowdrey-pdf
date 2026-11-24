@@ -1,6 +1,8 @@
 # Cowdrey.PDF app icon
 
-The icon is built the same way as Cowdrey One's: the family "C" (same arc, stroke 104 with round caps, scale 0.955, optical anchor 352), on a 135° diagonal gradient, with the letters in Instrument Sans Bold (SIL Open Font License) set inside the C and centred on its middle line. The letters are converted to outlines, so the SVGs need no font.
+The icon is built the same way as Cowdrey One's: the family "C" (same arc, stroke 104 with round caps) on a 135° diagonal gradient, with the letters in Instrument Sans Bold (SIL Open Font License) set in the C's opening, like One's "1", and centred on its middle line. The letters are converted to outlines, so the SVGs need no font.
+
+`"open": true` in `cfg.json` turns this placement on. Because the letters reach past the end caps, the whole mark is re-centred: instead of One's optical anchor (352), `gen.py` centres the span from the C's left edge to whichever is further right, the letters or the end caps, and the mark is drawn at scale 0.86 (0.97 for the 32 px master; `scale` in `cfg.json`) rather than 0.955.
 
 Sources (all 1024 × 1024):
 
@@ -9,7 +11,7 @@ Sources (all 1024 × 1024):
 - `design/icon-16.svg`: hand-tuned for 16 px, the C only (as Cowdrey One shows at that size).
 - `design/android/`: the flattened Android source (mark at 0.66× inside the adaptive-icon safe zone) and the foreground, background and monochrome layers.
 
-Rebuild the SVGs with `cd design/icon-tools && python3 gen.py cfg.json /tmp/icon` and copy `cowdrey-pdf.svg`, `cowdrey-pdf-32.svg` and `cowdrey-pdf-16.svg` to `design/icon.svg`, `icon-32.svg` and `icon-16.svg`, and `cowdrey-pdf-android*.svg` to `design/android/` (needs `pip install uharfbuzz fonttools`; `IS700.ttf` is Instrument Sans fixed at weight 700). It prints the clearance of the letters from the ring and the end caps; keep both at 50 units or more.
+Rebuild the SVGs with `cd design/icon-tools && python3 gen.py cfg.json /tmp/icon` and copy `cowdrey-pdf.svg`, `cowdrey-pdf-32.svg` and `cowdrey-pdf-16.svg` to `design/icon.svg`, `icon-32.svg` and `icon-16.svg`, and `cowdrey-pdf-android*.svg` to `design/android/` (needs `pip install uharfbuzz fonttools`; `IS700.ttf` is Instrument Sans fixed at weight 700). It prints the clearance of the letters from the ring and from the end caps (whichever side of them the letters sit); keep both at 50 units or more in the master (now 141 and 64). The 32 px master has heavier letters, so down to about 43 units from the end caps is accepted there (now 51).
 
 The PNGs in `desktop/src-tauri/icons` are rendered from these SVGs:
 
