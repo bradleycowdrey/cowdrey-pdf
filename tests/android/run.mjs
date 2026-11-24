@@ -546,7 +546,9 @@ await test('timestamps: the app posts a timestamp request over https (Android\'s
     if (i) await sleep(5000);
     if (i === 8 || i === 16) { // the emulator's radio, started again (it can stay down after the OCR scenario turned it off)
       log('  network:', (sh('dumpsys connectivity | grep -m1 "Active default network"') || '').trim(), '- airplane mode on and off');
-      sh('cmd connectivity airplane-mode enable'); await sleep(3000); sh('cmd connectivity airplane-mode disable'); sh('svc wifi enable'); sh('svc data enable'); await sleep(5000);
+      adb('emu', 'gsm', 'voice', 'home'); adb('emu', 'gsm', 'data', 'home');
+      sh('cmd connectivity airplane-mode enable'); await sleep(3000); sh('cmd connectivity airplane-mode disable'); sh('svc wifi enable'); sh('svc data enable'); await sleep(2000);
+      sh('cmd wifi connect-network AndroidWifi open'); await sleep(5000);
     }
     net = await page.evaluate(async () => { try { await fetch('https://www.gstatic.com/generate_204', { mode: 'no-cors', cache: 'no-store' }); return { ok: true }; } catch (e) { return { err: String(e) }; } });
   }

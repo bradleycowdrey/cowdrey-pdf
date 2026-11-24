@@ -9,6 +9,21 @@ adb shell settings put global hide_error_dialogs 1 2>/dev/null
 # would cover the app, so it is turned off.
 adb shell pm disable-user --user 0 com.google.android.googlesdksetup 2>&1 | tail -1
 adb shell cmd uimode night yes
+# What the emulator's networks are doing (for runs where none comes up)
+netinfo() {
+  echo "network: wifi: $(adb shell cmd wifi status 2>&1 | head -3 | tr '\n' ' ' | cut -c1-200)"
+  echo "network: radio: $(adb shell dumpsys telephony.registry 2>/dev/null | grep -m2 -oE 'mDataConnectionState=[-0-9]+|mVoiceRegState=[^ ,]+|mDataRegState=[^ ,]+' | tr '\n' ' ')"
+  echo "network: emulator: $(adb emu gsm status 2>&1 | tr '\n' ' ' | cut -c1-200)"
+  echo "network: addresses: $(adb shell ip -o -4 addr 2>&1 | awk '{print $2, $4}' | tr '\n' ' ')"
+}
+# Starts the emulator's networks again: the modem registered, data and Wi-Fi on, the emulator's Wi-Fi joined.
+netkick() {
+  adb emu gsm voice home > /dev/null 2>&1; adb emu gsm data home > /dev/null 2>&1; adb emu network speed full > /dev/null 2>&1
+  adb shell cmd connectivity airplane-mode enable; sleep 3; adb shell cmd connectivity airplane-mode disable
+  adb shell svc data enable; adb shell svc wifi enable; sleep 2
+  adb shell cmd wifi connect-network AndroidWifi open > /dev/null 2>&1
+  echo "network: started again (modem, airplane mode, data, Wi-Fi)"
+}
 # The network, for the timestamp scenario: on, no private DNS (DNS over TLS can fail on the emulator), and logged.
 adb shell settings put global private_dns_mode off
 adb shell svc wifi enable; adb shell svc data enable
@@ -18,10 +33,8 @@ for i in $(seq 1 36); do
   N=$(adb shell ping -c 1 -W 3 freetsa.org 2>&1 | head -2 | tr '\n' ' ')
   if echo "$N" | grep -q 'bytes from\|PING '; then echo "network: names resolve ($N)"; break; fi
   echo "network: not yet ($N; $(adb shell dumpsys connectivity 2>/dev/null | grep -m1 'Active default network'))"
-  if [[ $i == 12 || $i == 24 ]]; then
-    adb shell cmd connectivity airplane-mode enable; sleep 3; adb shell cmd connectivity airplane-mode disable
-    adb shell svc wifi enable; adb shell svc data enable; echo "network: airplane mode on and off"
-  fi
+  if [[ $i == 1 || $i == 12 || $i == 24 ]]; then netinfo; fi
+  if [[ $i == 6 || $i == 18 || $i == 30 ]]; then netkick; fi
   sleep 5
 done
 echo "network: by address: $(adb shell ping -c 1 -W 3 8.8.8.8 2>&1 | sed -n 2p)"
@@ -43,5 +56,6 @@ fi
 timeout 100m node tests/android/run.mjs "$TEST_APK" "$OUT"
 echo "device test exit code $?"
 adb logcat -d > "$OUT/logcat-full.log" 2>/dev/null
+grep -E "ConnectivityService|NetworkMonitor|WifiService|WifiClientModeImpl|SupplicantStaIfaceHal|DataNetwork|DataNetworkController|RILJ|ServiceStateTracker|netd|DnsResolver" "$OUT/logcat-full.log" | grep -viE "verbose|refreshing" | head -300 > "$OUT/network.txt"
 grep -iE "chromium|console|tauri|cowdrey|AndroidRuntime|FATAL|RustStdoutStderr" "$OUT/logcat-full.log" | tail -400 > "$OUT/logcat.txt"
 exit 0
