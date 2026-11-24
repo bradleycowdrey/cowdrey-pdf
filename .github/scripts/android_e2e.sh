@@ -9,11 +9,17 @@ adb shell settings put global hide_error_dialogs 1 2>/dev/null
 # would cover the app, so it is turned off.
 adb shell pm disable-user --user 0 com.google.android.googlesdksetup 2>&1 | tail -1
 adb shell cmd uimode night yes
-# The network, logged for the timestamp scenario (ping may be blocked by the emulator even when https works)
-for i in 1 2; do
-  if adb shell ping -c 1 -W 3 freetsa.org 2>&1 | grep -q '1 received'; then echo "network: freetsa.org answers"; break; fi
-  echo "network: not yet ($(adb shell ping -c 1 -W 3 freetsa.org 2>&1 | head -1))"; sleep 5
+# The network, for the timestamp scenario: on, no private DNS (DNS over TLS can fail on the emulator), and logged.
+adb shell settings put global private_dns_mode off
+adb shell svc wifi enable; adb shell svc data enable
+for i in $(seq 1 12); do
+  N=$(adb shell ping -c 1 -W 3 freetsa.org 2>&1 | head -2 | tr '\n' ' ')
+  if echo "$N" | grep -q 'bytes from\|PING '; then echo "network: names resolve ($N)"; break; fi
+  echo "network: not yet ($N)"; sleep 5
 done
+echo "network: by address: $(adb shell ping -c 1 -W 3 8.8.8.8 2>&1 | sed -n 2p)"
+echo "network: dns $(adb shell getprop net.dns1) / $(adb shell dumpsys connectivity 2>/dev/null | grep -m2 -oE 'DnsAddresses: \[[^]]*\]' | tr '\n' ' ')"
+adb shell dumpsys connectivity 2>/dev/null | grep -m3 -E 'Active default network|NetworkAgentInfo\{' | cut -c1-300
 if [[ -f "$APK" ]]; then
   adb install -r "$APK" > /dev/null && echo "release APK installed"
   adb shell dumpsys package "$PKG" | grep -m1 versionName | sed 's/^ */release version: /'

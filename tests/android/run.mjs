@@ -13,6 +13,8 @@ const forge = require(path.join(NM, 'node-forge'));
 const asn1js = require(path.join(NM, 'asn1js'));
 const fflate = require(path.join(NM, 'fflate'));
 
+// pdf.js (read here to check attachments) needs Promise.withResolvers, which Node 20 (the runner's) doesn't have.
+if (!Promise.withResolvers) Promise.withResolvers = function () { let resolve, reject; const promise = new this((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const [APK, OUTDIR] = process.argv.slice(2);
 A.setOut(OUTDIR || '/tmp/android-e2e');
 const results = [];

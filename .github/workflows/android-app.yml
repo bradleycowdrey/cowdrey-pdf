@@ -158,6 +158,9 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          # The DNS servers the runner itself uses (behind systemd-resolved's 127.0.0.53, which the emulator can't reach)
+          D=$(resolvectl dns 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | grep -v '^127\.' | sort -u | head -2 | paste -sd, -)
+          echo "EMU_DNS=${D:+$D,}8.8.8.8" >> "$GITHUB_ENV"; echo "emulator DNS: ${D:+$D,}8.8.8.8"
 
       # The release APK is launched once; then the test build runs every scenario in tests/android/run.mjs on the
       # emulator's own web view, and saves screenshots and the files it saved.
@@ -175,8 +178,8 @@ jobs:
           disk-size: 6000M
           disable-animations: true
           # The runner's own DNS (systemd-resolved on 127.0.0.53) can't be reached from inside the emulator, which then
-          # has no names at all (run 18: net::ERR_NAME_NOT_RESOLVED everywhere): it is given public DNS servers.
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 8.8.8.8,1.1.1.1
+          # has no names at all (runs 18 and 19: net::ERR_NAME_NOT_RESOLVED everywhere): it is given the real servers.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ env.EMU_DNS }}
           script: bash .github/scripts/android_e2e.sh "$RUNNER_TEMP/Cowdrey.PDF.apk" "$RUNNER_TEMP/Cowdrey.PDF-test.apk" "$RUNNER_TEMP/smoke" 2>&1 | tee -a "$RUNNER_TEMP/android-build.log"
 
       - name: Check the device test passed
