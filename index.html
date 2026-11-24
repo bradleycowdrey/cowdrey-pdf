@@ -2291,8 +2291,9 @@ function placeImage(v, px, py) {
   pendingImage = null; drawMarks(v); changed(before); setTool('select'); selectNew(v, m);
 }
 /* Selecting text, as pdf.js's viewer does it (TextLayerBuilder): while a selection is made, each text layer's
-   endOfContent covers the layer, and (in browsers that need it: Safari, Chromium before 148) it is moved right after
-   the span the selection ends in, so the gap past a line's last word selects nothing more. */
+   endOfContent covers the layer, and (in every browser but Firefox) it is moved right after the span the selection
+   ends in, so the gap past a line's last word selects up to that word and nothing more. pdf.js skips the move from
+   Chromium 148, but there a drag that leaves the line between two pointer events stops short (on 3 M, not 3 March). */
 const TL = { down: false, prev: null, modern: undefined };
 function tlReset(tl) { const end = tl.__eoc; if (!end) return; if (tl.lastChild !== end) tl.append(end); end.style.width = end.style.height = end.style.userSelect = ''; tl.classList.remove('selecting'); }
 const tlResetAll = () => $$('.page .textLayer').forEach(tlReset);
@@ -2306,11 +2307,7 @@ document.addEventListener('selectionchange', () => {
   if (!sel || !sel.rangeCount) { layers.forEach(tlReset); TL.prev = null; return; }
   const range = sel.getRangeAt(0);
   for (const t of layers) { if (range.intersectsNode(t)) t.classList.add('selecting'); else tlReset(t); }
-  if (TL.modern === undefined && layers.length) {
-    const ff = getComputedStyle(layers[0]).getPropertyValue('-moz-user-select') === 'none';
-    const v = navigator.userAgentData && navigator.userAgentData.brands ? (navigator.userAgentData.brands.find((b) => b.brand === 'Chromium') || {}).version : (/\bChrome\/(\d+)\b/.exec(navigator.userAgent) || [])[1];
-    TL.modern = ff || (!!v && parseInt(v, 10) >= 148);
-  }
+  if (TL.modern === undefined && layers.length) TL.modern = getComputedStyle(layers[0]).getPropertyValue('-moz-user-select') === 'none';
   if (TL.modern || !layers.length) return;
   const prev = TL.prev, modifyStart = !!prev && (range.compareBoundaryPoints(Range.END_TO_END, prev) === 0 || range.compareBoundaryPoints(Range.START_TO_END, prev) === 0);
   let anchor = modifyStart ? range.startContainer : range.endContainer;

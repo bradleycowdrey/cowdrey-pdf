@@ -6,7 +6,8 @@ async function open(o = {}) { const p = await openApp(o); if (!o.askName) await 
 const require = createRequire(import.meta.url);
 const { PDFDocument } = require('../desktop/node_modules/pdf-lib');
 const results = [];
-async function test(name, fn) { try { await fn(); results.push([true, name]); } catch (e) { results.push([false, name, e.message.split('\n')[0]]); } }
+// ONLY="some words" node tests/e2e.mjs runs just the tests whose names contain those words.
+async function test(name, fn) { if (process.env.ONLY && !name.includes(process.env.ONLY)) return; try { await fn(); results.push([true, name]); } catch (e) { results.push([false, name, e.message.split('\n')[0]]); } }
 const eq = (a, b, m = '') => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m} expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m || 'not ok'); };
 const saved = async (p) => PDFDocument.load(Buffer.from(await p.evaluate(async () => Array.from(await window.__cowdreyPdf.buildPdf()))));
