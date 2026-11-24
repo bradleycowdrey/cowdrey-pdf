@@ -233,4 +233,9 @@ jobs:
           echo "${{ job.status }} · run ${{ github.run_number }} (${{ github.run_id }}) · branch ${{ github.ref_name }} · ${{ github.sha }}" > status.txt
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Android build log, run ${{ github.run_number }}"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build-log
+          # (github.com can be out of reach for a minute: run 29's push failed after every test had passed)
+          for i in 1 2 3 4; do
+            git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build-log && exit 0
+            echo "push failed, trying again in $((i * 30)) s"; sleep $((i * 30))
+          done
+          exit 1
