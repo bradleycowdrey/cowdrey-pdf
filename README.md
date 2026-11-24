@@ -4,7 +4,7 @@ A PDF viewer and editor by **Bradley Cowdrey** · [bradcowdrey.com](https://brad
 
 Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms and rearrange pages, with nothing leaving your device. Like Cowdrey.MD it is one self-contained web page, wrapped as an app for Mac, iPhone, iPad and Android.
 
-**Version 1.1.** Edit text in any language, OCR that cleans and straightens scans, certificate signing with revocation checks, real redaction, PDF/A and PDF/X, a form designer, compare, tables and summaries, accessibility tools and batch Actions, on top of everything in 1.0, on the web and in native apps for Mac, iPhone and iPad. See the [changelog](CHANGELOG.md).
+**Version 1.1.** Edit text in any language, OCR that cleans and straightens scans, certificate signing with revocation checks, real redaction, PDF/A and PDF/X, a form designer, compare, tables and summaries, accessibility tools and batch Actions, on top of everything in 1.0, on the web and in native apps for Mac, iPhone and iPad, and now Android (in testing, not yet on Google Play). A new icon and new App Store screenshots too. See the [changelog](CHANGELOG.md).
 
 **Free. Forever.** Open source under the MIT License.
 
@@ -13,7 +13,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 | **Use it on the web** | [bradcowdrey.com/cowdrey-pdf/app](https://bradcowdrey.com/cowdrey-pdf/app) |
 | **Mac** | [Download Cowdrey.PDF.dmg](https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg) · signed and notarized by Apple · the Mac App Store version is coming |
 | **iPhone and iPad** | [Install with TestFlight](https://testflight.apple.com/join/tr4eD534) · the App Store version is on its way |
-| **Android** | In testing · see [docs/android.md](docs/android.md) |
+| **Android** | In testing, not yet on Google Play · each build's APK is attached to its [workflow run](https://github.com/bradleycowdrey/cowdrey-pdf/actions/workflows/android-app.yml) · see [docs/android.md](docs/android.md) |
 | **Product page** | [bradcowdrey.com/cowdrey-pdf](https://bradcowdrey.com/cowdrey-pdf) |
 
 ![Cowdrey.PDF on the Mac in dark mode, changing a line of a PDF in its own font](docs/screenshot-dark.png)
@@ -40,7 +40,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 
 ## Apps
 
-The same app runs on the web and, wrapped with Tauri 2, as apps for Mac, iPhone, iPad and Android, built by GitHub Actions (`.github/workflows`). The workflows produce a signed, notarized Mac DMG and TestFlight builds for iPhone and iPad; with the updater key they also add in-place Mac updates, and with the Android upload key a signed APK. Each platform opens PDFs from its file manager (Finder, Files, Android's Open with). On the Mac, Save writes back to the same file; on iPhone and iPad, Save PDF opens the share sheet (Save to Files, Drive, Mail, AirDrop); on Android it opens Android's save dialog, and saving again updates that file. The Android build is tested on an emulator by a device test (`tests/android/run.mjs`).
+The same app runs on the web and, wrapped with Tauri 2, as apps for Mac, iPhone, iPad and Android, built by GitHub Actions (`.github/workflows`). The workflows produce a signed, notarized Mac DMG and TestFlight builds for iPhone and iPad; with the updater key they also add in-place Mac updates, and with the Android upload key a signed APK. Each platform opens PDFs from its file manager (Finder, Files, Android's Open with). On the Mac, Save writes back to the same file; on iPhone and iPad, Save PDF opens the share sheet (Save to Files, Drive, Mail, AirDrop); on Android it opens Android's save dialog, and saving again updates that file. The Android build is tested on two emulators (Android 15, and Android 16 with 2 GB of memory) by a device test (`tests/android/run.mjs`) and a test of the release APK (`tests/android/release.mjs`). On Android, timestamps and revocation checks are sent by Android itself, not the web view, so servers need no CORS. The Android app is in testing and not yet on Google Play: [docs/android.md](docs/android.md) has the steps to publish it. The App Store screenshots in `docs/app-store` (iPhone 6.9", iPad 13" and Mac, at Apple's exact sizes) are made from the app by `node tests/app-store-screens.mjs`.
 
 ## Built with
 

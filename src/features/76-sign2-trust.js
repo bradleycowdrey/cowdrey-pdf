@@ -115,10 +115,11 @@ async function sgBuildChain(leaf, pool, trust, at) {
 }
 
 /* ---- revocation ---- */
-// GET (no body) or POST to a revocation server: fetch on the web, a native call in the apps (no CORS needed there)
+// GET (no body) or POST to a revocation server: fetch on the web, a native call in the apps (no CORS needed there;
+// on Android the request is made by Android itself: desktop/src-tauri/src/tsa.rs and sharekit's AndroidPdf.kt, pkiFetch)
 async function sgNetFetch(url, body, type) {
   if (!/^https?:\/\//i.test(url)) throw new SgError('Not a web address: ' + url);
-  if (NATIVE && !ANDROID_APP) {
+  if (NATIVE) {
     try { return b64ToBytes(await NATIVE.core.invoke('pki_fetch', { url, body: body ? bytesToB64(body) : null, contentType: type || null })); }
     catch (e) { throw new SgError(`${new URL(url).host} could not be reached (${e && e.message ? e.message : e})`); }
   }

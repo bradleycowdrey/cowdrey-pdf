@@ -71,6 +71,7 @@ export default async (h) => {
   issue('ca', 'late', 'Trust Test Revoked Later', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
   issue('ca', 'replay', 'Trust Test Replayed', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
   issue('ca', 'turn', 'Trust Test Revoked Meanwhile', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
+  issue('ca', 'droid', 'Trust Test Android Signer', 'leaf', new Date(now - DAY), new Date(now + 300 * DAY));
   issue('oldca', 'under', 'Trust Test Under Expired', 'crlonly', new Date(now - 30 * DAY), new Date(now + 300 * DAY));
   ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('gone.pem'), '-crl_reason', 'keyCompromise');
   ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('gonecrl.pem'), '-crl_reason', 'superseded');
@@ -79,7 +80,7 @@ export default async (h) => {
   const p12 = (n, chain) => { const extra = chain ? ['-certfile', chain] : []; ossl('pkcs12', '-export', '-inkey', f(n + '.key'), '-in', f(n + '.pem'), ...extra, '-passout', 'pass:pw', '-out', f(n + '.p12')); return fs.readFileSync(f(n + '.p12')); };
   fs.writeFileSync(f('chain.pem'), fs.readFileSync(f('inter.pem'), 'utf8') + fs.readFileSync(f('root.pem'), 'utf8'));
   fs.writeFileSync(f('oldchain.pem'), fs.readFileSync(f('old.pem'), 'utf8') + fs.readFileSync(f('root.pem'), 'utf8'));
-  const IDS = { leaf: p12('leaf', f('chain.pem')), gone: p12('gone', f('chain.pem')), gonecrl: p12('gonecrl', f('chain.pem')), late: p12('late', f('chain.pem')), replay: p12('replay', f('chain.pem')), turn: p12('turn', f('chain.pem')), under: p12('under', f('oldchain.pem')), p384: p12('p384'), ed: p12('ed') };
+  const IDS = { leaf: p12('leaf', f('chain.pem')), gone: p12('gone', f('chain.pem')), gonecrl: p12('gonecrl', f('chain.pem')), late: p12('late', f('chain.pem')), replay: p12('replay', f('chain.pem')), turn: p12('turn', f('chain.pem')), droid: p12('droid', f('chain.pem')), under: p12('under', f('oldchain.pem')), p384: p12('p384'), ed: p12('ed') };
 
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' };
   const route = (p) => p.ctx.route(BASE + '/**', async (r) => {
@@ -153,6 +154,46 @@ export default async (h) => {
     await p.click('#dialog [data-sg-rev]'); await p.waitForFunction(() => /Revoked: “Trust Test Revoked Meanwhile” was revoked/.test(document.querySelector('#dialog .sg-list').textContent));
     eq(hits, 3, 'the button asked the server');
     ok(/Check revocation again/.test(await p.textContent('#dialog .sg-list')), 'it can be checked again');
+    eq(p.errors, []); await p.ctx.close();
+  });
+  await test('revocation in the Android app: asked through the app (pki_fetch), never with the web view\'s fetch; asked again after a revocation', async () => {
+    // signed on the web, then checked in a pretend Android app whose pki_fetch is answered from here (as Android's
+    // own network stack would): the servers send no CORS headers, so a fetch from the page could not have worked
+    const w = await open(); await route(w); await openPdf(w);
+    const out = await sign(w, 'droid'); await w.ctx.close();
+    const UA = 'Mozilla/5.0 (Linux; Android 15; Pixel 9 Build/AP3A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0 Mobile Safari/537.36';
+    const p = await open({ width: 412, height: 915, touch: true, ua: UA, init: () => {
+      window.__pkiCalls = [];
+      window.__TAURI__ = {
+        core: { invoke: async (c, a) => {
+          if (c === 'pki_fetch') { window.__pkiCalls.push(a); return window.__pkiFetch(a); }
+          if (c === 'take_opened_files') return [];
+          if (c === 'plugin:sharekit|native') return a.method === 'insets' ? { top: 0, bottom: 0, left: 0, right: 0, keyboard: 0 } : {};
+          return null;
+        } },
+        fs: {}, dialog: {}, event: { listen: async () => {} }, opener: { openUrl: async () => {} },
+      };
+    } });
+    const asked = [];
+    await p.exposeFunction('__pkiFetch', async ({ url, body, contentType }) => {
+      asked.push([body ? 'POST' : 'GET', new URL(url).pathname, contentType]);
+      const r = await fetch(url, { method: body ? 'POST' : 'GET', ...(body ? { headers: { 'content-type': contentType }, body: Buffer.from(body, 'base64') } : {}) });
+      if (!r.ok) throw new Error('error ' + r.status);
+      return Buffer.from(await r.arrayBuffer()).toString('base64');
+    });
+    let direct = 0; p.on('request', (r) => { if (r.url().startsWith(BASE)) direct++; });
+    await openPdf(p);
+    ok(await p.evaluate(() => /Android/.test(navigator.userAgent) && !!window.__TAURI__), 'the pretend Android app');
+    const [a] = await details(p, out, { revocation: true });
+    eq([a.status, a.rev.verdict, a.rev.items[0].via], ['valid', 'good', 'OCSP']);
+    ok(/Not revoked: “Trust Test Android Signer” \(OCSP from 127\.0\.0\.1:/.test(a.rev.text), a.rev.text);
+    ossl('ca', '-config', f('ca/ca.cnf'), '-revoke', f('droid.pem'), '-crl_reason', 'keyCompromise');
+    const [b] = await details(p, out, { revocation: true });
+    eq([b.status, b.rev.verdict, b.rev.items[0].reason], ['revoked', 'revoked', 'key compromise']);
+    eq(asked, [['POST', '/ocsp', 'application/ocsp-request'], ['POST', '/ocsp', 'application/ocsp-request']], 'one OCSP request per check, through the app');
+    const calls = await p.evaluate(() => window.__pkiCalls.map((c) => [c.url.replace(/:\d+/, ''), typeof c.body, c.contentType]));
+    eq(calls, [['http://127.0.0.1/ocsp', 'string', 'application/ocsp-request'], ['http://127.0.0.1/ocsp', 'string', 'application/ocsp-request']]);
+    eq(direct, 0, 'no request from the web view itself');
     eq(p.errors, []); await p.ctx.close();
   });
   await test('revocation: an old OCSP answer (another nonce, or out of date) is not taken; the CRL is asked instead', async () => {

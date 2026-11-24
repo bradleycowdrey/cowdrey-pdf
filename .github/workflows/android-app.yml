@@ -106,6 +106,8 @@ jobs:
           { echo "Intent filters in $M:"; grep -A6 '<intent-filter' "$M"; } | tee -a "$RUNNER_TEMP/android-build.log"
           { echo "SDK levels:"; grep -rhoE '(minSdk|targetSdk|compileSdk)[^,)]*' src-tauri/gen/android/app/build.gradle.kts src-tauri/gen/android/buildSrc 2>/dev/null | sort -u; } | tee -a "$RUNNER_TEMP/android-build.log"
           { echo "Permissions:"; grep -h 'uses-permission' "$M"; } | tee -a "$RUNNER_TEMP/android-build.log"
+          # Cleartext http stays off in the release app; revocation checks speak plain http on their own (docs/android.md).
+          { echo "Cleartext traffic:"; grep -o 'usesCleartextTraffic="[^"]*"' "$M"; grep -h 'usesCleartextTraffic' src-tauri/gen/android/app/build.gradle.kts | sed 's/^ *//'; } | tee -a "$RUNNER_TEMP/android-build.log"
 
       - name: Sign the APK
         if: ${{ !inputs.quick }}

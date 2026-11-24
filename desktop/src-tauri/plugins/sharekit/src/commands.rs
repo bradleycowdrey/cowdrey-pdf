@@ -49,7 +49,10 @@ pub async fn share_file<R: Runtime>(
 }
 
 /// The app's own native features on iPhone, iPad and Android (printing, PDF, files and folders),
-/// each a method of the platform plugin. Only the methods listed here can be called.
+/// each a method of the platform plugin. Only the methods listed here can be called from the page.
+/// Android's tsaPost and pkiFetch (network requests for certificate signatures) are left out on purpose: the app's own
+/// tsa_post and pki_fetch commands (src-tauri/src/tsa.rs) check each request and call them from Rust, so the page can
+/// never reach them without those checks.
 const NATIVE_METHODS: &[&str] = &[
     "shareLink", "printPage", "exportPdf", "displayName",
     "pickFiles", "saveAsFile", "readFile", "writeFile",

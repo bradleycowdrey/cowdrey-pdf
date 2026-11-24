@@ -13,6 +13,8 @@
 //   is large.
 // - tsaPost: a trusted timestamp for a certificate signature, posted with Android's own network stack (called only
 //   by the app's tsa_post command, src-tauri/src/tsa.rs, never by the page directly).
+// - pkiFetch: a revocation check for a certificate signature (an OCSP request posted, or a revocation list fetched),
+//   called only by the app's pki_fetch command (src-tauri/src/tsa.rs), never by the page directly.
 package app.tauri.share
 
 import android.app.Activity
@@ -528,6 +530,164 @@ class AndroidPdf(private val plugin: SharePlugin, private val activity: Activity
             } finally {
                 c.disconnect()
             }
+        }
+    }
+
+    // ---- revocation checks (OCSP and CRL) ----
+
+    /** A GET of a revocation list, or a POST of an OCSP request (application/ocsp-request only, at most 8 KB), to the
+     *  address a certificate names; the answer (at most 32 MB) comes back as base64. src-tauri/src/tsa.rs checks the
+     *  request first. OCSP and CRL servers commonly use plain http: their answers are signed by the certificate's
+     *  issuer, and the page checks that signature, so nothing is taken on the network's word.
+     *  https goes through Android's own network stack (the phone's certificate authorities). Plain http is spoken
+     *  here, on a socket of its own (through the phone's http proxy when it has one), so the app as a whole keeps
+     *  Android's default of no cleartext traffic: only this request, GET or OCSP POST, ever goes out as plain http
+     *  (docs/android.md). A list may move (a redirect, at most 5, GET only), but only to another http or https address. */
+    fun pkiFetch(invoke: Invoke) {
+        val args = invoke.getArgs()
+        background(invoke) {
+            val given = if (args.has("body") && !args.isNull("body")) args.getString("body", "") ?: "" else null
+            val body = given?.let { android.util.Base64.decode(it, android.util.Base64.DEFAULT) }
+            if (body != null) {
+                if (body.size > PKI_REQUEST_MAX) throw Exception("That is not a revocation request")
+                val type = if (args.has("contentType") && !args.isNull("contentType")) args.getString("contentType", "") else "application/ocsp-request"
+                if (type != "application/ocsp-request") throw Exception("Only OCSP requests are sent")
+            }
+            var url = try { java.net.URL(args.getString("url", "") ?: "") } catch (_: Exception) { throw Exception("That is not a web address") }
+            var hops = 0
+            var answer: ByteArray? = null
+            while (answer == null) {
+                if (url.protocol != "http" && url.protocol != "https") throw Exception("Revocation servers are reached over http or https only")
+                if (url.host.isNullOrEmpty()) throw Exception("That is not a web address")
+                val got = try { if (url.protocol == "https") pkiHttps(url, body) else pkiHttp(url, body) }
+                    catch (e: java.io.IOException) { throw Exception("${e.javaClass.simpleName}: ${e.message ?: ""}".trimEnd(' ', ':')) }
+                val (code, location, data) = got
+                if (code in 300..399 && location != null && body == null && hops < 5) {
+                    hops++
+                    url = try { java.net.URL(url, location) } catch (_: Exception) { throw Exception("The server sent the request to an address that is not one") }
+                    continue
+                }
+                if (code !in 200..299) throw Exception("error $code")
+                answer = data
+            }
+            JSObject().apply { put("body", android.util.Base64.encodeToString(answer!!, android.util.Base64.NO_WRAP)) }
+        }
+    }
+
+    private val PKI_REQUEST_MAX = 8192
+    private val PKI_ANSWER_MAX = 32 shl 20
+
+    /** https, with Android's own network stack. (status, Location, answer) */
+    private fun pkiHttps(url: java.net.URL, body: ByteArray?): Triple<Int, String?, ByteArray> {
+        val c = url.openConnection() as javax.net.ssl.HttpsURLConnection
+        try {
+            c.connectTimeout = 20000
+            c.readTimeout = 30000
+            c.instanceFollowRedirects = false
+            c.useCaches = false
+            c.setRequestProperty("User-Agent", "Cowdrey.PDF")
+            if (body != null) {
+                c.requestMethod = "POST"
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "application/ocsp-request")
+                c.setFixedLengthStreamingMode(body.size)
+                c.outputStream.use { it.write(body) }
+            }
+            val code = c.responseCode
+            if (code !in 200..299) return Triple(code, c.getHeaderField("Location"), ByteArray(0))
+            if (c.contentLengthLong > PKI_ANSWER_MAX) throw Exception("The answer is too large")
+            val out = java.io.ByteArrayOutputStream()
+            c.inputStream.use { pkiCopy(it, out, -1) }
+            return Triple(code, null, out.toByteArray())
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /** Plain http/1.1 on a socket: one request, "Connection: close", the answer read by its length, in chunks, or to
+     *  the end. (status, Location, answer) */
+    private fun pkiHttp(url: java.net.URL, body: ByteArray?): Triple<Int, String?, ByteArray> {
+        val host = url.host
+        val port = if (url.port > 0) url.port else 80
+        val proxy = try {
+            java.net.ProxySelector.getDefault()?.select(url.toURI())?.firstOrNull { it.type() == java.net.Proxy.Type.HTTP }?.address() as? java.net.InetSocketAddress
+        } catch (_: Exception) { null }
+        val s = java.net.Socket()
+        try {
+            s.connect(proxy ?: java.net.InetSocketAddress(host, port), 20000)
+            s.soTimeout = 30000
+            val target = if (proxy != null) url.toExternalForm().substringBefore('#') else url.file.ifEmpty { "/" }
+            val head = StringBuilder()
+                .append(if (body != null) "POST " else "GET ").append(target).append(" HTTP/1.1\r\n")
+                .append("Host: ").append(if (url.port > 0 && url.port != 80) "$host:${url.port}" else host).append("\r\n")
+                .append("User-Agent: Cowdrey.PDF\r\nAccept: */*\r\nConnection: close\r\n")
+            if (body != null) head.append("Content-Type: application/ocsp-request\r\nContent-Length: ${body.size}\r\n")
+            head.append("\r\n")
+            if ((host + target).any { it <= ' ' || it.code >= 0x7f }) throw Exception("That is not a web address")
+            val out = java.io.BufferedOutputStream(s.getOutputStream())
+            out.write(head.toString().toByteArray(Charsets.ISO_8859_1))
+            if (body != null) out.write(body)
+            out.flush()
+            val input = java.io.BufferedInputStream(s.getInputStream())
+            var code: Int
+            var length = -1L
+            var chunked = false
+            var location: String? = null
+            do {
+                val status = pkiLine(input) ?: throw java.io.IOException("no answer from the server")
+                code = Regex("^HTTP/1\\.[01] (\\d{3})").find(status)?.groupValues?.get(1)?.toInt() ?: throw java.io.IOException("not an http answer")
+                while (true) {
+                    val l = pkiLine(input) ?: throw java.io.IOException("the answer was cut short")
+                    if (l.isEmpty()) break
+                    val i = l.indexOf(':'); if (i < 0) continue
+                    val v = l.substring(i + 1).trim()
+                    when (l.substring(0, i).trim().lowercase(Locale.ROOT)) {
+                        "content-length" -> length = v.toLongOrNull() ?: -1L
+                        "transfer-encoding" -> chunked = v.lowercase(Locale.ROOT).contains("chunked")
+                        "location" -> location = v
+                    }
+                }
+            } while (code in 100..199)
+            if (code !in 200..299) return Triple(code, location, ByteArray(0))
+            val data = java.io.ByteArrayOutputStream()
+            if (chunked) {
+                while (true) {
+                    val size = pkiLine(input)?.substringBefore(';')?.trim()?.toLongOrNull(16) ?: throw java.io.IOException("the answer was cut short")
+                    if (size == 0L) break
+                    pkiCopy(input, data, size)
+                    pkiLine(input)
+                }
+            } else pkiCopy(input, data, length)
+            return Triple(code, null, data.toByteArray())
+        } finally {
+            try { s.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** One line of an http answer's head, without its line end; null at the end of the stream. */
+    private fun pkiLine(input: java.io.InputStream): String? {
+        val b = java.io.ByteArrayOutputStream()
+        while (true) {
+            val c = input.read()
+            if (c < 0) return if (b.size() == 0) null else b.toString("ISO-8859-1")
+            if (c == '\n'.code) break
+            if (b.size() > 8192) throw java.io.IOException("not an http answer")
+            b.write(c)
+        }
+        return b.toString("ISO-8859-1").trimEnd('\r')
+    }
+
+    /** Copies `n` bytes (to the end when n < 0) into `out`, never more than PKI_ANSWER_MAX in all. */
+    private fun pkiCopy(input: java.io.InputStream, out: java.io.ByteArrayOutputStream, n: Long) {
+        if (n > PKI_ANSWER_MAX || (n > 0 && out.size() + n > PKI_ANSWER_MAX)) throw Exception("The answer is too large")
+        val buf = ByteArray(8192)
+        var left = n
+        while (n < 0 || left > 0) {
+            val k = input.read(buf, 0, if (n < 0) buf.size else minOf(buf.size.toLong(), left).toInt())
+            if (k < 0) { if (n < 0) break else throw java.io.IOException("the answer was cut short") }
+            out.write(buf, 0, k)
+            left -= k
+            if (out.size() > PKI_ANSWER_MAX) throw Exception("The answer is too large")
         }
     }
 }

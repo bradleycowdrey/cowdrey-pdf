@@ -5,6 +5,7 @@
 // Usage: node tests/android/run.mjs <test apk> <output dir>
 import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module'; import { spawn } from 'node:child_process';
 import * as A from './lib.mjs';
+import { startPki } from './pki.mjs';
 const { adb, adbBytes, sh, log, shot, sleep, PKG, root, isDocs, toDownloads, saveThroughDialog } = A;
 const inDownloadsHere = A.inDownloads;
 const require = createRequire(import.meta.url);
@@ -690,6 +691,62 @@ await test('timestamps: a timestamp server typed in Signing IDs; the signature s
   log('  the app reads:', JSON.stringify(sigs.map((x) => ({ status: x.status, ts: x.ts }))));
   ok(sigs.length === 1 && sigs[0].ts && sigs[0].ts.ok, 'the app checks the timestamp');
   shot('timestamped');
+});
+
+await test('revocation: OCSP and CRL servers on plain http (on the machine running the emulator); not revoked, then revoked, asked again each time (Android\'s own network, not the web view)', async () => {
+  // A certificate authority of the test's own: its OCSP responder (openssl ocsp) and its revocation list (a tiny http
+  // server), reached from the emulator at 10.0.2.2. The release app allows no cleartext traffic: these requests are
+  // plain http all the same, made by the app's pkiFetch on Android's side (docs/android.md).
+  const pki = await startPki(path.join(A.OUT, '.pki-' + Date.now()), '10.0.2.2');
+  try {
+    log('  OCSP responder', pki.ocsp, '· revocation list', pki.crl);
+    log('  10.0.2.2 from the emulator:', (sh('ping -c 1 -W 3 10.0.2.2') || '').split('\n')[1] || '(no answer to ping)');
+    await openBytes(SAMPLE, 'Revocation.pdf');
+    const id = await page.evaluate(async ([b, pw]) => { const bin = atob(b); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return window.__cowdreyPdf.sgImportId(u, pw); }, [pki.p12.toString('base64'), pki.password]);
+    log('  signing ID:', JSON.stringify(id));
+    eq(id.chain, 3, 'the signing ID has its chain');
+    const { bytes } = await saveThroughDialog(async () => {
+      await run('sgSign'); await page.waitForSelector('#dialog[open] #sgPlace');
+      await page.selectOption('#sgId', id.id);
+      if (await page.$('#sgPw:visible')) await page.fill('#sgPw', pki.password);
+      // (no timestamp: this scenario asks only the servers made here)
+      if (await page.$('#sgTs:checked')) await page.click('#sgTs');
+      await page.selectOption('#sgPlace', 'draw'); await page.selectOption('#sgLook', 'text');
+      await page.click('#dialog .dlg-foot .btn.primary');
+      await page.waitForFunction(() => document.querySelector('#app').dataset.tool === 'sgbox');
+      const [x1, y1] = await at(0, 320, 200), [x2, y2] = await at(0, 540, 140);
+      await A.swipeCss(page, x1, y1, x2, y2, 500);
+    }, 'revocation');
+    const r = ranges(bytes); ok(r.length === 1, 'one signature');
+    const v = nodeVerify(bytes, r[0]); log('  ', JSON.stringify(v));
+    ok(v.digestOk && v.sigOk && /Device Test Signer/.test(v.signer), 'the signature verifies');
+    eq([pki.ocspHits(), pki.crlHits()], [0, 0], 'nothing asked before the person asks');
+    await openBytes(bytes, 'Revocation check.pdf');
+    await run('sgPanel'); await page.waitForSelector('#dialog[open] [data-sg-rev]');
+    const listText = () => page.evaluate(() => (document.querySelector('#dialog .sg-list') || document.querySelector('#dialog')).textContent.replace(/\s+/g, ' '));
+    // the panel's own button, tapped, then its answer
+    const check = async (re, label) => {
+      await A.tapEl(page, '#dialog [data-sg-rev]');
+      try { await page.waitForFunction((src) => new RegExp(src).test(document.querySelector('#dialog .sg-list').textContent), re.source, { timeout: 60000 }); }
+      catch (e) { log('  the panel says:', (await listText()).slice(0, 600)); throw e; }
+      const m = (await listText()).match(/(Not revoked|Revoked|Not checked)[^.]*\./); log(`  ${label}:`, m ? m[0] : '');
+      shot('revocation-' + label);
+    };
+    await check(/Not revoked: “Device Test Signer” \(OCSP from 10\.0\.2\.2:\d+\)/, 'not-revoked');
+    eq(pki.ocspHits(), 1, 'one OCSP request');
+    await pki.revoke();
+    log('  the signer\'s certificate is revoked now');
+    await check(/Revoked: “Device Test Signer” was revoked .*key compromise.*\(OCSP from 10\.0\.2\.2:\d+\)/, 'revoked-ocsp');
+    eq(pki.ocspHits(), 2, 'asked again, not an answer kept from before');
+    // with the OCSP responder gone, the revocation list (a GET) is asked instead
+    await pki.stopOcsp();
+    await check(/Revoked: “Device Test Signer” was revoked .*\(CRL from 10\.0\.2\.2:\d+\)/, 'revoked-crl');
+    eq(pki.crlHits(), 1, 'the revocation list was fetched');
+    const sigs = await page.evaluate(() => window.__cowdreyPdf.sgSignatures());
+    log('  the app reads:', JSON.stringify(sigs.map((x) => ({ status: x.status, rev: x.rev && x.rev.verdict }))));
+    eq(sigs.map((x) => x.status), ['revoked']);
+    await answer('Close').catch(() => {});
+  } finally { await pki.close(); }
 });
 
 await test('signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password', async () => {

@@ -112,6 +112,35 @@ Each new version needs a higher version code. It comes from the version in `desk
   nothing itself.
 - Copies installed from the APK on GitHub check GitHub's latest release once a day and offer the newer APK.
 
+## The network: timestamps and revocation checks
+
+The app goes online only when the person asks it to (a timestamp server they set, or "Check revocation online").
+Neither request is made by the web view, whose `fetch` most timestamp, OCSP and CRL servers block (they send no CORS
+headers): the page hands the request to the app (`desktop/src-tauri/src/tsa.rs`), which checks it and has Android make
+it (`tsaPost` and `pkiFetch` in `desktop/src-tauri/plugins/sharekit/android/src/main/java/AndroidPdf.kt`). The page
+cannot call those two directly: they are not in the plugin's list of methods the page may use.
+
+- **Timestamps** are https only, through Android's own network stack (the phone's certificate authorities, DNS and proxy).
+- **Revocation checks** send an OCSP request (a POST of at most 8 KB, `application/ocsp-request` only) or fetch a
+  revocation list (a GET); answers over 32 MB are refused, and a list may move (at most 5 redirects, GET only) only to
+  another http or https address. https goes through Android's own network stack, as timestamps do.
+
+**Plain http, and why the app still allows no cleartext traffic.** Most OCSP responders and CRLs are plain http, which
+is safe for them: every answer is signed by the certificate's issuer, and the page checks that signature, the nonce
+and the dates before it believes an answer, so someone on the network can at worst make a check fail, never change its
+result. But the release app allows no cleartext traffic (Tauri sets `usesCleartextTraffic` to false for release builds,
+true only for the debug build the device test drives), and Android's network security config can only allow cleartext
+for named domains or for the whole app, while OCSP and CRL servers can be any host a certificate names. Allowing it for
+the whole app would also let the web view and every other request use plain http. So nothing in the manifest changes:
+`pkiFetch` speaks plain http/1.1 itself, on a socket of its own (through the phone's http proxy when it has one), for
+exactly these two kinds of request and nothing else. Everything else in the app stays https only, and the device test
+runs the same code as the release app, because `pkiFetch` never relies on the debug build's cleartext setting.
+
+The device test checks this end to end: it makes a small certificate authority with openssl on the runner
+(`tests/android/pki.mjs`), runs `openssl ocsp` and a tiny http server for its revocation list there, reached from the
+emulator at `10.0.2.2`, signs with a certificate that names both, and checks revocation from the Signatures panel: not
+revoked, then revoked (a new OCSP request, not a kept answer), then revoked from the CRL once the OCSP responder is gone.
+
 ## What only you can do
 
 - Create the upload key and add the three secrets (steps 1 and 2).
