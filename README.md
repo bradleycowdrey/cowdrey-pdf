@@ -4,7 +4,7 @@ A PDF viewer and editor by **Bradley Cowdrey** · [bradcowdrey.com](https://brad
 
 Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms and rearrange pages, with nothing leaving your device. Like Cowdrey.MD it is one self-contained web page, wrapped as an app for Mac, iPhone, iPad and Android.
 
-**Version 1.1.** Edit text in any language, OCR that cleans and straightens scans, certificate signing, real redaction, PDF/A, a form designer, compare, tables and summaries, accessibility tools and batch Actions, on top of everything in 1.0, on the web and in native apps for Mac, iPhone and iPad. See the [changelog](CHANGELOG.md).
+**Version 1.1.** Edit text in any language, OCR that cleans and straightens scans, certificate signing with revocation checks, real redaction, PDF/A and PDF/X, a form designer, compare, tables and summaries, accessibility tools and batch Actions, on top of everything in 1.0, on the web and in native apps for Mac, iPhone and iPad. See the [changelog](CHANGELOG.md).
 
 **Free. Forever.** Open source under the MIT License.
 
@@ -22,7 +22,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 
 - **Read:** smooth scrolling pages, thumbnails, the PDF's outline, find with every match marked, zoom and fit width, dark mode for the app and an optional dark page. Video and audio in a PDF play in place; portfolios list their files.
 - **Mark up:** highlight selected text, draw, boxes, text, sticky notes (saved as real PDF comments), stamps (your own pictures, "Approved by" stamps with the date, and a library of your stamps), file attachments, signatures (kept on this device for next time) and pictures. Select a mark to move or delete it; undo and redo.
-- **Edit the PDF itself, in any language:** click a line to retype it in its own font and colour; letters the PDF's font lacks are written in embedded Noto fonts, so Greek, Cyrillic, symbols and (after a one-time download) Chinese, Japanese, Korean, Hindi and Thai save as typed. Text inside forms and kerned lines can be edited too. Right-to-left text (Arabic, Hebrew) can't be saved yet.
+- **Edit the PDF itself, in any language:** click a line to retype it in its own font and colour; letters the PDF's font lacks are written in embedded Noto fonts, so Greek, Cyrillic, symbols and (after a one-time download) Chinese, Japanese, Korean, Hindi and Thai save as typed, and draw in any PDF app. Text inside forms and kerned lines can be edited too. Right-to-left text (Arabic, Hebrew) can't be saved yet.
 - **Pictures:** move, resize, turn or flip without re-encoding (a JPEG stays the same JPEG), crop for real, replace, and Enhance (brightness, contrast, sharpen, straighten, black and white, remove specks, resample). Export all pictures as a .zip. Deleted pictures leave the file.
 - **OCR:** recognize text in scans on the device. It straightens and cleans the page first, turns sideways and upside-down pages upright, reads up to three languages at once, lists uncertain words under Check words for correction, can replace the scan with a cleaned image, and can run when a scanned PDF opens.
 - **Forms:** fill fields; make new ones and edit the PDF's own (position, look, options, actions); number, date and percent formats, range checks and totals that work as you fill in; tab order; align, distribute, duplicate and copy to pages; a picture in a signature field; export and import form data and comments (XFDF, FDF).
