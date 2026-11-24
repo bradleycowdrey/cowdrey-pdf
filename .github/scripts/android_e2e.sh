@@ -12,10 +12,17 @@ adb shell cmd uimode night yes
 # The network, for the timestamp scenario: on, no private DNS (DNS over TLS can fail on the emulator), and logged.
 adb shell settings put global private_dns_mode off
 adb shell svc wifi enable; adb shell svc data enable
-for i in $(seq 1 12); do
+# The emulator's mobile network can take a while to come up, or not come up at all (run 21: no network after a minute):
+# after a minute, airplane mode is turned on and off, which starts the radio again.
+for i in $(seq 1 36); do
   N=$(adb shell ping -c 1 -W 3 freetsa.org 2>&1 | head -2 | tr '\n' ' ')
   if echo "$N" | grep -q 'bytes from\|PING '; then echo "network: names resolve ($N)"; break; fi
-  echo "network: not yet ($N)"; sleep 5
+  echo "network: not yet ($N; $(adb shell dumpsys connectivity 2>/dev/null | grep -m1 'Active default network'))"
+  if [[ $i == 12 || $i == 24 ]]; then
+    adb shell cmd connectivity airplane-mode enable; sleep 3; adb shell cmd connectivity airplane-mode disable
+    adb shell svc wifi enable; adb shell svc data enable; echo "network: airplane mode on and off"
+  fi
+  sleep 5
 done
 echo "network: by address: $(adb shell ping -c 1 -W 3 8.8.8.8 2>&1 | sed -n 2p)"
 echo "network: dns $(adb shell getprop net.dns1) / $(adb shell dumpsys connectivity 2>/dev/null | grep -m2 -oE 'DnsAddresses: \[[^]]*\]' | tr '\n' ' ')"
