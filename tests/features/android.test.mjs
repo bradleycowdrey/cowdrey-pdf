@@ -12,6 +12,7 @@ export default async (h) => {
       core: { invoke: async (c, a) => {
         window.__calls.push([c, a]);
         if (c === 'take_opened_files') return opened.splice(0);
+        if (c === 'tsa_post') throw new Error('no answer (test)');
         if (c === 'write_share_file') { const p = '/data/user/0/app/cache/outgoing/' + a.name; window.__files[p] = (a.append ? window.__files[p] || '' : '') + atob(a.base64); return p; }
         if (c !== 'plugin:sharekit|native') return null;
         const m = a.method, x = a.args || {};
@@ -224,6 +225,20 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  await test('Android app: a timestamp request goes through the app (tsa_post), not the web view, which most servers block', async () => {
+    const p = await open(android()); await openPdf(p);
+    const web = []; p.on('request', (r) => { if (/tsa\.example/.test(r.url())) web.push(r.url()); });
+    const id = await p.evaluate(async () => (await window.__cowdreyPdf.sgCreateId({ name: 'Droid Signer', password: 'pw1234' })).id);
+    await p.evaluate((i) => { window.__cowdreyPdf.sgSignNow({ id: i, password: 'pw1234', page: 0, rect: [300, 640, 520, 700], o: { tsa: 'https://tsa.example/ts' } }); }, id);
+    await p.waitForSelector('#dialog[open]', { timeout: 30000 });
+    const said = await p.textContent('#dialog');
+    ok(/Could not sign/.test(said) && /could not be reached \(no answer \(test\)\)/.test(said), said);
+    const calls = await p.evaluate(() => window.__calls.filter(([c]) => c === 'tsa_post').map(([, a]) => [a.url, atob(a.body).charCodeAt(0), atob(a.body).length]));
+    eq(calls.length, 1, 'one tsa_post'); eq(calls[0].slice(0, 2), ['https://tsa.example/ts', 0x30]);
+    ok(calls[0][2] > 50 && calls[0][2] < 200, 'a timestamp request, not the document: ' + calls[0][2] + ' bytes');
+    eq(web, [], 'nothing posted from the web view');
+    await p.ctx.close();
+  });
   await test('Android app: Check for updates offers the APK from GitHub, but not when Google Play installed the app', async () => {
     const p = await open(android({ installer: 'com.android.vending' }));
     ok(await p.evaluate(() => !window.__cowdreyPdf.cmdHidden('checkUpdates')), 'offered');
