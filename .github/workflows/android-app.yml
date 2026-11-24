@@ -149,6 +149,17 @@ jobs:
           echo "Test APK: $T" | tee -a "$RUNNER_TEMP/android-build.log"
           cp "$T" "$RUNNER_TEMP/Cowdrey.PDF-test.apk"
 
+      # The release build leaves Gradle and Kotlin daemons and gigabytes of build files behind; on full runs the
+      # emulator then came up without any network (runs 21 and 22; quick runs 20 and 23 had one). The APKs are
+      # already copied out, so the daemons are stopped and Gradle's build files removed before the emulator starts.
+      - name: Make room for the emulator
+        run: |
+          echo "before:"; free -m | sed -n 2p; df -h / | tail -1
+          (cd desktop/src-tauri/gen/android && ./gradlew --stop > /dev/null 2>&1) || true
+          pkill -f 'GradleDaemon|KotlinCompileDaemon|kotlin-daemon' || true
+          rm -rf desktop/src-tauri/gen/android/app/build desktop/src-tauri/gen/android/.gradle
+          echo "after:"; free -m | sed -n 2p; df -h / | tail -1
+
       - name: Install the device test driver
         run: |
           mkdir -p "$RUNNER_TEMP/driver" && cd "$RUNNER_TEMP/driver" && npm init -y > /dev/null
