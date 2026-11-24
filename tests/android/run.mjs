@@ -447,7 +447,8 @@ await test('forms: Save PDF tapped while typing in a field (keyboard up), on a P
   await page.evaluate(() => {
     window.__inv = []; const core = window.__TAURI__.core, inv = core.invoke.bind(core);
     if (!core.__wrapped) { core.__wrapped = true; core.invoke = (c, a) => { window.__inv.push(c + (a && a.method ? ':' + a.method : '')); return inv(c, a); }; }
-    window.__clicks = []; document.addEventListener('click', (e) => window.__clicks.push((e.target.closest('button') || e.target).id || e.target.tagName), true);
+    window.__clicks = []; const t0 = performance.now();
+    for (const t of ['pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click', 'focusout']) document.addEventListener(t, (e) => window.__clicks.push(`${Math.round(performance.now() - t0)} ${t} ${(e.target.closest && e.target.closest('button') || e.target).id || e.target.tagName}`), true);
   });
   for (let i = 0; i < 3; i++) {
     await A.tapEl(page, '.annotationLayer input[name="name"]');

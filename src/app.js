@@ -5061,6 +5061,11 @@ function androidStart() {
     if (o.keyboard > 0) setTimeout(() => { const a = document.activeElement; if (a && a !== document.body && (/INPUT|TEXTAREA|SELECT/.test(a.tagName) || a.isContentEditable)) a.scrollIntoView({ block: 'center' }); }, 150);
   };
   androidCall('insets').then(window.__cowdreyInsets, () => {});
+  // A tap on a button while typing (the keyboard up over a field): the field keeps the focus, so the keyboard stays
+  // until the button has done its work. Otherwise it goes down during the tap, the web view lays out again under the
+  // finger and drops the click: Save PDF did nothing until tapped again.
+  const keyboardIn = (el) => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|file|range|color|image)$/i.test(el.type)));
+  document.addEventListener('mousedown', (e) => { const b = e.target.closest && e.target.closest('button'); if (b && !b.disabled && keyboardIn(document.activeElement) && !b.contains(document.activeElement)) e.preventDefault(); }, true);
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
   window.__cowdreyNight = (night) => { androidNight = !!night; applyTheme(); };
   androidCall('appInfo').then((r) => { if (r && typeof r.night === 'boolean') window.__cowdreyNight(r.night); }, () => {});

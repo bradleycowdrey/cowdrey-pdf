@@ -270,6 +270,29 @@ export default async (h) => {
     eq(p.errors, []); await p.ctx.close();
   });
 
+  // On a phone, the keyboard going down mid-tap made the web view drop the click (tests/android/run.mjs found Save PDF
+  // doing nothing when tapped while typing): a button tapped while typing leaves the focus, and the keyboard, as they are.
+  await test('Android app: Save PDF tapped while typing in a field saves at once, with the typed value; the field keeps the focus', async () => {
+    const p = await open(android({ saveAs: [{ saved: true, uri: 'content://docs/document/7', name: 'Quarterly report.pdf' }] }));
+    await openPdf(p);
+    // (the pages are laid out again for the phone's width just after opening: the field is tapped once they settle)
+    await p.waitForTimeout(1500);
+    await p.tap('.annotationLayer input[name="name"]');
+    await p.waitForFunction(() => document.activeElement && document.activeElement.name === 'name');
+    await p.keyboard.type('Typed then saved');
+    await p.evaluate(() => { window.__focusAtClick = null; document.querySelector('#saveBtn').addEventListener('click', () => { window.__focusAtClick = document.activeElement && document.activeElement.name; }, { once: true }); });
+    await p.tap('#saveBtn'); await p.waitForTimeout(800);
+    eq(await p.evaluate(() => window.__focusAtClick), 'name', 'the field still has the focus when Save runs');
+    eq((await native(p, 'saveAs')).length, 1, 'the save dialog');
+    const path = (await native(p, 'saveAs'))[0].args.path;
+    const bytes = await p.evaluate((f) => Array.from(window.__files[f], (c) => c.charCodeAt(0)), path);
+    eq((await h.PDFDocument.load(new Uint8Array(bytes))).getForm().getTextField('name').getText(), 'Typed then saved');
+    // a checkbox is not typing: the focus moves as usual
+    await p.tap('.annotationLayer .checkBox input'); await p.tap('#saveBtn'); await p.waitForTimeout(600);
+    eq(await p.evaluate(() => document.activeElement && document.activeElement.id), 'saveBtn');
+    eq(p.errors, []); await p.ctx.close();
+  });
+
   // Android can close an app soon after it leaves the screen: a change still waiting to be kept is kept at once.
   await test('Android app: leaving the app keeps the last change on the device at once', async () => {
     const p = await open(android());
