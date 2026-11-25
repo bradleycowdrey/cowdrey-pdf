@@ -1,0 +1,4 @@
+Cowdrey.PDF 2.1.0: Mac App Store build check
+macOS App Store version 0.3.2: WAITING_FOR_REVIEW
+Skipped: macOS 0.3.2 is WAITING_FOR_REVIEW; the Mac App Store build of 2.1.0 will be made after it is released.
+Nothing was revoked, deleted or uploaded. (To build anyway, run this workflow by hand with "build_while_in_review"; the certificates of the build in review are then kept.)
