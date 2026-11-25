@@ -1,7 +1,7 @@
 // Sharing: Share app (the title bar, Help, More on a phone) and Share… for the document on the web.
 export default async (h) => {
   const { test, eq, ok, open, openPdf, macApp, calls, waitPages, fixture } = h;
-  const APP_URL = 'https://bradcowdrey.com/cowdrey-pdf', MAC_URL = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest', IOS_URL = 'https://testflight.apple.com/join/tr4eD534';
+  const APP_URL = 'https://bradcowdrey.com/cowdrey-pdf', MAC_URL = 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest', IOS_URL = 'https://apps.apple.com/app/id6834950576';
   const BLURB = 'Cowdrey.PDF is a free PDF editor by Bradley Cowdrey. Free. Forever. Pass it on to anyone who works with PDFs.';
   // A browser with a clipboard that records, and with or without a share sheet (and file sharing).
   const browser = (o = {}) => [(o) => {

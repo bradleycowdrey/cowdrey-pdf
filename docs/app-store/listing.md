@@ -2,7 +2,7 @@
 
 Made from [`listing.json`](listing.json) by `.github/scripts/app_store_listing_md.py`: change listing.json and run the script, never this file by hand. listing.json is what `.github/scripts/app_store_listing.py` sends to App Store Connect. All counts are characters, measured on the exact text in the block (no trailing newline). Keywords are also counted in bytes.
 
-Version 1.1.0. Minimum OS: iOS 15.0 / iPadOS 15.0, macOS 11.0. No sign-in or demo account required.
+Version 2.1.0. Minimum OS: iOS 15.0 / iPadOS 15.0, macOS 11.0. No sign-in or demo account required.
 
 # iPhone and iPad
 
@@ -132,10 +132,10 @@ https://bradcowdrey.com/legal
 - Primary: Productivity
 - Secondary: Business
 
-## What's New in 1.1.0 (722/4000)
+## What's New in 2.1.0 (722/4000)
 
 ```
-Cowdrey.PDF 1.1, still entirely on your iPhone or iPad:
+Cowdrey.PDF 2.1, still entirely on your iPhone or iPad:
 - Sign with a certificate (PAdES), with an optional timestamp, and check signatures: certificate chain, changes after signing, and revocation when you ask
 - Save as PDF/A or PDF/X, and edit document properties and metadata
 - Compare two PDFs side by side, with the changes marked
@@ -270,10 +270,10 @@ annotate,highlight,form,redact,merge,split,ocr,scan,signature,document,watermark
 
 No words from the name or subtitle (cowdrey, pdf, editor, edit, sign, fill, free), no spaces after commas, no plural repeats.
 
-## What's New in 1.1.0 (711/4000)
+## What's New in 2.1.0 (711/4000)
 
 ```
-Cowdrey.PDF 1.1, still entirely on your Mac:
+Cowdrey.PDF 2.1, still entirely on your Mac:
 - Sign with a certificate (PAdES), with an optional timestamp, and check signatures: certificate chain, changes after signing, and revocation when you ask
 - Save as PDF/A or PDF/X, and edit document properties and metadata
 - Compare two PDFs side by side, with the changes marked

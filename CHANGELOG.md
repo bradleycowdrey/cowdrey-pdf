@@ -2,6 +2,10 @@
 
 Versions follow [Semantic Versioning](https://semver.org). Every platform shares one version number.
 
+## 2.1.0 — on the App Store for iPhone and iPad
+
+The version number moves to 2.1 to line up with the other Cowdrey apps. On iPhone and iPad, Cowdrey.PDF is now on the App Store: https://apps.apple.com/app/id6834950576 (TestFlight stays open for early versions). Everything else is as in 1.1.0 below.
+
 ## 1.1.0 — closer to Acrobat Pro, still on your device
 
 Cowdrey.PDF 1.1 fills most of the gaps against Acrobat Pro, and comes to Android (in testing). Everything still runs on your device; the only things that ever go online are a font download you agree to, OCR language data you choose, a timestamp server you set yourself (it gets a fingerprint of the signature, not the document), and revocation checks you ask for (the certificate's servers get its serial number and its issuer's fingerprints, never the document).

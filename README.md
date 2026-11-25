@@ -12,7 +12,7 @@ Cowdrey.PDF is Cowdrey.MD's sibling for PDFs: read, mark up, sign, fill forms an
 |---|---|
 | **Use it on the web** | [bradcowdrey.com/cowdrey-pdf/app](https://bradcowdrey.com/cowdrey-pdf/app) |
 | **Mac** | [Download Cowdrey.PDF.dmg](https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg) · signed and notarized by Apple · the Mac App Store version is coming |
-| **iPhone and iPad** | [Install with TestFlight](https://testflight.apple.com/join/tr4eD534) · the App Store version is on its way |
+| **iPhone and iPad** | [Download on the App Store](https://apps.apple.com/app/id6834950576) · early versions on [TestFlight](https://testflight.apple.com/join/tr4eD534) |
 | **Android** | In testing, not yet on Google Play · each build's APK is attached to its [workflow run](https://github.com/bradleycowdrey/cowdrey-pdf/actions/workflows/android-app.yml) · see [docs/android.md](docs/android.md) |
 | **Product page** | [bradcowdrey.com/cowdrey-pdf](https://bradcowdrey.com/cowdrey-pdf) |
 
