@@ -1,6 +1,8 @@
 // App Store screenshots for iPhone 6.9" (1320 x 2868), iPad 13" (2064 x 2752) and Mac (2880 x 1800), all from the
 // real app in dark mode, on the family template shared with Cowdrey.MD (tests/store-frame.mjs, the same file in both
-// repos): a deep raspberry ground, a Fraunces headline, one line in Instrument Sans, and a plain device with the app.
+// repos, a word-for-word copy of the family master): a deep raspberry ground, a Fraunces headline, one line in
+// Instrument Sans, and the device with the app: the iPhone, the iPad, and on the Mac the app's window on the family's
+// MacBook desktop.
 //
 // Run: python3 build.py && (cd desktop && npm ci) && npm install --no-save playwright@1.56.1 &&
 //      node tests/app-store-screens.mjs [--only=iphone,ipad,mac] [--shots=1,2] [--raw=dir] [--docs=dir]
@@ -8,10 +10,11 @@
 //
 // Every document is fictional and made here with pdf-lib (or drawn in the page, for the scan). The phone and tablet
 // are the iPhone and iPad app (touch, their user agent, the safe areas of the real screens); the Mac is the Mac App
-// Store build in a window with the macOS title bar.
+// Store build in a window with the macOS title bar, on a MacBook's desktop. The app's clock is fixed at the family's
+// MAC_CLOCK time (Wed Nov 25 2026, 9:41 AM), so the dates it shows (a comment's day) never drift between runs.
 import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module'; import { fileURLToPath } from 'node:url';
-import { compose as frame, THEMES } from './store-frame.mjs';
+import { compose as frame, desktop, THEMES } from './store-frame.mjs';
 const require = createRequire(import.meta.url);
 let pw; try { pw = require('playwright'); } catch { try { pw = require(path.join(process.cwd(), 'node_modules/playwright')); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); } }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,8 +34,10 @@ const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1
 const DEVICES = {
   iphone: { w: 440, h: 956, scale: 3, touch: true, ua: IPHONE_UA, safe: { top: 62, bottom: 34 }, out: [1320, 2868] },
   ipad: { w: 1032, h: 1376, scale: 2, touch: true, ua: IPAD_UA, safe: { top: 24, bottom: 20 }, out: [2064, 2752] },
-  // The Mac window: 1380 x 851 points with the 28-point macOS title bar drawn by the template above it. At this width
-  // the ribbon of every tab the stories use fits the window (the window is drawn 2280 px wide, as Cowdrey.MD's is).
+  // The Mac window: 1380 x 851 points, the app's 1380 x 823 under the 28-point macOS title bar the template draws
+  // (the app has no title bar of its own). At this width the ribbon of every tab the stories use fits the window, and
+  // the window sits on the MacBook's 1512 x 982 pt desktop at its real size with 66 pt of wallpaper at each side and
+  // about 50 pt above and below it, under the 32 pt menu bar.
   mac: { w: 1380, h: 823, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
 };
 
@@ -53,10 +58,14 @@ function html(d) {
   for (const [side, v] of Object.entries({ top: d.safe.top, bottom: d.safe.bottom, left: 0, right: 0 })) s = s.split(`env(safe-area-inset-${side}, 0px)`).join(v + 'px');
   return s;
 }
+// The app's clock: the family's MAC_CLOCK time ('Wed Nov 25  9:41 AM', 2026), so a comment made in a story is dated
+// 25 Nov 2026 on every run, and the Mac's menu bar agrees with it.
+const NOW = { time: '2026-11-25T09:41:00-08:00', zone: 'America/Los_Angeles', locale: 'en-US' };
 async function app(kind) {
   const d = DEVICES[kind];
   await launch();
-  const ctx = await browser.newContext({ viewport: { width: d.w, height: d.h }, colorScheme: 'dark', deviceScaleFactor: d.scale, hasTouch: d.touch, isMobile: kind === 'iphone', acceptDownloads: true, ...(d.ua ? { userAgent: d.ua } : {}) });
+  const ctx = await browser.newContext({ viewport: { width: d.w, height: d.h }, colorScheme: 'dark', deviceScaleFactor: d.scale, hasTouch: d.touch, isMobile: kind === 'iphone', acceptDownloads: true, locale: NOW.locale, timezoneId: NOW.zone, ...(d.ua ? { userAgent: d.ua } : {}) });
+  await ctx.clock.setSystemTime(new Date(NOW.time));
   const p = await ctx.newPage();
   p.errors = []; p.on('pageerror', (e) => p.errors.push(e.message));
   await p.addInitScript(native, kind === 'mac');
@@ -502,9 +511,13 @@ async function compose(kind, story, raw, file) {
   const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
   // Every headline in the set is two lines, so the iPhone sits where every family app's does, at the two-line height.
   // The Mac's copy has room for one headline line and the sub-line only, so there the two lines run as one.
-  const head = kind === 'mac' ? story.title.replace(/\n/g, ' ') : story.title;
-  const screen = kind === 'mac' ? [DEVICES.mac.w, DEVICES.mac.h] : undefined;
-  return frame(browser, kind, { head, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 2, screen }, THEMES.pdf, FONTS);
+  if (kind !== 'mac') return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 2 }, THEMES.pdf, FONTS);
+  // The Mac: the window at its real point size, centred on the MacBook's desktop under the menu bar, with the
+  // template's title bar (the app's capture has none of its own), the family's clock and the Dock hidden.
+  const M = DEVICES.mac;
+  const screen = await desktop(browser, { theme: THEMES.pdf, app: 'Cowdrey.PDF', fonts: FONTS,
+    windows: [{ png: raw, w: M.w, h: M.h + M.titlebar, chrome: 'window' }] });
+  return frame(browser, kind, { head: story.title.replace(/\n/g, ' '), sub, device: 'macbook', png: screen, file }, THEMES.pdf, FONTS);
 }
 
 // The organize story's document: the review, the form, the letter and the scan in one file, with three of the
