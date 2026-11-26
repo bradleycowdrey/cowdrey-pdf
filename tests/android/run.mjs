@@ -6,6 +6,9 @@
 import fs from 'node:fs'; import path from 'node:path'; import crypto from 'node:crypto'; import { createRequire } from 'node:module'; import { spawn } from 'node:child_process';
 import * as A from './lib.mjs';
 import { startPki } from './pki.mjs';
+// The app's version, read from the Tauri config so these checks follow each version bump.
+const APP_VERSION = JSON.parse(fs.readFileSync(new URL('../../desktop/src-tauri/tauri.conf.json', import.meta.url), 'utf8')).version;
+const VERSION_RE = APP_VERSION.replace(/\./g, '\\.');
 const { adb, adbBytes, sh, log, shot, sleep, PKG, root, isDocs, toDownloads, saveThroughDialog } = A;
 const inDownloadsHere = A.inDownloads;
 const require = createRequire(import.meta.url);
@@ -460,7 +463,7 @@ await test('Save PDF: Android\'s save dialog; the file in Downloads is the PDF w
   savedName = name;
   const d = await L.PDFDocument.load(bytes, { updateMetadata: false });
   eq(d.getPageCount(), 3);
-  ok(/^Cowdrey\.PDF 1\.1\.0/.test(d.getProducer() || ''), 'producer: ' + d.getProducer());
+  ok(new RegExp('^Cowdrey\\.PDF ' + VERSION_RE).test(d.getProducer() || ''), 'producer: ' + d.getProducer());
   const annots = d.getPage(0).node.Annots(); const subs = annots ? annots.asArray().map((r) => String(d.context.lookup(r).get(L.PDFName.of('Subtype')))) : [];
   log('  annotations:', subs.join(' '));
   ok(subs.includes('/Highlight') && subs.includes('/Ink') && subs.includes('/Text'), 'the comments are in the file');
@@ -1314,7 +1317,7 @@ await test('update check (an APK not installed from Google Play): Check for upda
   await run('checkUpdates');
   await page.waitForFunction(() => /latest version|Could not check/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
   log('  GitHub:', JSON.stringify(await page.evaluate(() => window.__gh)), '· toast:', await toastText());
-  ok(/You have the latest version \(1\.1\.0\)/.test(await toastText()) || /api\.github\.com.*",403\]/.test(JSON.stringify(await page.evaluate(() => window.__gh))), 'GitHub answered, and 1.1.0 is not older than its latest release');
+  ok(new RegExp('You have the latest version \\(' + VERSION_RE + '\\)').test(await toastText()) || /api\.github\.com.*",403\]/.test(JSON.stringify(await page.evaluate(() => window.__gh))), 'GitHub answered, and ' + APP_VERSION + ' is not older than its latest release');
   // a newer release with an APK (GitHub's answer replaced): the app offers it, and Download hands the link to Android
   await page.evaluate(() => { window.__fakeRelease = { tag_name: 'v99.0.0', html_url: 'https://github.com/bradleycowdrey/cowdrey-pdf/releases', assets: [{ name: 'Cowdrey.PDF.dmg', browser_download_url: 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.dmg' }, { name: 'Cowdrey.PDF.apk', browser_download_url: 'https://github.com/bradleycowdrey/cowdrey-pdf/releases/latest/download/Cowdrey.PDF.apk' }] }; });
   try {
