@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       quick:
-        description: Only build the test app and run the device test (no release APK or App Bundle)
+        description: Only build the test app and run the device test (no release APK or App Bundle, nothing to Google Play)
         type: boolean
         default: false
 
@@ -42,8 +42,35 @@ jobs:
       KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
       KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      # Google Play service account key (docs/play/README.md). Without it, nothing is sent to Google Play.
+      HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
+
+      # Google Play gets release builds of main only: a run started by hand (not a quick one), or a push that changes
+      # the version number (which is how a new version is released). Other pushes rebuild the same version for the
+      # GitHub APK and the device tests. Tauri sets the version code from the version (2.1.0 is 2001000), so each new
+      # version has a higher code, and Play skips a version code it already has.
+      - name: Is this a release build for Google Play?
+        id: play
+        env:
+          BEFORE: ${{ github.event.before }}
+          QUICK: ${{ inputs.quick }}
+        run: |
+          V=$(jq -r .version desktop/src-tauri/tauri.conf.json)
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            RELEASE=false; WHY="not main ($GITHUB_REF_NAME)"
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            if [[ "$QUICK" == true ]]; then RELEASE=false; WHY="quick run, no App Bundle"; else RELEASE=true; WHY="started by hand"; fi
+          else
+            OLD=""
+            if [[ -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]] && git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; then
+              OLD=$(git show "$BEFORE:desktop/src-tauri/tauri.conf.json" | jq -r .version || true)
+            fi
+            if [[ "$OLD" != "$V" ]]; then RELEASE=true; WHY="version ${OLD:-?} -> $V"; else RELEASE=false; WHY="version unchanged ($V)"; fi
+          fi
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Google Play: release build $RELEASE ($WHY)" | tee -a "$RUNNER_TEMP/android-build.log"
 
       - uses: actions/setup-java@v4
         with:
@@ -223,6 +250,89 @@ jobs:
             ${{ runner.temp }}/Cowdrey.PDF.apk
             ${{ runner.temp }}/Cowdrey.PDF.aab
           if-no-files-found: ignore
+
+      # The signed App Bundle as Google Play reads it: the package, the version, and the target API level, which must
+      # be Android 16 (API 36) or later for Play. The Tauri CLI pinned in desktop/package-lock.json (2.12.1) writes
+      # targetSdk 37 into the Android project it generates; this stops the run if a later one writes less.
+      - name: Check the Google Play App Bundle
+        id: aab
+        if: ${{ !inputs.quick && env.KEYSTORE != '' }}
+        run: |
+          set -eo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/bundletool.jar" https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          java -jar "$RUNNER_TEMP/bundletool.jar" dump manifest --bundle "$RUNNER_TEMP/Cowdrey.PDF.aab" > "$RUNNER_TEMP/play-manifest.xml"
+          python3 - "$RUNNER_TEMP/play-manifest.xml" "$(jq -r .version desktop/src-tauri/tauri.conf.json)" <<'EOF' 2>&1 | tee -a "$RUNNER_TEMP/android-build.log"
+          import os, sys
+          import xml.etree.ElementTree as ET
+          A = '{http://schemas.android.com/apk/res/android}'
+          root = ET.parse(sys.argv[1]).getroot()
+          code, name = root.get(A + 'versionCode'), root.get(A + 'versionName')
+          sdk = root.find('uses-sdk')
+          target = int(sdk.get(A + 'targetSdkVersion') or 0) if sdk is not None else 0
+          perms = [p.get(A + 'name') for p in root.iter('uses-permission')]
+          problems = []
+          if root.get('package') != 'com.bradcowdrey.cowdreypdf':
+              problems.append(f"package is {root.get('package')}, not com.bradcowdrey.cowdreypdf")
+          if name != sys.argv[2]:
+              problems.append(f'versionName is {name}, not {sys.argv[2]} (tauri.conf.json)')
+          if target < 36:
+              problems.append(f'targetSdkVersion is {target}; Google Play needs 36 or later')
+          if 'android.permission.REQUEST_INSTALL_PACKAGES' in perms:
+              problems.append('it asks for REQUEST_INSTALL_PACKAGES, which Google Play does not allow this app')
+          print(f'Google Play App Bundle: {root.get("package")} {name} (version code {code}), targetSdkVersion {target}, permissions: {", ".join(perms) or "none"}')
+          for p in problems:
+              print(f'::error::Google Play App Bundle: {p}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'code={code}\n')
+          sys.exit(1 if problems else 0)
+          EOF
+
+      # The release's name and "What's new": this version's CHANGELOG entry without the lines that are only about the
+      # Mac, iPhone or iPad, as plain text within Play's 500 characters, or one line about the app when none is left.
+      - name: Prepare the Google Play release
+        id: release
+        if: env.HAS_PLAY == 'true' && env.KEYSTORE != '' && steps.play.outputs.release == 'true'
+        env:
+          CODE: ${{ steps.aab.outputs.code }}
+        run: |
+          V=$(jq -r .version desktop/src-tauri/tauri.conf.json)
+          echo "name=$V ($CODE)" >> "$GITHUB_OUTPUT"
+          {
+            echo 'notes<<NOTES_EOF'
+            python3 - "$V" <<'PY'
+          import re, sys
+          v = sys.argv[1]
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          m = re.search(r'^## ' + re.escape(v) + r'(?=\s|$)[^\n]*$(.*?)(?=^## |\Z)', text, re.M | re.S)
+          lines = [l.strip() for l in (m.group(1) if m else '').splitlines() if l.strip()]
+          lines = [l for l in lines if 'Android' in l or not re.search(r'Mac|iPhone|iPad|TestFlight|App Store', l)]
+          out = ''
+          for l in lines:
+              l = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', re.sub(r'\*\*|`', '', l))
+              l = '• ' + l[2:] if l.startswith('- ') else l
+              if len(out) + len(l) > 500:
+                  break
+              out += l + '\n'
+          print(out.strip() or f'Cowdrey.PDF {v} for Android: change the words in a PDF in its own font, sign it, fill in forms and black out private details, all on your device.')
+          PY
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "Google Play release: $V (version code $CODE)" | tee -a "$RUNNER_TEMP/android-build.log"
+
+      # The App Bundle signed with the upload key goes to the closed test (docs/play/README.md). Each step of the upload
+      # says [OK], [SKIP] or [NEEDS YOU] (a warning on the run, for something only Bradley can do in Play Console).
+      - name: Google Play closed test
+        if: env.HAS_PLAY == 'true' && env.KEYSTORE != '' && steps.play.outputs.release == 'true'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PLAY_PACKAGE: com.bradcowdrey.cowdreypdf
+          PLAY_AAB: ${{ runner.temp }}/Cowdrey.PDF.aab
+          PLAY_RELEASE_NAME: ${{ steps.release.outputs.name }}
+          PLAY_RELEASE_NOTES: ${{ steps.release.outputs.notes }}
+        run: |
+          set -o pipefail
+          pip install --quiet pyjwt cryptography
+          python3 .github/scripts/play_publish.py 2>&1 | tee -a "$RUNNER_TEMP/android-build.log"
 
       # The test build, the build log and what the device test saved: kept with the run only, never on a release.
       - uses: actions/upload-artifact@v4

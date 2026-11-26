@@ -79,32 +79,23 @@ To build without pushing: Actions, "Android app", Run workflow (on `main`). Leav
 2. Create the app: Create app, name `Cowdrey.PDF`, default language English (United Kingdom) or (United States),
    App, Free.
 
-### Once: the store listing and policies
+### The store listing, the closed test and each release
 
-Everything to paste is in [`docs/play-store/listing.md`](play-store/listing.md):
+Everything for Google Play is in [`docs/play/`](play/README.md): the listing (`listing.json`), the icon, the feature
+graphic and the phone screenshots, and in its README the one-time steps in Play Console (the closed test, the service
+account, the first bundle, store settings) and suggested answers for App content and Data safety.
 
-- Main store listing: app name, short description, full description, app icon (512 x 512) and feature graphic
-  (1024 x 500), phone screenshots (at least 2).
-- App content: privacy policy URL, ads (none), app access (no login), content rating questionnaire, target audience
-  (18 and over is simplest; the app is fine for everyone), data safety (no data collected or shared), government app (no),
-  financial features (none), health (none).
-- Category: Productivity. Contact email and website.
+From then on the workflows do the uploads:
 
-### Each release: upload the App Bundle
+- **Android app** sends the App Bundle, signed with the upload key from step 2, to Play's closed test for each release
+  build of `main`: a push that changes the version in `desktop/src-tauri/tauri.conf.json`, or a run started by hand
+  (with "Only build the test app" off), once the device tests have passed.
+- **Google Play listing** sends the listing's text and pictures when they change, or when run by hand.
 
-1. Run the workflow with the upload key set (step 2). Download `Cowdrey.PDF-Android` from the run's Artifacts and take
-   `Cowdrey.PDF.aab` out of the zip.
-2. In Play Console: Test and release, Testing, Internal testing, Create new release.
-3. The first time, accept **Play App Signing**: Google keeps the key that signs what phones install, and your key from
-   step 1 is only the upload key. Choose "Use Google-generated key".
-4. Upload `Cowdrey.PDF.aab`. The release name fills in from the version (1.1.0, version code 1001000).
-5. Release notes: the "What's new" text from `docs/play-store/listing.md`.
-6. Save, Review release, Start rollout to Internal testing. Add yourself (and testers) under Testers, then open the
-   opt-in link on the phone.
-7. When it works: promote the release to Closed testing, then to Production.
+Both need the `PLAY_SERVICE_ACCOUNT_JSON` secret (`docs/play/README.md`); without it they skip Play and still pass.
 
 Each new version needs a higher version code. It comes from the version in `desktop/src-tauri/tauri.conf.json`
-(1.1.0 becomes 1001000), so bumping the version is enough.
+(2.1.0 becomes 2001000), so bumping the version is enough.
 
 ### Updates
 
@@ -160,5 +151,6 @@ dead processes in the log.
 ## What only you can do
 
 - Create the upload key and add the three secrets (steps 1 and 2).
-- Create the Play Console account, verify your identity, fill in the listing and policies, and upload the first AAB.
+- Create the Play Console account and verify your identity; then the one-time steps in [`docs/play/README.md`](play/README.md)
+  (the closed test and its testers, the service account and its secret, App content, and the first AAB if Play asks for it).
 - Optionally, after the first signed release: say on the README and the website that the Android app is available.
