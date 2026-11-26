@@ -100,16 +100,15 @@ const fontkit = require(path.join(NM, '@pdf-lib/fontkit'));
 const GF = (fam, file) => fs.readFileSync(path.join(NM, '@expo-google-fonts', fam, file));
 const hex = (h) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
 const W = 612, H = 792;
-// The dates in the documents. The app's clock is MAC_CLOCK (Wed Nov 25 2026), and a comment made in a story is dated
-// that day, so the proposal on every device is from the week before it (16 November 2026), valid until 18 December,
-// with the kick-off in January. The Mac shows its menu bar's clock, so there no document at all is dated after it:
-// the form and the letters are from November 2026 too. The iPhone and iPad show no clock and keep the form, the
-// letters and the scan as they were.
-const PROPOSAL_DATES = { proposal: '16 November 2026', valid: '18 December 2026', extended: '8 January 2027', kickoff: '2027-01-11' };
-const DATES = {
-  device: { ...PROPOSAL_DATES, season: 2027, signed: '2 March 2027', letter: '4 February 2027', until: 'January 2027', scan: '10 February 2027', paid: '12 FEB 2027', pack: 'Paperwork 2027' },
-  mac: { ...PROPOSAL_DATES, season: 2027, signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Paperwork 2026' },
-};
+// The dates in the documents, one line for the whole set. The app's clock is MAC_CLOCK (Wed Nov 25 2026, in the Mac's
+// menu bar), and a comment made in a story is dated that day, so no document in any picture is dated after it: the
+// proposal is from the week before (16 November 2026), valid until 18 December and moved to 8 January 2027 in the
+// edit, with the kick-off in January; the minutes of the proposal review are from 20 November, the reference and the
+// supplier's invoice from early November (the invoice's PAID stamp from the week after), and the supplier form is
+// signed the day before the clock (the date typed in the fill-and-sign story).
+const ONE_DATE_LINE = { proposal: '16 November 2026', valid: '18 December 2026', extended: '8 January 2027', kickoff: '2027-01-11',
+  minutes: '20 November 2026', signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Alder & Co client file' };
+const DATES = { device: ONE_DATE_LINE, mac: ONE_DATE_LINE };
 
 // A design studio's proposal to a client, as studios send them: a cover, a summary, the approach, the scope and
 // fees, a timeline and the page to sign, in the studio's own type with one accent colour.
@@ -347,58 +346,63 @@ async function terms() {
   return pdf.save();
 }
 
-// A club's membership form, with real form fields.
+// Alder & Co.'s new supplier form, as the studio fills it in once the proposal is agreed, with real form fields:
+// text fields, the payment terms as a radio group, tick boxes for the declarations, the date and a line to sign.
 async function form(D = DATES.device) {
   const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
   const f = await pdf.embedFont(StandardFonts.Helvetica), b = await pdf.embedFont(StandardFonts.HelveticaBold);
   const serif = await pdf.embedFont(GF('noto-serif', '700Bold/NotoSerif_700Bold.ttf'));
-  const green = hex('#1F5E4B'), grey = hex('#5F6670'), ink = hex('#1D2228'), mint = hex('#E7F1EC');
+  const navy = hex('#1E3A5F'), gold = hex('#C9A45C'), grey = hex('#5F6670'), ink = hex('#1D2228'), pale = hex('#EEF2F7'), edge = hex('#B7C0CC'), box = hex('#8A94A3');
   const M = 56, p = pdf.addPage([W, H]), fm = pdf.getForm();
-  p.drawRectangle({ x: 0, y: H - 120, width: W, height: 120, color: green });
-  // Two oars, crossed
-  for (const [a, c] of [[0.6, hex('#E8D9B5')], [-0.6, hex('#E8D9B5')]]) p.drawSvgPath(`M 0 0 L ${a > 0 ? 70 : -70} 70`, { x: W - 110, y: H - 25, borderColor: c, borderWidth: 4 });
-  p.drawEllipse({ x: W - 110 + 70 - 4, y: H - 95 + 4, xScale: 8, yScale: 14, color: hex('#E8D9B5'), rotate: L.degrees(45) });
-  p.drawEllipse({ x: W - 110 - 70 + 4, y: H - 95 + 4, xScale: 8, yScale: 14, color: hex('#E8D9B5'), rotate: L.degrees(-45) });
-  p.drawText('Riverside Rowing Club', { x: M, y: H - 62, size: 24, font: serif, color: hex('#FFFFFF') });
-  p.drawText(`Membership form, ${D.season} season`, { x: M, y: H - 88, size: 12, font: f, color: hex('#CFE3DA') });
-  let y = H - 160;
-  const label = (t, x, yy) => p.drawText(t, { x, y: yy, size: 9.5, font: b, color: grey });
+  p.drawRectangle({ x: 0, y: H - 112, width: W, height: 112, color: navy });
+  p.drawRectangle({ x: 0, y: H - 116, width: W, height: 4, color: gold });
+  // The company's mark: an "A&" in a square
+  p.drawRectangle({ x: W - M - 46, y: H - 82, width: 46, height: 46, borderColor: gold, borderWidth: 2 });
+  p.drawText('A&', { x: W - M - 38, y: H - 66, size: 18, font: serif, color: gold });
+  p.drawText('Alder & Co.', { x: M, y: H - 56, size: 23, font: serif, color: hex('#FFFFFF') });
+  p.drawText(`New supplier form  ·  Finance department  ·  Form AP-04`, { x: M, y: H - 82, size: 11.5, font: f, color: hex('#C9D5E4') });
+  let y = H - 146;
+  const label = (t, x, yy) => p.drawText(t, { x, y: yy, size: 9, font: b, color: grey });
   const field = (name, t, x, yy, w, value) => {
     label(t.toUpperCase(), x, yy + 30);
-    const tf = fm.createTextField(name); tf.addToPage(p, { x, y: yy, width: w, height: 24, borderColor: hex('#B9C2BE'), borderWidth: 1, backgroundColor: hex('#FFFFFF'), font: f });
+    const tf = fm.createTextField(name); tf.addToPage(p, { x, y: yy, width: w, height: 24, borderColor: edge, borderWidth: 1, backgroundColor: hex('#FFFFFF'), font: f });
     tf.setFontSize(12); if (value) tf.setText(value);
   };
-  p.drawText('About you', { x: M, y, size: 15, font: b, color: green }); y -= 52;
-  field('name', 'Full name', M, y, 300, 'Alex Morgan'); field('dob', 'Date of birth', M + 320, y, 180, '14 May 1991'); y -= 58;
-  field('email', 'Email', M, y, 300, 'alex.morgan@example.com'); field('phone', 'Phone', M + 320, y, 180, '555-0163'); y -= 58;
-  field('address', 'Address', M, y, 500, '18 Willow Lane, Riverside'); y -= 50;
-  p.drawText('Membership', { x: M, y, size: 15, font: b, color: green }); y -= 30;
-  const opts = [['adult', 'Adult rower', '$240 a year'], ['student', 'Student', '$120 a year'], ['social', 'Social member', '$60 a year']];
-  opts.forEach(([n, t, price], i) => {
-    const x = M + i * 170; const cb = fm.createCheckBox('m_' + n);
-    cb.addToPage(p, { x, y: y - 4, width: 16, height: 16, borderColor: hex('#8B9590'), borderWidth: 1, backgroundColor: hex('#FFFFFF') });
-    if (n === 'adult') cb.check();
-    p.drawText(t, { x: x + 24, y, size: 12, font: b, color: ink }); p.drawText(price, { x: x + 24, y: y - 15, size: 10, font: f, color: grey });
+  const head = (t) => { p.drawText(t, { x: M, y, size: 14, font: b, color: navy }); };
+  head('Supplier details'); y -= 50;
+  field('company', 'Company name', M, y, 290, 'Northwind Studio Ltd'); field('taxid', 'Tax ID', M + 310, y, W - 2 * M - 310, '84-2190573'); y -= 52;
+  field('contact', 'Contact name', M, y, 290, 'Alex Morgan'); field('phone', 'Phone', M + 310, y, W - 2 * M - 310, '555-0163'); y -= 52;
+  field('email', 'Accounts email', M, y, 290, 'accounts@northwind.example'); field('po', 'Purchase order', M + 310, y, W - 2 * M - 310, 'PO-30871'); y -= 52;
+  field('address', 'Registered address', M, y, W - 2 * M, '4th floor, 12 Foundry Street, Portland, OR 97209'); y -= 46;
+  head('Payment terms'); y -= 28;
+  const rg = fm.createRadioGroup('terms');
+  [['14', '14 days', 'from invoice date'], ['30', '30 days', 'from invoice date'], ['60', '60 days', 'end of month']].forEach(([n, t, sub], i) => {
+    const x = M + i * 168;
+    rg.addOptionToPage(n, p, { x, y: y - 4, width: 16, height: 16, borderColor: box, borderWidth: 1, backgroundColor: hex('#FFFFFF') });
+    p.drawText(t, { x: x + 24, y, size: 12, font: b, color: ink }); p.drawText(sub, { x: x + 24, y: y - 15, size: 9.5, font: f, color: grey });
   });
+  rg.select('14');
   y -= 50;
-  p.drawRectangle({ x: M, y: y - 64, width: W - 2 * M, height: 82, color: mint });
-  const cb2 = fm.createCheckBox('course'); cb2.addToPage(p, { x: M + 16, y: y - 6, width: 16, height: 16, borderColor: hex('#8B9590'), borderWidth: 1, backgroundColor: hex('#FFFFFF') }); cb2.check();
-  p.drawText('Sign me up for the Learn to Row course (four Saturday mornings)', { x: M + 42, y: y - 2, size: 11.5, font: f, color: ink });
-  const cb3 = fm.createCheckBox('volunteer'); cb3.addToPage(p, { x: M + 16, y: y - 40, width: 16, height: 16, borderColor: hex('#8B9590'), borderWidth: 1, backgroundColor: hex('#FFFFFF') });
-  p.drawText('I can help at the spring regatta', { x: M + 42, y: y - 36, size: 11.5, font: f, color: ink });
-  y -= 110;
-  p.drawText('Declaration', { x: M, y, size: 15, font: b, color: green }); y -= 22;
-  for (const t of ['I can swim 50 metres in light clothing, and I agree to follow the club\'s', 'safety rules on and off the water.']) { p.drawText(t, { x: M, y, size: 11.5, font: f, color: ink }); y -= 17; }
-  y -= 56;
-  p.drawLine({ start: { x: M, y }, end: { x: M + 300, y }, thickness: .8, color: hex('#8B9590') });
+  head('Declarations'); y -= 12;
+  p.drawRectangle({ x: M, y: y - 84, width: W - 2 * M, height: 84, color: pale });
+  [['insurance', 'We hold professional indemnity insurance of at least $1 million.', true], ['conduct', 'We have read and accept the Alder & Co. supplier code of conduct.', true], ['einvoice', 'Send purchase orders and remittances by email only.', false]].forEach(([n, t, on], i) => {
+    const yy = y - 24 - i * 24;
+    const cb = fm.createCheckBox(n); cb.addToPage(p, { x: M + 16, y: yy - 4, width: 16, height: 16, borderColor: box, borderWidth: 1, backgroundColor: hex('#FFFFFF') }); if (on) cb.check();
+    p.drawText(t, { x: M + 42, y: yy, size: 11.5, font: f, color: ink });
+  });
+  y -= 114;
+  head('Authorisation'); y -= 22;
+  for (const t of ['I confirm that the details above are correct and that I may sign for the supplier.', 'Alder & Co. will check the bank details by phone before the first payment is made.']) { p.drawText(t, { x: M, y, size: 10.5, font: f, color: ink }); y -= 16; }
+  y -= 44;
+  p.drawLine({ start: { x: M, y }, end: { x: M + 290, y }, thickness: .8, color: box });
   label('SIGNATURE', M, y - 16);
-  field('date', 'Date', M + 320, y, 180, D.signed);
-  p.drawText('Riverside Rowing Club, Boathouse Road. Hand this form in at the boathouse or bring it to your first session.', { x: M, y: 60, size: 8.5, font: f, color: grey });
-  pdf.setTitle(`Membership ${D.season}`);
+  field('date', 'Date', M + 310, y, W - 2 * M - 310); // typed in the story
+  p.drawText('Return this form to accounts.payable@alder.example. Bank details are collected separately, by phone.', { x: M, y: 40, size: 8.5, font: f, color: grey });
+  pdf.setTitle('New supplier form');
   return { bytes: await pdf.save(), sigLine: [M + 20, y + 4] };
 }
 
-// A reference letter full of personal details, to redact.
+// An employment reference full of personal details, to redact.
 async function letter(D = DATES.device) {
   const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
   const f = await pdf.embedFont(GF('noto-serif', '400Regular/NotoSerif_400Regular.ttf'));
@@ -407,25 +411,62 @@ async function letter(D = DATES.device) {
   const plum = hex('#3B2F5C'), grey = hex('#62666E'), ink = hex('#1D2228');
   const M = 72, p = pdf.addPage([W, H]);
   p.drawRectangle({ x: M, y: H - 92, width: 30, height: 30, color: plum });
-  p.drawText('O', { x: M + 8, y: H - 84, size: 18, font: sb, color: hex('#FFFFFF') });
-  p.drawText('Oakfield Lettings', { x: M + 42, y: H - 76, size: 15, font: sb, color: plum });
-  p.drawText('22 Market Street, Oakfield  ·  555-0118  ·  lettings@example.com', { x: M + 42, y: H - 90, size: 8.5, font: s, color: grey });
+  p.drawText('B', { x: M + 9, y: H - 84, size: 18, font: sb, color: hex('#FFFFFF') });
+  p.drawText('Brightline Logistics', { x: M + 42, y: H - 76, size: 15, font: sb, color: plum });
+  p.drawText('People team  ·  22 Market Street, Oakfield  ·  555-0118  ·  people@brightline.example', { x: M + 42, y: H - 90, size: 8.5, font: s, color: grey });
   let y = H - 150;
   const P = (arr, o = {}) => { for (const t of arr) { p.drawText(t, { x: M, y, size: o.size || 11, font: o.font || f, color: o.color || ink }); y -= (o.size || 11) * 1.65; } y -= 8; };
   P([D.letter], { color: grey });
-  P(['Tenant reference: Jordan Ellis'], { font: b, size: 15, color: plum });
+  P(['Employment reference: Jordan Ellis'], { font: b, size: 15, color: plum });
   P(['To whom it may concern,']);
-  P(['Jordan Ellis rented 7 Orchard Court, Oakfield, from us between June 2023', `and ${D.until}. The rent of $1,450 a month was always paid on time,`, 'and the flat was left clean and in good order.']);
-  P(['Jordan was a considerate neighbour, and we would rent to Jordan again.', 'We have no hesitation in recommending Jordan as a tenant.']);
-  P(['Contact details we hold:'], { font: b });
-  for (const [k, v] of [['Phone', '555-0194'], ['Email', 'jordan.ellis@example.com'], ['Date of birth', '23 September 1994'], ['Bank account', '40-12-77  31926458'], ['Previous address', '41 Kestrel Road, Millbrook']]) {
+  P(['Jordan Ellis worked for Brightline Logistics as an operations coordinator', `from June 2021 to ${D.until}, on a salary of $58,000 a year at leaving.`, 'Jordan left us of their own accord, in good standing.']);
+  P(['Jordan ran our carrier bookings with care, was well liked by clients', 'and colleagues, and we would gladly employ Jordan again.']);
+  P(['Personal details we hold:'], { font: b });
+  for (const [k, v] of [['Phone', '555-0194'], ['Email', 'jordan.ellis@example.com'], ['Date of birth', '23 September 1994'], ['Employee number', 'BL-31926'], ['Home address', '41 Linden Road, Millbrook']]) {
     p.drawText(k, { x: M, y, size: 11, font: s, color: grey }); p.drawText(v, { x: M + 130, y, size: 11, font: f, color: ink }); y -= 22;
   }
   y -= 14;
   P(['If you would like to talk about this reference, please call me on 555-0118.']);
   P(['Yours faithfully,']); y -= 20;
-  P(['Sam Okafor', 'Lettings manager, Oakfield Lettings'], { color: ink });
-  pdf.setTitle('Tenant reference');
+  P(['Sam Okafor', 'Head of People, Brightline Logistics'], { color: ink });
+  pdf.setTitle('Employment reference');
+  return pdf.save();
+}
+
+// The minutes of the proposal review with the client: the meeting that agreed the proposal's changes.
+async function minutes(D = DATES.device) {
+  const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
+  const f = await pdf.embedFont(StandardFonts.Helvetica), b = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const serif = await pdf.embedFont(GF('noto-serif', '700Bold/NotoSerif_700Bold.ttf'));
+  const navy = hex('#1E3A5F'), grey = hex('#5F6670'), ink = hex('#1D2228'), line = hex('#D5DAE1');
+  const M = 64, p = pdf.addPage([W, H]);
+  p.drawText('ALDER & CO.  ·  MEETING MINUTES', { x: M, y: H - 70, size: 9, font: b, color: grey });
+  p.drawText('Website redesign: proposal review', { x: M, y: H - 102, size: 21, font: serif, color: navy });
+  let y = H - 140;
+  for (const [k, v] of [['Date', D.minutes], ['Present', 'Dana Whitfield, Priya Shah (Alder & Co.); Alex Morgan (Northwind Studio)'], ['Subject', 'Proposal NW-2611, scope, fees and timeline']]) {
+    p.drawText(k, { x: M, y, size: 10, font: b, color: grey }); p.drawText(v, { x: M + 70, y, size: 10, font: f, color: ink }); y -= 17;
+  }
+  y -= 10; p.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: .8, color: line }); y -= 28;
+  const items = [
+    ['Scope', ['The four phases in the proposal are agreed. The client asked for the online', 'shop to stay out of scope for now and be quoted separately.']],
+    ['Fees', ['The fixed fee of $47,000 is agreed. The client asked to split the build fee', 'into two payments; the studio will send a new fees page.']],
+    ['Timeline', ['Fourteen weeks from kick-off. The client will name one contact who signs', 'off each phase, with feedback within five working days.']],
+    ['Supplier set-up', ['The studio will return the new supplier form to Finance this week.']],
+  ];
+  items.forEach(([t, ls], i) => {
+    p.drawText(`${i + 1}.`, { x: M, y, size: 12, font: b, color: navy }); p.drawText(t, { x: M + 22, y, size: 12, font: b, color: ink }); y -= 19;
+    for (const l of ls) { p.drawText(l, { x: M + 22, y, size: 10.5, font: f, color: ink }); y -= 15.5; }
+    y -= 14;
+  });
+  y -= 6; p.drawText('Actions', { x: M, y, size: 13, font: b, color: navy }); y -= 24;
+  p.drawText('ACTION', { x: M, y, size: 8.5, font: b, color: grey }); p.drawText('OWNER', { x: M + 300, y, size: 8.5, font: b, color: grey }); p.drawText('DUE', { x: M + 410, y, size: 8.5, font: b, color: grey }); y -= 8;
+  for (const [a, o, d] of [['Send the revised fees page', 'Alex Morgan', '25 Nov 2026'], ['Return the new supplier form', 'Alex Morgan', '27 Nov 2026'], ['Sign and return the proposal', 'Dana Whitfield', '18 Dec 2026']]) {
+    p.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: .6, color: line }); y -= 18;
+    p.drawText(a, { x: M, y, size: 10.5, font: f, color: ink }); p.drawText(o, { x: M + 300, y, size: 10.5, font: f, color: ink }); p.drawText(d, { x: M + 410, y, size: 10.5, font: f, color: ink }); y -= 10;
+  }
+  p.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: .6, color: line });
+  p.drawText('Minutes taken by Priya Shah  ·  Alder & Co.  ·  Internal', { x: M, y: 56, size: 8.5, font: f, color: grey });
+  pdf.setTitle('Proposal review minutes');
   return pdf.save();
 }
 
@@ -516,11 +557,12 @@ async function dragText(p, n, a, from, b, to) {
   await p.mouse.move(s[0], s[1]); await p.mouse.down(); await p.mouse.move(e[0], e[1], { steps: 10 }); await p.mouse.up();
   await p.waitForTimeout(300);
 }
-// Drag across the words from one to another (the first of them after it), as a finger or the mouse selects text.
+// Drag across the words from one to another (the first word after it that starts with `to`), as a finger or the mouse
+// selects text.
 async function selectWords(p, n, from, to) {
   const [a, b] = await p.evaluate(([n, from, to]) => {
     const all = [...document.querySelectorAll(`.page[data-n="${n}"] .textLayer span`)];
-    const i = all.findIndex((s) => s.textContent.trim() === from), j = all.findIndex((s, k) => k > i && s.textContent.trim() === to);
+    const i = all.findIndex((s) => s.textContent.trim() === from), j = all.findIndex((s, k) => k > i && s.textContent.trim().startsWith(to));
     const r = (el) => { const q = el.getBoundingClientRect(); return [q.left, q.top, q.width, q.height]; };
     return [r(all[i]), r(all[j])];
   }, [n, from, to]);
@@ -572,28 +614,39 @@ const STORIES = [
     } },
   { slug: 'scans-to-text', title: 'Scans become\nsearchable text.', sub: 'Search and copy words on scanned pages.',
     async shoot(p, docs) {
-      await openDoc(p, docs.scan, 'Garden letter.pdf');
+      await openDoc(p, docs.scan, 'Kestrel invoice.pdf');
       if (p.kind === 'mac') await tab(p, 'Edit'); // where Recognize text is
       await onePage(p);
       const r = await p.evaluate(() => window.__cowdreyPdf.ocrRunHeadless({ lang: 'eng' }));
       if (!r.words) throw new Error('OCR found no words: ' + JSON.stringify(r));
       await p.waitForTimeout(600);
-      await run(p, 'find'); await p.fill('#findInput', 'plot'); await p.waitForTimeout(900);
-      // The fees paragraph and the price list (three of the hits) in the middle of the view, and the line under the
-      // list selected, as you would to copy it: what was a picture of a page is text now. (The selection's own
-      // toolbar opens under it, clear of the list.)
+      await run(p, 'find'); await p.fill('#findInput', 'invoice'); await p.waitForTimeout(900);
+      // The invoice's opening paragraph and its items, with the hits for "invoice", and the payment paragraph under
+      // the items selected, both its lines, as you would to copy it: what was a picture of a page is text now. (The
+      // selection's own toolbar opens under it, in the gap above the closing, clear of the items.)
       await phoneZoom(p);
       // (On the Mac the selection's toolbar opens above it and would cover the list: the hits alone tell it there.)
-      // The Mac at 125%: the letter whole from "Dear plot holder" to the signature, the closing and the PAID stamp,
-      // the view's top in the gap under the date and its foot in the paper under the secretary's name.
-      if (p.kind === 'mac') { await setZoom(p, 125); await lineTo(p, 0, 'Dear', 28); await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; }); }
-      else { await belowFind(p, 0); await selectWords(p, 0, 'Water', 'Please'); }
+      // The Mac at 125%: the letter whole from "Dear Accounts team" to the signature, the closing and the PAID stamp,
+      // the view's top in the gap under the date and its foot in the paper under the signer's name, clear of the edge.
+      if (p.kind === 'mac') { await setZoom(p, 125); await lineTo(p, 0, 'Dear', 16); await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; }); }
+      else { await belowFind(p, 0); await selectWords(p, 0, 'Payment', 'accounts@'); }
     } },
   { slug: 'fill-and-sign', title: 'Fill in forms.\nSign in seconds.', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
     async shoot(p, docs) {
-      await openDoc(p, docs.form.bytes, `Membership ${docs.D.season}.pdf`);
+      await openDoc(p, docs.form.bytes, 'Alder & Co supplier form.pdf');
       await onePage(p);
       await p.waitForSelector('.annotationLayer input');
+      // The date, typed into its field (on the iPhone the page zooms in to a field while it has the focus, and back
+      // out when the focus leaves it), then the signature drawn and put on its line.
+      {
+        const field = p.locator('.page[data-n="0"] .annotationLayer input[name="date"]');
+        await field.scrollIntoViewIfNeeded(); await p.waitForTimeout(300);
+        if (p.kind === 'mac') await field.click(); else await field.tap();
+        await p.waitForTimeout(800);
+        await p.keyboard.type(docs.D.signed, { delay: 20 }); await p.waitForTimeout(300);
+        await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+        await p.waitForTimeout(1200);
+      }
       if (p.kind === 'mac') await tab(p, 'Protect'); // its first tool is Signature
       await run(p, 'sign'); await p.waitForSelector('#dialog[open] #sigPad');
       const pad = await (await p.$('#sigPad')).boundingBox();
@@ -604,10 +657,12 @@ const STORIES = [
         await p.mouse.up();
       }
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(400);
-      // The Mac at 150%, so the form's words read at thumbnail size: from the "Membership" heading, 24 points under
-      // the ribbon, past the declaration to the signature and the date, so the first line in view is a heading and
-      // none is cut.
-      if (p.kind === 'mac') { await setZoom(p, 150); await lineTo(p, 0, 'Membership', 24); } else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
+      // The Mac at 150%, so the form's words read at thumbnail size: from the "Payment terms" heading, 24 points
+      // under the ribbon, past the declarations and the authorisation to the signature and the date. The iPhone keeps the page
+      // at its width, so the whole form is in view, banner to foot; the iPad shows the page whole.
+      if (p.kind === 'mac') { await setZoom(p, 150); await lineTo(p, 0, 'Payment terms', 24); }
+      else if (p.kind === 'iphone') { await goPage(p, 0, 'center'); await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; }); }
+      else await goPage(p, 0, 'end');
       const [sx, sy] = docs.form.sigLine;
       const [x, y] = await at(p, 0, sx + 120, sy + 22);
       await p.mouse.click(x, y); await p.waitForTimeout(500);
@@ -628,8 +683,9 @@ const STORIES = [
       await run(p, 'tool_highlight');
       await selectText(p, 3, '$18,200'); await highlightLine(p, 3, 'When the visual design is signed off');
       await p.evaluate(() => window.__cowdreyPdf.setAuthor('Dana Whitfield'));
-      await run(p, 'tool_note'); { const [x, y] = await at(p, 3, 558, 386); await p.mouse.click(x, y); }
-      await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Could we split the build fee into two payments, one at the start of the build and one at launch?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
+      // (On the iPhone the note goes in the gap before the fee, so the strip beside the comments list, below, holds it.)
+      await run(p, 'tool_note'); { const [x, y] = await at(p, 3, p.kind === 'iphone' ? 457 : 558, 386); await p.mouse.click(x, y); }
+      await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Could we split the build fee into two payments?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
       await p.evaluate(() => window.__cowdreyPdf.setAuthor('Alex Morgan'));
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
       {
@@ -645,31 +701,36 @@ const STORIES = [
       }
       await top();
       await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; });
-      // On the iPhone the next page's head shows under the fees page: its title whole, just over the status bar,
-      // never cut across by the bar's edge.
+      // On the iPhone the comments list covers most of the screen, and the page shows in the strip beside it: zoomed
+      // so the strip holds the fee column of the fees page, from the table's head to the last payment, with the
+      // highlighted build fee, the note beside it and the total, and nothing else (no line of running text, no
+      // page head or foot, no next page) to be cut by the list's edge.
       if (p.kind === 'iphone') {
-        await p.evaluate(([fs]) => {
-          const el = eval(fs)([4, 'Fourteen weeks']), v = document.querySelector('#viewer'), bar = document.querySelector('.statusbar');
-          v.scrollTop += el.getBoundingClientRect().bottom - (bar.getBoundingClientRect().top - 14);
-        }, [findSpan.toString()]);
-        await p.waitForTimeout(600);
+        const strip = await p.evaluate(() => { const v = document.querySelector('#viewer').getBoundingClientRect(), s = document.querySelector('.sidebar').getBoundingClientRect(); return [s.right, v.right, v.top, Math.min(v.bottom, document.querySelector('.statusbar').getBoundingClientRect().top)]; });
+        const [x0, x1] = [444, 553]; // the page's points the strip shows across: from the note to the fees' right edge
+        const pxPerPt = async () => { const [a] = await at(p, 3, 0, 0), [b] = await at(p, 3, 100, 0); return (b - a) / 100; };
+        let z = await p.evaluate(() => +document.querySelector('#zoomRange').value);
+        for (let i = 0; i < 2; i++) { z = Math.round(z * (strip[1] - strip[0]) / (x1 - x0) / await pxPerPt()); await setZoom(p, z); }
+        const [px, py] = await at(p, 3, x0, H - 356); // (356 points down: midway from the page's head to the line under the payments)
+        await p.evaluate(([dx, dy]) => { const v = document.querySelector('#viewer'); v.scrollLeft += dx; v.scrollTop += dy; }, [px - strip[0], py - (strip[2] + strip[3]) / 2]);
+        await p.waitForTimeout(700);
       }
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
   { slug: 'redact', title: 'Redact for real.\nGone for good.', sub: 'Private details are removed, not covered.',
     async shoot(p, docs) {
-      await openDoc(p, docs.letter, 'Tenant reference.pdf');
+      await openDoc(p, docs.letter, 'Employment reference.pdf');
       await onePage(p);
       await tab(p, 'Protect');
-      for (const t of ['Jordan', 'Ellis', '7 Orchard Court', '555-0194', 'jordan.ellis@example.com', '23 September 1994', '31926458', '40-12-77', '41 Kestrel Road, Millbrook']) {
+      for (const t of ['Jordan', 'Ellis', '$58,000', '555-0194', 'jordan.ellis@example.com', '23 September 1994', 'BL-31926', '41 Linden Road, Millbrook']) {
         await run(p, 'protRedSearch'); await p.waitForSelector('#dialog[open] input[name=text]'); await p.fill('#dialog input[name=text]', t);
         await p.click('#dialog .dlg-foot button:has-text("Find")');
         await p.waitForSelector('#dialog[open] .dlg-foot button:has-text("Mark")'); await p.click('#dialog .dlg-foot button:has-text("Mark")'); await p.waitForTimeout(250);
       }
       await run(p, 'protRedApply'); await p.waitForSelector('#dialog[open]'); await p.click('#dialog .dlg-foot button:has-text("Apply")'); await p.waitForTimeout(800);
       // the redacted contact details in the middle of the view
-      if (p.kind === 'mac') await pageAt(p, 0, .13);
-      if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Contact details we hold', .45); }
+      if (p.kind === 'mac') await pageAt(p, 0, .155);
+      if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Personal details we hold', .45); }
     } },
   { slug: 'organize-pages', title: 'Put every page\nin its place.', sub: 'Move, turn, combine and split pages.',
     // On the Mac the window is 36 points taller than the others (859 pt, still 30 pt clear of the menu bar and the
@@ -677,8 +738,8 @@ const STORIES = [
     // under the second row.
     macH: 859,
     async shoot(p, docs) {
-      // A stack of paperwork twelve pages long (the proposal and its terms of business, the form and the letters), so
-      // the grid fills the screen, with two pages picked to move together.
+      // The client file, twelve pages long (the proposal and its terms of business, the minutes, the supplier form
+      // and the scanned invoice), so the grid fills the screen, with two pages picked to move together.
       await openDoc(p, docs.pack, `${docs.D.pack}.pdf`);
       await tab(p, 'Pages'); await run(p, 'pg60_organize'); await p.waitForTimeout(2500);
       await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([2, 3])); await p.waitForTimeout(600);
@@ -740,11 +801,12 @@ async function compose(kind, story, raw, file) {
   return frame(browser, kind, { head: story.title.replace(/\n/g, ' '), sub, device: 'macbook', png: screen, file }, THEMES.pdf, FONTS);
 }
 
-// The organize story's document: the proposal and the studio's terms of business that go with it, then the form,
-// the letter and the scan, in one file (twelve pages, none of them twice).
+// The organize story's document: the studio's client file for Alder & Co., in one PDF (twelve pages, none of them
+// twice): the proposal and the terms of business that go with it, the minutes of the proposal review, the client's
+// new supplier form, and a supplier's scanned invoice for the printed proposals.
 async function pack(d, D = DATES.device) {
   const out = await PDFDocument.create();
-  for (const bytes of [d.proposal, d.terms, d.form.bytes, d.letter, d.scan]) {
+  for (const bytes of [d.proposal, d.terms, d.minutes, d.form.bytes, d.scan]) {
     const src = await PDFDocument.load(bytes);
     for (const pg of await out.copyPages(src, src.getPageIndices())) out.addPage(pg);
   }
@@ -752,7 +814,7 @@ async function pack(d, D = DATES.device) {
   return out.save();
 }
 
-// A scanned letter: typed, printed, signed and scanned at 200 dpi (drawn here in the browser, so the PDF has only a
+// A supplier's invoice letter to the studio: typed, printed, signed and scanned at 200 dpi (drawn here in the browser, so the PDF has only a
 // picture of the page and no text until it is recognized).
 async function scan(D = DATES.device) {
   await launch();
@@ -770,16 +832,16 @@ async function scan(D = DATES.device) {
     g.fillStyle = v; g.fillRect(0, 0, W, H);
     g.save(); g.translate(W / 2, H / 2); g.rotate(-0.006); g.translate(-W / 2, -H / 2);
     const serif = '"Liberation Serif", "Times New Roman", Times, serif';
-    g.fillStyle = '#2E5E3A'; g.font = `bold 64px ${serif}`; g.fillText('Northfield Community Garden', 170, 250);
-    g.fillStyle = '#3C3C3C'; g.font = `34px ${serif}`; g.fillText('Allotment Office  ·  Mill Lane  ·  Northfield', 170, 305);
+    g.fillStyle = '#23395B'; g.font = `bold 64px ${serif}`; g.fillText('Kestrel Print & Paper Co.', 170, 250);
+    g.fillStyle = '#3C3C3C'; g.font = `34px ${serif}`; g.fillText('Unit 7, Mill Lane Trading Estate  ·  Oakfield  ·  555-0147', 170, 305);
     g.fillRect(170, 340, 1360, 3);
     g.fillStyle = '#1E1E1E'; g.font = `40px ${serif}`;
-    const lines = [date, '', 'Dear plot holder,', '', 'Thank you for another good year at the garden. The spring work day', 'is on Saturday 13 March, starting at 9 in the morning. We will clear', 'the paths, mend the fences and spread compost on the shared beds.', '', 'Plot fees for the new season are due by 31 March:', '', ['Full plot', '$48'], ['Half plot', '$26'], ['Raised bed', '$15'], '', 'Water will be turned on at the standpipes on 1 April. Please keep', 'hoses off the paths, and bring your own tools if you can.', '', 'Seed swap tables will be open in the potting shed all morning.', '', 'With best wishes,'];
-    let y = 450; for (const t of lines) { if (Array.isArray(t)) { g.fillText(t[0], 250, y); g.fillText(t[1], 720, y); } else g.fillText(t, 170, y); y += 62; }
+    const lines = [date, '', 'Dear Accounts team,', '', 'Thank you for your order PO-30871. Please find below our invoice', 'INV-4471 for the printed proposals and samples delivered to your', 'studio on 6 November.', '', 'Invoice INV-4471:', '', ['KP-210  Proposal binders (x40)', '$312'], ['KP-118  Uncoated paper, 120 gsm', '$184'], ['KP-305  Colour sample cards', '$96'], ['Total due', '$592'], '', 'Payment is due within 14 days. Please quote INV-4471 on your', 'remittance, and send it to accounts@kestrel.example.', '', 'Thank you for your business.', '', 'With best wishes,'];
+    let y = 450; for (const t of lines) { if (Array.isArray(t)) { g.fillText(t[0], 250, y); g.fillText(t[1], 1180, y); } else g.fillText(t, 170, y); y += 62; }
     // a signature in ink
     g.strokeStyle = '#1B2A6B'; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath();
     g.moveTo(180, y + 40); g.bezierCurveTo(220, y - 30, 260, y + 70, 300, y + 10); g.bezierCurveTo(330, y - 20, 350, y + 60, 390, y + 20); g.bezierCurveTo(420, y - 10, 470, y + 50, 520, y + 15); g.bezierCurveTo(560, y - 5, 600, y + 30, 650, y + 25); g.stroke();
-    g.fillStyle = '#1E1E1E'; g.font = `40px ${serif}`; g.fillText('Ruth Adeyemi, Garden Secretary', 170, y + 120);
+    g.fillStyle = '#1E1E1E'; g.font = `40px ${serif}`; g.fillText('Ruth Adeyemi, Accounts Manager', 170, y + 120);
     g.restore();
     // a rubber stamp
     g.save(); g.translate(1310, 1640); g.rotate(-0.21); g.strokeStyle = 'rgba(176, 38, 60, .72)'; g.fillStyle = 'rgba(176, 38, 60, .72)'; g.lineWidth = 7;
@@ -790,16 +852,17 @@ async function scan(D = DATES.device) {
   const pdf = await PDFDocument.create();
   const im = await pdf.embedPng(Buffer.from(png, 'base64'));
   pdf.addPage([W, H]).drawImage(im, { x: 0, y: 0, width: W, height: H });
-  pdf.setTitle('Garden letter (scan)');
+  pdf.setTitle('Kestrel invoice INV-4471 (scan)');
   return pdf.save();
 }
 
-export { DEVICES, app, openDoc, run, tab, grab, launch, proposal, form, letter };
+export { DEVICES, app, openDoc, run, tab, grab, launch, proposal, form, letter, minutes };
 if (ARG.docs) {
   fs.writeFileSync(path.join(ARG.docs, 'proposal.pdf'), await proposal());
   fs.writeFileSync(path.join(ARG.docs, 'terms.pdf'), await terms());
   fs.writeFileSync(path.join(ARG.docs, 'form.pdf'), (await form()).bytes);
   fs.writeFileSync(path.join(ARG.docs, 'letter.pdf'), await letter());
+  fs.writeFileSync(path.join(ARG.docs, 'minutes.pdf'), await minutes());
   fs.writeFileSync(path.join(ARG.docs, 'scan.pdf'), await scan()); await browser.close();
 } else {
   // The documents for each set of dates (the Mac's, and the iPhone's and iPad's), made once.
@@ -807,7 +870,7 @@ if (ARG.docs) {
   const docsFor = async (kind) => {
     const D = DATES[kind === 'mac' ? 'mac' : 'device'];
     if (made[D.proposal]) return made[D.proposal];
-    const docs = { D, proposal: await proposal(D), terms: await terms(), form: await form(D), letter: await letter(D), scan: await scan(D) };
+    const docs = { D, proposal: await proposal(D), terms: await terms(), minutes: await minutes(D), form: await form(D), letter: await letter(D), scan: await scan(D) };
     docs.pack = await pack(docs, D);
     return (made[D.proposal] = docs);
   };
