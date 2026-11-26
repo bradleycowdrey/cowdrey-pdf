@@ -101,97 +101,180 @@ const GF = (fam, file) => fs.readFileSync(path.join(NM, '@expo-google-fonts', fa
 const hex = (h) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
 const W = 612, H = 792;
 // The dates in the documents. The Mac shows its menu bar's clock (Wed Nov 25 2026), so there no document is dated
-// after it: the review is of 2025, the form and the letters are from November 2026. The iPhone and iPad show no date
+// after it: the proposal, the form and the letters are from November 2026. The iPhone and iPad show no date
 // and keep their documents as they were.
 const DATES = {
-  device: { year: 2026, published: 'March 2027', season: 2027, signed: '2 March 2027', letter: '4 February 2027', until: 'January 2027', scan: '10 February 2027', paid: '12 FEB 2027', pack: 'Board pack 2027' },
-  mac: { year: 2025, published: 'March 2026', season: 2027, signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Board pack 2026' },
+  device: { proposal: '8 February 2027', valid: '10 March 2027', extended: '24 March 2027', kickoff: '2027-03-15', season: 2027, signed: '2 March 2027', letter: '4 February 2027', until: 'January 2027', scan: '10 February 2027', paid: '12 FEB 2027', pack: 'Paperwork 2027' },
+  mac: { proposal: '16 November 2026', valid: '18 December 2026', extended: '8 January 2027', kickoff: '2027-01-11', season: 2027, signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Paperwork 2026' },
 };
 
-// A ferry company's yearly review: a cover, highlights, a chart, a table, the fleet and a map, in its own colours.
-async function review(D = DATES.device) {
-  const pdf = await PDFDocument.create();
-  const f = await pdf.embedFont(StandardFonts.Helvetica), b = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const teal = hex('#17707A'), tealL = hex('#A9D3D3'), navy = hex('#14284B'), grey = hex('#5F6670'), ink = hex('#1D2228'), sand = hex('#F4EFE6'), sea = hex('#DCEEF0'), coral = hex('#E2725B');
-  const M = 64;
-  const text = (p, t, x, y, size = 11.5, font = f, color = ink) => p.drawText(t, { x, y, size, font, color });
-  const para = (p, arr, y, o = {}) => { for (const t of arr) { text(p, t, o.x || M, y, o.size || 11.5, o.font || f, o.color || ink); y -= (o.size || 11.5) * (o.lead || 1.5); } return y; };
-  const head = (p, n, title) => {
-    p.drawRectangle({ x: 0, y: H - 10, width: W, height: 10, color: teal });
-    text(p, 'HARBOUR LINE FERRIES', M, H - 46, 8.5, b, teal);
-    const t = `Service review ${D.year}`; text(p, t, W - M - f.widthOfTextAtSize(t, 8.5), H - 46, 8.5, f, grey);
-    if (title) text(p, title, M, H - 104, 24, b, navy);
-    p.drawLine({ start: { x: M, y: 52 }, end: { x: W - M, y: 52 }, thickness: .5, color: hex('#D9DCE0') });
-    text(p, String(n), W / 2 - 3, 34, 9, f, grey);
+// A design studio's proposal to a client, as studios send them: a cover, a summary, the approach, the scope and
+// fees, a timeline and the page to sign, in the studio's own type with one accent colour.
+const PROPOSAL = { studio: 'Northwind Studio', client: 'Alder & Co.', title: 'Website redesign', ref: 'NW-2611', file: 'Alder & Co proposal.pdf' };
+const longDate = (d) => `${d.getUTCDate()} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+async function proposal(D = DATES.device) {
+  const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
+  // Without ligatures: an "fi" drawn as one glyph would come back as that glyph when the line is retyped.
+  const font = (fam, file) => pdf.embedFont(GF(fam, file), { features: { liga: false } });
+  const f = await font('noto-sans', '400Regular/NotoSans_400Regular.ttf');
+  const m = await font('noto-sans', '600SemiBold/NotoSans_600SemiBold.ttf');
+  const b = await font('noto-sans', '700Bold/NotoSans_700Bold.ttf');
+  const serif = await font('noto-serif', '600SemiBold/NotoSerif_600SemiBold.ttf');
+  const accent = hex('#B4532A'), ink = hex('#1A1D21'), grey = hex('#5E6570'), light = hex('#9AA0A8'), rule = hex('#DADDE1'), tint = hex('#F7F1EC'), white = hex('#FFFFFF');
+  const M = 64, R = W - M, PAGES = 6;
+  const text = (p, t, x, y, size = 10.5, font = f, color = ink) => p.drawText(t, { x, y, size, font, color });
+  const right = (p, t, x, y, size = 10.5, font = f, color = ink) => text(p, t, x - font.widthOfTextAtSize(t, size), y, size, font, color);
+  const line = (p, x1, y1, x2, y2, color = rule, thickness = .6) => p.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color });
+  // Words wrapped to a width, one drawText per line (so each line is one line of text in a viewer).
+  const wrap = (t, width, size, font = f) => {
+    const out = []; let cur = '';
+    for (const w of t.split(' ')) { const s = cur ? cur + ' ' + w : w; if (font.widthOfTextAtSize(s, size) > width && cur) { out.push(cur); cur = w; } else cur = s; }
+    return cur ? [...out, cur] : out;
   };
-  // A ferry on the water, drawn with shapes.
-  const ferry = (p, x, y, s, hull = navy) => {
-    const P = (d, color, o = {}) => p.drawSvgPath(d, { x, y, scale: s, color, borderWidth: 0, ...o });
-    P('M 0 60 L 300 60 L 270 100 L 20 100 Z', hull);
-    P('M 40 60 L 250 60 L 240 28 L 60 28 Z', hex('#FFFFFF'));
-    P('M 80 28 L 220 28 L 210 2 L 96 2 Z', hex('#FFFFFF'));
-    for (let i = 0; i < 7; i++) P(`M ${62 + i * 25} 38 h 16 v 12 h -16 Z`, teal);
-    for (let i = 0; i < 4; i++) P(`M ${104 + i * 26} 9 h 16 v 11 h -16 Z`, teal);
-    P('M 150 2 L 162 2 L 162 -22 L 150 -22 Z', coral);
+  const para = (p, t, y, o = {}) => {
+    const size = o.size || 10.5, lead = size * (o.lead || 1.6);
+    for (const l of o.lines || wrap(t, o.width || R - M, size, o.font || f)) { text(p, l, o.x ?? M, y, size, o.font || f, o.color || ink); y -= lead; }
+    return y;
   };
-  const waves = (p, y0, depth, color, amp = 5, len = 46, x0 = 0, x1 = W) => {
-    let d = `M ${x0} 0`; for (let x = x0; x < x1; x += len) d += ` q ${len / 4} ${-amp} ${len / 2} 0 t ${len / 2} 0`;
-    d += ` L ${x1} ${depth} L ${x0} ${depth} Z`;
-    p.drawSvgPath(d, { x: 0, y: y0, color, borderWidth: 0 });
+  const mark = (p, x, y, s) => { p.drawRectangle({ x, y, width: s, height: s, color: accent }); text(p, 'N', x + s * .25, y + s * .22, s * .62, b, white); };
+  const kicker = (p, t, y) => text(p, t.toUpperCase(), M, y, 8, b, accent);
+  // Every page after the cover: the studio's mark and the document's name, and a footer with the page number.
+  const page = (n, kick, title) => {
+    const p = pdf.addPage([W, H]);
+    mark(p, M, H - 58, 14); text(p, PROPOSAL.studio, M + 22, H - 54, 9.5, m, ink);
+    right(p, `${PROPOSAL.title} proposal  ·  ${PROPOSAL.client}`, R, H - 54, 8.5, f, grey);
+    line(p, M, H - 72, R, H - 72);
+    footer(p, n);
+    kicker(p, kick, H - 122); text(p, title, M, H - 152, 24, serif, ink);
+    return p;
   };
+  const footer = (p, n) => {
+    line(p, M, 58, R, 58);
+    text(p, `${PROPOSAL.studio}  ·  Proposal ${PROPOSAL.ref}  ·  Confidential`, M, 42, 8, f, light);
+    right(p, `Page ${n} of ${PAGES}`, R, 42, 8, f, light);
+  };
+  const start = new Date(D.kickoff + 'T12:00:00Z');
+  const week = (w) => longDate(new Date(start.getTime() + (w - 1) * 7 * 864e5));
+  const PHASES = [
+    { n: '01', name: 'Discovery', does: ['Stakeholder interviews, analytics', 'review and a content audit'], weeks: [1, 3], fee: 6400 },
+    { n: '02', name: 'UX and structure', does: ['Sitemap, wireframes for 12 key', 'templates, prototype testing'], weeks: [3, 6], fee: 9800 },
+    { n: '03', name: 'Visual design', does: ['Design system, high-fidelity', 'pages, accessibility review'], weeks: [5, 9], fee: 12600 },
+    { n: '04', name: 'Build and launch', does: ['CMS build, content migration,', 'testing and launch support'], weeks: [8, 14], fee: 18200 },
+  ];
+  const money = (v) => '$' + v.toLocaleString('en-US');
+  const total = PHASES.reduce((s, x) => s + x.fee, 0);
 
   // 1. Cover
   let p = pdf.addPage([W, H]);
-  p.drawRectangle({ x: 0, y: H - 360, width: W, height: 360, color: sea });
-  p.drawCircle({ x: 470, y: H - 120, size: 46, color: hex('#F6C66B') });
-  ferry(p, 150, H - 176, .95);
-  waves(p, H - 262, 98, tealL, 6, 52); waves(p, H - 300, 60, teal, 5, 40);
-  text(p, 'HARBOUR LINE FERRIES', M, H - 400, 9, b, teal);
-  text(p, `${D.year} Service Review`, M, H - 440, 32, b, navy);
-  para(p, ['A year of steady growth on the harbour: more crossings, fewer delays', 'and two new stops on the north shore.'], H - 472, { color: grey, size: 13 });
-  p.drawRectangle({ x: M, y: 200, width: W - 2 * M, height: 86, color: sand });
-  [['1.84M', 'passengers'], ['96.2%', 'on time'], ['41,300', 'crossings']].forEach(([v, l], i) => {
-    const x = M + 24 + i * 164; text(p, v, x, 248, 24, b, teal); text(p, l, x, 228, 10.5, f, grey);
+  p.drawRectangle({ x: 0, y: H - 8, width: W, height: 8, color: accent });
+  mark(p, M, H - 92, 26); text(p, PROPOSAL.studio, M + 38, H - 84, 15, m, ink);
+  right(p, `Proposal ${PROPOSAL.ref}`, R, H - 82, 9, f, grey);
+  kicker(p, 'Proposal', H - 196);
+  text(p, PROPOSAL.title, M, H - 242, 34, serif, ink);
+  text(p, `for ${PROPOSAL.client}`, M, H - 274, 20, serif, grey);
+  p.drawRectangle({ x: M, y: H - 310, width: 48, height: 3, color: accent });
+  let y = H - 368;
+  for (const [k, v] of [['Client', 'Alder & Co.'], ['Date', D.proposal], ['Prepared by', 'Alex Morgan, Studio director'], ['Valid until', D.valid]]) {
+    text(p, k.toUpperCase(), M, y, 8, b, light); text(p, v, M + 120, y - 1, 12, m, ink);
+    y -= 14; line(p, M, y, R, y); y -= 26;
+  }
+  para(p, 'A new website that sells as well as the shops do: clearer to browse, faster on a phone, and simple for the Alder team to keep up to date.', 200, { size: 12, color: grey, width: 290, lead: 1.55 });
+  footer(p, 1);
+
+  // 2. Executive summary
+  p = page(2, 'Executive summary', 'Why now, and what we propose');
+  y = para(p, 'Alder & Co. has grown from one shop to six, and half of your sales now start online. The current site was built for a catalogue, not a store: products are hard to find, checkout takes five steps, and three in four visitors arrive on a phone.', H - 196, { size: 11.5, color: grey, lead: 1.65 });
+  y = para(p, 'We propose a 14-week redesign in four phases, for a fixed fee of $47,000. You will have a site your team can update without us, and a design system that keeps new pages on brand.', y - 8, { size: 11.5, color: grey, lead: 1.65 });
+  y -= 34;
+  p.drawRectangle({ x: M, y: y - 74, width: R - M, height: 92, color: tint });
+  [['14 weeks', 'from kick-off to launch'], [money(total), 'fixed fee, four phases'], ['3 steps', 'to checkout, down from five']].forEach(([v, l], i) => {
+    const x = M + 22 + i * 164; text(p, v, x, y - 22, 22, serif, accent); text(p, l, x, y - 44, 9.5, f, grey);
   });
-  para(p, ['Prepared for the board, the city transport office and our passengers.', `Published ${D.published}.`], 150, { color: grey, size: 10 });
-  // 2. Highlights
-  p = pdf.addPage([W, H]); head(p, 2, 'Highlights of the year');
-  let y = para(p, ['Ridership grew for the third year running. Summer weekends were the', 'busiest on record, and the new timetable cut the wait between', 'sailings on the harbour loop to twelve minutes.'], H - 140, { color: grey, size: 12.5 });
-  y -= 12;
-  for (const [t, d] of [[`Ridership up 12 percent on ${D.year - 1}`, 'More than 1.8 million trips, led by commuters on the north shore.'], ['Average delay down to 2.1 minutes', 'New berths at Pier 3 and Kings Wharf cut the time at each stop.'], ['Kestrel, our first electric ferry', 'Kestrel carried one in five passengers from June to December.'], ['Two new stops on the north shore', 'Birch Point and Gull Harbour opened in April.']]) {
-    p.drawCircle({ x: M + 6, y: y + 4, size: 4, color: teal });
-    text(p, t, M + 20, y, 13, b, navy); y -= 18; text(p, d, M + 20, y, 11.5, f, grey); y -= 32;
+  y -= 124;
+  text(p, 'What success looks like', M, y, 14, m, ink); y -= 46;
+  for (const [t, d] of [['Found in two taps', 'Every product reachable from the home page in two taps or fewer.'], ['Updated by your team', 'New products and offers go live the same day, without a developer.'], ['More online orders', 'Raise the share of visits that end in an order from 1.9% to 2.6%.']]) {
+    p.drawRectangle({ x: M, y: y - 3, width: 3, height: 32, color: accent });
+    text(p, t, M + 16, y + 17, 11.5, m, ink); text(p, d, M + 16, y + 1, 10.5, f, grey); y -= 52;
   }
-  y -= 4; text(p, 'Next year', M, y, 16, b, navy); y -= 26;
-  y = para(p, ['We plan a second electric ferry, contactless boarding at every stop and a', 'quieter timetable on Sunday evenings. Fares stay the same for a fourth year.'], y);
-  // 3. Chart
-  p = pdf.addPage([W, H]); head(p, 3, 'Passengers by month');
-  para(p, ['Thousands of passengers each month. August was the busiest month on', 'record, with 210,000 passengers.'], H - 140, { color: grey, size: 12.5 });
-  const vals = [98, 104, 121, 138, 160, 182, 205, 210, 176, 150, 122, 134];
-  for (let g = 0; g <= 4; g++) { const gy = 360 + g * 60; p.drawLine({ start: { x: M + 24, y: gy }, end: { x: W - M, y: gy }, thickness: .4, color: hex('#E3E6E9') }); text(p, String(g * 60), M, gy - 3, 8.5, f, grey); }
-  vals.forEach((v, i) => { const x = M + 36 + i * 38.5; p.drawRectangle({ x, y: 360, width: 24, height: v, color: i === 7 ? teal : tealL }); text(p, 'JFMAMJJASOND'[i], x + 8, 344, 9, f, grey); });
-  para(p, ['Kestrel carried one in five passengers from June, and the evening', 'sailings added in May were full most Fridays.'], 300);
-  // 4. Routes
-  p = pdf.addPage([W, H]); head(p, 4, 'Routes and stops');
-  y = H - 150; const cols = [M, M + 170, M + 250, M + 350];
-  ['Route', 'Stops', 'Crossings', 'On time'].forEach((t, i) => text(p, t, cols[i], y, 10.5, b, grey));
-  y -= 12; p.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: .8, color: navy }); y -= 22;
-  for (const r of [['Harbour loop', '6', '18,900', '97.1%'], ['North shore', '4', '12,600', '95.4%'], ['Island run', '3', '9,800', '95.8%'], ['Night service', '5', '2,400', '98.3%']]) {
-    r.forEach((t, i) => text(p, t, cols[i], y, 12, i ? f : b, ink)); y -= 12; p.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: .4, color: hex('#E3E6E9') }); y -= 22;
+
+  // 3. Approach
+  p = page(3, 'Our approach', 'How we will work together');
+  y = para(p, 'We work in short, open phases. You see the work every week, and nothing moves to the next phase until you have signed it off.', H - 196, { size: 11.5, color: grey, lead: 1.65 });
+  y -= 14;
+  for (const [n, t, d] of [['1', 'Start with your customers', 'Interviews with shoppers and shop staff, and a review of a year of analytics, before we draw a single page.'], ['2', 'Design in the open', 'A shared board with every sketch and decision, and a 30-minute review with your team each Thursday.'], ['3', 'Build to last', 'A design system and a CMS your team is trained on, so the site keeps its shape long after launch.']]) {
+    p.drawCircle({ x: M + 13, y: y - 4, size: 13, color: tint }); text(p, n, M + 9.5, y - 9, 12, b, accent);
+    text(p, t, M + 40, y, 12.5, m, ink); para(p, d, y - 19, { x: M + 40, width: R - M - 40, color: grey, size: 10.5, lead: 1.55 }); y -= 84;
   }
-  p.drawRectangle({ x: M, y: 150, width: W - 2 * M, height: 300, color: sea });
-  p.drawSvgPath('M 0 0 L 484 0 L 484 52 C 420 86 330 40 240 66 C 150 92 70 58 0 84 Z', { x: M, y: 450, color: sand, borderWidth: 0 });
-  [[140, 380, 'Kings Wharf'], [260, 330, 'Pier 3'], [380, 400, 'Birch Point'], [470, 300, 'Gull Harbour']].forEach(([x, yy, t]) => { p.drawCircle({ x, y: yy, size: 6, color: coral }); text(p, t, x + 10, yy - 3, 9.5, b, navy); });
-  p.drawSvgPath('M 140 -380 Q 200 -300 260 -330 T 380 -400 T 470 -300', { x: 0, y: 0, borderColor: teal, borderWidth: 2, borderDashArray: [5, 4] });
-  // 5. Fleet
-  p = pdf.addPage([W, H]); head(p, 5, 'Our fleet');
-  p.drawRectangle({ x: M, y: H - 380, width: W - 2 * M, height: 230, color: sea });
-  ferry(p, 150, H - 262, .9, teal); waves(p, H - 336, 44, tealL, 5, 44, M, W - M);
-  para(p, ['Kestrel joined the fleet in June: 300 seats, no exhaust, and a full charge', 'in the eight minutes she spends at Kings Wharf.', '', 'Our six other ferries were refitted with quieter engines and new seats.', 'Two of them will be replaced by electric ferries by 2029.'], H - 420);
-  // 6. Contacts
-  p = pdf.addPage([W, H]); head(p, 6, 'Contacts');
-  para(p, ['Operations: Jamie Rivera, 555-0142, jamie.rivera@example.com', 'Fleet: Priya Nair, 555-0177, priya.nair@example.com', 'Passenger services: 555-0100, hello@example.com'], H - 150, { lead: 1.9 });
-  pdf.setTitle(`Service review ${D.year}`); pdf.setAuthor('Harbour Line Ferries');
+  y -= 4; line(p, M, y, R, y); y -= 30;
+  text(p, 'Included', M, y, 11.5, m, ink); text(p, 'Not included', M + 252, y, 11.5, m, ink); y -= 22;
+  const inc = ['Up to 12 page templates', 'Migration of up to 120 pages', 'Two rounds of revisions per phase', 'CMS training for four people'];
+  const exc = ['Photography and video', 'Copywriting for new pages', 'Paid search and advertising', 'Hosting fees'];
+  inc.forEach((t, i) => { text(p, '+', M, y - i * 20, 10.5, b, accent); text(p, t, M + 14, y - i * 20, 10.5, f, ink); text(p, '–', M + 252, y - i * 20, 10.5, b, light); text(p, exc[i], M + 266, y - i * 20, 10.5, f, grey); });
+
+  // 4. Scope and fees
+  p = page(4, 'Scope and fees', 'Four phases, one fixed fee');
+  y = H - 204; const cx = [M, M + 160, M + 352];
+  text(p, 'PHASE', cx[0], y, 8, b, light); text(p, 'DELIVERABLES', cx[1], y, 8, b, light); text(p, 'WEEKS', cx[2], y, 8, b, light); right(p, 'FEE', R, y, 8, b, light);
+  y -= 12; line(p, M, y, R, y, ink, .8); y -= 26;
+  for (const ph of PHASES) {
+    text(p, ph.n, cx[0], y, 10.5, b, accent); text(p, ph.name, cx[0] + 24, y, 11.5, m, ink);
+    ph.does.forEach((t, i) => text(p, t, cx[1], y - i * 16, 10.5, f, grey));
+    text(p, `${ph.weeks[0]}–${ph.weeks[1]}`, cx[2], y, 10.5, f, ink);
+    right(p, money(ph.fee), R, y, 11.5, m, ink);
+    y -= 32; line(p, M, y, R, y); y -= 26;
+  }
+  y += 4; p.drawRectangle({ x: M, y: y - 16, width: R - M, height: 40, color: tint });
+  text(p, 'Total, fixed fee', M + 14, y, 12.5, m, ink); right(p, money(total), R - 14, y - 1, 16, serif, accent);
+  y -= 66;
+  text(p, 'Payment schedule', M, y, 12.5, m, ink); y -= 26;
+  for (const [pc, t, v] of [['30%', 'On signing this proposal', total * .3], ['40%', 'When the visual design is signed off', total * .4], ['30%', 'At launch', total * .3]]) {
+    text(p, pc, M, y, 10.5, b, accent); text(p, t, M + 44, y, 10.5, f, ink); right(p, money(v), R, y, 10.5, f, ink); y -= 12; line(p, M, y, R, y); y -= 20;
+  }
+  y -= 8;
+  text(p, 'Fees exclude sales tax. Invoices are due within 14 days. Support after launch: $1,200 a month.', M, y, 9.5, f, grey);
+
+  // 5. Timeline
+  p = page(5, 'Timeline', `Fourteen weeks, from ${week(1)}`);
+  const gx = M + 130, gw = R - gx, cw = gw / 14; y = H - 206;
+  for (let w = 1; w <= 14; w++) text(p, String(w), gx + (w - .5) * cw - f.widthOfTextAtSize(String(w), 8) / 2, y, 8, f, light);
+  text(p, 'WEEK', M, y, 8, b, light);
+  y -= 12; const top = y;
+  const rows = [...PHASES.map((x) => [x.name, x.weeks]), ['Content migration', [10, 13]], ['Launch', [14, 14]]];
+  const bottom = top - rows.length * 40;
+  for (let w = 0; w <= 14; w++) line(p, gx + w * cw, top, gx + w * cw, bottom, hex('#ECEEF0'), .5);
+  rows.forEach(([t, [a, z]], i) => {
+    const ry = top - i * 40 - 26;
+    text(p, t, M, ry + 2, 10.5, i < 4 ? m : f, ink);
+    p.drawRectangle({ x: gx + (a - 1) * cw + 2, y: ry - 2, width: (z - a + 1) * cw - 4, height: 14, color: i === 5 ? accent : i < 4 ? hex('#D9926F') : hex('#EBC6B2') });
+  });
+  line(p, M, bottom, R, bottom); y = bottom - 40;
+  text(p, 'Key dates', M, y, 12.5, m, ink); y -= 26;
+  for (const [t, w] of [['Kick-off workshop at your office', 1], ['Wireframes signed off', 6], ['Visual design signed off', 9], ['Site ready for your team to test', 13], ['Launch', 14]]) {
+    p.drawCircle({ x: M + 4, y: y + 3.5, size: 3.5, color: accent });
+    text(p, t, M + 16, y, 10.5, f, ink); right(p, week(w), R, y, 10.5, m, ink); y -= 12; line(p, M, y, R, y); y -= 20;
+  }
+
+  // 6. Next steps and acceptance
+  p = page(6, 'Next steps', 'Getting started');
+  y = H - 204;
+  for (const [n, t] of [['1', `Sign and return this page by ${D.valid}.`], ['2', 'We send the first invoice and book the kick-off workshop.'], ['3', `Discovery starts on ${week(1)}.`]]) {
+    text(p, n, M, y, 12, b, accent); text(p, t, M + 22, y, 11.5, f, ink); y -= 30;
+  }
+  y -= 18; line(p, M, y, R, y); y -= 40;
+  text(p, 'Acceptance', M, y, 16, serif, ink); y -= 28;
+  y = para(p, `By signing below, Alder & Co. accepts this proposal (${PROPOSAL.ref}) and the fixed fee of ${money(total)}, under Northwind Studio's standard terms of business.`, y, { size: 10.5, color: grey, lead: 1.6 });
+  y -= 70;
+  // Two blocks to sign: a line for the signature, the name and title, and the date.
+  const sigs = (x, who, name) => {
+    text(p, who.toUpperCase(), x, y + 52, 8, b, light);
+    line(p, x, y, x + 220, y, ink, .8); text(p, 'Signature', x, y - 16, 8.5, f, light);
+    if (name) text(p, name, x, y - 56, 10.5, m, ink);
+    line(p, x, y - 62, x + 220, y - 62, ink, .8); text(p, 'Name and title', x, y - 78, 8.5, f, light);
+    line(p, x, y - 124, x + 220, y - 124, ink, .8); text(p, 'Date', x, y - 140, 8.5, f, light);
+  };
+  sigs(M, 'For Alder & Co.');
+  sigs(M + 264, 'For Northwind Studio', 'Alex Morgan, Studio director');
+  pdf.setTitle(`${PROPOSAL.title} proposal for ${PROPOSAL.client}`); pdf.setAuthor(PROPOSAL.studio);
   return pdf.save();
 }
 
@@ -286,6 +369,13 @@ async function tapLine(p, n, text, where = 'end') {
   if (p.kind === 'mac') await p.mouse.click(x, y); else await p.touchscreen.tap(x, y);
   await p.waitForTimeout(400);
 }
+// Highlight one whole line of page n as the app does a text selection. (A drag that starts at the very left edge of
+// a line that follows a number on the same line can catch the page's own layer and select all of it.)
+const highlightLine = (p, n, text) => p.evaluate(([n, text]) => {
+  const el = [...document.querySelectorAll(`.page[data-n="${n}"] .textLayer span`)].find((s) => s.textContent === text);
+  const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  return window.__cowdreyPdf.highlightSelection();
+}, [n, text]);
 async function selectText(p, n, text) {
   const b = await (await lineAt(p, n, text)).boundingBox();
   await p.mouse.move(b.x + 1, b.y + b.height / 2); await p.mouse.down(); await p.mouse.move(b.x + b.width - 1, b.y + b.height / 2, { steps: 8 }); await p.mouse.up();
@@ -373,40 +463,38 @@ async function selectWords(p, n, from, to) {
 const STORIES = [
   { slug: 'edit-text', title: 'Edit any PDF.\nRight on the page.', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
     async shoot(p, docs) {
-      await openDoc(p, docs.review, `Service review ${docs.D.year}.pdf`);
+      await openDoc(p, docs.proposal, PROPOSAL.file);
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
       if (p.kind === 'iphone') {
-        // The cover's title, zoomed in so the text runs across the screen, in the middle of the view.
-        await phoneZoom(p); await centerOn(p, 0, `${docs.D.year} Service Review`, .42);
-        await tapLine(p, 0, `${docs.D.year} Service Review`);
-        await p.keyboard.press('End'); for (let i = 0; i < 14; i++) await p.keyboard.press('Backspace');
-        await p.keyboard.type('Year in Review', { delay: 20 });
+        // The cover, zoomed in so its details run across the screen, labels and all: the proposal's last day,
+        // moved on two weeks for the client. (The last line of the details, so the format bar opens over the
+        // empty paper under them.)
+        await phoneZoom(p); await setZoom(p, 140); await centerOn(p, 0, docs.D.valid, .65);
+        await p.evaluate(async (x) => { const v = document.querySelector('#viewer'), el = document.querySelector('.page[data-n="0"]'); v.scrollLeft += el.getBoundingClientRect().left + el.offsetWidth * x - v.getBoundingClientRect().left; }, 50 / W);
+        await p.waitForTimeout(500);
+        await tapLine(p, 0, docs.D.valid);
+        await p.keyboard.press('End'); for (let i = 0; i < docs.D.valid.length; i++) await p.keyboard.press('Backspace');
+        await p.keyboard.type(docs.D.extended, { delay: 20 });
       } else {
         if (p.kind === 'mac') { await run(p, 'sidebar'); await p.waitForTimeout(500); }
         await goPage(p, 1);
         if (p.kind === 'mac') {
           // Close in on the page (150%), so the edit box and the format bar read at thumbnail size: the whole width
-          // of the page with the grey on both sides, from under the page's running head (the view's top falls in
-          // the gap above the title) to past the last line of its text, so no line is cut at an edge.
+          // of the page with the grey on both sides, from the gap above the figures to the paper under the last
+          // line of its text, so no line is cut at an edge.
           await setZoom(p, 150);
           await p.evaluate(([H]) => {
             const v = document.querySelector('#viewer'), el = document.querySelector('.page[data-n="1"]');
-            v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * 62 / H;
+            v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * 306 / H;
             v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2;
           }, [H]);
           await p.waitForTimeout(700);
         }
-        if (p.kind === 'ipad') {
-          // The last line of the page's text, so the format bar opens over the empty foot of the page and no
-          // line is cut by its edge.
-          await tapLine(p, 1, 'quieter timetable');
-          await p.keyboard.press('End'); for (let i = 0; i < 12; i++) await p.keyboard.press('Backspace');
-          await p.keyboard.type('fifth year.', { delay: 20 });
-        } else {
-          await tapLine(p, 1, 'Average delay down');
-          await p.keyboard.press('End'); for (let i = 0; i < 11; i++) await p.keyboard.press('Backspace');
-          await p.keyboard.type('1.8 minutes', { delay: 20 });
-        }
+        // The summary's last goal, the target raised after a call with the client (the page's last line, so the
+        // format bar opens over the empty paper under it).
+        await tapLine(p, 1, 'Raise the share of visits');
+        await p.keyboard.press('End'); for (let i = 0; i < 'to 2.6%.'.length; i++) await p.keyboard.press('Backspace');
+        await p.keyboard.type('to 3% within a year.', { delay: 20 });
       }
       await p.waitForTimeout(400);
     } },
@@ -456,36 +544,30 @@ const STORIES = [
     } },
   { slug: 'comments', title: 'Mark it up.\nTalk it through.', sub: 'Highlight, comment and reply.',
     async shoot(p, docs) {
-      await openDoc(p, docs.review, `Service review ${docs.D.year}.pdf`);
-      if (p.kind === 'mac') {
-        // The Mac at 125%, on the chart page (the edit story is on the highlights page): the page's title, the
-        // chart and the lines under it, from the gap under the running head to the paper under the last line. Two
-        // phrases highlighted, and a colleague's note on August's bar.
-        await tab(p, 'Comment'); await setZoom(p, 125); await pageAt(p, 2, 64 / H);
-        await run(p, 'tool_highlight');
-        await dragText(p, 2, 'August was the busiest', 'August', 'record, with', 'record');
-        await dragText(p, 2, 'Kestrel carried one', 'Kestrel', 'Kestrel carried one', 'from June');
-        await p.evaluate(() => window.__cowdreyPdf.setAuthor('Priya Nair'));
-        await run(p, 'tool_note'); { const [x, y] = await at(p, 2, 404, 586); await p.mouse.click(x, y); }
-        await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Can we add the Sunday figures here?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
-        await p.evaluate(() => window.__cowdreyPdf.setAuthor('Alex Morgan'));
-        await run(p, 'tool_select'); await p.keyboard.press('Escape');
-        await run(p, 'cm_list'); await p.waitForTimeout(600);
-        await pageAt(p, 2, 64 / H);
-        await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; });
-        await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
-        return;
-      }
-      await tab(p, 'Comment'); await goPage(p, 1);
+      // The fees page, as the client reads it: the build fee and the payment it falls in highlighted, the client's
+      // question on the build phase, and (where the comments list is open) the studio's answer under it.
+      await openDoc(p, docs.proposal, PROPOSAL.file);
+      await tab(p, 'Comment');
+      // (The Mac at 125%: from the table's head, under the page's title, to the note under the payments.)
+      const top = async () => { if (p.kind === 'mac') await pageAt(p, 3, 170 / H); else await goPage(p, 3); };
+      if (p.kind === 'mac') await setZoom(p, 125);
+      await top();
       await run(p, 'tool_highlight');
-      for (const t of [`Ridership up 12 percent on ${docs.D.year - 1}`, 'Kestrel, our first electric ferry']) await selectText(p, 1, t);
-      await p.evaluate(() => window.__cowdreyPdf.setAuthor('Priya Nair'));
-      await run(p, 'tool_note'); { const [x, y] = await at(p, 1, 500, 590); await p.mouse.click(x, y); }
-      await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Can we add the Sunday figures here?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
+      await selectText(p, 3, '$18,200'); await highlightLine(p, 3, 'When the visual design is signed off');
+      await p.evaluate(() => window.__cowdreyPdf.setAuthor('Dana Whitfield'));
+      await run(p, 'tool_note'); { const [x, y] = await at(p, 3, 558, 386); await p.mouse.click(x, y); }
+      await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Could we split the build fee into two payments, one at the start of the build and one at launch?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
       await p.evaluate(() => window.__cowdreyPdf.setAuthor('Alex Morgan'));
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
-      if (p.kind !== 'iphone') { await run(p, 'cm_list'); await p.waitForTimeout(600); }
-      await goPage(p, 1);
+      if (p.kind !== 'iphone') {
+        await run(p, 'cm_list'); await p.waitForTimeout(600);
+        const note = p.locator('#sidePanel [data-cm-go]', { hasText: 'two payments' }).first();
+        await note.click(); await p.waitForSelector('#sidePanel [data-cm-reply]');
+        await p.fill('#sidePanel [data-cm-reply]', 'Yes, happy to. I’ll move half of it to launch and send a new page 4 today.');
+        await p.click('#sidePanel [data-cm-send]'); await p.waitForTimeout(600);
+      }
+      await top();
+      await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; });
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
   { slug: 'redact', title: 'Redact for real.\nGone for good.', sub: 'Private details are removed, not covered.',
@@ -509,7 +591,8 @@ const STORIES = [
     // under the second row.
     macH: 859,
     async shoot(p, docs) {
-      // A board pack of twelve pages, so the grid fills the screen, with two pages picked to move together.
+      // A stack of paperwork twelve pages long (the proposal, the form, the letters and three of the proposal's pages
+      // again), so the grid fills the screen, with two pages picked to move together.
       await openDoc(p, docs.pack, `${docs.D.pack}.pdf`);
       await tab(p, 'Pages'); await run(p, 'pg60_organize'); await p.waitForTimeout(2500);
       await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([2, 3])); await p.waitForTimeout(600);
@@ -571,11 +654,11 @@ async function compose(kind, story, raw, file) {
   return frame(browser, kind, { head: story.title.replace(/\n/g, ' '), sub, device: 'macbook', png: screen, file }, THEMES.pdf, FONTS);
 }
 
-// The organize story's document: the review, the form, the letter and the scan in one file, with three of the
-// review's pages again at the back as an appendix (twelve pages).
+// The organize story's document: the proposal, the form, the letter and the scan in one file, with three of the
+// proposal's pages (the approach, the fees and the timeline) again at the back as an appendix (twelve pages).
 async function pack(d, D = DATES.device) {
   const out = await PDFDocument.create();
-  for (const [bytes, idx] of [[d.review, null], [d.form.bytes, null], [d.letter, null], [d.scan, null], [d.review, [2, 3, 4]]]) {
+  for (const [bytes, idx] of [[d.proposal, null], [d.form.bytes, null], [d.letter, null], [d.scan, null], [d.proposal, [2, 3, 4]]]) {
     const src = await PDFDocument.load(bytes);
     for (const pg of await out.copyPages(src, idx || src.getPageIndices())) out.addPage(pg);
   }
@@ -625,9 +708,9 @@ async function scan(D = DATES.device) {
   return pdf.save();
 }
 
-export { DEVICES, app, openDoc, run, tab, grab, launch, review, form, letter };
+export { DEVICES, app, openDoc, run, tab, grab, launch, proposal, form, letter };
 if (ARG.docs) {
-  fs.writeFileSync(path.join(ARG.docs, 'review.pdf'), await review());
+  fs.writeFileSync(path.join(ARG.docs, 'proposal.pdf'), await proposal());
   fs.writeFileSync(path.join(ARG.docs, 'form.pdf'), (await form()).bytes);
   fs.writeFileSync(path.join(ARG.docs, 'letter.pdf'), await letter());
   fs.writeFileSync(path.join(ARG.docs, 'scan.pdf'), await scan()); await browser.close();
@@ -636,10 +719,10 @@ if (ARG.docs) {
   const made = {};
   const docsFor = async (kind) => {
     const D = DATES[kind === 'mac' ? 'mac' : 'device'];
-    if (made[D.year]) return made[D.year];
-    const docs = { D, review: await review(D), form: await form(D), letter: await letter(D), scan: await scan(D) };
+    if (made[D.proposal]) return made[D.proposal];
+    const docs = { D, proposal: await proposal(D), form: await form(D), letter: await letter(D), scan: await scan(D) };
     docs.pack = await pack(docs, D);
-    return (made[D.year] = docs);
+    return (made[D.proposal] = docs);
   };
   // The Mac leads with Fill in and sign: Edit text outlines every line on the page, busy as a first picture.
   const ORDER = { mac: ['fill-and-sign', 'edit-text', 'scans-to-text', 'comments', 'redact', 'organize-pages'] };
