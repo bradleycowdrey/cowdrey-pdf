@@ -36,7 +36,10 @@ async function step(name, fn) {
   }
   write(false);
 }
-const appNodes = () => A.uiNodes().filter((n) => n.package === PKG);
+// The app's own nodes on screen. A system "isn't responding" window over the app is closed first (A.focused(), as the
+// device test does): uiautomator reads only the window in front, so the app's title and fields would never be found
+// under one (run 50: "Pixel Launcher isn't responding" covered the opened PDF on a freshly booted emulator).
+const appNodes = () => { A.focused(); return A.uiNodes().filter((n) => n.package === PKG); };
 async function waitApp(test, timeout = 60000) {
   const end = Date.now() + timeout;
   while (Date.now() < end) { const n = appNodes().find(test); if (n) return n; await sleep(1000); }
@@ -47,7 +50,9 @@ let comp = '';
 adb('logcat', '-c');
 await step('installs; a release build (not debuggable, no web view debugging compiled in)', async () => {
   adb('uninstall', PKG);
-  log(adb('install', '-r', APK).trim());
+  // A whole install, as from Google Play or the downloaded APK. apksigner writes a .idsig next to the APK, and with it
+  // adb would install incrementally, streaming the APK in on demand while the app and the launcher first read it.
+  log(adb('install', '-r', '--no-incremental', APK).trim());
   const info = sh(`dumpsys package ${PKG}`);
   log('  ', (info.match(/versionName=\S+/) || [''])[0], (info.match(/pkgFlags=\[[^\]]*\]/) || [''])[0]);
   ok(new RegExp(`versionName=${VERSION.replace(/\./g, '\\.')}\\b`).test(info), 'version ' + VERSION);
