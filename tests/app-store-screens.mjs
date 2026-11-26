@@ -505,7 +505,7 @@ async function compose(kind, story, raw, file) {
   if (kind === 'mac') {
     const d = DEVICES.mac;
     const screen = await desktop(browser, {
-      theme: THEMES.pdf, app: 'Cowdrey.PDF', clock: 'Wed Nov 25  9:41 AM', fonts: { instrument: FONTS.instrument },
+      theme: THEMES.pdf, app: 'Cowdrey.PDF', fonts: { instrument: FONTS.instrument },
       windows: [{ png: raw, w: d.w, h: d.h + d.titlebar, title: 'Cowdrey.PDF' }],
     });
     return frame(browser, kind, { head: story.title, sub, png: screen, device: 'macbook', file, lines: 1 }, THEMES.pdf, FONTS);
