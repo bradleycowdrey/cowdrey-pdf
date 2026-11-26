@@ -1,0 +1,1052 @@
+== install the app's libraries
+
+added 53 packages, and audited 54 packages in 5s
+
+6 packages are looking for funding
+  run `npm fund` for details
+
+1 high severity vulnerability
+
+To address all issues, run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+== install Playwright and Chromium
+
+added 2 packages in 1s
+Installing dependencies...
+Switching to root user to install dependencies...
+Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [152 B]
+Hit:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble InRelease
+Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:4 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:5 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [880 kB]
+Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [804 kB]
+Get:9 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1492 kB]
+Get:10 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [321 kB]
+Get:11 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1716 kB]
+Get:12 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [346 kB]
+Get:13 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1949 kB]
+Get:14 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [448 kB]
+Get:15 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1231 kB]
+Get:16 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security/main Translation-en [243 kB]
+Get:17 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1233 kB]
+Get:18 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [249 kB]
+Get:19 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1842 kB]
+Get:20 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [429 kB]
+Fetched 13.6 MB in 1s (11.5 MB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libatk-bridge2.0-0t64 is already the newest version (2.52.0-1build1).
+libatk-bridge2.0-0t64 set to manually installed.
+libatk1.0-0t64 is already the newest version (2.52.0-1build1).
+libatk1.0-0t64 set to manually installed.
+libatspi2.0-0t64 is already the newest version (2.52.0-1build1).
+libatspi2.0-0t64 set to manually installed.
+libcairo2 is already the newest version (1.18.0-3build1).
+libcairo2 set to manually installed.
+libcups2t64 is already the newest version (2.4.7-1.2ubuntu7.14).
+libcups2t64 set to manually installed.
+libdbus-1-3 is already the newest version (1.14.10-4ubuntu4.1).
+libdbus-1-3 set to manually installed.
+libdrm2 is already the newest version (2.4.125-1ubuntu0.1~24.04.2).
+libdrm2 set to manually installed.
+libglib2.0-0t64 is already the newest version (2.80.0-6ubuntu3.10).
+libglib2.0-0t64 set to manually installed.
+libnspr4 is already the newest version (2:4.35-1.1build1).
+libnspr4 set to manually installed.
+libnss3 is already the newest version (2:3.98-1ubuntu0.3).
+libnss3 set to manually installed.
+libpango-1.0-0 is already the newest version (1.52.1+ds-1build1).
+libpango-1.0-0 set to manually installed.
+libx11-6 is already the newest version (2:1.8.7-1ubuntu0.1).
+libx11-6 set to manually installed.
+libxcb1 is already the newest version (1.15-1ubuntu2).
+libxcb1 set to manually installed.
+libxcomposite1 is already the newest version (1:0.4.5-1build3).
+libxcomposite1 set to manually installed.
+libxdamage1 is already the newest version (1:1.1.6-1build1).
+libxdamage1 set to manually installed.
+libxext6 is already the newest version (2:1.3.4-1build2).
+libxext6 set to manually installed.
+libxfixes3 is already the newest version (1:6.0.0-2build1).
+libxfixes3 set to manually installed.
+libxkbcommon0 is already the newest version (1.6.0-1build1).
+libxkbcommon0 set to manually installed.
+libxrandr2 is already the newest version (2:1.5.2-2build1).
+libxrandr2 set to manually installed.
+xvfb is already the newest version (2:21.1.12-1ubuntu1.9).
+fonts-noto-color-emoji is already the newest version (2.047-0ubuntu0.24.04.1).
+libfontconfig1 is already the newest version (2.15.0-1.1ubuntu2).
+libfontconfig1 set to manually installed.
+libfreetype6 is already the newest version (2.13.2+dfsg-1ubuntu0.2).
+libfreetype6 set to manually installed.
+fonts-liberation is already the newest version (1:2.1.5-3).
+fonts-liberation set to manually installed.
+The following additional packages will be installed:
+  libasound2-data libgl1-mesa-dri libglx-mesa0 mesa-libgallium
+  xfonts-encodings xfonts-utils
+Suggested packages:
+  alsa-utils libasound2-plugins
+Recommended packages:
+  fonts-ipafont-mincho fonts-tlwg-loma alsa-ucm-conf alsa-topology-conf
+The following NEW packages will be installed:
+  fonts-freefont-ttf fonts-ipafont-gothic fonts-tlwg-loma-otf fonts-unifont
+  fonts-wqy-zenhei xfonts-cyrillic xfonts-encodings xfonts-scalable
+  xfonts-utils
+The following packages will be upgraded:
+  libasound2-data libasound2t64 libgbm1 libgl1-mesa-dri libglx-mesa0
+  mesa-libgallium
+6 upgraded, 9 newly installed, 0 to remove and 88 not upgraded.
+Need to get 32.5 MB of archives.
+After this operation, 79.7 MB of additional disk space will be used.
+Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [152 B]
+Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-ipafont-gothic all 00303-21ubuntu1 [3513 kB]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/main amd64 fonts-freefont-ttf all 20211204+svn4273-2 [5641 kB]
+Get:4 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-tlwg-loma-otf all 1:0.7.3-1 [107 kB]
+Get:5 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-unifont all 1:15.1.01-1build1 [2993 kB]
+Get:6 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/universe amd64 fonts-wqy-zenhei all 0.9.45-8 [7472 kB]
+Get:7 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 libasound2t64 amd64 1.2.11-1ubuntu0.5 [400 kB]
+Get:8 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 libasound2-data all 1.2.11-1ubuntu0.5 [21.6 kB]
+Get:9 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 libgl1-mesa-dri amd64 25.2.8-0ubuntu0.24.04.5 [38.0 kB]
+Get:10 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 libglx-mesa0 amd64 25.2.8-0ubuntu0.24.04.5 [110 kB]
+Get:11 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 libgbm1 amd64 25.2.8-0ubuntu0.24.04.5 [34.2 kB]
+Get:12 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 mesa-libgallium amd64 25.2.8-0ubuntu0.24.04.5 [10.8 MB]
+Get:13 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-encodings all 1:1.0.5-0ubuntu2 [578 kB]
+Get:14 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-utils amd64 1:7.7+6build3 [94.4 kB]
+Get:15 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/universe amd64 xfonts-cyrillic all 1:1.0.5+nmu1 [384 kB]
+Get:16 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble/main amd64 xfonts-scalable all 1:1.0.3-1.3 [304 kB]
+Fetched 32.5 MB in 1s (24.7 MB/s)
+Selecting previously unselected package fonts-ipafont-gothic.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 216720 files and directories currently installed.)
+Preparing to unpack .../00-fonts-ipafont-gothic_00303-21ubuntu1_all.deb ...
+Unpacking fonts-ipafont-gothic (00303-21ubuntu1) ...
+Selecting previously unselected package fonts-freefont-ttf.
+Preparing to unpack .../01-fonts-freefont-ttf_20211204+svn4273-2_all.deb ...
+Unpacking fonts-freefont-ttf (20211204+svn4273-2) ...
+Selecting previously unselected package fonts-tlwg-loma-otf.
+Preparing to unpack .../02-fonts-tlwg-loma-otf_1%3a0.7.3-1_all.deb ...
+Unpacking fonts-tlwg-loma-otf (1:0.7.3-1) ...
+Selecting previously unselected package fonts-unifont.
+Preparing to unpack .../03-fonts-unifont_1%3a15.1.01-1build1_all.deb ...
+Unpacking fonts-unifont (1:15.1.01-1build1) ...
+Selecting previously unselected package fonts-wqy-zenhei.
+Preparing to unpack .../04-fonts-wqy-zenhei_0.9.45-8_all.deb ...
+Unpacking fonts-wqy-zenhei (0.9.45-8) ...
+Preparing to unpack .../05-libasound2t64_1.2.11-1ubuntu0.5_amd64.deb ...
+Unpacking libasound2t64:amd64 (1.2.11-1ubuntu0.5) over (1.2.11-1ubuntu0.3) ...
+Preparing to unpack .../06-libasound2-data_1.2.11-1ubuntu0.5_all.deb ...
+Unpacking libasound2-data (1.2.11-1ubuntu0.5) over (1.2.11-1ubuntu0.3) ...
+Preparing to unpack .../07-libgl1-mesa-dri_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking libgl1-mesa-dri:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Preparing to unpack .../08-libglx-mesa0_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking libglx-mesa0:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Preparing to unpack .../09-libgbm1_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking libgbm1:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Preparing to unpack .../10-mesa-libgallium_25.2.8-0ubuntu0.24.04.5_amd64.deb ...
+Unpacking mesa-libgallium:amd64 (25.2.8-0ubuntu0.24.04.5) over (25.2.8-0ubuntu0.24.04.4) ...
+Selecting previously unselected package xfonts-encodings.
+Preparing to unpack .../11-xfonts-encodings_1%3a1.0.5-0ubuntu2_all.deb ...
+Unpacking xfonts-encodings (1:1.0.5-0ubuntu2) ...
+Selecting previously unselected package xfonts-utils.
+Preparing to unpack .../12-xfonts-utils_1%3a7.7+6build3_amd64.deb ...
+Unpacking xfonts-utils (1:7.7+6build3) ...
+Selecting previously unselected package xfonts-cyrillic.
+Preparing to unpack .../13-xfonts-cyrillic_1%3a1.0.5+nmu1_all.deb ...
+Unpacking xfonts-cyrillic (1:1.0.5+nmu1) ...
+Selecting previously unselected package xfonts-scalable.
+Preparing to unpack .../14-xfonts-scalable_1%3a1.0.3-1.3_all.deb ...
+Unpacking xfonts-scalable (1:1.0.3-1.3) ...
+Setting up mesa-libgallium:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up libgbm1:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up libgl1-mesa-dri:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up fonts-wqy-zenhei (0.9.45-8) ...
+Setting up fonts-freefont-ttf (20211204+svn4273-2) ...
+Setting up libasound2-data (1.2.11-1ubuntu0.5) ...
+Setting up libasound2t64:amd64 (1.2.11-1ubuntu0.5) ...
+Setting up fonts-tlwg-loma-otf (1:0.7.3-1) ...
+Setting up xfonts-encodings (1:1.0.5-0ubuntu2) ...
+Setting up fonts-ipafont-gothic (00303-21ubuntu1) ...
+update-alternatives: using /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf to provide /usr/share/fonts/truetype/fonts-japanese-gothic.ttf (fonts-japanese-gothic.ttf) in auto mode
+Setting up fonts-unifont (1:15.1.01-1build1) ...
+Setting up libglx-mesa0:amd64 (25.2.8-0ubuntu0.24.04.5) ...
+Setting up xfonts-utils (1:7.7+6build3) ...
+Setting up xfonts-cyrillic (1:1.0.5+nmu1) ...
+Setting up xfonts-scalable (1:1.0.3-1.3) ...
+Processing triggers for libc-bin (2.39-0ubuntu8.12) ...
+Processing triggers for man-db (2.12.0-4build2) ...
+Not building database; man-db/auto-update is not 'true'.
+Processing triggers for fontconfig (2.15.0-1.1ubuntu2) ...
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1194/chromium-linux.zip
+|                                                                                |   0% of 173.9 MiB
+|■■■■■■■■                                                                        |  10% of 173.9 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 173.9 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 173.9 MiB
+Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+Downloading FFMPEG playwright build v1011 from https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/1011/ffmpeg-linux.zip
+|                                                                                |   0% of 2.3 MiB
+|■■■■■■■■                                                                        |  10% of 2.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1194/chromium-headless-shell-linux.zip
+|                                                                                |   0% of 104.3 MiB
+|■■■■■■■■                                                                        |  10% of 104.3 MiB
+|■■■■■■■■■■■■■■■■                                                                |  20% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 104.3 MiB
+|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 104.3 MiB
+Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+== check index.html is built from src/
+index.html written (2363 KB)
+== check docs/app-store/listing.md is made from listing.json
+docs/app-store/listing.md matches listing.json
+== make the sample PDF
+tests/fixtures/sample.pdf
+tests/fixtures/protected.pdf
+tests/fixtures/tricky.pdf
+== run the tests
+Trying to parse invalid object: {"line":257,"column":6,"offset":4254})
+Invalid object ref: 31 0 R
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Trying to parse invalid object: {"line":284,"column":6,"offset":6062})
+Invalid object ref: 39 0 R
+Trying to parse invalid object: {"line":297,"column":6,"offset":4950})
+Invalid object ref: 38 0 R
+      (clean-up of an A4 page at 300 dpi: 188 ms here)
+      (pdftotext is not installed: checked with pdf.js only)
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Warning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.
+Trying to parse invalid object: {"line":298,"column":6,"offset":5685})
+Invalid object ref: 53 0 R
+      (veraPDF not installed: set VERAPDF to its jar to run it; skipped)
+Trying to parse invalid object: {"line":257,"column":6,"offset":4254})
+Invalid object ref: 27 0 R
+PASS  opens a PDF: pages, thumbnails, page count, title, text layer; nothing fails to load
+PASS  find: counts every match across pages and steps through them
+PASS  mark up: highlight selected text, draw, box, text, note; undo and redo; all saved into the PDF
+PASS  select a mark: move it by dragging, delete it with the Delete key
+PASS  forms: typed values and ticks are kept in the saved PDF; checkbox tick shows
+PASS  pages: rotate, move, duplicate, delete, insert blank; saved PDF follows
+PASS  signature: drawn once, kept for next time, placed as a picture in the PDF
+PASS  library: an opened PDF and its mark-up come back after a reload
+PASS  extract pages: parses ranges
+PASS  phone: the page fits the screen, the sidebar is out of the way, nothing scrolls sideways
+PASS  dark pages and themes
+PASS  Mac app: opens a PDF from Finder, saves back to the same file, menu bar matches the app
+PASS  iPhone app: Save PDF opens the share sheet with the PDF
+PASS  protected PDF: asks for the password, never stores it, saves with or without it as chosen
+PASS  Mac app: a file opened from Finder at launch wins over last time's document
+PASS  Mac app: print, export, extract and share use the Mac, not the browser
+PASS  Mac app: Save a copy leaves the file edited; a file changed elsewhere is not replaced without asking
+PASS  Mac app: quitting with unsaved changes to a file asks first; menu Undo is the app's
+PASS  dialogs wait their turn: a notice during a password question doesn't lose it, and opening carries on
+PASS  drop: if the first PDF doesn't open, the others are not added to the open document
+PASS  phone apps: Print uses the system print dialog; Android "Open with" gets the real file name
+PASS  sample PDF: Try a sample opens a two-page guide with a form and a pelican to find
+PASS  Edit PDF: a line is rewritten in its own font and colour; the saved PDF has only the new text
+PASS  Edit PDF: Escape keeps the edit and Undo takes it back; typing the original back removes the edit; undo brings it back
+PASS  Edit PDF: a picture is moved, resized and deleted; the saved PDF draws it in its new place only
+PASS  Edit PDF: a comment from another app is edited, another deleted; Erase area clears a line
+PASS  Edit PDF: a PDF from Chrome keeps its subset fonts; letters they lack use the closest standard font
+PASS  Edit PDF: saving keeps the next word in another font, lines broken with ', and content stored as an array
+PASS  Edit PDF: the content reader never hangs on a malformed stream
+PASS  Accessibility: a tagged PDF with a page deleted keeps the tags of the other pages only, with a new ParentTree
+PASS  Accessibility: combining two tagged PDFs keeps both trees; each page’s StructParents and MCIDs match its content
+PASS  Accessibility: on a tagged page, a highlight is a tagged comment, a picture is decoration and added text is a new P
+PASS  Accessibility: alt text on a picture of word.pdf is a Figure with /Alt, which pdf.js reads; decorative pictures are artifacts
+PASS  Accessibility: Add tags automatically on sample.pdf: H1 then P in reading order, MarkInfo, form fields tagged; the check passes but for what needs a person
+PASS  Accessibility: the check lists a figure without alt text until it has some; the dialog shows results with Fix buttons
+PASS  Accessibility: Save as PDF/UA refuses while there are problems, else writes pdfuaid:part 1 in the XMP
+PASS  Accessibility: reading order lists the tags of the page; moving and retagging are saved (added tags and the PDF’s own)
+PASS  Accessibility: reading order Move down on a PDF’s own tags keeps the element on its page (not the end of the document)
+PASS  Accessibility: reading order rows fit the panel, with their buttons in view (desktop)
+PASS  Accessibility: reading order rows fit the panel, with their buttons in view (phone)
+PASS  Accessibility: Decorative on a picture that is already tagged takes its Figure out of the tree; the check passes
+PASS  Accessibility: saving a tagged PDF with many links grows with the page count, not faster; every link is tagged on its page
+PASS  Accessibility: tags copied into a new or untagged file are marked as tagged and follow the page order
+PASS  Bookmarks: Add bookmarks from headings nests H1 to H3 in one step (auto tags, the PDF’s tags, or the text)
+PASS  Bookmarks: colour and bold (/C, /F) and the destination kind are kept through a rename; actions are kept; Style and zoom changes them
+PASS  Accessibility: the ribbon has an Accessibility group on the Export tab
+PASS  Android app: Save PDF opens the save dialog; "Saved" only when saved; then Save goes to the same file
+PASS  Android app: when the saved file can no longer be written, Save asks where again
+PASS  Android app: exports use the save dialog; a large file goes over in parts; split saves every part into one folder
+PASS  Android app: Print sends the PDF itself to the print service; theme sets the system bars; insets reach the page
+PASS  Android app: Open with a file it cannot read, or a web link, says so; PDFs shared several at once open
+PASS  Android app: pickers for signing IDs, XFDF and actions show every file; PDF and picture pickers keep their filter
+PASS  Android app: Read aloud speaks with Android's text-to-speech; hidden when the phone has no speech engine
+PASS  Android app: long-press and drag a page thumbnail moves the page
+PASS  Android app: the keyboard coming up (a shorter window) keeps a note being typed and a line being edited
+PASS  Android app: a timestamp request goes through the app (tsa_post), not the web view, which most servers block
+PASS  Android app: Check for updates offers the APK from GitHub, but not when Google Play installed the app
+PASS  Android app: a web view without CSS round() still puts form fields and words where they are on the page
+PASS  Android app: Save PDF tapped while typing in a field saves at once, with the typed value; the field keeps the focus until the click, then the keyboard goes down
+PASS  Android app: a HEIC photo the web view cannot read is decoded by Android and becomes a PDF page
+PASS  Android app: New PDF from pictures uses Android's photo picker, Android reads the photos; one it can't read is named
+PASS  Android app: leaving the app keeps the last change on the device at once
+PASS  Mac App Store build: no Check for updates in Help or the menu bar, and no update check
+PASS  Developer ID build: Check for updates is still there and asks the updater
+PASS  actions: rotate page 1, Bates ABC from 1 (6 digits), Title “<<file>> (reviewed)” on 3 PDFs: one zip, numbers carry on, log lists them; the open PDF is untouched
+PASS  actions: a corrupt file is reported as failed and the others still finish (it uses no Bates numbers)
+PASS  actions: Cancel stops after the current file
+PASS  actions: an action exported as .json imports back the same; unknown files are refused
+PASS  actions: the dialogs — presets, a new action with steps in order, Run on files… with a progress list, a zip and the Bates log; the open PDF stays
+PASS  actions: Optimize, Export as text and Set password steps; the saved PDFs open only with the password
+PASS  actions on the Mac: many files from the Open panel, a folder (list_folder), results next to the originals with a suffix
+PASS  actions in a folder: files with the same name (from subfolders) and files already there are never replaced
+PASS  actions: the list dialog shows only its own buttons, and they fit on a phone
+PASS  actions: an imported step named like a property of every object (constructor, toString, __proto__) is unknown, not run
+PASS  Bookmarks: add (Ctrl+B, named after the heading), rename, add child, set page, drag to nest, delete; saved with the right pages after a page moves
+PASS  Bookmarks: the PDF’s own outline becomes editable on the first change and replaces the old one on save; a deleted page’s bookmark with nothing under it is left out
+PASS  Bookmarks: on a phone the toolbar fits the sidebar and Ctrl+B adds without opening it
+PASS  Bookmarks: untouched, a bookmark whose page is deleted goes from the saved PDF; one with bookmarks under it stays, without a target
+PASS  commands: the web File button lists the File menu only; every menu command has a home on the ribbon
+PASS  commands: on a phone, Home keeps View and Read as their own groups
+PASS  commands: Comment tab has the four text mark-ups together; Area highlight is with the shapes; Signature in Add
+PASS  commands: Edit PDF chooses lines or paragraphs in its menu (a choice of one, kept); only Edit PDF is pressed
+PASS  commands: a single line can be aligned in its own box (right, centre), on screen and in the saved PDF
+PASS  comments: every Comment-tab tool makes a real PDF annotation with its own look, shown again on reopening
+PASS  comments: the Comments panel lists every comment, goes to it, and deletes it (the PDF's own too)
+PASS  comments: no name question; one toast says where to set it; the panel sets the author, filters by type and author and sorts by date
+PASS  comments: on a turned page, typewriter text and stamps stay upright, on screen and in the saved PDF
+PASS  comments: phone width: the Comment tab scrolls, the Comments panel opens, nothing scrolls sideways
+PASS  comments: the pressed swatch is the colour each tool draws; a swatch recolours the selected mark in one undo step; swatches are named
+PASS  comments: a new shape, stroke, callout, typewriter text or stamp is selected after drawing, ready to restyle
+PASS  comments: the Comment tab fits 1440 and 1280 wide windows: Stamp and the Comments list in view (Signature is on Protect)
+PASS  comments: replies and a review status in the Comments panel are saved as replies (/IRT) and read back on reopening
+PASS  signature: Type and Picture besides Draw; the last three are kept; also on the Protect tab
+PASS  compare: the menu and ribbon open the picker; the chosen PDF is Old, the open one New; the changes are exactly what changed
+PASS  compare: scrolling one side scrolls the other to the page lined up with it; zoom is shared; Overlay shows Old behind New
+PASS  compare: the report is a copy of New with Highlight, StrikeOut, Square and page comments that say what changed, after a cover page with the counts; the document gets no marks
+PASS  compare: swap, options (case, punctuation, headers and footers, formatting), a removed page, scans compared as pictures
+PASS  compare: Myers diff gives a shortest edit script that rebuilds the new text; pages align around insertions and removals
+PASS  compare: on a phone, one side at a time with an Old/New switch, and the list of changes in a sheet
+PASS  create: a blank PDF in the size, orientation and number of pages asked for, named Untitled
+PASS  create: from pictures, one per page in the order picked, fitted or on Letter with margins; added to an open PDF
+PASS  create: dropping pictures (no PDF) makes a PDF from them
+PASS  create: pasting a picture makes a one-page PDF, or with a PDF open adds a page or places it
+PASS  read aloud: speaks the page's sentences with the chosen speed, highlights them, moves on to the next page
+PASS  read aloud: hidden where the device has no speech
+PASS  read mode: hides the ribbon, menus and sidebar; arrows turn pages; Esc and the exit button leave
+PASS  export: every page as PNGs in one STORE .zip; the entries are valid PNGs of the right size
+PASS  export: one page as JPEG at 150 dpi saves a single picture; the Mac app saves through the Mac
+PASS  create and read: phone width, nothing scrolls sideways; the read-aloud bar fits
+PASS  Document properties: a producer and modification date typed in are used by the next save; later saves stamp the app and the time
+PASS  Document properties: page numbers i, ii, iii then 1, 2, 3 are saved as /PageLabels and read back
+PASS  Document properties: the XMP packet is edited as text; its title change reaches the fields; other properties are kept as typed
+PASS  Document properties: shows the file, page size, fonts; edits saved into the Info dictionary and kept after reopening; undo
+PASS  Document properties: saving no longer replaces the PDF title with the file name; a PDF with no title gets the file name
+PASS  Document properties: the security summary of a protected PDF
+PASS  Document properties: on a phone the dialog fits the screen
+PASS  Edit PDF: a click puts the caret where it was; typing inserts there; double click selects a word, triple the line
+PASS  Edit PDF: in paragraph mode and on a phone tap, the caret also goes where the text was touched
+PASS  Edit PDF: on a phone, a tap on small body text that zooms in first still puts the caret at the tap
+PASS  Edit PDF: deleting a picture hides the same draw on screen that the saved file removes (clipped copies, forms)
+PASS  Edit PDF: on the brochure, deleting the page-one picture looks the same on screen and in the saved file
+PASS  Edit PDF: editing part of a mixed-font line moves the next run along; nothing is drawn over it
+PASS  Edit PDF: edited text keeps its render mode, line width, spacing and width scale, on screen and saved
+PASS  Edit PDF: an edited line keeps its place in the reading order (lines and paragraphs)
+PASS  Edit PDF: the format bar shows the line's own colour, pressed
+PASS  Edit PDF: paragraph mode groups double-spaced body text, but not short lines spaced apart
+PASS  Edit PDF: on a phone, a line too small to read is zoomed to at least 14 px while edited, then zoom comes back
+PASS  edit feedback: each tool has its cursor (I-beam for Add text and Note, crosshair for shapes); the hover cursor goes with Edit PDF
+PASS  edit feedback: the hover outline and cursor follow the pointer to where it stops (text over a full-page picture)
+PASS  edit feedback: paragraph mode hover is up to date too
+PASS  edit feedback: Edit PDF faintly outlines every line and picture it can edit; they go when another tool is chosen
+PASS  Edit PDF: keys typed right after clicking a line, while it is still being read, go into the line (not the ribbon)
+PASS  Edit PDF: choosing it reads the drawn pages ahead, so the first click opens the line at once
+PASS  Edit PDF: deleting a picture drawn inside a form leaves the page and its text, on screen and in the saved PDF
+PASS  Edit PDF: moving a picture drawn inside a form moves only the picture
+PASS  text: paragraph mode keeps lines that fitted when one letter is added to the last line
+PASS  Edit PDF: the line editor types in the document's own font
+PASS  phone (dark): the format bar wraps to two rows, every control in view, and does not cover the line being edited
+PASS  phone (light): the format bar wraps to two rows, every control in view, and does not cover the line being edited
+PASS  desktop: the format bar shows its swatches as before (no colour button)
+PASS  keys: Left and Right turn the page only from the page, not on a swatch or ribbon button
+PASS  undo and redo say what they take back: "Undo Watermark" in the menu, "Undid: Watermark" after
+PASS  flow: the web shows the ribbon as its only menu row; File and ? reach every menu command; Alt goes to the tabs
+PASS  flow: File > Close leaves Open a PDF with the file in Recent; Open recent shows the list
+PASS  flow: text mark-up stays on its text: a drag over it selects text; a click selects it; arrows and dragging never move it
+PASS  flow: deleting, moving and duplicating a page shows a toast with Undo
+PASS  flow: the comment-author toast is for comments only, once, and waits for a dialog to close
+PASS  flow: Highlight highlights the selection and keeps the tool in use, else turns on; its tooltip says so
+PASS  flow: before any file, the sidebar shows Recent; the last tab comes back with a document
+PASS  flow: Signature is on Protect and in Comment > Add (one command); Save PDF is in the title bar, not again on Home or Export
+PASS  flow: the sidebar keeps the page in view in view; Organize opens with the Pages tab and Done goes back
+PASS  fonts: a line typed in Cyrillic, Greek, accents and a symbol is saved as typed, in embedded Unicode fonts
+PASS  fonts: a one-line Latin edit with letters the page font lacks adds less than 60 KB
+PASS  fonts: a partial edit of a TJ line keeps the kerning numbers of what did not change
+PASS  fonts: a line inside a form XObject is edited: the old words are in no stream of the saved file
+PASS  fonts: a line in a password-protected PDF is saved with the password, its new font encrypted with it
+PASS  fonts: Add text and Replace text write any language; the Font list has Same as the PDF
+PASS  fonts: watermark and header in any language, odd pages only, file name field, read back from the saved PDF
+PASS  fonts: page design: different first page, even pages, title and author fields, presets
+PASS  fonts: right-to-left text is refused with a plain message, not saved broken
+PASS  fonts: a line in a form drawn by another form is edited: the form's other lines stay, the old words go
+PASS  fonts: a partial TJ edit changed in place: the text after it on the line moves by the new width only
+PASS  fonts: saying Not now to a font download: the next save asks again and saves with the font
+PASS  fonts: a letter no font has (an emoji) is left out of the drawing, not written as an empty box
+PASS  fonts: a byte order mark in pasted text is not right-to-left; the line saves without it
+PASS  fonts: the font service picks a face that has the letters
+PASS  fonts: the app bundle has Noto Sans and fontkit offline (./vendor), with the network cut off
+PASS  fonts/protect: OCR of a protected file that claims PDF/A keeps the password and drops the claim
+PASS  fonts/protect: a watermark is read back from a protected file that claims PDF/A; the copy keeps the password
+PASS  fonts drawn: Add text in Latin extended is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Add text in Greek is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Add text in Cyrillic is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Add text in Greek and Cyrillic, serif bold italic is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Add text in Chinese (on-demand font) is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Add text in Hindi (on-demand font) is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Add text in Thai (on-demand font) is drawn with every letter, by pdf.js and poppler
+PASS  fonts drawn: Edit PDF and Add text on the sample PDF: Greek drawn whole; the edited line too
+PASS  fonts drawn: a header in Greek and Cyrillic (page design) is drawn with every letter
+PASS  fonts drawn: a new form field with a Greek value is drawn in a font that has its letters
+PASS  fonts drawn: a new form field with a Chinese value is drawn in a font that has its letters
+PASS  fonts drawn: a Chinese form field value, the font download declined: no empty boxes, other apps draw it
+PASS  fonts drawn: OCR, then Edit PDF on a recognised line: the new words are drawn with every letter
+PASS  forms: every kind of field drawn, its properties set, saved as real fields, and fillable when reopened
+PASS  forms: a new field moves, resizes, is deleted with the Delete key, and comes back with undo
+PASS  forms: fields already in the PDF are renamed and deleted; a deleted one leaves the page and the saved form
+PASS  forms: Recognize form proposes fields on blank lines and empty boxes; one click, or Add all, adds them
+PASS  forms: Clear form empties every field; Flatten form makes what is filled in part of the page
+PASS  forms: a new field can be filled in as soon as you leave form design (another tab, Select, Esc or Fill in); a form tool or Edit fields designs it again
+PASS  forms designer: a field from the PDF moves, resizes and takes new settings; saved in place with its value
+PASS  forms designer: an untouched field is left alone; its type can change (made again with its name and value); Delete removes a moved field
+PASS  forms designer: number format and a total (sum of A and B) are saved with the standard scripts, and work as the form is filled in
+PASS  forms designer: formats, validation and calculation scripts are read and written the standard way
+PASS  forms designer: tab order is set in the Fields panel; the page gets /Tabs /S and its widgets in that order
+PASS  forms designer: several fields selected (Shift-click, a box) align, match and duplicate; Copy to pages makes one field with a widget on each page
+PASS  forms designer: a signature field takes a picture as its look (not a digital signature); a signing feature can take over
+PASS  forms designer: Prepare for signing adds signature, initials and date fields for each person
+PASS  forms designer: appearance, styles and actions are saved: check box style, dashed border, Times, Go to page, Show/hide, mail submit
+PASS  forms designer: form data and comments go to XFDF and come back into a fresh copy of the PDF; FDF imports too
+PASS  forms designer: a signed signature field is not offered a picture, and keeps its signature when saved
+PASS  forms designer: a field from the PDF that is moved keeps its own font and the text in it
+PASS  forms designer: a field with a dotted name keeps its name when its settings change, and a rename keeps its parent
+PASS  forms designer: a total from the PDF shows its new value when it has the focus, and once it loses it
+PASS  forms designer: an average of fields listed in one string ("A, B") is worked out
+PASS  forms designer: a check box from the PDF shows its own style (cross) in Properties
+PASS  Image editing: a deleted picture leaves the file, and the page no longer lists it
+PASS  Image editing: moving and turning a picture keeps its own picture object, byte for byte
+PASS  Image editing: a replaced picture leaves the file; a JPEG put in its place keeps its own bytes
+PASS  Image editing: a JPEG that is moved stays the same JPEG; a real crop gives a smaller JPEG and the original goes
+PASS  Image editing: Export all pictures gives a zip with the original JPEG bytes
+PASS  Image editing: Enhance shows a live preview; greyscale makes a grey picture, the original leaves the file, undo brings it back
+PASS  Image editing: Enhance resamples to a resolution, and is on the right-click menu and the Edit tab
+PASS  Image editing: a CMYK picture is moved without being touched; Enhance says it becomes RGB
+PASS  Image editing: a real crop of an added picture with transparency cuts its soft mask the same way
+PASS  Image editing: Straighten automatically finds how far lines lean
+PASS  Pictures: a picture in the PDF is turned, mirrored and cropped from its toolbar; the saved PDF draws it so, clipped
+PASS  Pictures: Save picture as PNG gives the picture’s own pixels; Replace fits a new one in the same box
+PASS  Pictures: on a turned page, Flip horizontal mirrors across the screen, not the paper
+PASS  Pictures: an added picture is selected with Select, turned, moved, resized and replaced; undo and the saved PDF follow
+PASS  Pictures: an added picture is picked with Edit PDF, flipped and cropped; the saved PDF clips it
+PASS  Pictures: the toolbar fits a phone screen and the crop can be cancelled with Escape
+PASS  tables: a ruled table and one lined up by spacing are found; CSV is exactly the cells, a comma and quotes included
+PASS  tables: the preview moves, adds and removes column dividers; header off; copy as table; all tables to one workbook
+PASS  tables: a long account number (more than 15 digits) stays text in Excel and keeps every digit
+PASS  summary and ask: each bullet of a list without full stops is a sentence of its own
+PASS  summary: TextRank picks the topic sentence first, with its page; key terms; the dialog says where the sentences come from
+PASS  summary: the browser's on-device model is offered only when it is ready, and writes into the dialog
+PASS  ask: "when is the invoice due" finds the passage with the date, on its page; choosing it marks the sentence there
+PASS  integration: Actions can run Save as PDF/A (2b and 2u); each file passes the built-in check
+PASS  integration: File menu has Save as PDF/A then Save as PDF/UA after Save a copy; Actions after the exports; Close last
+PASS  Add text types on the page: no dialog; Escape keeps it and the Text tool stays; an empty box adds nothing
+PASS  Note opens a small editor on the page, not a dialog; Escape keeps the note and the Note tool; empty adds nothing
+PASS  Selecting text with Select shows a bar (Highlight, Underline, Strikethrough, Redact, Copy); the right-click menu has the same
+PASS  Phone: a selection made by touch shows the bar once it rests; Redact marks the text
+PASS  Dialogs open on their first text field, so typing straight away lands there, and Enter presses the main button
+PASS  Closing Find (Esc or X) gives the focus back to what opened it; a Comments-list item keeps the focus in the list
+PASS  Ribbon: each group is a toolbar with one Tab stop; arrows move within it, Tab to the next group; Down opens a list
+PASS  Commands that do not apply are disabled: Remove security, Delete page, Split, Manage page design, Flatten and Clear form
+PASS  Drag-only tools are placed with Enter: a usual-size one in the middle of the page in view, selected; arrows move it, Alt+Shift+arrows resize it
+PASS  Edit PDF: closing the line editor with Escape or Enter puts the focus on the page, and Tab goes on from there
+PASS  Edit PDF: Tab and Shift+Tab go between the text and the format bar; Ctrl+B, I and U format the line
+PASS  Edit PDF: the format bar has few Tab stops: the swatches and the alignment are radio groups and the size can be typed
+PASS  Mac app: the menu bar greys out commands that do not apply, and sends only what changed
+PASS  Close (Ctrl+W): asks about unsaved changes, then goes back to the start; Recent keeps the document
+PASS  Mac app: File > Close has Cmd+W
+PASS  File menu: Close stays last; Export all pictures sits with the other exports
+PASS  phone: a tool hint toast goes once the page is tapped or the tool changes; ribbon rows fade at the edge with more
+PASS  phone: touch targets are at least 44px (Stop, the text format bar, title and status bar); desktop keeps its sizes
+PASS  iPhone: a small form field zooms the page so its text is 16px or more, keeps the focus, and the zoom goes back after
+PASS  Android: a tick box tapped after a zoomed form field brings the zoom back (it takes no typing)
+PASS  Android: Back closes the top thing first (dialog, sidebar, tool) and leaves only when nothing is open
+PASS  layout: the five sidebar tabs sit in one row, named by tooltip and for screen readers; a phone shows the names too
+PASS  layout: a phone title bar gives the name its room, cutting the middle (the whole name is the tooltip); the mode chip names the tool
+PASS  layout: Organize hides the sidebar, its bar has Select all and a plain Done (the ribbon has the rest); Done goes back
+PASS  layout: a page's right-click menu (sidebar and Organize, mouse or Shift+F10) has the page commands, and they work on that page
+PASS  layout: the Picture group is tinted as a context group and scrolls into view, whole, when a picture is chosen
+PASS  layout: Fill in has its own icon and is pressed only once chosen; pressed, it goes back to Edit fields
+PASS  layout: Combine is on Home (File, next to Open) and on the Pages tab next to Insert, and both fit at 1440
+PASS  layout: the theme button's name says the theme in use
+PASS  layout: the Mac menu bar has check items only for real switches (never a … command) and no separator at an end or twice
+PASS  layout: moving and deleting pages is read out (the live region), from the keys and the menus
+PASS  layout: All results is one Tab stop (a list box the arrows move through); form fields with no tooltip are named; the ribbon is a named region
+PASS  Links: add a web link (on a rotated page) and a link to a page; saved as real links that follow page moves
+PASS  Links: a link already in the PDF is changed, another deleted; undo; saved PDF and the view follow
+PASS  Links: the PDF's own page links follow their page when pages are reordered, and go when it is deleted
+PASS  look: the format bar's "colour now" swatch has a visible edge on dark and on light
+PASS  look: a split button's arrow is inside its hover and pressed tint (one shape)
+PASS  look: Header & footer shows each place's text in full
+PASS  look: a phone title cut in the middle has no gap before the kept end
+PASS  look: on a phone, the Edit PDF hint toast goes when you leave the tool
+PASS  look: the text format bar never covers the line above the one being edited, and stays in view on a phone
+PASS  look: the text format bar's Font sets a line in a standard font or in another font the page has; the saved PDF uses it
+PASS  look: a paragraph's Font, alignment and Line spacing are kept in the saved PDF
+PASS  look: the Comment tab's groups match the other tabs: 12px names, two rows as tall as a big button, shapes named when there is room
+PASS  text mark-up: a drag past the end of a line marks that line only, once
+PASS  text mark-up: text under a comment from the file, or under your own shape, can be selected and marked
+PASS  selected marks: a dashed box with handles; dragging one resizes the mark in one undo step (both themes, touch)
+PASS  selected marks: named for screen readers, and selecting one is announced
+PASS  mode chip: the status bar says which tool is on and how to use it, until Esc; hints are not toasts
+PASS  comments list: highlight rows show the marked words, also after saving and opening again
+PASS  comments: Hide all hides every comment on screen only; Export and Import carry them as XFDF
+PASS  Protect: Flatten pages says what it flattens, apart from Flatten form
+PASS  comments: Hide, Export and Import are on the Comments list button and in the Comment menu
+PASS  media: Attach file puts a file on a page as a file attachment comment; pdf.js reads its bytes back
+PASS  media: the Attachments panel renames, describes and removes files the PDF came with; Source goes in /AF
+PASS  media: combining two PDFs that each have an attached file keeps both (the second name gets " (2)")
+PASS  media: a portfolio shows a Portfolio bar and its files (columns and folders); Open opens an embedded PDF
+PASS  media: Insert video saves a Screen annotation with a Rendition and the file; reopened, Play makes a video from a blob
+PASS  media: a Sound comment plays as a WAV made from its samples; mu-law samples are decoded
+PASS  media: a RichMedia annotation with an embedded MP4 plays from its file
+PASS  stamps: a picture stamp is a Stamp with the picture as its look; Your stamps keeps, renames and deletes it
+PASS  stamps: the dynamic stamp says Approved by your name on the date and time
+PASS  mobile: a finger draws with Draw, Box and Area highlight, and selects text with Highlight and Underline (no scroll takes over)
+PASS  mobile: a phone on its side gets the phone layout, so the document gets most of the height
+PASS  mobile: Undo and Redo sit in the title bar on phones on every tab, disabled when there is nothing to undo
+PASS  mobile: hints on a touch screen never name Esc or Ctrl; Keyboard shortcuts lists Ctrl+D once
+PASS  mobile: the phone sidebar takes focus when it opens, keeps it while open (Tab goes round), and gives it back
+PASS  mobile: menu toggles are checkbox items and Appearance is a radio group, with their checked state
+PASS  mobile: keyboard focus rings are the accent colour on fields, buttons, the menu bar and swatches, in both themes
+PASS  mobile: the Mac app hides the window menu bar once the macOS menu bar has the menus; the web app keeps it
+PASS  mobile: with Note or Stamp chosen, Enter places it in the middle of the page in view, selected, and the arrows move it; pages are named regions
+PASS  OCR: a scanned page is read at 300 dpi; its words become invisible text you can select and find; saved and reopened
+PASS  OCR: undo takes the text away again and redo brings it back; the mark-up stays on the page
+PASS  OCR: Edit PDF rewrites a recognized line; the saved PDF shows the new words and finds only them
+PASS  OCR: a sideways scan turned to read upright is read upright; the text lies on its words
+PASS  OCR: language choice; letters Helvetica lacks (Cyrillic, Greek) are found and copied in the saved PDF
+PASS  OCR: pages with text are skipped unless asked; recognizing again replaces the old layer
+PASS  OCR: Cancel stops a run and changes nothing; an engine that cannot load says so
+PASS  OCR: a protected PDF keeps its password and restrictions after recognizing text
+PASS  OCR: the dialog fits a phone screen
+PASS  OCR clean-up: a page turned 4 degrees is found to be 4 degrees off and straightened; 1-2 px specks go, letters and dots stay
+PASS  OCR clean-up: lines running up the page are turned a quarter turn; the map takes clean pixels back to the scan; it runs in a worker too
+PASS  OCR (real engine): a page scanned 3 degrees askew, image kept, reads as the sentences, each word on its slanted box in the scan
+PASS  OCR (real engine): a page scanned sideways (no /Rotate) is found, turned to read upright, and its text reads correctly
+PASS  OCR (real engine): a page scanned 3 degrees askew, read with its image straightened and cleaned, reads as the sentences (pdf.js, pdftotext); each word on its box; saved as 1-bit
+PASS  OCR: up to three languages are read together ("eng+fra"); the dialog says what a first use downloads
+PASS  OCR (real engine): a language used for the first time is downloaded once and read with, alone and with English; a bad download fails clearly and is not kept
+PASS  OCR (real engine): a new language is read with even where it cannot be kept on the device
+PASS  OCR: Cancel while the text reader is getting ready ends the run at once; text can be recognized again
+PASS  OCR: words the reader was unsure of are listed in Check words with a close-up; one put right is saved; next, previous, accept all; undo
+PASS  OCR: a second run keeps the first run's words in Check words; one put right later keeps the other page as it was
+PASS  OCR: a page with typed text and a scanned line, read with "Also pages that already have text", has each typed word once
+PASS  OCR: "Recognize text when a scanned PDF opens" reads a scan as it opens; off, it only offers to
+PASS  OCR: a colour scan is kept in colour (JPEG) when its image is cleaned; undo brings the original image back
+PASS  OCR: the dialog has the new choices; "Turn pages upright" is on and "Also straighten and clean the page image" off at first
+PASS  optimize: a 600 ppi predictor-Flate RGB picture and an Indexed picture get smaller at 150 dpi, at about 150 ppi
+PASS  optimize: a black-and-white scan stays 1-bit (CCITT G4 or Flate, never JPEG) and is made 300 ppi
+PASS  optimize: the G4 encoder reads back pixel for pixel in pdf.js (edges, long runs, odd widths)
+PASS  optimize: two identical pictures on two pages end as one picture object
+PASS  optimize: a Flate stream deflated at level 1 becomes smaller, and its decoded bytes are the same
+PASS  optimize: Lossless only changes no picture bytes
+PASS  optimize: never larger: an already optimized PDF comes back as the same bytes, and says so
+PASS  optimize: CMYK pictures are untouched unless converting them to RGB is chosen
+PASS  optimize: clean-up drops unused resources and thumbnails, keeps what is drawn; tags only when asked
+PASS  optimize: the dialog shows the sizes, sets Optimize for saving; the saved PDF is smaller and has pictures at about 150 ppi
+PASS  optimize: saving an already compact PDF with Optimize set keeps the file as it was, and says so
+PASS  optimize: pictures pdf.js has to read (ASCIIHex here) are made smaller too
+PASS  optimize with a password (an action): pictures shrink and the saved PDF still needs its password
+PASS  optimize: Remove JavaScript is done even when the PDF is already compact (optimizeBytes and the dialog)
+PASS  optimize: Remove unused resources keeps the form’s default font (AcroForm /DR) that a field’s /DA names
+PASS  saved file: a line edited on word.pdf leaves no trace of the old words in any stream, in every save path
+PASS  saved file: on the brochure, edited and replaced text is gone from every stream
+PASS  saved file: a password-protected PDF saved with its password keeps no trace of an edited line
+PASS  saved file: Ctrl+S while typing in a form field made here keeps the value (and Undo still takes it back)
+PASS  saved file: Ctrl+S while typing keeps the words in every editor (line, paragraph, Add text, note, callout, typewriter, bookmark name)
+PASS  saved file: callout and typewriter /DA is a plain string; every comment's Rect holds its QuadPoints, vertices and leader
+PASS  reopened: our callout and typewriter text can be edited again, keeping where they are and how they look
+PASS  Compress never makes a file bigger: an already compact PDF is saved as it was, and you are told
+PASS  page design: watermark, background, header, footer and Bates are pagination artifacts other editors can find; ours again on reopening
+PASS  page design: a text watermark on chosen pages, in front or tiled behind, on screen and in the saved PDF
+PASS  page design: a background colour goes behind the page on chosen pages, on screen and when saved
+PASS  page design: header & footer with page number, page count and date on every page; numbers follow the saved order
+PASS  page design: Bates numbers with prefix, digits and suffix run across the saved pages in their place
+PASS  page design: Manage lists what was added; edit, remove, undo and redo
+PASS  page design: after saving and reopening, the watermark and header can be updated or removed
+PASS  page design: a picture watermark and a header on a rotated page keep their place; dialogs fit a phone
+PASS  page design: the Watermark, Background, Header & footer and Bates buttons open the one already there; Add another and Remove
+PASS  page design: the dialogs show a live preview of the page, and the page stays visible behind them
+PASS  page design: on a phone the dialogs are one column, with the preview on top, and no choice is cut off
+PASS  page design: applying redactions never cuts letters out of a watermark, header or Bates number added here
+PASS  page design: on a PDF with a password, a watermark added earlier can be changed or removed after reopening
+PASS  icons: each command on the ribbon has its own icon where the meaning differs
+PASS  pages: split into files by ranges, every N pages, and one per page; each part has the right pages
+PASS  pages: insert chosen pages from another PDF after this page; saved PDF has them in place
+PASS  pages: replace a range with pages from another PDF; undo brings the old pages back
+PASS  pages: crop by dragging a box; page shows cropped; CropBox and TrimBox saved; respects rotation; undo
+PASS  pages: reverse page order (all, or just the chosen pages); saved PDF follows
+PASS  pages: Delete pages… takes a range and asks first; Delete on a page in the sidebar asks too
+PASS  pages: several pages chosen in the sidebar are rotated, moved and deleted together
+PASS  pages: the Pages tab has one Rotate, one Delete and one Insert, with their other choices in a list, and fits at 1440
+PASS  pages: Combine PDFs lists this PDF and the added files with their pages; they can be moved and taken out, then are joined in that order
+PASS  pages: Combine PDFs with nothing open opens the first file and adds the rest
+PASS  PDF/A-2b: a page-designed, annotated PDF is saved with XMP (pdfaid, title), an sRGB output intent, every font embedded, no scripts, printable appearances
+PASS  PDF/A: the output intent profile is a valid ICC v2 sRGB profile, made in code
+PASS  PDF/A check: the PDF/A file passes; the plain saved PDF lists fonts not embedded and no OutputIntent
+PASS  PDF/A: a PDF with a password is refused
+PASS  Document properties: title, author, a custom key, language, opening page and window title are saved (Info, XMP, catalog) and read back
+PASS  Document properties: dates and creator are editable, the language is checked, the hidden page-design key is not listed; undo
+PASS  PDF/A: scripts, launch actions, LZW, hidden and appearance-less comments are fixed; Arial and Times get stand-ins; Wingdings is reported, "Save anyway" drops the claim
+PASS  PDF/A-2u: every font has a Unicode mapping; PDF/A-3b keeps an attachment (described), PDF/A-2b offers 3b for it
+PASS  PDF/A: a form the reader was asked to draw (NeedAppearances) gets drawn appearances in an embedded font
+PASS  PDF/A: the command is in the File menu and on the Export tab (Archive)
+PASS  PDF/A: a PDF/A file keeps its claim when only its properties change, and loses it when pages from another PDF are added
+PASS  PDF/A: a PDF/A file can be saved with a password (the claim is dropped first)
+PASS  Document properties: Custom tab changes keep Info keys it does not show; several XMP authors stay several
+PASS  PDF/A and X-4 metadata: no pdf:Trapped in a PDF/A packet; X-4 has VersionID and RenditionClass; a form font with /Differences is symbolic in PDF/A-1; a ligature gets its Unicode in 2u
+PASS  PDF/A: one base font under two encodings gets two font programs; a shared one is flagged and split
+PASS  PDF/A: veraPDF (when installed: $VERAPDF names its jar or script) finds the output compliant
+PASS  PDF/X-4: the sample is saved with a FOGRA39 output intent, the version, a TrimBox, trapping stated, RGB defined as sRGB; the built-in check passes
+PASS  PDF/X-1a: RGB content is refused with the reason, and no file is saved
+PASS  PDF/A: the dialog offers 1b, 2b, 2u, 3b, 3u and screen or print colours; PDF/A-1b has no object streams and passes the built-in check
+PASS  PDF/X: the command is in the File menu after Save as PDF/A, and on the Export tab
+PASS  thumbnails: new form fields look as saved (no black fill, no name tag or handles); links are not drawn
+PASS  page design dialog: the preview shows the page as edited (mark-up and redactions), not the original
+PASS  header & footer: Page number inserted inside a field goes after it; broken fields are caught; saved PDF reads "Page 2 of 3"
+PASS  read aloud: when no voice can speak it stops with a message on the page it began, not skimming to the end
+PASS  read aloud: other errors skip a sentence, but three in a row stop it; it starts on the page in view
+PASS  read aloud: "not allowed" asks for a click
+PASS  search and redact: lists each match with its page and words around it; shows it; unticked ones are not marked
+PASS  Protect: search and redact a figure, an area of a picture and a note; the saved PDF no longer has them
+PASS  Protect: redact a word in a PDF from Chrome, with text on the box; neighbouring words stay in place
+PASS  Protect: mark selected text for redaction; undo and redo applying; patterns find emails and phone numbers
+PASS  Protect: redact on a rotated page: the dragged area and the saved box cover the same words
+PASS  Protect: set an open password and limits; the PDF opens only with it and keeps the limits
+PASS  Protect: remove security from a PDF opened with its password (saving doesn't ask to keep it)
+PASS  Protect: flatten makes form fields and comments part of the page
+PASS  Protect: a redaction box from text stays off the line above on tight leading
+PASS  Protect: compress says when a PDF is already compact, and Compress stays the main button
+PASS  Protect: compress makes a PDF with a large picture smaller, and shows the sizes
+PASS  Protect: remove hidden information: metadata, attachments and scripts
+PASS  Protect: the tab and its dialogs fit a phone screen
+PASS  Protect: redacting part of a see-through JPEG picture keeps it a JPEG with its soft mask; the file does not grow
+PASS  Protect: when Balanced gains next to nothing but Smallest does, Balanced stays chosen and the note says what Smallest would save
+PASS  redaction scrub: geometry helpers cut shapes and lines along a box
+PASS  redaction scrub: a tagged PDF keeps no trace of the redacted word, in content, tags, drawings, bookmarks or properties
+PASS  redaction scrub: a named property list is copied and cleaned; an element whose content is partly redacted loses its alternate text and gets the box text
+PASS  redaction scrub: Search and redact also finds the word in comments, bookmarks, form fields and properties, and saving removes it there
+PASS  redaction scrub: a dragged area cuts a circle and a line along its edge, and takes out Type 3 letters under it
+PASS  redaction scrub: on tightly spaced lines (a standard font, no font descriptor) the line below the box keeps its letters
+PASS  redaction scrub: a shape filled and used as the clip (W f) under the box goes; a form drawn squeezed (Tz from the page) loses the right letters
+PASS  save: moving a page keeps the file size (fonts and pictures stay shared); deleting one makes it smaller
+PASS  save: bookmarks, named destinations and document info survive deleting and moving pages
+PASS  save: a PDF with no title gets the file name as its title
+PASS  save: filled form fields stay fields after moving, deleting, duplicating pages and adding a blank page
+PASS  save: deleting the page with the fields removes them from the form
+PASS  save: merging another PDF keeps this one's filled fields and adds the other's pages in order
+PASS  saving edits never writes compressed bytes into page content (brochure: line edit, picture delete, watermark; manual: line and paragraph edit)
+PASS  editing the first run of a mixed-style line moves the runs after it as they are (colour, slant, size), on screen and saved
+PASS  a centred title stays centred when edited or replaced; right-aligned text grows left; nothing runs off the page
+PASS  a click at the end of a line on the manual puts the caret at the end (the PDF's own letter widths), and inside it between the right letters
+PASS  Combine: a form field from the added PDF whose name is taken gets its own name, and still works
+PASS  paragraph: Escape on a paragraph that grew keeps it without asking, with Shrink to fit and Undo at hand; Shrink to fit keeps the line spacing
+PASS  applying redaction takes the comments over it off the screen at once
+PASS  Security: the limits map to pdf-lib permissions as this table says
+PASS  Security: each choice of changes and printing is exactly what the saved PDF allows (pdf.js getPermissions)
+PASS  Security: AES-256 by default, AES-128 for older apps; both open with the password
+PASS  Security: settings saved as a preset (never the passwords) and picked again
+PASS  Security: a PDF its author limited: editing is off until the permissions password is entered; then security can be removed
+PASS  Security: following the author's limits can be turned off; forms follow their own flag
+PASS  Security: the permissions password of a PDF opened with its open password (tests/fixtures/protected.pdf)
+PASS  Security: a PDF whose author forbids page changes: the sidebar's drag and drop and Delete key don't change its pages either
+PASS  share: Share app sits between the theme and Open; its options copy the link, the Mac link and a message
+PASS  share: Share… in Share app only with a share sheet, and it shares the link; Help (?) has Share Cowdrey.PDF…
+PASS  share: on the web, Share… for the document only where the browser shares PDF files; it shares the saved PDF
+PASS  share: phone: More has Share… with the file items and Share Cowdrey.PDF… at the end; the title bar fits at 390px
+PASS  share: Mac app: Help in the menu bar has Share Cowdrey.PDF…, which shares the link with the Mac share menu
+PASS  shell: the ribbon keeps one height on every tab, buttons never overlap, and a wide tab fades at the edge
+PASS  shell: the Comment tab starts Tools, Colour, Style; no Edit group; the Picture group shows only for a picture
+PASS  shell: switching ribbon tabs goes back to Select unless the tool is on that tab; then a form can be filled
+PASS  shell: Escape keeps an edit to a text box; Undo takes it back
+PASS  shell: menus work from the keyboard; ribbon and sidebar tabs are tab lists
+PASS  shell: arrow keys nudge the selected mark (Shift for 10 pt); copy, paste and duplicate it
+PASS  shell: dialogs are named and start on their first field; a disabled button looks disabled; save state is truthful
+PASS  shell: with reduced motion, going to a page jumps straight there
+PASS  shell: phone: the sidebar has a scrim and closes on Escape, a tap outside and its close button
+PASS  shell: phone: More reaches the menu-only commands; buttons are named and big enough; dialog buttons stay in view
+PASS  shell: one name per place: Comment menu, page design under Edit, pictures called pictures
+PASS  certificate signing: sign with a drawn box; the original bytes, then one incremental update; the signature checks out
+PASS  certificate signing: the Signatures panel says valid, not verified, until the certificate is trusted
+PASS  certificate signing: a byte changed in the signed part is Invalid; a comment added later is allowed and said
+PASS  certificate signing: page changes hidden from the check are caught (more xref sections, /XRefStm, disguised objects, an edited signature)
+PASS  certificate signing: a second signer signs the signed file as it is; both signatures stay valid
+PASS  certificate signing: a timestamp from a timestamp server (only a fingerprint is sent); none asked for with the setting off
+PASS  certificate signing: saving an edited signed PDF warns first; Cancel saves nothing; unedited and form-only saves keep the signatures
+PASS  certificate signing: an ECDSA P-256 signing ID made on the device signs and validates
+PASS  certificate signing: signing IDs from OpenSSL (EC, legacy RC2-40, a chain with its CA); wrong passwords; delete
+PASS  certificate signing: classic xref tables; PKCS #7; certify; a field from the Forms tab; protected PDFs refused
+PASS  certificate signing: a hybrid-reference file gets a classic xref section that points back at it
+PASS  certificate signing: an empty signature field in the PDF is signed in place, through the same incremental update
+PASS  certificate signing: a protected PDF is refused with a clear message
+PASS  certificate signing: the apps carry the signing libraries (desktop/dist loads them from ./vendor, offline)
+PASS  certificate chains: root → intermediate → signer walks to a root trusted from a file; untrusted until then
+PASS  certificate chains: an intermediate that had expired when signing makes the signature invalid, with the reason
+PASS  revocation: only when asked; OCSP says revoked, the CRL says revoked, a good certificate is not revoked
+PASS  revocation: each check asks again, so a certificate revoked since the last check shows as revoked
+PASS  revocation in the Android app: asked through the app (pki_fetch), never with the web view's fetch; asked again after a revocation
+PASS  revocation: an old OCSP answer (another nonce, or out of date) is not taken; the CRL is asked instead
+PASS  timestamps: the time is relied on only when the timestamp authority is trusted (revoked after the timestamp)
+PASS  certificate signing: a file cut short before its signature’s byte range is reported incomplete, not unsigned
+PASS  certificate signing: ECDSA P-384 (SHA-384) and Ed25519 signing IDs from OpenSSL sign and verify
+PASS  certificate signing: damage is told apart: the signed content, the signature object, a file cut short
+PASS  certificate signing: sign, add a comment, sign again: the comment is an incremental update and the first signature stays valid
+PASS  text: Escape in the paragraph editor keeps the change and stays in Edit PDF; a second Escape leaves
+PASS  text: paragraph mode edits a whole paragraph, re-wraps it to the block's width, and saves it in its own font
+PASS  text: the format bar makes a line bigger, bold, red and underlined, on screen and in the saved PDF
+PASS  text: Add text with font, bold, centring and a box it wraps in; edited later in place; old text marks still save
+PASS  text: Replace text… replaces a phrase on every page as edited lines, in one undo step; Replace does one at a time
+PASS  text: on a rotated page a paragraph is edited, centred and saved along the page's own lines
+PASS  text: a paragraph that grows past its lines warns, and shrinks to fit or runs on only when asked
+PASS  text: the format bar fits a phone screen
+PASS  Edit PDF: letters missing from the font: whole words use the standard font, and other readers get the exact line
+PASS  thumbnails: show mark-up, page design and redactions; follow undo and redo; still shown after save and reopen
+PASS  pages: after clicking a thumbnail, page commands act on that page, even the last page at a small zoom
+PASS  thumbnails: one Tab stop, a list box; arrows, Home and End move; Shift+arrows choose; Enter goes to the page
+PASS  find: a phrase split across pieces of text is found and shown in the middle of the view; all results list jumps
+PASS  organize: pages in a grid; choose, drag to reorder, rotate and delete the chosen pages; Escape goes back
+PASS  insert blank pages: size, orientation, how many and where; one step to undo
+PASS  phone: a Pages button in the status bar opens the sidebar; choosing a page closes it
+PASS  tidy: the first redaction mark says it is not removed yet, with Apply at hand; later marks do not repeat it
+PASS  tidy: thumbnails have their page's shape before they are drawn (no jump from a short row)
+PASS  tidy: an imported bookmark with no destination is plain (not struck through), with the tooltip No destination
+PASS  tidy: a new bookmark is named after the whole heading, wrapped over two lines
+PASS  tidy: the format bar names fonts as people know them (no subset tag, words apart)
+PASS  drawing: box, oval, line, area highlight, pen and redaction drags stop at the edge of their page
+PASS  Edit PDF from the keyboard: Tab and arrows go through the lines and pictures, Enter edits or selects, Escape leaves
+PASS  Keyboard shortcuts lists the Edit PDF keys
+PASS  phone: menu rows and dialog buttons are 44px for a finger; desktop keeps its sizes
+PASS  dialogs open with the focus on their first field or tab, never on Close (Signature: the Draw tab)
+PASS  status bar: no "Page [ ] of 0" on the start screen; Read aloud scrolls without animation when motion is reduced
+PASS  view: the Hand tool (H) drags the pages around without selecting text or drawing
+PASS  view: Space held down pans with any tool (Pen draws nothing); a tap of Space still scrolls a screen
+PASS  view: Fit page (Ctrl+0), Actual size (Ctrl+1) and Fit width (Ctrl+2); each in the View menu
+PASS  view: Two pages side by side; thumbnails, find, marks and the page box still work
+PASS  view: Single page shows one page at a time; Page Down, the page box and a wheel at the end turn it
+PASS  view: Two pages on the 285-page guide: Fit page shows a whole pair; going to page 100 keeps working
+PASS  view: Attachments lists the files in a PDF (attached and on a page); Save gives each one back
+PASS  view: Attach file adds a file that is kept in the saved PDF; undo takes it back
+PASS  view: page labels show in the page box and thumbnails, and the page box takes a label
+PASS  viewer: Ctrl+wheel zooms around the pointer, not the whole window
+PASS  viewer: a two-finger pinch zooms the pages (touch-action keeps the window still); phones open at fit width
+PASS  viewer: pages far from view give their canvases back, and are drawn again on return
+PASS  viewer: the page box follows scrolling after you type a page into it
+PASS  viewer: the find bar stays at the top of the viewer when a match scrolls the pages (desktop and phone)
+PASS  viewer: toasts sit above bars along the bottom (status bar, read aloud)
+PASS  viewer: opening another document goes back to Select and leaves Edit PDF, Edit fields and Find
+PASS  viewer: right-click menus on a page in the sidebar, on a page and on a mark
+PASS  viewer: right-click menus open from the keyboard (Shift+F10, menu key) and with a long press
+PASS  visual: the Export tab has short labels that fit and no two neighbours with the same icon
+PASS  visual: at 1024 px a mouse wheel and the edge arrows reach the end of the Comment tab; selection groups come last
+PASS  visual: every menu row keeps its icon; toggles show their check in a column of its own
+PASS  visual: one segmented control (sidebar, signature, watermark) and one colour picker (format bar, page design, Comment tab)
+PASS  visual: on a phone the Comment tab is about 1.5 screens wide: Style holds colour, width and fill; Shapes is a split button
+PASS  visual: phone fields are 16 px or more, so iOS never zooms in (page box, find, dialogs, format bar, read-aloud)
+PASS  visual: forced colours keep the swatch colours and outline what is pressed, chosen or current
+PASS  visual: the read-aloud bar has a filled Stop square and a voice list that fits a phone
+PASS  visual: a touch-only phone says Open a PDF, its menus show no shortcuts, and the sidebar tab is Recent
+PASS  every library URL resolves to a file in the pinned packages
+
+536/536 passed
+== open a PDF in the copy the apps ship
+desktop/dist ready (36 libraries: lucide/dist/umd/lucide.min.js, pdfjs-dist/legacy/build/pdf.min.mjs, pdfjs-dist/legacy/build/pdf.worker.min.mjs, @cantoo/pdf-lib/dist/pdf-lib.esm.min.js, @pdf-lib/fontkit/dist/fontkit.umd.min.js, regenerator-runtime/runtime.js, @expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf, @expo-google-fonts/noto-sans/700Bold/NotoSans_700Bold.ttf, @expo-google-fonts/noto-sans/400Regular_Italic/NotoSans_400Regular_Italic.ttf, @expo-google-fonts/noto-sans/700Bold_Italic/NotoSans_700Bold_Italic.ttf, @expo-google-fonts/noto-serif/400Regular/NotoSerif_400Regular.ttf, @expo-google-fonts/noto-serif/700Bold/NotoSerif_700Bold.ttf, @expo-google-fonts/noto-serif/400Regular_Italic/NotoSerif_400Regular_Italic.ttf, @expo-google-fonts/noto-serif/700Bold_Italic/NotoSerif_700Bold_Italic.ttf, @expo-google-fonts/noto-sans-mono/400Regular/NotoSansMono_400Regular.ttf, @expo-google-fonts/noto-sans-mono/700Bold/NotoSansMono_700Bold.ttf, @expo-google-fonts/noto-sans-symbols/400Regular/NotoSansSymbols_400Regular.ttf, @expo-google-fonts/noto-sans-symbols-2/400Regular/NotoSansSymbols2_400Regular.ttf, pvutils/build/utils.es.js, pvtsutils/build/index.es.js, asn1js/build/index.es.js, pkijs/build/index.es.js, node-forge/dist/forge.min.js, fflate/esm/browser.js, @expo-google-fonts/arimo/400Regular/Arimo_400Regular.ttf, @expo-google-fonts/arimo/700Bold/Arimo_700Bold.ttf, @expo-google-fonts/arimo/400Regular_Italic/Arimo_400Regular_Italic.ttf, @expo-google-fonts/arimo/700Bold_Italic/Arimo_700Bold_Italic.ttf, @expo-google-fonts/tinos/400Regular/Tinos_400Regular.ttf, @expo-google-fonts/tinos/700Bold/Tinos_700Bold.ttf, @expo-google-fonts/tinos/400Regular_Italic/Tinos_400Regular_Italic.ttf, @expo-google-fonts/tinos/700Bold_Italic/Tinos_700Bold_Italic.ttf, @expo-google-fonts/cousine/400Regular/Cousine_400Regular.ttf, @expo-google-fonts/cousine/700Bold/Cousine_700Bold.ttf, @expo-google-fonts/cousine/400Regular_Italic/Cousine_400Regular_Italic.ttf, @expo-google-fonts/cousine/700Bold_Italic/Cousine_700Bold_Italic.ttf)
+✓ the app bundle opens a PDF, saves it and signs it, offline
+== PDF/A and PDF/X conformance (tests/conformance/pkg3.mjs)
+tests/conformance/.cache/verapdf-cli-1.30.4.jar: OK
+[   0s] veraPDF: tests/conformance/.cache/verapdf-cli-1.30.4.jar
+fixtures ready in /home/runner/work/cowdrey-pdf/cowdrey-pdf/tests/conformance/.cache/assets
+[   1s] fixtures: a1b, a2b, a3b, a1bu, a2u, a3u, x1a, x3, x4, neg-rgb, neg-16bit, neg-alpha, neg-js, blank, annots, scan50, docinfo, form, form-mixed, trap-a1b, trap-a2b, trap-a3b, trap-a1bu, trap-a2u, trap-a3u, trap-blank, trap-annots, trap-form
+[  36s] ok   P3-R1 a font program shared by two encodings is flagged by the in-app check — font-sharing: Font Arimo-Regular shares one font program between 2 different encodings, so its widths can't all match.
+[  40s] ok   P3-10 neg-rgb — “Can't save as PDF/A-1b”: This PDF can't be saved as PDF/A-1b. Nothing was saved. Page 1 uses RGB colours, which print (CMYK) colours don't cover. Choose screen colours (sRGB) instead.; no file saved
+[  43s] ok   P3-11 neg-16bit — “Can't save as PDF/X-3”: This PDF can't be saved as PDF/X-3. Nothing was saved. Page 1 has a picture with 16 bits per colour. PDF/X-3 takes 8 bits at most (it is based on PDF 1.4): use PDF/X-4.; no file saved
+[  46s] ok   P3-12 neg-alpha — “Can't save as PDF/X-1a”: This PDF can't be saved as PDF/X-1a. Nothing was saved. Page 1 has see-through objects (transparency: see-through drawing). PDF/X-1a can't keep them: use PDF/X-4.; no file saved
+[  48s] ok   P3-13 neg-js — “Scripts and actions”: PDF/A files can't run scripts or actions. This PDF has JavaScript (4 scripts), Launch actions, actions that run by themselves.Remove them to make the PDF/A-2b copy? Your document stays as it is.; no file saved
+[  49s] converter refusals: {"rgb":{"blocked":"profile","bytes":false,"why":["rgb"]},"16bit":{"blocked":"profile","bytes":false,"why":["bits16"]},"alpha":{"blocked":"profile","bytes":false,"why":["alpha"]},"js":{"blocked":"scripts","bytes":false,"why":["JavaScript (4 scripts), Launch actions, actions that run by themselves"]}}
+[  53s] ok   P3-14 saved, reopened, identical — Info {"Title":"Rapport — final","Author":"Zoë Ångström; Bo Li","Subject":"Results, 2026 (audited)","Keywords":"finance; audit; ünïcode","Creator":"Writer 8.1","Producer":"Hand-set Producer 2.0"}; XMP in step true; dialog after reopening identical
+[  53s] ok   P3-18 re-export after a hand-set producer — save 1: Hand-set Producer 2.0; re-save: Cowdrey.PDF 2.1.0 (bradcowdrey.com) (XMP Cowdrey.PDF 2.1.0 (bradcowdrey.com)); PDF/A re-export: Cowdrey.PDF 2.1.0 (bradcowdrey.com)
+[  57s] ok   P3-15 set, saved, reopened, re-exported — set: created 2020-01-02T03:04:05.000Z, modified 2021-02-03T04:05:06.000Z (XMP in step true); reopened dialog created 2020-01-02T03:04:05, modified 2021-02-03T04:05:06; re-export: created 2020-01-02T03:04:05.000Z, modified 2026-11-26T16:09:52.000Z (now; XMP ModifyDate 2026-11-26T16:09:52Z)
+[  60s] ok   P3-16 set, saved, reopened, saved again — dialog preview “Pages: i, ii, iii, 1, 2, 3”; pdf.js reads ["i","ii","iii","1","2","3"]; reopened in the app ["i","ii","iii","1","2","3"] (ranges 1|r||1 ; 4|D||1); saved again ["i","ii","iii","1","2","3"]
+[  61s] ok   P3-17 saved with no changes — Info: only Producer, ModDate changed (each save stamps them); XMP: 22 statements, 0 lost, 0 added; changed by the save: Producer = Cowdrey.PDF 2.1.0 (bradcowdrey.com), InstanceID = uuid:87ee9684-0a59-40b9-8acc-0bc321a3f4bc, MetadataDate = 2026-11-26T16:09:57Z, ModifyDate = 2026-11-26T16:09:57Z; XMP 
+[  64s] ok   P3-18 edited in the XMP tab, saved, reopened — saved packet: P-43 true, fr title edited true, photoshop edited true, other properties kept true; producer written on this save: Cowdrey.PDF 2.1.0 (bradcowdrey.com); reopened dialog shows the edit true
+[ 136s] validating 54 files
+[ 136s] veraPDF 1b 11 files
+[ 140s] veraPDF 2b 10 files
+[ 142s] veraPDF 3b 7 files
+[ 143s] veraPDF 2u 7 files
+[ 145s] veraPDF 3u 7 files
+[ 146s] ok   P3-01 a1b → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-02 a2b → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-03 a3b → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 146s] ok   P3-04 a1bu → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-05 a2u → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 146s] ok   P3-06 a3u → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 146s] ok   P3-07 x1a → PDF/X-1a — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 146s] ok   P3-08 x3 → PDF/X-3 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 146s] ok   P3-09 x4 → PDF/X-4 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+[ 146s] ok   P3-01 a1b with Info /Trapped /False → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-02 a2b with Info /Trapped /False → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-03 a3b with Info /Trapped /False → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 146s] ok   P3-04 a1bu with Info /Trapped /False → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-05 a2u with Info /Trapped /False → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 146s] ok   P3-06 a3u with Info /Trapped /False → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 146s] ok   P3-05 tests/fixtures/word.pdf (ligature glyph with no ToUnicode entry) → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 146s] ok   P3-06 tests/fixtures/word.pdf (ligature glyph with no ToUnicode entry) → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 trap-form → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form-mixed → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form-mixed → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form-mixed → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form-mixed → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 146s] ok   P3-R1 form-mixed → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 146s] ok   P3-R1 the shared-program file saved as PDF/A-2b again: each encoding gets its own copy — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-13 after "Remove and save": the copy validates — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-19 50 pages → PDF/A-2b in 0.5 s; input 12 MB, output 12 MB; JS heap 286 MB → peak 289 MB; renderer RSS 831 MB → peak 850 MB (limits 600 MB heap, 1600 MB RSS) — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-20 blank page → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 146s] ok   P3-20 blank page → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 146s] ok   P3-20 blank page → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 146s] ok   P3-20 blank page → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 146s] ok   P3-20 blank page → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 147s] ok   P3-20 blank page → PDF/X-1a — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 147s] ok   P3-20 blank page → PDF/X-3 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 147s] ok   P3-20 blank page → PDF/X-4 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/X-1a — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/X-3 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 147s] ok   P3-20 blank page with Info /Trapped → PDF/X-4 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+[ 147s] ok   P3-21 highlight + note + ink, Info /Trapped → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 147s] ok   P3-21 highlight + note + ink → PDF/A-1b: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+[ 147s] ok   P3-21 highlight + note + ink → PDF/A-2b: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+[ 147s] ok   P3-21 highlight + note + ink → PDF/A-2u: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+[ 147s] ok   P3-21 highlight + note + ink → PDF/A-3b: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+[ 147s] ok   P3-21 highlight + note + ink → PDF/A-3u: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+[ 147s] ok   P3-21 highlight + note + ink → PDF/X-1a: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→0, Popup F 28→24, Text F 28→24, Ink F 4→0 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 147s] ok   P3-21 highlight + note + ink → PDF/X-3: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→0, Popup F 28→24, Text F 28→24, Ink F 4→0 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+[ 147s] ok   P3-21 highlight + note + ink → PDF/X-4: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→0, Popup F 28→24, Text F 28→24, Ink F 4→0 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+
+==============================================================================================================
+PACKAGE 3 — PDF/A · PDF/X · doc-info editor
+==============================================================================================================
+PASS  P3-01  PDF/A-1b: subsetted Type 1, JPEG, text annotation, link  (2/2)
+        ok   a1b → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   a1b with Info /Trapped /False → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+PASS  P3-02  PDF/A-2b: as 1b plus a CID (CJK) font  (2/2)
+        ok   a2b → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+        ok   a2b with Info /Trapped /False → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+PASS  P3-03  PDF/A-3b: as 2b plus an embedded file and a Form XObject  (2/2)
+        ok   a3b → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+        ok   a3b with Info /Trapped /False → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+PASS  P3-04  PDF/A-1b "u": one subsetted Unicode TrueType (Arabic + emoji), ToUnicode-mapped  (2/2)
+        ok   a1bu → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   a1bu with Info /Trapped /False → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+PASS  P3-05  PDF/A-2u (2b-u): Chinese text and emoji  (3/3)
+        ok   a2u → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+        ok   a2u with Info /Trapped /False → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+        ok   tests/fixtures/word.pdf (ligature glyph with no ToUnicode entry) → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+PASS  P3-06  PDF/A-3u (3b-u): everything above combined  (3/3)
+        ok   a3u → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+        ok   a3u with Info /Trapped /False → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+        ok   tests/fixtures/word.pdf (ligature glyph with no ToUnicode entry) → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+PASS  P3-07  PDF/X-1a: CMYK-only content, no alpha, no RGB  (1/1)
+        ok   x1a → PDF/X-1a — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+PASS  P3-08  PDF/X-3: RGB in an ICC profile, no alpha  (1/1)
+        ok   x3 → PDF/X-3 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+PASS  P3-09  PDF/X-4: a transparency object, every colour space  (1/1)
+        ok   x4 → PDF/X-4 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+PASS  P3-10  RGB-only content as PDF/A-1b with a CMYK output intent → refused  (1/1)
+        ok   neg-rgb — “Can't save as PDF/A-1b”: This PDF can't be saved as PDF/A-1b. Nothing was saved. Page 1 uses RGB colours, which print (CMYK) colours don't cover. Choose screen colours (sRGB) instead.; no file saved
+PASS  P3-11  16-bit deep colour as PDF/X-3 → refused  (1/1)
+        ok   neg-16bit — “Can't save as PDF/X-3”: This PDF can't be saved as PDF/X-3. Nothing was saved. Page 1 has a picture with 16 bits per colour. PDF/X-3 takes 8 bits at most (it is based on PDF 1.4): use PDF/X-4.; no file saved
+PASS  P3-12  Alpha channel / transparency as PDF/X-1a → refused  (1/1)
+        ok   neg-alpha — “Can't save as PDF/X-1a”: This PDF can't be saved as PDF/X-1a. Nothing was saved. Page 1 has see-through objects (transparency: see-through drawing). PDF/X-1a can't keep them: use PDF/X-4.; no file saved
+PASS  P3-13  Embedded JavaScript / actions as PDF/A-2b → refused  (2/2)
+        ok   neg-js — “Scripts and actions”: PDF/A files can't run scripts or actions. This PDF has JavaScript (4 scripts), Launch actions, actions that run by themselves.Remove them to make the PDF/A-2b copy? Your document stays as it is.; no file saved
+        ok   after "Remove and save": the copy validates — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+PASS  P3-14  Doc-info: title, author, subject, keywords, creator, producer round-trip  (1/1)
+        ok   saved, reopened, identical — Info {"Title":"Rapport — final","Author":"Zoë Ångström; Bo Li","Subject":"Results, 2026 (audited)","Keywords":"finance; audit; ünïcode","Creator":"Writer 8.1","Producer":"Hand-set Producer 2.0"}; XMP in step true; dialog after reopening identical
+PASS  P3-15  Doc-info: creation and modification dates settable + ModDate auto-updated on re-export  (1/1)
+        ok   set, saved, reopened, re-exported — set: created 2020-01-02T03:04:05.000Z, modified 2021-02-03T04:05:06.000Z (XMP in step true); reopened dialog created 2020-01-02T03:04:05, modified 2021-02-03T04:05:06; re-export: created 2020-01-02T03:04:05.000Z, modified 2026-11-26T16:09:52.000Z (now; XMP ModifyDate 2026-11-26T16:09:52Z)
+PASS  P3-16  Doc-info: page labels, Roman then Arabic (i, ii, iii, 1, 2, 3)  (1/1)
+        ok   set, saved, reopened, saved again — dialog preview “Pages: i, ii, iii, 1, 2, 3”; pdf.js reads ["i","ii","iii","1","2","3"]; reopened in the app ["i","ii","iii","1","2","3"] (ranges 1|r||1 ; 4|D||1); saved again ["i","ii","iii","1","2","3"]
+PASS  P3-17  Doc-info: existing /Info dict + XMP packet preserved when untouched  (1/1)
+        ok   saved with no changes — Info: only Producer, ModDate changed (each save stamps them); XMP: 22 statements, 0 lost, 0 added; changed by the save: Producer = Cowdrey.PDF 2.1.0 (bradcowdrey.com), InstanceID = uuid:87ee9684-0a59-40b9-8acc-0bc321a3f4bc, MetadataDate = 2026-11-26T16:09:57Z, ModifyDate = 2026-11-26T16:09:57Z; XMP bytes not byte-identical (re-serialised), semantically identical
+PASS  P3-18  Doc-info: producer tag updated on every re-export  (2/2)
+        ok   re-export after a hand-set producer — save 1: Hand-set Producer 2.0; re-save: Cowdrey.PDF 2.1.0 (bradcowdrey.com) (XMP Cowdrey.PDF 2.1.0 (bradcowdrey.com)); PDF/A re-export: Cowdrey.PDF 2.1.0 (bradcowdrey.com)
+        ok   edited in the XMP tab, saved, reopened — saved packet: P-43 true, fr title edited true, photoshop edited true, other properties kept true; producer written on this save: Cowdrey.PDF 2.1.0 (bradcowdrey.com); reopened dialog shows the edit true
+PASS  P3-19  Scale: 50-page scanned PDF, full export, memory reasonable  (1/1)
+        ok   50 pages → PDF/A-2b in 0.5 s; input 12 MB, output 12 MB; JS heap 286 MB → peak 289 MB; renderer RSS 831 MB → peak 850 MB (limits 600 MB heap, 1600 MB RSS) — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+PASS  P3-20  Single blank page, every profile  (16/16)
+        ok   blank page → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   blank page → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+        ok   blank page → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+        ok   blank page → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+        ok   blank page → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+        ok   blank page → PDF/X-1a — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+        ok   blank page → PDF/X-3 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+        ok   blank page → PDF/X-4 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+        ok   blank page with Info /Trapped → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   blank page with Info /Trapped → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+        ok   blank page with Info /Trapped → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+        ok   blank page with Info /Trapped → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+        ok   blank page with Info /Trapped → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+        ok   blank page with Info /Trapped → PDF/X-1a — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+        ok   blank page with Info /Trapped → PDF/X-3 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+        ok   blank page with Info /Trapped → PDF/X-4 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+PASS  P3-21  Existing annotations kept by every profile  (9/9)
+        ok   highlight + note + ink, Info /Trapped → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   highlight + note + ink → PDF/A-1b: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   highlight + note + ink → PDF/A-2b: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+        ok   highlight + note + ink → PDF/A-2u: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+        ok   highlight + note + ink → PDF/A-3b: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+        ok   highlight + note + ink → PDF/A-3u: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→4, Popup F 28→28, Text F 28→28, Ink F 4→4 — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+        ok   highlight + note + ink → PDF/X-1a: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→0, Popup F 28→24, Text F 28→24, Ink F 4→0 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+        ok   highlight + note + ink → PDF/X-3: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→0, Popup F 28→24, Text F 28→24, Ink F 4→0 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 20 rules pass
+        ok   highlight + note + ink → PDF/X-4: 4 annotations kept (subtype, NM, rect, contents, author, quads, ink, colour, popup); Highlight F 4→0, Popup F 28→24, Text F 28→24, Ink F 4→0 — pdfx_check.py (ISO 15930 rules; veraPDF has no PDF/X profile): all 17 rules pass
+PASS  P3-R1  Form fields (Helvetica, not embedded, with /Differences, also used in WinAnsi on the page) as every PDF/A  (11/11)
+        ok   a font program shared by two encodings is flagged by the in-app check — font-sharing: Font Arimo-Regular shares one font program between 2 different encodings, so its widths can't all match.
+        ok   form → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   form → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+        ok   form → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+        ok   trap-form → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   form-mixed → PDF/A-1b — veraPDF 1.30.4 --flavour 1b: compliant, 0 failed rules
+        ok   form-mixed → PDF/A-2b — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+        ok   form-mixed → PDF/A-2u — veraPDF 1.30.4 --flavour 2u: compliant, 0 failed rules
+        ok   form-mixed → PDF/A-3b — veraPDF 1.30.4 --flavour 3b: compliant, 0 failed rules
+        ok   form-mixed → PDF/A-3u — veraPDF 1.30.4 --flavour 3u: compliant, 0 failed rules
+        ok   the shared-program file saved as PDF/A-2b again: each encoding gets its own copy — veraPDF 1.30.4 --flavour 2b: compliant, 0 failed rules
+
+22/22 package 3 checks pass (65/65 sub-checks) in 147 s
+Making keys and certificates in /tmp/cowdrey-pkg4-dtc9fK
+Imported 17 signing IDs and 7 trusted roots through the UI in 4.0 s
+PASS             A1 RSA-2048 SHA-256: signs and verifies clean
+                 app: Valid, signer trusted, RSA with SHA-256, key RSA 2048, signed in 430 ms; openssl cms: CMS Verification successful; pyHanko: intact=true valid=true trusted=true (sha256_rsa); pdfsig: Signature is Valid.
+PASS             A2 RSA-4096 SHA-256: signs and verifies clean
+                 app: Valid, signer trusted, RSA with SHA-256, key RSA 4096, signed in 412 ms; openssl cms: CMS Verification successful; pyHanko: intact=true valid=true trusted=true (sha256_rsa); pdfsig: Signature is Valid.
+PASS             A3 ECDSA P-256 SHA-256: signs and verifies clean
+                 app: Valid, signer trusted, ECDSA with SHA-256, key ECDSA P-256, signed in 392 ms; openssl cms: CMS Verification successful; pyHanko: intact=true valid=true trusted=true (sha256_ecdsa); pdfsig: Signature is Valid.
+PASS             A4 ECDSA P-384 SHA-384: signs and verifies clean
+                 app: Valid, signer trusted, ECDSA with SHA-384, key ECDSA P-384, signed in 369 ms; openssl cms: CMS Verification successful; pyHanko: intact=true valid=true trusted=true (sha384_ecdsa); pdfsig: Signature is Valid.
+PASS             A5 Ed25519 (bonus): signs and verifies clean
+                 app: Valid, signer trusted, Ed25519, key Ed25519, signed in 404 ms; openssl cms: OpenSSL 3.0 cannot check Ed25519 CMS (invalid digest), not counted; pyHanko: intact=true valid=true trusted=true (ed25519); pdfsig: Document isn't signed or corrupted data. (poppler/NSS here does not support this algorithm: pdfsig not counted)
+PASS             C1 Self-signed root signs a 1-page blank PDF: PKCS#7 present, validates, content readable, certificate details shown
+                 CMS SignedData (openssl cms -cmsout): true; app: Valid, signer trusted; renders (pdftoppm): true; pdftotext reads it: true; panel shows subject, issuer, validity, expiry, serial, SHA-256, key
+PASS-SUBSTITUTE  C2 Same file in Acrobat / Foxit / PDF-XChange: external validator says valid, no errors
+                 pdfsig: Signature is Valid. (ETSI.CAdES.detached, total document signed); pyHanko: intact=true valid=true trusted=true coverage=ENTIRE_FILE; openssl cms -verify: CMS Verification successful
+PASS             T1 Sign + RFC 3161 timestamp: signature valid, timestamp independently downloadable and checkable
+                 app: Valid, signer trusted, timestamp 2026-11-26T16:11:50.000Z by Pkg4 Timestamp Authority, serial 02, policy 1.3.6.1.4.1.55555.1.1; token saved from the panel (3324 bytes); openssl ts -verify -digest sha256(signature value): Verification: OK; token says Nov 26 16:11:50 2026 GMT; pyHanko: timestamp valid=true
+PASS             T2 Timestamped signature with a future-dated certificate (valid from 2 days ahead): valid up to the TSA date
+                 TSA date 2026-11-29T16:11:38.000Z (certificate valid from 2026-11-28T16:11:37.000Z): app Valid, signer trusted; openssl cms -verify -attime <TSA date>: CMS Verification successful; openssl cms -verify at today: 40D734B75E7F0000:error:17000064:CMS routines:cms_signerinfo_verify_cert:certificate verify error:../crypto/cms/cms_smime.c:289:Verify error: certificate is not yet valid. Control, timestamped today: app Invalid: certificate not valid when signed — The signer’s certificate was not valid yet when this was signed (it is valid from Nov 28, 2026).
+PASS             T3 Certificate revoked after the TSA date: signature valid, revocation warning shown, signature not failed
+                 checked before revoking, same session: Valid, signer trusted; Not revoked: “Pkg4 Revoked Later Signer” (OCSP from 127.0.0.1:35915). As of Nov 26, 2026, 04:11:54 PM.. After revoking, same session (1 new OCSP request(s)): app Valid, signer trusted; revocation: Warning: “Pkg4 Revoked Later Signer” was revoked on Nov 26, 2026, 04:11:56 PM (key compromise), after the timestamp (Nov 26, 2026, 04:11:53 PM). The signature was made before that, so it still counts (OCSP from 127.0.0.1:35915). As of Nov 26, 2026, 04:11:57 PM.; openssl ocsp (external): /tmp/cowdrey-pkg4-dtc9fK/leaf-late.pem: revoked. Untrusted TSA (“Pkg4 Rogue TSA”), revoked after its stamp: app Revoked; Timestamp: warn (Not relied on, timestamp authority not trusted: Nov 26, 2026, 04:11 PM by Pkg4 Rogue TSA); revocation: Revoked: “Pkg4 Rogue-Stamped Signer” was revoked on Nov 26, 2026, 04:11:59 PM (key compromise), and the signing time is not proven by a timestamp (OCSP from 127.0.0.1:35915). As of Nov 26, 2026, 04:12:00 PM.; pyHanko timestamp trusted=false. Look-alike TSA (“Pkg4 Swap TSA”, the trusted authority’s serial number and certificate placed first in its token): app Revoked; Timestamp: warn (Not relied on, timestamp authority not trusted: Nov 26, 2026, 04:12 PM by Pkg4 Swap TSA); pyHanko timestamp trusted=false
+PASS             R1 3-certificate chain (root → intermediate → leaf): chain walks, all three certificates with expiry and issuer shown
+                 app chain: Pkg4 Chain Signer (issued by Pkg4 Intermediate CA, expires 2028-11-25) → Pkg4 Intermediate CA (issued by Pkg4 Root CA, expires 2031-11-25) → Pkg4 Root CA (issued by Pkg4 Root CA, expires 2036-11-23); complete=true trusted=true; panel lists 3/3 with 3 expiry lines; openssl cms -verify -CAfile root only: CMS Verification successful
+PASS             R2 Revoked leaf (reachable OCSP and CRL): signature flagged revoked, details shown
+                 app: Revoked; Revoked: “Pkg4 Revoked Signer” was revoked on Nov 26, 2026, 04:11:38 PM (key compromise) (OCSP from 127.0.0.1:35915). As of Nov 26, 2026, 04:12:05 PM.; openssl ocsp (external): /tmp/cowdrey-pkg4-dtc9fK/leaf-revoked.pem: revoked. Checked while good (good), then revoked, then a new signature in the same session: app Revoked; Revoked: “Pkg4 Revoked Meanwhile Signer” was revoked on Nov 26, 2026, 04:12:06 PM (key compromise) (OCSP from 127.0.0.1:35915). As of Nov 26, 2026, 04:12:07 PM. (1 new OCSP request(s)); openssl ocsp (external): /tmp/cowdrey-pkg4-dtc9fK/leaf-meanwhile.pem: revoked
+PASS             R2b Revoked leaf found through its CRL only (no OCSP in the certificate): flagged revoked
+                 app: Revoked; Revoked: “Pkg4 Revoked CRL Signer” was revoked on Nov 26, 2026, 04:11:38 PM (key compromise) (CRL from 127.0.0.1:35915). As of Nov 26, 2026, 04:12:08 PM.; openssl crl lists serial 13227C12FBC8859F: true. Checked while good (good), revoked, checked again in the same session: app Revoked; Revoked: “Pkg4 Revoked Meanwhile CRL Signer” was revoked on Nov 26, 2026, 04:12:10 PM (key compromise), and the signing time is not proven by a timestamp (CRL from 127.0.0.1:35915). As of Nov 26, 2026, 04:12:11 PM. (1 new CRL download(s))
+PASS             R3 Intermediate expired, leaf still in date: signature fails with a clear reason
+                 app: Invalid: certificate not valid when signed — “The certificate “Pkg4 Expired Intermediate CA”, which vouches for the signer’s, had expired when this was signed (it expired on Nov 24, 2026).” (leaf in date: true); openssl cms -verify: 40573E9D3B7F0000:error:17000064:CMS routines:cms_signerinfo_verify_cert:certificate verify error:../crypto/cms/cms_smime.c:289:Verify error: certificate has expired; pyHanko: valid=true trusted=false
+PASS             X1 1 byte flipped in a content stream: tamper reported, timestamp and certificate both flagged
+                 byte 71 (object 6's stream) flipped; app: Invalid: the document was changed after signing; Document: Changed in the part this signature covers; Certificate: bad; Timestamp: bad (Not relied on: it stamps a signature that no longer matches the file (Nov 26, 2026, 04:11 PM by Pkg4 Timestamp Authority)); openssl cms -verify: 404738DEE07F0000:error:1700006D:CMS routines:CMS_verify:content verify error:../crypto/cms/cms_smime.c:457:; pdfsig: Digest Mismatch.; pyHanko intact=false
+PASS             X2 1 byte flipped in the signature object itself: reported distinctly as signature object invalid
+                 hex digit at 7625 (inside the signature value) changed; app: Invalid: the signature itself is damaged (document digest still matches: true; Signature: Damaged: it does not match the signer’s certificate); differs from X1's “Invalid: the document was changed after signing”; openssl cms -verify: 40D770E34E7F0000:error:1700009E:CMS routines:CMS_SignerInfo_verify:verification failure:../crypto/cms/cms_sd.c:907:; pdfsig: Signature is Invalid.; pyHanko: valid=false
+PASS             X3 Truncated file (last 200 bytes removed): reports missing/incomplete, no crash
+                 app: Invalid: the file is incomplete — The file is incomplete: it ends 200 bytes before the end of what this signature covers. It may have been cut short while copying or downloading.; bar: “This PDF has a digital signature that can’t be read. A signature is not valid.View signatures”; page errors: 0; pdfsig: Syntax Error: Couldn't read xref table; pyHanko: PdfReadError: EOF marker not found. pyHanko-signed file cut by more bytes (app): 1000: incomplete; 3000: incomplete; 11477: incomplete
+PASS             M1 Two different certificates sign the same file (second over the first): both PKCS#7 blocks present, both validate
+                 2 /ByteRange blocks; app: Pkg4 Chain Signer (RSA with SHA-256): Valid, signer trusted; Pkg4 Second Signer (ECDSA with SHA-256): Valid, signer trusted; openssl cms: CMS Verification successful / CMS Verification successful; pdfsig: Signature is Valid. / Signature is Valid.; pyHanko: intact=true valid=true FORM_FILLING / intact=true valid=true NONE
+PASS             M2 Sign, add a comment, sign again (incremental): the first signature stays valid, the second is added cleanly
+                 first signed file kept byte for byte: true; annotations /Widget, /Text, /Widget; app: Pkg4 Chain Signer: Valid, signer trusted (Changed after signing: comments added (allowed).); Pkg4 Second Signer: Valid, signer trusted; pdfsig: Signature is Valid. / Signature is Valid.; pyHanko: intact=true valid=true modification=OTHER / intact=true valid=true modification=NONE
+PASS-SUBSTITUTE  E1 Signed externally, Foxit-style (RSA-2048, ETSI.CAdES.detached + TSA): verifies clean, certificate, TSA and metadata shown
+                 pyHanko-signed (foxit style); app: Valid, signer trusted, ETSI.CAdES.detached, RSA with SHA-256, timestamp 2026-11-26T16:12:21.000Z by Pkg4 Timestamp Authority; reason/location/contact/name: Approved for release (foxit style) / Wellington / signer@example.com / Pkg4 External Signer; panel shows 11/11 details
+PASS-SUBSTITUTE  E2 Signed externally, Acrobat-style (RSA-2048, adbe.pkcs7.detached, no TSA): verifies clean
+                 pyHanko-signed (acrobat style); app: Valid, signer trusted, adbe.pkcs7.detached, RSA with SHA-256; reason/location/contact/name: Approved for release (acrobat style) / Wellington / signer@example.com / Pkg4 External Signer; panel shows 9/9 details
+PASS             E3 Signed with a certificate from an untrusted root: trust warning, signature itself structurally valid, details shown
+                 app: Valid, signer not verified; Certificate: warn; The chain ends at “Pkg4 Untrusted Root”, which is not trusted on this device.; openssl cms -verify -noverify (signature only): CMS Verification successful; pyHanko: intact=true valid=true trusted=false
+PASS             P1 1-page blank PDF: signs and validates instantly
+                 signed through the dialog in 378 ms (including the box drag and the download), checked in 154 ms; Valid, signer trusted
+PASS             P2 100-page PDF: signs and validates, no timeout, certificate details correct
+                 100 pages, 72043 bytes; signed in 415 ms, checked in 291 ms; Valid, signer trusted: Pkg4 Chain Signer, Cowdrey Pkg4 issued by Pkg4 Intermediate CA, Cowdrey Pkg4, key RSA 2048, expires 2028-11-25; openssl cms: CMS Verification successful; pdfsig: Signature is Valid.
+
+Package 4 — certificate signing, timestamps, revocation, verification
+ID   Result           Check
+A1   pass             RSA-2048 SHA-256: signs and verifies clean
+A2   pass             RSA-4096 SHA-256: signs and verifies clean
+A3   pass             ECDSA P-256 SHA-256: signs and verifies clean
+A4   pass             ECDSA P-384 SHA-384: signs and verifies clean
+A5   pass             Ed25519 (bonus): signs and verifies clean
+C1   pass             Self-signed root signs a 1-page blank PDF: PKCS#7 present, validates, content readable, certificate details shown
+C2   pass-substitute  Same file in Acrobat / Foxit / PDF-XChange: external validator says valid, no errors
+T1   pass             Sign + RFC 3161 timestamp: signature valid, timestamp independently downloadable and checkable
+T2   pass             Timestamped signature with a future-dated certificate (valid from 2 days ahead): valid up to the TSA date
+T3   pass             Certificate revoked after the TSA date: signature valid, revocation warning shown, signature not failed
+R1   pass             3-certificate chain (root → intermediate → leaf): chain walks, all three certificates with expiry and issuer shown
+R2   pass             Revoked leaf (reachable OCSP and CRL): signature flagged revoked, details shown
+R2b  pass             Revoked leaf found through its CRL only (no OCSP in the certificate): flagged revoked
+R3   pass             Intermediate expired, leaf still in date: signature fails with a clear reason
+X1   pass             1 byte flipped in a content stream: tamper reported, timestamp and certificate both flagged
+X2   pass             1 byte flipped in the signature object itself: reported distinctly as signature object invalid
+X3   pass             Truncated file (last 200 bytes removed): reports missing/incomplete, no crash
+M1   pass             Two different certificates sign the same file (second over the first): both PKCS#7 blocks present, both validate
+M2   pass             Sign, add a comment, sign again (incremental): the first signature stays valid, the second is added cleanly
+E1   pass-substitute  Signed externally, Foxit-style (RSA-2048, ETSI.CAdES.detached + TSA): verifies clean, certificate, TSA and metadata shown
+E2   pass-substitute  Signed externally, Acrobat-style (RSA-2048, adbe.pkcs7.detached, no TSA): verifies clean
+E3   pass             Signed with a certificate from an untrusted root: trust warning, signature itself structurally valid, details shown
+P1   pass             1-page blank PDF: signs and validates instantly
+P2   pass             100-page PDF: signs and validates, no timeout, certificate details correct
+
+24/24 passed (pass-substitute: Acrobat/Foxit/PDF-XChange stand-ins), page errors: none
