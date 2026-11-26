@@ -353,15 +353,15 @@ const STORIES = [
       } else {
         await goPage(p, 1);
         if (p.kind === 'mac') {
-          // Close in on the line (180%), so the edit box and the format bar read at thumbnail size.
-          await p.evaluate(() => { const r = document.querySelector('#zoomRange'); r.value = 180; r.dispatchEvent(new Event('change')); });
-          await p.waitForTimeout(1500);
-          await centerOn(p, 1, 'Average delay down', .5);
-          await p.evaluate(() => {
-            const el = [...document.querySelectorAll('.page[data-n="1"] .textLayer span')].find((s) => s.textContent.includes('Average delay down'));
-            const v = document.querySelector('#viewer'), vr = v.getBoundingClientRect();
-            v.scrollLeft += el.getBoundingClientRect().left - (vr.left + vr.width * .1);
-          });
+          // Close in on the page (150%), so the edit box and the format bar read at thumbnail size: the whole width
+          // of the page with the grey on both sides, from under the page's running head (the view's top falls in
+          // the gap above the title) to past the last line of its text, so no line is cut at an edge.
+          await setZoom(p, 150);
+          await p.evaluate(([H]) => {
+            const v = document.querySelector('#viewer'), el = document.querySelector('.page[data-n="1"]');
+            v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * 62 / H;
+            v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2;
+          }, [H]);
           await p.waitForTimeout(700);
         }
         if (p.kind === 'ipad') {
@@ -392,7 +392,9 @@ const STORIES = [
       // toolbar opens under it, clear of the list.)
       await phoneZoom(p);
       // (On the Mac the selection's toolbar opens above it and would cover the list: the hits alone tell it there.)
-      if (p.kind === 'mac') await centerOn(p, 0, 'Dear', .09);
+      // The Mac at 125%: the letter whole from "Dear plot holder" to the signature, the closing and the PAID stamp,
+      // the view's top in the gap under the date and its foot in the paper under the secretary's name.
+      if (p.kind === 'mac') { await setZoom(p, 125); await lineTo(p, 0, 'Dear', 28); await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; }); }
       else { await belowFind(p, 0); await selectWords(p, 0, 'Water', 'Please'); }
     } },
   { slug: 'fill-and-sign', title: 'Fill in and sign', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
