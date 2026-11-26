@@ -1,0 +1,165 @@
+{
+ "app": "Cowdrey.PDF",
+ "slug": "cowdrey-pdf",
+ "sky": [
+  "#B0234F",
+  "#5E0A28"
+ ],
+ "captures": "../../../tests/.app-store-raw",
+ "out": "../../../docs/app-store",
+ "statusBar": {
+  "time": "9:41",
+  "date": "Wed Nov 25"
+ },
+ "iphone": [
+  {
+   "id": "edit-text",
+   "eyebrow": "Edit text",
+   "headline": [
+    "Fix it",
+    "in place."
+   ],
+   "subhead": "Tap a line and type, in the PDF’s own font.",
+   "capture": "iphone-edit-text.png"
+  },
+  {
+   "id": "scans",
+   "eyebrow": "Scans to text",
+   "headline": [
+    "Scans become",
+    "searchable."
+   ],
+   "subhead": "Search and copy words on scanned pages.",
+   "capture": "iphone-scans-to-text.png"
+  },
+  {
+   "id": "fill-sign",
+   "eyebrow": "Fill & sign",
+   "headline": [
+    "Fill it.",
+    "Sign it."
+   ],
+   "subhead": "Type into any form, then sign it.",
+   "capture": "iphone-fill-and-sign.png"
+  },
+  {
+   "id": "comments",
+   "eyebrow": "Comments",
+   "headline": [
+    "Highlight,",
+    "comment, reply."
+   ],
+   "subhead": "Pens, notes, stamps and shapes.",
+   "capture": "iphone-comments.png"
+  },
+  {
+   "id": "redact",
+   "eyebrow": "Redact",
+   "headline": [
+    "Redact",
+    "for real."
+   ],
+   "subhead": "Private details are removed, not covered.",
+   "capture": "iphone-redact.png"
+  },
+  {
+   "id": "pages",
+   "eyebrow": "Pages",
+   "headline": [
+    "Every page",
+    "in order."
+   ],
+   "subhead": "Move, turn, combine and split pages.",
+   "capture": "iphone-organize-pages.png"
+  }
+ ],
+ "ipad": [
+  {
+   "id": "edit-text",
+   "eyebrow": "Edit text",
+   "headline": [
+    "Fix it",
+    "in place."
+   ],
+   "subhead": "Tap a line and type, in the PDF’s own font.",
+   "capture": "ipad-edit-text.png"
+  },
+  {
+   "id": "scans",
+   "eyebrow": "Scans to text",
+   "headline": [
+    "Scans become",
+    "searchable."
+   ],
+   "subhead": "Search and copy words on scanned pages.",
+   "capture": "ipad-scans-to-text.png"
+  },
+  {
+   "id": "fill-sign",
+   "eyebrow": "Fill & sign",
+   "headline": [
+    "Fill it.",
+    "Sign it."
+   ],
+   "subhead": "Type into any form, then sign it.",
+   "capture": "ipad-fill-and-sign.png"
+  }
+ ],
+ "mac": [
+  {
+   "id": "fill-sign",
+   "eyebrow": "Fill & sign",
+   "headline": [
+    "Fill it.",
+    "Sign it."
+   ],
+   "subhead": "Type into any form, then add your signature.",
+   "capture": "mac-fill-and-sign.png",
+   "title": "Cowdrey.PDF"
+  },
+  {
+   "id": "edit-text",
+   "eyebrow": "Edit text",
+   "headline": [
+    "Fix it",
+    "in place."
+   ],
+   "subhead": "Click a line and type, in the PDF’s own font.",
+   "capture": "mac-edit-text.png",
+   "title": "Cowdrey.PDF"
+  },
+  {
+   "id": "scans",
+   "eyebrow": "Scans to text",
+   "headline": [
+    "Scans become",
+    "searchable."
+   ],
+   "subhead": "Search and copy words on scanned pages.",
+   "capture": "mac-scans-to-text.png",
+   "title": "Cowdrey.PDF"
+  },
+  {
+   "id": "comments",
+   "eyebrow": "Comments",
+   "headline": [
+    "Highlight,",
+    "comment, reply."
+   ],
+   "subhead": "Pens, notes, stamps and shapes.",
+   "capture": "mac-comments.png",
+   "title": "Cowdrey.PDF"
+  },
+  {
+   "id": "redact",
+   "eyebrow": "Redact",
+   "headline": [
+    "Redact",
+    "for real."
+   ],
+   "subhead": "Private details are removed, not covered.",
+   "capture": "mac-redact.png",
+   "title": "Cowdrey.PDF"
+  }
+ ]
+}

@@ -9,3 +9,4 @@ __pycache__/
 tests/.*.pdf
 tests/conformance/.cache/
 tests/conformance/out/
+tests/.app-store-raw/
