@@ -100,12 +100,15 @@ const fontkit = require(path.join(NM, '@pdf-lib/fontkit'));
 const GF = (fam, file) => fs.readFileSync(path.join(NM, '@expo-google-fonts', fam, file));
 const hex = (h) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
 const W = 612, H = 792;
-// The dates in the documents. The Mac shows its menu bar's clock (Wed Nov 25 2026), so there no document is dated
-// after it: the proposal, the form and the letters are from November 2026. The iPhone and iPad show no date
-// and keep their documents as they were.
+// The dates in the documents. The app's clock is MAC_CLOCK (Wed Nov 25 2026), and a comment made in a story is dated
+// that day, so the proposal on every device is from the week before it (16 November 2026), valid until 18 December,
+// with the kick-off in January. The Mac shows its menu bar's clock, so there no document at all is dated after it:
+// the form and the letters are from November 2026 too. The iPhone and iPad show no clock and keep the form, the
+// letters and the scan as they were.
+const PROPOSAL_DATES = { proposal: '16 November 2026', valid: '18 December 2026', extended: '8 January 2027', kickoff: '2027-01-11' };
 const DATES = {
-  device: { proposal: '8 February 2027', valid: '10 March 2027', extended: '24 March 2027', kickoff: '2027-03-15', season: 2027, signed: '2 March 2027', letter: '4 February 2027', until: 'January 2027', scan: '10 February 2027', paid: '12 FEB 2027', pack: 'Paperwork 2027' },
-  mac: { proposal: '16 November 2026', valid: '18 December 2026', extended: '8 January 2027', kickoff: '2027-01-11', season: 2027, signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Paperwork 2026' },
+  device: { ...PROPOSAL_DATES, season: 2027, signed: '2 March 2027', letter: '4 February 2027', until: 'January 2027', scan: '10 February 2027', paid: '12 FEB 2027', pack: 'Paperwork 2027' },
+  mac: { ...PROPOSAL_DATES, season: 2027, signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Paperwork 2026' },
 };
 
 // A design studio's proposal to a client, as studios send them: a cover, a summary, the approach, the scope and
@@ -275,6 +278,72 @@ async function proposal(D = DATES.device) {
   sigs(M, 'For Alder & Co.');
   sigs(M + 264, 'For Northwind Studio', 'Alex Morgan, Studio director');
   pdf.setTitle(`${PROPOSAL.title} proposal for ${PROPOSAL.client}`); pdf.setAuthor(PROPOSAL.studio);
+  return pdf.save();
+}
+
+// The studio's terms of business, which the proposal's acceptance page names: three pages in the proposal's house
+// style (the mark, the running head, numbered clauses and a footer), sent with it.
+async function terms() {
+  const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
+  const font = (fam, file) => pdf.embedFont(GF(fam, file), { features: { liga: false } });
+  const f = await font('noto-sans', '400Regular/NotoSans_400Regular.ttf');
+  const m = await font('noto-sans', '600SemiBold/NotoSans_600SemiBold.ttf');
+  const b = await font('noto-sans', '700Bold/NotoSans_700Bold.ttf');
+  const serif = await font('noto-serif', '600SemiBold/NotoSerif_600SemiBold.ttf');
+  const accent = hex('#B4532A'), ink = hex('#1A1D21'), grey = hex('#5E6570'), light = hex('#9AA0A8'), rule = hex('#DADDE1'), white = hex('#FFFFFF');
+  const M = 64, R = W - M, PAGES = 3;
+  const text = (p, t, x, y, size, fo, color) => p.drawText(t, { x, y, size, font: fo, color });
+  const wrap = (t, width, size) => {
+    const out = []; let cur = '';
+    for (const w of t.split(' ')) { const s = cur ? cur + ' ' + w : w; if (f.widthOfTextAtSize(s, size) > width && cur) { out.push(cur); cur = w; } else cur = s; }
+    return cur ? [...out, cur] : out;
+  };
+  const CLAUSES = [
+    ['Scope', ['The work is what the signed proposal describes, phase by phase. Anything outside it is quoted separately and starts only once you have agreed the quote in writing.', 'Each phase ends with a sign-off. Once a phase is signed off, changes to it are new work.']],
+    ['Revisions', ['Each phase includes two rounds of revisions. A round is one set of consolidated comments from your team, sent to us in one message or one shared document.']],
+    ['Fees and payment', ['Fees are fixed for the scope in the proposal and exclude sales tax. We invoice on the schedule in the proposal, and invoices are due within 14 days.', 'If an invoice is more than 30 days late we may pause the work until it is paid, and the timeline moves by the length of the pause.']],
+    ['Your part', ['You give us a named contact who can sign off each phase, access to your analytics and current site, and the content and photographs the proposal lists as yours.', 'Feedback within five working days keeps the timeline. Longer delays move the dates that follow.']],
+    ['Ownership', ['When the final invoice is paid, you own the designs, the templates and the code we write for you. We keep the right to show the work in our portfolio, unless you ask us not to.', 'Fonts, photographs and software from third parties stay under their own licences.']],
+    ['Confidentiality', ['We keep your business information private and use it only for this project. The same applies to anything we share with you about our methods and pricing.']],
+    ['Launch and support', ['We fix any defect in our work that you report within 30 days of launch, at no charge. After that, support is available at the monthly fee in the proposal, cancellable with a month’s notice.']],
+    ['Ending the project', ['Either of us may end the project with 14 days’ notice in writing. You pay for the work done up to that date, and we hand over everything made so far.']],
+    ['Accessibility', ['We design and build to the Web Content Accessibility Guidelines 2.2 at level AA, and test the key templates with a screen reader before launch. Content your team adds later is yours to keep accessible.']],
+    ['Hosting and third parties', ['Hosting, domain names, plug-ins and paid services are in your name and on your account. We set them up for you and pass on their costs at the price we pay.', 'We are not responsible for outages or changes made by those services, but we will help you deal with them.']],
+    ['Personal data', ['Where we handle your customers\u2019 personal data, we do so only on your instructions, keep it secure, and delete it when the project ends. We sign a data processing agreement if you need one.']],
+    ['Liability', ['Our total liability under this agreement is limited to the fees paid. Neither of us is liable for indirect losses, such as lost profits or lost data.']],
+    ['Disputes', ['If something goes wrong, tell us first: the studio director will reply within two working days. If we cannot settle it between us, we will try mediation before going to court.']],
+    ['General', ['These terms and the signed proposal are the whole agreement between us. Changes to them are valid only in writing and signed by both of us.', 'If any part of these terms cannot be enforced, the rest still applies.']],
+  ];
+  // The clauses flowed over the pages, each page under the running head with a kicker and a title on the first.
+  let n = 0, p, y;
+  const next = () => {
+    n++; p = pdf.addPage([W, H]);
+    p.drawRectangle({ x: M, y: H - 58, width: 14, height: 14, color: accent }); text(p, 'N', M + 3.5, H - 55, 8.7, b, white);
+    text(p, 'Northwind Studio', M + 22, H - 54, 9.5, m, ink);
+    const rh = 'Terms of business  ·  2026 edition'; text(p, rh, R - f.widthOfTextAtSize(rh, 8.5), H - 54, 8.5, f, grey);
+    p.drawLine({ start: { x: M, y: H - 72 }, end: { x: R, y: H - 72 }, thickness: .6, color: rule });
+    p.drawLine({ start: { x: M, y: 58 }, end: { x: R, y: 58 }, thickness: .6, color: rule });
+    text(p, 'Northwind Studio  ·  Terms of business', M, 42, 8, f, light);
+    const pg = `Page ${n} of ${PAGES}`; text(p, pg, R - f.widthOfTextAtSize(pg, 8), 42, 8, f, light);
+    y = H - 122;
+    if (n === 1) {
+      text(p, 'TERMS OF BUSINESS', M, y, 8, b, accent); text(p, 'How we work with clients', M, y - 30, 24, serif, ink);
+      y -= 64;
+      for (const l of wrap('These terms apply to every project Northwind Studio takes on, together with the proposal you sign. Where the two differ, the proposal wins.', R - M, 11.5)) { text(p, l, M, y, 11.5, f, grey); y -= 19; }
+      y -= 20;
+    }
+  };
+  next();
+  CLAUSES.forEach(([t, paras], i) => {
+    const lines = paras.map((x) => wrap(x, R - M - 34, 10.5));
+    const need = 26 + lines.reduce((s, l) => s + l.length * 16.5 + 8, 0);
+    if (y - need < 80) next();
+    text(p, String(i + 1).padStart(2, '0'), M, y, 10.5, b, accent); text(p, t, M + 34, y, 12.5, m, ink); y -= 22;
+    for (const ls of lines) { for (const l of ls) { text(p, l, M + 34, y, 10.5, f, grey); y -= 16.5; } y -= 8; }
+    y -= 14;
+  });
+  if (n !== PAGES) throw new Error(`terms ran to ${n} pages, not ${PAGES}`);
+  pdf.setTitle('Northwind Studio terms of business'); pdf.setAuthor('Northwind Studio');
   return pdf.save();
 }
 
@@ -462,6 +531,7 @@ async function selectWords(p, n, from, to) {
 
 const STORIES = [
   { slug: 'edit-text', title: 'Edit any PDF.\nRight on the page.', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
+    macH: 859, // (the taller Mac window of the organize story, below)
     async shoot(p, docs) {
       await openDoc(p, docs.proposal, PROPOSAL.file);
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
@@ -469,7 +539,8 @@ const STORIES = [
         // The cover, zoomed in so its details run across the screen, labels and all: the proposal's last day,
         // moved on two weeks for the client. (The last line of the details, so the format bar opens over the
         // empty paper under them.)
-        await phoneZoom(p); await setZoom(p, 140); await centerOn(p, 0, docs.D.valid, .65);
+        // (The cover's "Proposal" kicker a little under the ribbon, so the page does not start cut mid-line.)
+        await phoneZoom(p); await setZoom(p, 140); await lineTo(p, 0, 'PROPOSAL', 10);
         await p.evaluate(async (x) => { const v = document.querySelector('#viewer'), el = document.querySelector('.page[data-n="0"]'); v.scrollLeft += el.getBoundingClientRect().left + el.offsetWidth * x - v.getBoundingClientRect().left; }, 50 / W);
         await p.waitForTimeout(500);
         await tapLine(p, 0, docs.D.valid);
@@ -479,13 +550,14 @@ const STORIES = [
         if (p.kind === 'mac') { await run(p, 'sidebar'); await p.waitForTimeout(500); }
         await goPage(p, 1);
         if (p.kind === 'mac') {
-          // Close in on the page (150%), so the edit box and the format bar read at thumbnail size: the whole width
-          // of the page with the grey on both sides, from the gap above the figures to the paper under the last
-          // line of its text, so no line is cut at an edge.
-          await setZoom(p, 150);
+          // Close in on the page (110%, in the taller window), so the edit box and the format bar read at thumbnail
+          // size: the whole width of the page with the grey on both sides, from the gap above the "Executive summary"
+          // kicker and the page's title (so the picture reads as the proposal) to the paper under the last line of
+          // its text, so no line is cut at an edge.
+          await setZoom(p, 110);
           await p.evaluate(([H]) => {
             const v = document.querySelector('#viewer'), el = document.querySelector('.page[data-n="1"]');
-            v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * 306 / H;
+            v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * 104 / H;
             v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2;
           }, [H]);
           await p.waitForTimeout(700);
@@ -542,14 +614,15 @@ const STORIES = [
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'comments', title: 'Mark it up.\nTalk it through.', sub: 'Highlight, comment and reply.',
+  { slug: 'comments', title: 'Mark it up.\nTalk it through.', sub: 'Highlight, comment and reply.', macH: 859,
     async shoot(p, docs) {
       // The fees page, as the client reads it: the build fee and the payment it falls in highlighted, the client's
-      // question on the build phase, and (where the comments list is open) the studio's answer under it.
+      // question on the build phase, and in the comments list the studio's answer under it.
       await openDoc(p, docs.proposal, PROPOSAL.file);
       await tab(p, 'Comment');
-      // (The Mac at 125%: from the table's head, under the page's title, to the note under the payments.)
-      const top = async () => { if (p.kind === 'mac') await pageAt(p, 3, 170 / H); else await goPage(p, 3); };
+      // (The Mac at 125%, in the taller window: from the page's kicker and title, so it reads as the proposal, to
+      // the last payment, the view's foot in the gap above the note under them.)
+      const top = async () => { if (p.kind === 'mac') await pageAt(p, 3, 104 / H); else await goPage(p, 3); };
       if (p.kind === 'mac') await setZoom(p, 125);
       await top();
       await run(p, 'tool_highlight');
@@ -559,15 +632,28 @@ const STORIES = [
       await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Could we split the build fee into two payments, one at the start of the build and one at launch?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
       await p.evaluate(() => window.__cowdreyPdf.setAuthor('Alex Morgan'));
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
-      if (p.kind !== 'iphone') {
+      {
         await run(p, 'cm_list'); await p.waitForTimeout(600);
         const note = p.locator('#sidePanel [data-cm-go]', { hasText: 'two payments' }).first();
-        await note.click(); await p.waitForSelector('#sidePanel [data-cm-reply]');
+        await note.click();
+        // (On the iPhone, choosing a comment closes the list to show the note on the page: open it again, where the
+        // note's thread is open and takes the reply.)
+        if (p.kind === 'iphone') { await p.waitForTimeout(500); await run(p, 'cm_list'); await p.waitForTimeout(600); }
+        await p.waitForSelector('#sidePanel [data-cm-reply]');
         await p.fill('#sidePanel [data-cm-reply]', 'Yes, happy to. I’ll move half of it to launch and send a new page 4 today.');
         await p.click('#sidePanel [data-cm-send]'); await p.waitForTimeout(600);
       }
       await top();
       await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; });
+      // On the iPhone the next page's head shows under the fees page: its title whole, just over the status bar,
+      // never cut across by the bar's edge.
+      if (p.kind === 'iphone') {
+        await p.evaluate(([fs]) => {
+          const el = eval(fs)([4, 'Fourteen weeks']), v = document.querySelector('#viewer'), bar = document.querySelector('.statusbar');
+          v.scrollTop += el.getBoundingClientRect().bottom - (bar.getBoundingClientRect().top - 14);
+        }, [findSpan.toString()]);
+        await p.waitForTimeout(600);
+      }
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
   { slug: 'redact', title: 'Redact for real.\nGone for good.', sub: 'Private details are removed, not covered.',
@@ -591,8 +677,8 @@ const STORIES = [
     // under the second row.
     macH: 859,
     async shoot(p, docs) {
-      // A stack of paperwork twelve pages long (the proposal, the form, the letters and three of the proposal's pages
-      // again), so the grid fills the screen, with two pages picked to move together.
+      // A stack of paperwork twelve pages long (the proposal and its terms of business, the form and the letters), so
+      // the grid fills the screen, with two pages picked to move together.
       await openDoc(p, docs.pack, `${docs.D.pack}.pdf`);
       await tab(p, 'Pages'); await run(p, 'pg60_organize'); await p.waitForTimeout(2500);
       await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([2, 3])); await p.waitForTimeout(600);
@@ -654,13 +740,13 @@ async function compose(kind, story, raw, file) {
   return frame(browser, kind, { head: story.title.replace(/\n/g, ' '), sub, device: 'macbook', png: screen, file }, THEMES.pdf, FONTS);
 }
 
-// The organize story's document: the proposal, the form, the letter and the scan in one file, with three of the
-// proposal's pages (the approach, the fees and the timeline) again at the back as an appendix (twelve pages).
+// The organize story's document: the proposal and the studio's terms of business that go with it, then the form,
+// the letter and the scan, in one file (twelve pages, none of them twice).
 async function pack(d, D = DATES.device) {
   const out = await PDFDocument.create();
-  for (const [bytes, idx] of [[d.proposal, null], [d.form.bytes, null], [d.letter, null], [d.scan, null], [d.proposal, [2, 3, 4]]]) {
+  for (const bytes of [d.proposal, d.terms, d.form.bytes, d.letter, d.scan]) {
     const src = await PDFDocument.load(bytes);
-    for (const pg of await out.copyPages(src, idx || src.getPageIndices())) out.addPage(pg);
+    for (const pg of await out.copyPages(src, src.getPageIndices())) out.addPage(pg);
   }
   out.setTitle(D.pack);
   return out.save();
@@ -711,6 +797,7 @@ async function scan(D = DATES.device) {
 export { DEVICES, app, openDoc, run, tab, grab, launch, proposal, form, letter };
 if (ARG.docs) {
   fs.writeFileSync(path.join(ARG.docs, 'proposal.pdf'), await proposal());
+  fs.writeFileSync(path.join(ARG.docs, 'terms.pdf'), await terms());
   fs.writeFileSync(path.join(ARG.docs, 'form.pdf'), (await form()).bytes);
   fs.writeFileSync(path.join(ARG.docs, 'letter.pdf'), await letter());
   fs.writeFileSync(path.join(ARG.docs, 'scan.pdf'), await scan()); await browser.close();
@@ -720,7 +807,7 @@ if (ARG.docs) {
   const docsFor = async (kind) => {
     const D = DATES[kind === 'mac' ? 'mac' : 'device'];
     if (made[D.proposal]) return made[D.proposal];
-    const docs = { D, proposal: await proposal(D), form: await form(D), letter: await letter(D), scan: await scan(D) };
+    const docs = { D, proposal: await proposal(D), terms: await terms(), form: await form(D), letter: await letter(D), scan: await scan(D) };
     docs.pack = await pack(docs, D);
     return (made[D.proposal] = docs);
   };
