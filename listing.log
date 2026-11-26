@@ -1,0 +1,13 @@
+App: Cowdrey.PDF Editor (6834950576), version 2.1.0
+Release: macOS 0.3.2 is IN_REVIEW; nothing to release.
+State now: iOS App Store version 2.1.0 is WAITING_FOR_REVIEW
+State now: macOS App Store version 0.3.2 is IN_REVIEW
+macOS 0.3.2 is IN_REVIEW, so the Mac version and the app information are left alone this run; the iPhone and iPad version 2.1.0 goes ahead.
+iOS App Store version 2.1.0: WAITING_FOR_REVIEW
+iOS 2.1.0 is already submitted or approved: the iPhone and iPad version and app information are left alone.
+
+App Store listing for Cowdrey.PDF 2.1.0 (iPhone, iPad and Mac)
+State now: iOS App Store version 2.1.0 is WAITING_FOR_REVIEW
+State now: macOS App Store version 2.1.0 is not created yet
+
+If App Privacy is not yet set in App Store Connect, choose "Data Not Collected" there.
