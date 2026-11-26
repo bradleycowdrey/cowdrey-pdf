@@ -8,10 +8,10 @@
 //
 // Every document is fictional and made here with pdf-lib (or drawn in the page, for the scan). The phone and tablet
 // are the iPhone and iPad app (touch, their user agent, the safe areas of the real screens); the Mac is the Mac App
-// Store build in a window with the macOS title bar.
+// Store build in a window with the macOS title bar, on the family desktop (desktop()) shown on a MacBook.
 import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module'; import { fileURLToPath } from 'node:url';
-import { compose as frame, THEMES } from './store-frame.mjs';
+import { compose as frame, desktop, THEMES } from './store-frame.mjs';
 const require = createRequire(import.meta.url);
 let pw; try { pw = require('playwright'); } catch { try { pw = require(path.join(process.cwd(), 'node_modules/playwright')); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); } }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,8 +31,8 @@ const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1
 const DEVICES = {
   iphone: { w: 440, h: 956, scale: 3, touch: true, ua: IPHONE_UA, safe: { top: 62, bottom: 34 }, out: [1320, 2868] },
   ipad: { w: 1032, h: 1376, scale: 2, touch: true, ua: IPAD_UA, safe: { top: 24, bottom: 20 }, out: [2064, 2752] },
-  // The Mac window: 1380 x 851 points with the 28-point macOS title bar drawn by the template above it. At this width
-  // the ribbon of every tab the stories use fits the window (the window is drawn 2280 px wide, as Cowdrey.MD's is).
+  // The Mac window: 1380 x 851 points with the 28-point macOS title bar drawn by desktop() above it, centred on the
+  // MacBook's 1512 x 982 pt screen under the menu bar. At this width the ribbon of every tab the stories use fits.
   mac: { w: 1380, h: 823, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
 };
 
@@ -498,11 +498,20 @@ async function capture(kind, story, docs) {
 const b64 = (f) => fs.readFileSync(path.join(root, f)).toString('base64');
 const FONTS = { fraunces: b64('design/app-store/fraunces.woff2'), instrument: b64('fonts/instrument-sans-latin-wght-normal.woff2') };
 // The headline is a picture's first words: one or two lines, kept short enough to read in a search result.
+// The Mac: the window on the family desktop (the menu bar with the app's name and the clock, the Dock hidden), and
+// that desktop on the MacBook.
 async function compose(kind, story, raw, file) {
   const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
+  if (kind === 'mac') {
+    const d = DEVICES.mac;
+    const screen = await desktop(browser, {
+      theme: THEMES.pdf, app: 'Cowdrey.PDF', clock: 'Wed Nov 25  9:41 AM', fonts: { instrument: FONTS.instrument },
+      windows: [{ png: raw, w: d.w, h: d.h + d.titlebar, title: 'Cowdrey.PDF' }],
+    });
+    return frame(browser, kind, { head: story.title, sub, png: screen, device: 'macbook', file, lines: 1 }, THEMES.pdf, FONTS);
+  }
   // Every headline in the set is one line, so the iPhone sits higher with the copy hung just above it.
-  const screen = kind === 'mac' ? [DEVICES.mac.w, DEVICES.mac.h] : undefined;
-  return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 1, screen }, THEMES.pdf, FONTS);
+  return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 1 }, THEMES.pdf, FONTS);
 }
 
 // The organize story's document: the review, the form, the letter and the scan in one file, with three of the
