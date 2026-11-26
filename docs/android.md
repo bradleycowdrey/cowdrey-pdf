@@ -136,6 +136,9 @@ emulator at `10.0.2.2`, signs with a certificate that names both, and checks rev
 revoked, then revoked (a new OCSP request, not a kept answer), then revoked from the CRL once the OCSP responder is gone. The release
 APK test (`tests/android/release.mjs`) does the same with taps on the release build itself, whose cleartext traffic is
 off: a PDF signed on the runner (with `openssl cms`) is opened from Android and checked from the Signatures panel.
+Before it asks, it waits until the emulator's network reaches the runner, as the device test does before its network
+scenarios. A check that no server on the runner received (the emulator's network was still down) is asked again, at
+most three times in all; the request counts and answers it checks are the same.
 
 ## When the device test loses its connection
 

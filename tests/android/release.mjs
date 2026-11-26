@@ -156,6 +156,31 @@ await step('still running after all of that', async () => {
   ok(/cowdreypdf/.test(A.focused()), 'the app is in front: ' + A.focused());
 });
 
+// The emulator's network is up and reaches this machine (10.0.2.2, where the test's OCSP and CRL servers listen), as
+// the device test makes sure before its network scenarios (ensureNetwork in run.mjs), with the emulator's radio
+// started again if it stays down. The release app's web view can't be driven, so Android's shell asks: a ping to
+// 10.0.2.2. (Run 51: the emulator had no network yet, "Active default network: none", and the app rightly said
+// "Not checked … could not be reached (… ENETUNREACH (Network is unreachable))".)
+const defaultNetwork = () => (sh('dumpsys connectivity | grep -m1 "Active default network"') || '').trim();
+async function hostReachable() {
+  const answers = (p) => /1 received|1 packets received/.test(p);
+  sh('svc wifi enable'); sh('svc data enable');
+  let p = sh('ping -c 1 -W 2 10.0.2.2');
+  for (let i = 1; i < 24 && !answers(p); i++) {
+    if (i === 1) log('  network: not yet (10.0.2.2 does not answer;', defaultNetwork() + ')');
+    await sleep(5000);
+    if (i === 8 || i === 16) {
+      log('  network:', defaultNetwork(), '- airplane mode on and off');
+      adb('emu', 'gsm', 'voice', 'home'); adb('emu', 'gsm', 'data', 'home');
+      sh('cmd connectivity airplane-mode enable'); await sleep(3000); sh('cmd connectivity airplane-mode disable'); sh('svc wifi enable'); sh('svc data enable'); await sleep(2000);
+      sh('cmd wifi connect-network AndroidWifi open'); await sleep(5000);
+    }
+    p = sh('ping -c 1 -W 2 10.0.2.2');
+  }
+  log('  10.0.2.2 from the emulator:', answers(p) ? (p.split('\n').find((l) => /bytes from/.test(l)) || '').trim() : (p.trim().split('\n').pop() || '(no answer to ping)'), '·', defaultNetwork());
+  ok(answers(p), 'no network on the emulator: this machine (10.0.2.2) does not answer');
+}
+
 // Revocation in the release build, where cleartext traffic is off (usesCleartextTraffic false): a PDF signed here with
 // a certificate whose OCSP responder and revocation list are plain http on this machine (tests/android/pki.mjs, reached
 // from the emulator at 10.0.2.2), opened from Android, and checked from the Signatures panel with taps. The app's
@@ -166,6 +191,8 @@ await step('revocation over plain http in the release build: not revoked (OCSP),
     const RNAME = 'Release revocation';
     log('  the release app\'s flags:', (sh(`dumpsys package ${PKG}`).match(/^\s*flags=\[[^\]]*\]/m) || [''])[0].trim(), '(the workflow\'s build log shows usesCleartextTraffic false for it)');
     log('  OCSP responder', pki.ocsp, '· revocation list', pki.crl);
+    // (the servers are listening once startPki returns; the emulator's network next)
+    await hostReachable();
     const f = path.join(A.OUT, '.push-release-revocation.pdf');
     fs.writeFileSync(f, await pki.signPdf(fs.readFileSync(path.join(root, 'tests/fixtures/sample.pdf'))));
     sh(`rm -f '${A.DL}/${RNAME}.pdf'`); adb('push', f, `${A.DL}/${RNAME}.pdf`); fs.unlinkSync(f);
@@ -178,14 +205,36 @@ await step('revocation over plain http in the release build: not revoked (OCSP),
     const tapLabel = async (re, what, timeout = 60000) => { const n = await waitApp((x) => re.test(label(x)) && x.w > 0, timeout); ok(n, what); sh(`input tap ${n.x} ${n.y}`); await sleep(1500); };
     await tapLabel(/^View signatures$/, 'the signature bar\'s View signatures', 90000);
     eq2([pki.ocspHits(), pki.crlHits()], [0, 0], 'nothing asked before the person asks');
+    const panel = () => appNodes().map(label).filter(Boolean).join(' ').replace(/\s+/g, ' ');
+    // The panel's revocation line once the app has asked ("Revocation: … As of <time>."; before that it says "Not
+    // checked"). A new answer is one that differs from the line before the tap.
+    const answer = (all) => (all.match(/Revocation: (.*?As of [^.]+\.)/) || [])[1] || '';
     const check = async (re, shotName) => {
-      await tapLabel(/^Check revocation (online|again)$/, 'a Check revocation button in the Signatures panel');
-      let all = '';
-      for (const end = Date.now() + 60000; Date.now() < end; await sleep(1000)) { all = appNodes().map(label).filter(Boolean).join(' ').replace(/\s+/g, ' '); if (re.test(all) && !/Checking…/.test(all)) break; }
-      const m = all.match(/(Not revoked|Revoked|Not checked): [^()]*\(\w+ from [^)]*\)/);
-      log(`  ${shotName}:`, m ? m[0] : all.slice(0, 600));
-      ok(re.test(all), 'the panel says ' + re);
-      shot('release-' + shotName);
+      for (let attempt = 1; ; attempt++) {
+        const before = answer(panel()), hits = [pki.ocspHits(), pki.crlHits()];
+        await tapLabel(/^Check revocation (online|again)$/, 'a Check revocation button in the Signatures panel');
+        // until the app has answered: the expected answer, or any new one. The app gives each server 60 s (OCSP,
+        // then the revocation list), so 150 s is past both and the panel then shows the app's own answer.
+        let all = '', now = '';
+        for (const end = Date.now() + 150000; Date.now() < end; await sleep(1000)) {
+          all = panel(); now = answer(all);
+          if (/Checking…/.test(all)) continue;
+          if (re.test(all) || (now && now !== before)) break;
+        }
+        log(`  ${shotName}${attempt > 1 ? ` (asked ${attempt} times)` : ''}:`, now || all.slice(0, 600));
+        // Asked while the emulator's network was down: the app says it could not reach the servers, and neither
+        // server here had a request. The network is waited for and the check asked again (at most 3 times in all).
+        // The request counts checked after each check stay exact: a request that never left the emulator counts
+        // nowhere, and any other answer is not asked again.
+        if (!re.test(all) && attempt < 3 && /could not be reached/.test(now) && pki.ocspHits() === hits[0] && pki.crlHits() === hits[1]) {
+          log('  no request reached this machine: the network first, then the check again');
+          await hostReachable();
+          continue;
+        }
+        ok(re.test(all), `the panel says ${re}, not: ${/Checking…/.test(all) ? 'still checking after 150 s' : now !== before ? now : 'no new answer'}`);
+        shot('release-' + shotName);
+        return;
+      }
     };
     await check(/Not revoked: “Device Test Signer” \(OCSP from 10\.0\.2\.2:\d+\)/, 'not-revoked');
     eq2(pki.ocspHits(), 1, 'one OCSP request');
