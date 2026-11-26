@@ -61,10 +61,10 @@ function html(d) {
 // The app's clock: the family's MAC_CLOCK time ('Wed Nov 25  9:41 AM', 2026), so a comment made in a story is dated
 // 25 Nov 2026 on every run, and the Mac's menu bar agrees with it.
 const NOW = { time: '2026-11-25T09:41:00-08:00', zone: 'America/Los_Angeles', locale: 'en-US' };
-async function app(kind) {
+async function app(kind, h) {
   const d = DEVICES[kind];
   await launch();
-  const ctx = await browser.newContext({ viewport: { width: d.w, height: d.h }, colorScheme: 'dark', deviceScaleFactor: d.scale, hasTouch: d.touch, isMobile: kind === 'iphone', acceptDownloads: true, locale: NOW.locale, timezoneId: NOW.zone, ...(d.ua ? { userAgent: d.ua } : {}) });
+  const ctx = await browser.newContext({ viewport: { width: d.w, height: h || d.h }, colorScheme: 'dark', deviceScaleFactor: d.scale, hasTouch: d.touch, isMobile: kind === 'iphone', acceptDownloads: true, locale: NOW.locale, timezoneId: NOW.zone, ...(d.ua ? { userAgent: d.ua } : {}) });
   await ctx.clock.setSystemTime(new Date(NOW.time));
   const p = await ctx.newPage();
   p.errors = []; p.on('pageerror', (e) => p.errors.push(e.message));
@@ -100,9 +100,16 @@ const fontkit = require(path.join(NM, '@pdf-lib/fontkit'));
 const GF = (fam, file) => fs.readFileSync(path.join(NM, '@expo-google-fonts', fam, file));
 const hex = (h) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
 const W = 612, H = 792;
+// The dates in the documents. The Mac shows its menu bar's clock (Wed Nov 25 2026), so there no document is dated
+// after it: the review is of 2025, the form and the letters are from November 2026. The iPhone and iPad show no date
+// and keep their documents as they were.
+const DATES = {
+  device: { year: 2026, published: 'March 2027', season: 2027, signed: '2 March 2027', letter: '4 February 2027', until: 'January 2027', scan: '10 February 2027', paid: '12 FEB 2027', pack: 'Board pack 2027' },
+  mac: { year: 2025, published: 'March 2026', season: 2027, signed: '24 November 2026', letter: '9 November 2026', until: 'October 2026', scan: '10 November 2026', paid: '18 NOV 2026', pack: 'Board pack 2026' },
+};
 
 // A ferry company's yearly review: a cover, highlights, a chart, a table, the fleet and a map, in its own colours.
-async function review() {
+async function review(D = DATES.device) {
   const pdf = await PDFDocument.create();
   const f = await pdf.embedFont(StandardFonts.Helvetica), b = await pdf.embedFont(StandardFonts.HelveticaBold);
   const teal = hex('#17707A'), tealL = hex('#A9D3D3'), navy = hex('#14284B'), grey = hex('#5F6670'), ink = hex('#1D2228'), sand = hex('#F4EFE6'), sea = hex('#DCEEF0'), coral = hex('#E2725B');
@@ -112,7 +119,7 @@ async function review() {
   const head = (p, n, title) => {
     p.drawRectangle({ x: 0, y: H - 10, width: W, height: 10, color: teal });
     text(p, 'HARBOUR LINE FERRIES', M, H - 46, 8.5, b, teal);
-    const t = `Service review 2026`; text(p, t, W - M - f.widthOfTextAtSize(t, 8.5), H - 46, 8.5, f, grey);
+    const t = `Service review ${D.year}`; text(p, t, W - M - f.widthOfTextAtSize(t, 8.5), H - 46, 8.5, f, grey);
     if (title) text(p, title, M, H - 104, 24, b, navy);
     p.drawLine({ start: { x: M, y: 52 }, end: { x: W - M, y: 52 }, thickness: .5, color: hex('#D9DCE0') });
     text(p, String(n), W / 2 - 3, 34, 9, f, grey);
@@ -140,18 +147,18 @@ async function review() {
   ferry(p, 150, H - 176, .95);
   waves(p, H - 262, 98, tealL, 6, 52); waves(p, H - 300, 60, teal, 5, 40);
   text(p, 'HARBOUR LINE FERRIES', M, H - 400, 9, b, teal);
-  text(p, '2026 Service Review', M, H - 440, 32, b, navy);
+  text(p, `${D.year} Service Review`, M, H - 440, 32, b, navy);
   para(p, ['A year of steady growth on the harbour: more crossings, fewer delays', 'and two new stops on the north shore.'], H - 472, { color: grey, size: 13 });
   p.drawRectangle({ x: M, y: 200, width: W - 2 * M, height: 86, color: sand });
   [['1.84M', 'passengers'], ['96.2%', 'on time'], ['41,300', 'crossings']].forEach(([v, l], i) => {
     const x = M + 24 + i * 164; text(p, v, x, 248, 24, b, teal); text(p, l, x, 228, 10.5, f, grey);
   });
-  para(p, ['Prepared for the board, the city transport office and our passengers.', 'Published March 2027.'], 150, { color: grey, size: 10 });
+  para(p, ['Prepared for the board, the city transport office and our passengers.', `Published ${D.published}.`], 150, { color: grey, size: 10 });
   // 2. Highlights
   p = pdf.addPage([W, H]); head(p, 2, 'Highlights of the year');
   let y = para(p, ['Ridership grew for the third year running. Summer weekends were the', 'busiest on record, and the new timetable cut the wait between', 'sailings on the harbour loop to twelve minutes.'], H - 140, { color: grey, size: 12.5 });
   y -= 12;
-  for (const [t, d] of [['Ridership up 12 percent on 2025', 'More than 1.8 million trips, led by commuters on the north shore.'], ['Average delay down to 2.1 minutes', 'New berths at Pier 3 and Kings Wharf cut the time at each stop.'], ['Kestrel, our first electric ferry', 'Kestrel carried one in five passengers from June to December.'], ['Two new stops on the north shore', 'Birch Point and Gull Harbour opened in April.']]) {
+  for (const [t, d] of [[`Ridership up 12 percent on ${D.year - 1}`, 'More than 1.8 million trips, led by commuters on the north shore.'], ['Average delay down to 2.1 minutes', 'New berths at Pier 3 and Kings Wharf cut the time at each stop.'], ['Kestrel, our first electric ferry', 'Kestrel carried one in five passengers from June to December.'], ['Two new stops on the north shore', 'Birch Point and Gull Harbour opened in April.']]) {
     p.drawCircle({ x: M + 6, y: y + 4, size: 4, color: teal });
     text(p, t, M + 20, y, 13, b, navy); y -= 18; text(p, d, M + 20, y, 11.5, f, grey); y -= 32;
   }
@@ -184,12 +191,12 @@ async function review() {
   // 6. Contacts
   p = pdf.addPage([W, H]); head(p, 6, 'Contacts');
   para(p, ['Operations: Jamie Rivera, 555-0142, jamie.rivera@example.com', 'Fleet: Priya Nair, 555-0177, priya.nair@example.com', 'Passenger services: 555-0100, hello@example.com'], H - 150, { lead: 1.9 });
-  pdf.setTitle('Service review 2026'); pdf.setAuthor('Harbour Line Ferries');
+  pdf.setTitle(`Service review ${D.year}`); pdf.setAuthor('Harbour Line Ferries');
   return pdf.save();
 }
 
 // A club's membership form, with real form fields.
-async function form() {
+async function form(D = DATES.device) {
   const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
   const f = await pdf.embedFont(StandardFonts.Helvetica), b = await pdf.embedFont(StandardFonts.HelveticaBold);
   const serif = await pdf.embedFont(GF('noto-serif', '700Bold/NotoSerif_700Bold.ttf'));
@@ -201,7 +208,7 @@ async function form() {
   p.drawEllipse({ x: W - 110 + 70 - 4, y: H - 95 + 4, xScale: 8, yScale: 14, color: hex('#E8D9B5'), rotate: L.degrees(45) });
   p.drawEllipse({ x: W - 110 - 70 + 4, y: H - 95 + 4, xScale: 8, yScale: 14, color: hex('#E8D9B5'), rotate: L.degrees(-45) });
   p.drawText('Riverside Rowing Club', { x: M, y: H - 62, size: 24, font: serif, color: hex('#FFFFFF') });
-  p.drawText('Membership form, 2027 season', { x: M, y: H - 88, size: 12, font: f, color: hex('#CFE3DA') });
+  p.drawText(`Membership form, ${D.season} season`, { x: M, y: H - 88, size: 12, font: f, color: hex('#CFE3DA') });
   let y = H - 160;
   const label = (t, x, yy) => p.drawText(t, { x, y: yy, size: 9.5, font: b, color: grey });
   const field = (name, t, x, yy, w, value) => {
@@ -233,14 +240,14 @@ async function form() {
   y -= 56;
   p.drawLine({ start: { x: M, y }, end: { x: M + 300, y }, thickness: .8, color: hex('#8B9590') });
   label('SIGNATURE', M, y - 16);
-  field('date', 'Date', M + 320, y, 180, '2 March 2027');
+  field('date', 'Date', M + 320, y, 180, D.signed);
   p.drawText('Riverside Rowing Club, Boathouse Road. Hand this form in at the boathouse or bring it to your first session.', { x: M, y: 60, size: 8.5, font: f, color: grey });
-  pdf.setTitle('Membership 2027');
+  pdf.setTitle(`Membership ${D.season}`);
   return { bytes: await pdf.save(), sigLine: [M + 20, y + 4] };
 }
 
 // A reference letter full of personal details, to redact.
-async function letter() {
+async function letter(D = DATES.device) {
   const pdf = await PDFDocument.create(); pdf.registerFontkit(fontkit);
   const f = await pdf.embedFont(GF('noto-serif', '400Regular/NotoSerif_400Regular.ttf'));
   const b = await pdf.embedFont(GF('noto-serif', '700Bold/NotoSerif_700Bold.ttf'));
@@ -253,10 +260,10 @@ async function letter() {
   p.drawText('22 Market Street, Oakfield  ·  555-0118  ·  lettings@example.com', { x: M + 42, y: H - 90, size: 8.5, font: s, color: grey });
   let y = H - 150;
   const P = (arr, o = {}) => { for (const t of arr) { p.drawText(t, { x: M, y, size: o.size || 11, font: o.font || f, color: o.color || ink }); y -= (o.size || 11) * 1.65; } y -= 8; };
-  P(['4 February 2027'], { color: grey });
+  P([D.letter], { color: grey });
   P(['Tenant reference: Jordan Ellis'], { font: b, size: 15, color: plum });
   P(['To whom it may concern,']);
-  P(['Jordan Ellis rented 7 Orchard Court, Oakfield, from us between June 2023', 'and January 2027. The rent of $1,450 a month was always paid on time,', 'and the flat was left clean and in good order.']);
+  P(['Jordan Ellis rented 7 Orchard Court, Oakfield, from us between June 2023', `and ${D.until}. The rent of $1,450 a month was always paid on time,`, 'and the flat was left clean and in good order.']);
   P(['Jordan was a considerate neighbour, and we would rent to Jordan again.', 'We have no hesitation in recommending Jordan as a tenant.']);
   P(['Contact details we hold:'], { font: b });
   for (const [k, v] of [['Phone', '555-0194'], ['Email', 'jordan.ellis@example.com'], ['Date of birth', '23 September 1994'], ['Bank account', '40-12-77  31926458'], ['Previous address', '41 Kestrel Road, Millbrook']]) {
@@ -335,6 +342,21 @@ async function belowFind(p, n) {
   }, n);
   await p.waitForTimeout(700);
 }
+// Drag with the mouse from the start of the words `from` in the line holding `a` to the end of the words `to` in the
+// line holding `b` (on page n), as you select a phrase that starts or ends inside a line.
+async function dragText(p, n, a, from, b, to) {
+  const [s, e] = await p.evaluate(([n, a, from, b, to]) => {
+    const all = [...document.querySelectorAll(`.page[data-n="${n}"] .textLayer span`)];
+    const rect = (line, sub, end) => {
+      const el = all.find((x) => x.textContent.includes(line)), t = el.firstChild, i = t.textContent.indexOf(sub);
+      const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + sub.length);
+      const q = r.getBoundingClientRect(); return [end ? q.right - 1 : q.left + 1, q.top + q.height / 2];
+    };
+    return [rect(a, from, false), rect(b, to, true)];
+  }, [n, a, from, b, to]);
+  await p.mouse.move(s[0], s[1]); await p.mouse.down(); await p.mouse.move(e[0], e[1], { steps: 10 }); await p.mouse.up();
+  await p.waitForTimeout(300);
+}
 // Drag across the words from one to another (the first of them after it), as a finger or the mouse selects text.
 async function selectWords(p, n, from, to) {
   const [a, b] = await p.evaluate(([n, from, to]) => {
@@ -351,15 +373,16 @@ async function selectWords(p, n, from, to) {
 const STORIES = [
   { slug: 'edit-text', title: 'Edit any PDF.\nRight on the page.', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
     async shoot(p, docs) {
-      await openDoc(p, docs.review, 'Service review 2026.pdf');
+      await openDoc(p, docs.review, `Service review ${docs.D.year}.pdf`);
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
       if (p.kind === 'iphone') {
         // The cover's title, zoomed in so the text runs across the screen, in the middle of the view.
-        await phoneZoom(p); await centerOn(p, 0, '2026 Service Review', .42);
-        await tapLine(p, 0, '2026 Service Review');
+        await phoneZoom(p); await centerOn(p, 0, `${docs.D.year} Service Review`, .42);
+        await tapLine(p, 0, `${docs.D.year} Service Review`);
         await p.keyboard.press('End'); for (let i = 0; i < 14; i++) await p.keyboard.press('Backspace');
         await p.keyboard.type('Year in Review', { delay: 20 });
       } else {
+        if (p.kind === 'mac') { await run(p, 'sidebar'); await p.waitForTimeout(500); }
         await goPage(p, 1);
         if (p.kind === 'mac') {
           // Close in on the page (150%), so the edit box and the format bar read at thumbnail size: the whole width
@@ -408,7 +431,7 @@ const STORIES = [
     } },
   { slug: 'fill-and-sign', title: 'Fill in forms.\nSign in seconds.', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
     async shoot(p, docs) {
-      await openDoc(p, docs.form.bytes, 'Membership 2027.pdf');
+      await openDoc(p, docs.form.bytes, `Membership ${docs.D.season}.pdf`);
       await onePage(p);
       await p.waitForSelector('.annotationLayer input');
       if (p.kind === 'mac') await tab(p, 'Protect'); // its first tool is Signature
@@ -421,9 +444,10 @@ const STORIES = [
         await p.mouse.up();
       }
       await p.click('#dialog .dlg-foot .btn.primary'); await p.waitForTimeout(400);
-      // The Mac at 100%: the form from "About you", 24 points under the ribbon, to the signature and date, so the
-      // first line in view is a heading and none is cut.
-      if (p.kind === 'mac') { await setZoom(p, 100); await lineTo(p, 0, 'About you', 24); } else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
+      // The Mac at 150%, so the form's words read at thumbnail size: from the "Membership" heading, 24 points under
+      // the ribbon, past the declaration to the signature and the date, so the first line in view is a heading and
+      // none is cut.
+      if (p.kind === 'mac') { await setZoom(p, 150); await lineTo(p, 0, 'Membership', 24); } else if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Declaration', .5); } else await goPage(p, 0, 'end');
       const [sx, sy] = docs.form.sigLine;
       const [x, y] = await at(p, 0, sx + 120, sy + 22);
       await p.mouse.click(x, y); await p.waitForTimeout(500);
@@ -432,10 +456,29 @@ const STORIES = [
     } },
   { slug: 'comments', title: 'Mark it up.\nTalk it through.', sub: 'Highlight, comment and reply.',
     async shoot(p, docs) {
-      await openDoc(p, docs.review, 'Service review 2026.pdf');
+      await openDoc(p, docs.review, `Service review ${docs.D.year}.pdf`);
+      if (p.kind === 'mac') {
+        // The Mac at 125%, on the chart page (the edit story is on the highlights page): the page's title, the
+        // chart and the lines under it, from the gap under the running head to the paper under the last line. Two
+        // phrases highlighted, and a colleague's note on August's bar.
+        await tab(p, 'Comment'); await setZoom(p, 125); await pageAt(p, 2, 64 / H);
+        await run(p, 'tool_highlight');
+        await dragText(p, 2, 'August was the busiest', 'August', 'record, with', 'record');
+        await dragText(p, 2, 'Kestrel carried one', 'Kestrel', 'Kestrel carried one', 'from June');
+        await p.evaluate(() => window.__cowdreyPdf.setAuthor('Priya Nair'));
+        await run(p, 'tool_note'); { const [x, y] = await at(p, 2, 404, 586); await p.mouse.click(x, y); }
+        await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Can we add the Sunday figures here?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
+        await p.evaluate(() => window.__cowdreyPdf.setAuthor('Alex Morgan'));
+        await run(p, 'tool_select'); await p.keyboard.press('Escape');
+        await run(p, 'cm_list'); await p.waitForTimeout(600);
+        await pageAt(p, 2, 64 / H);
+        await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; });
+        await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+        return;
+      }
       await tab(p, 'Comment'); await goPage(p, 1);
       await run(p, 'tool_highlight');
-      for (const t of ['Ridership up 12 percent on 2025', 'Kestrel, our first electric ferry']) await selectText(p, 1, t);
+      for (const t of [`Ridership up 12 percent on ${docs.D.year - 1}`, 'Kestrel, our first electric ferry']) await selectText(p, 1, t);
       await p.evaluate(() => window.__cowdreyPdf.setAuthor('Priya Nair'));
       await run(p, 'tool_note'); { const [x, y] = await at(p, 1, 500, 590); await p.mouse.click(x, y); }
       await p.waitForSelector('.page-ask textarea'); await p.fill('.page-ask textarea', 'Can we add the Sunday figures here?'); await p.click('.page-ask .btn.primary'); await p.waitForTimeout(300);
@@ -461,9 +504,13 @@ const STORIES = [
       if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Contact details we hold', .45); }
     } },
   { slug: 'organize-pages', title: 'Put every page\nin its place.', sub: 'Move, turn, combine and split pages.',
+    // On the Mac the window is 36 points taller than the others (859 pt, still 30 pt clear of the menu bar and the
+    // desktop's foot), so both rows of the grid are whole, with their page numbers, and the view ends in the gap
+    // under the second row.
+    macH: 859,
     async shoot(p, docs) {
       // A board pack of twelve pages, so the grid fills the screen, with two pages picked to move together.
-      await openDoc(p, docs.pack, 'Board pack 2027.pdf');
+      await openDoc(p, docs.pack, `${docs.D.pack}.pdf`);
       await tab(p, 'Pages'); await run(p, 'pg60_organize'); await p.waitForTimeout(2500);
       await p.evaluate(() => window.__cowdreyPdf.pg60.setSel([2, 3])); await p.waitForTimeout(600);
     } },
@@ -488,7 +535,7 @@ function smooth(pts, n = 8) {
 const at = (p, n, x, y) => p.evaluate(([n, x, y]) => { const v = window.__cowdreyPdf.views()[n]; const [vx, vy] = v.viewport.convertToViewportPoint(x, y); const r = v.el.getBoundingClientRect(); return [r.left + vx, r.top + vy]; }, [n, x, y]);
 
 async function capture(kind, story, docs) {
-  const p = await app(kind);
+  const p = await app(kind, kind === 'mac' && story.macH);
   await story.shoot(p, docs);
   await p.evaluate(() => document.querySelectorAll('.ribbon-body').forEach((r) => { if (!r.dataset.keepScroll) r.scrollLeft = 0; }));
   // the tab strip from its start, so "Home" is never cut off, with the chosen tab still in view
@@ -520,28 +567,28 @@ async function compose(kind, story, raw, file) {
   // template's title bar (the app's capture has none of its own), the family's clock and the Dock hidden.
   const M = DEVICES.mac;
   const screen = await desktop(browser, { theme: THEMES.pdf, app: 'Cowdrey.PDF', fonts: FONTS,
-    windows: [{ png: raw, w: M.w, h: M.h + M.titlebar, chrome: 'window' }] });
+    windows: [{ png: raw, w: M.w, h: (story.macH || M.h) + M.titlebar, chrome: 'window' }] });
   return frame(browser, kind, { head: story.title.replace(/\n/g, ' '), sub, device: 'macbook', png: screen, file }, THEMES.pdf, FONTS);
 }
 
 // The organize story's document: the review, the form, the letter and the scan in one file, with three of the
 // review's pages again at the back as an appendix (twelve pages).
-async function pack(d) {
+async function pack(d, D = DATES.device) {
   const out = await PDFDocument.create();
   for (const [bytes, idx] of [[d.review, null], [d.form.bytes, null], [d.letter, null], [d.scan, null], [d.review, [2, 3, 4]]]) {
     const src = await PDFDocument.load(bytes);
     for (const pg of await out.copyPages(src, idx || src.getPageIndices())) out.addPage(pg);
   }
-  out.setTitle('Board pack 2027');
+  out.setTitle(D.pack);
   return out.save();
 }
 
 // A scanned letter: typed, printed, signed and scanned at 200 dpi (drawn here in the browser, so the PDF has only a
 // picture of the page and no text until it is recognized).
-async function scan() {
+async function scan(D = DATES.device) {
   await launch();
   const ctx = await browser.newContext(); const p = await ctx.newPage();
-  const png = await p.evaluate(() => {
+  const png = await p.evaluate(([date, paid]) => {
     const W = 1700, H = 2200, c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d');
     g.fillStyle = '#F6F3EC'; g.fillRect(0, 0, W, H);
@@ -558,7 +605,7 @@ async function scan() {
     g.fillStyle = '#3C3C3C'; g.font = `34px ${serif}`; g.fillText('Allotment Office  ·  Mill Lane  ·  Northfield', 170, 305);
     g.fillRect(170, 340, 1360, 3);
     g.fillStyle = '#1E1E1E'; g.font = `40px ${serif}`;
-    const lines = ['10 February 2027', '', 'Dear plot holder,', '', 'Thank you for another good year at the garden. The spring work day', 'is on Saturday 13 March, starting at 9 in the morning. We will clear', 'the paths, mend the fences and spread compost on the shared beds.', '', 'Plot fees for the new season are due by 31 March:', '', ['Full plot', '$48'], ['Half plot', '$26'], ['Raised bed', '$15'], '', 'Water will be turned on at the standpipes on 1 April. Please keep', 'hoses off the paths, and bring your own tools if you can.', '', 'Seed swap tables will be open in the potting shed all morning.', '', 'With best wishes,'];
+    const lines = [date, '', 'Dear plot holder,', '', 'Thank you for another good year at the garden. The spring work day', 'is on Saturday 13 March, starting at 9 in the morning. We will clear', 'the paths, mend the fences and spread compost on the shared beds.', '', 'Plot fees for the new season are due by 31 March:', '', ['Full plot', '$48'], ['Half plot', '$26'], ['Raised bed', '$15'], '', 'Water will be turned on at the standpipes on 1 April. Please keep', 'hoses off the paths, and bring your own tools if you can.', '', 'Seed swap tables will be open in the potting shed all morning.', '', 'With best wishes,'];
     let y = 450; for (const t of lines) { if (Array.isArray(t)) { g.fillText(t[0], 250, y); g.fillText(t[1], 720, y); } else g.fillText(t, 170, y); y += 62; }
     // a signature in ink
     g.strokeStyle = '#1B2A6B'; g.lineWidth = 4; g.lineCap = 'round'; g.beginPath();
@@ -567,9 +614,9 @@ async function scan() {
     g.restore();
     // a rubber stamp
     g.save(); g.translate(1310, 1640); g.rotate(-0.21); g.strokeStyle = 'rgba(176, 38, 60, .72)'; g.fillStyle = 'rgba(176, 38, 60, .72)'; g.lineWidth = 7;
-    g.strokeRect(-190, -70, 380, 140); g.font = `bold 50px ${serif}`; g.textAlign = 'center'; g.fillText('PAID', 0, 2); g.font = `bold 30px ${serif}`; g.fillText('12 FEB 2027', 0, 46); g.restore();
+    g.strokeRect(-190, -70, 380, 140); g.font = `bold 50px ${serif}`; g.textAlign = 'center'; g.fillText('PAID', 0, 2); g.font = `bold 30px ${serif}`; g.fillText(paid, 0, 46); g.restore();
     return c.toDataURL('image/png').split(',')[1];
-  });
+  }, [D.scan, D.paid]);
   await ctx.close();
   const pdf = await PDFDocument.create();
   const im = await pdf.embedPng(Buffer.from(png, 'base64'));
@@ -585,12 +632,20 @@ if (ARG.docs) {
   fs.writeFileSync(path.join(ARG.docs, 'letter.pdf'), await letter());
   fs.writeFileSync(path.join(ARG.docs, 'scan.pdf'), await scan()); await browser.close();
 } else {
-  const docs = { review: await review(), form: await form(), letter: await letter(), scan: await scan() };
-  docs.pack = await pack(docs);
+  // The documents for each set of dates (the Mac's, and the iPhone's and iPad's), made once.
+  const made = {};
+  const docsFor = async (kind) => {
+    const D = DATES[kind === 'mac' ? 'mac' : 'device'];
+    if (made[D.year]) return made[D.year];
+    const docs = { D, review: await review(D), form: await form(D), letter: await letter(D), scan: await scan(D) };
+    docs.pack = await pack(docs, D);
+    return (made[D.year] = docs);
+  };
   // The Mac leads with Fill in and sign: Edit text outlines every line on the page, busy as a first picture.
   const ORDER = { mac: ['fill-and-sign', 'edit-text', 'scans-to-text', 'comments', 'redact', 'organize-pages'] };
   for (const kind of ONLY) {
     const order = (ORDER[kind] || STORIES.map((s) => s.slug)).map((slug) => STORIES.find((s) => s.slug === slug));
+    const docs = await docsFor(kind);
     for (const [k, story] of order.entries()) {
       if (SHOTS && !SHOTS.includes(k + 1)) continue;
       const rawFile = RAW && path.join(RAW, `${kind}-${story.slug}.png`);
