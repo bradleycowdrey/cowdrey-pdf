@@ -340,7 +340,7 @@ async function selectWords(p, n, from, to) {
 }
 
 const STORIES = [
-  { slug: 'edit-text', title: 'Edit any PDF', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
+  { slug: 'edit-text', title: 'Edit any PDF.\nRight on the page.', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
     async shoot(p, docs) {
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
@@ -378,7 +378,7 @@ const STORIES = [
       }
       await p.waitForTimeout(400);
     } },
-  { slug: 'scans-to-text', title: 'Scans become text', sub: 'Search and copy words on scanned pages.',
+  { slug: 'scans-to-text', title: 'Scans become\nsearchable text.', sub: 'Search and copy words on scanned pages.',
     async shoot(p, docs) {
       await openDoc(p, docs.scan, 'Garden letter.pdf');
       if (p.kind === 'mac') await tab(p, 'Edit'); // where Recognize text is
@@ -395,7 +395,7 @@ const STORIES = [
       if (p.kind === 'mac') await centerOn(p, 0, 'Dear', .09);
       else { await belowFind(p, 0); await selectWords(p, 0, 'Water', 'Please'); }
     } },
-  { slug: 'fill-and-sign', title: 'Fill in and sign', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
+  { slug: 'fill-and-sign', title: 'Fill in forms.\nSign in seconds.', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
     async shoot(p, docs) {
       await openDoc(p, docs.form.bytes, 'Membership 2027.pdf');
       await onePage(p);
@@ -419,7 +419,7 @@ const STORIES = [
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'comments', title: 'Mark it up', sub: 'Highlight, comment and reply.',
+  { slug: 'comments', title: 'Mark it up.\nTalk it through.', sub: 'Highlight, comment and reply.',
     async shoot(p, docs) {
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Comment'); await goPage(p, 1);
@@ -434,7 +434,7 @@ const STORIES = [
       await goPage(p, 1);
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'redact', title: 'Redact for real', sub: 'Private details are removed, not covered.',
+  { slug: 'redact', title: 'Redact for real.\nGone for good.', sub: 'Private details are removed, not covered.',
     async shoot(p, docs) {
       await openDoc(p, docs.letter, 'Tenant reference.pdf');
       await onePage(p);
@@ -449,7 +449,7 @@ const STORIES = [
       if (p.kind === 'mac') await pageAt(p, 0, .13);
       if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Contact details we hold', .45); }
     } },
-  { slug: 'organize-pages', title: 'Pages in order', sub: 'Move, turn, combine and split pages.',
+  { slug: 'organize-pages', title: 'Put every page\nin its place.', sub: 'Move, turn, combine and split pages.',
     async shoot(p, docs) {
       // A board pack of twelve pages, so the grid fills the screen, with two pages picked to move together.
       await openDoc(p, docs.pack, 'Board pack 2027.pdf');
@@ -500,9 +500,11 @@ const FONTS = { fraunces: b64('design/app-store/fraunces.woff2'), instrument: b6
 // The headline is a picture's first words: one or two lines, kept short enough to read in a search result.
 async function compose(kind, story, raw, file) {
   const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
-  // Every headline in the set is one line, so the iPhone sits higher with the copy hung just above it.
+  // Every headline in the set is two lines, so the iPhone sits where every family app's does, at the two-line height.
+  // The Mac's copy has room for one headline line and the sub-line only, so there the two lines run as one.
+  const head = kind === 'mac' ? story.title.replace(/\n/g, ' ') : story.title;
   const screen = kind === 'mac' ? [DEVICES.mac.w, DEVICES.mac.h] : undefined;
-  return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 1, screen }, THEMES.pdf, FONTS);
+  return frame(browser, kind, { head, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 2, screen }, THEMES.pdf, FONTS);
 }
 
 // The organize story's document: the review, the form, the letter and the scan in one file, with three of the
