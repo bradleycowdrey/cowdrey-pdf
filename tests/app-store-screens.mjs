@@ -362,15 +362,15 @@ const STORIES = [
       } else {
         await goPage(p, 1);
         if (p.kind === 'mac') {
-          // Close in on the line (180%), so the edit box and the format bar read at thumbnail size.
-          await p.evaluate(() => { const r = document.querySelector('#zoomRange'); r.value = 180; r.dispatchEvent(new Event('change')); });
-          await p.waitForTimeout(1500);
-          await centerOn(p, 1, 'Average delay down', .5);
-          await p.evaluate(() => {
-            const el = [...document.querySelectorAll('.page[data-n="1"] .textLayer span')].find((s) => s.textContent.includes('Average delay down'));
-            const v = document.querySelector('#viewer'), vr = v.getBoundingClientRect();
-            v.scrollLeft += el.getBoundingClientRect().left - (vr.left + vr.width * .1);
-          });
+          // Close in on the page (150%), so the edit box and the format bar read at thumbnail size: the whole width
+          // of the page with the grey on both sides, from under the page's running head (the view's top falls in
+          // the gap above the title) to past the last line of its text, so no line is cut at an edge.
+          await setZoom(p, 150);
+          await p.evaluate(([H]) => {
+            const v = document.querySelector('#viewer'), el = document.querySelector('.page[data-n="1"]');
+            v.scrollTop += el.getBoundingClientRect().top - v.getBoundingClientRect().top + el.offsetHeight * 62 / H;
+            v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2;
+          }, [H]);
           await p.waitForTimeout(700);
         }
         if (p.kind === 'ipad') {
@@ -401,7 +401,9 @@ const STORIES = [
       // toolbar opens under it, clear of the list.)
       await phoneZoom(p);
       // (On the Mac the selection's toolbar opens above it and would cover the list: the hits alone tell it there.)
-      if (p.kind === 'mac') await centerOn(p, 0, 'Dear', .09);
+      // The Mac at 125%: the letter whole from "Dear plot holder" to the signature, the closing and the PAID stamp,
+      // the view's top in the gap under the date and its foot in the paper under the secretary's name.
+      if (p.kind === 'mac') { await setZoom(p, 125); await lineTo(p, 0, 'Dear', 28); await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; }); }
       else { await belowFind(p, 0); await selectWords(p, 0, 'Water', 'Please'); }
     } },
   { slug: 'fill-and-sign', title: 'Fill in forms.\nSign in seconds.', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
@@ -507,6 +509,8 @@ async function capture(kind, story, docs) {
 const b64 = (f) => fs.readFileSync(path.join(root, f)).toString('base64');
 const FONTS = { fraunces: b64('design/app-store/fraunces.woff2'), instrument: b64('fonts/instrument-sans-latin-wght-normal.woff2') };
 // The headline is a picture's first words: one or two lines, kept short enough to read in a search result.
+// The Mac: the window on the family desktop (the menu bar with the app's name and the clock, the Dock hidden), and
+// that desktop on the MacBook.
 async function compose(kind, story, raw, file) {
   const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
   // Every headline in the set is two lines, so the iPhone sits where every family app's does, at the two-line height.
