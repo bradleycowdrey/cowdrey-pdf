@@ -28,15 +28,25 @@ netkick() {
 adb shell settings put global private_dns_mode off
 adb shell svc wifi enable; adb shell svc data enable
 # The emulator's mobile network can take a while to come up, or not come up at all (run 21: no network after a minute):
-# after a minute, airplane mode is turned on and off, which starts the radio again.
+# after half a minute, airplane mode is turned on and off, which starts the radio again.
+# The network is up when Android has an active default network and names resolve. A reply to ping isn't needed (the
+# internet's ICMP replies may not come back to the emulator), so the bare "PING freetsa.org (…)" line counts for names,
+# but only with a default network: in run 51 that line came with "Active default network: none", and the emulator
+# then had no network for 7 minutes. If it never comes up the tests still run: the scenarios that need the network
+# wait for it themselves and say "no network".
+UP=""
 for i in $(seq 1 36); do
+  DEF=$(adb shell dumpsys connectivity 2>/dev/null | grep -m1 'Active default network' | tr -d '\r')
   N=$(adb shell ping -c 1 -W 3 freetsa.org 2>&1 | head -2 | tr '\n' ' ')
-  if echo "$N" | grep -q 'bytes from\|PING '; then echo "network: names resolve ($N)"; break; fi
-  echo "network: not yet ($N; $(adb shell dumpsys connectivity 2>/dev/null | grep -m1 'Active default network'))"
+  if [[ -n "$DEF" && "$DEF" != *none* ]] && echo "$N" | grep -q 'bytes from\|PING '; then
+    UP=yes; echo "network: up ($DEF; names resolve: $N)"; break
+  fi
+  echo "network: not yet ($N; ${DEF:-Active default network: not listed})"
   if [[ $i == 1 || $i == 12 || $i == 24 ]]; then netinfo; fi
   if [[ $i == 6 || $i == 18 || $i == 30 ]]; then netkick; fi
   sleep 5
 done
+[[ -n "$UP" ]] || echo "network: still not up after $i tries; the tests run anyway (the scenarios that need it wait for it themselves)"
 echo "network: by address: $(adb shell ping -c 1 -W 3 8.8.8.8 2>&1 | sed -n 2p)"
 echo "network: dns $(adb shell getprop net.dns1) / $(adb shell dumpsys connectivity 2>/dev/null | grep -m2 -oE 'DnsAddresses: \[[^]]*\]' | tr '\n' ' ')"
 adb shell dumpsys connectivity 2>/dev/null | grep -m3 -E 'Active default network|NetworkAgentInfo\{' | cut -c1-300
