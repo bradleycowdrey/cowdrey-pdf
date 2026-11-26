@@ -168,21 +168,18 @@ No accounts, login, user-generated content shared with others, paid content, in-
 
 iPhone 6.9-inch display, 1320 x 2868 (`APP_IPHONE_67`), in this order:
 
-1. `iphone-01-edit-text.png`
-2. `iphone-02-scans-to-text.png`
-3. `iphone-03-fill-and-sign.png`
-4. `iphone-04-comments.png`
-5. `iphone-05-redact.png`
-6. `iphone-06-organize-pages.png`
+1. `iphone-1-edit-text.png`
+2. `iphone-2-scans.png`
+3. `iphone-3-fill-sign.png`
+4. `iphone-4-comments.png`
+5. `iphone-5-redact.png`
+6. `iphone-6-pages.png`
 
 iPad 13-inch display, 2064 x 2752 (`APP_IPAD_PRO_3GEN_129`), in this order:
 
-1. `ipad-01-edit-text.png`
-2. `ipad-02-scans-to-text.png`
-3. `ipad-03-fill-and-sign.png`
-4. `ipad-04-comments.png`
-5. `ipad-05-redact.png`
-6. `ipad-06-organize-pages.png`
+1. `ipad-1-edit-text.png`
+2. `ipad-2-scans.png`
+3. `ipad-3-fill-sign.png`
 
 # Mac
 
@@ -306,9 +303,8 @@ No accounts, login, user-generated content shared with others, paid content, in-
 
 Mac, 2880 x 1800 (`APP_DESKTOP`), in this order:
 
-1. `mac-01-fill-and-sign.png`
-2. `mac-02-edit-text.png`
-3. `mac-03-scans-to-text.png`
-4. `mac-04-comments.png`
-5. `mac-05-redact.png`
-6. `mac-06-organize-pages.png`
+1. `mac-1-fill-sign.png`
+2. `mac-2-edit-text.png`
+3. `mac-3-scans.png`
+4. `mac-4-comments.png`
+5. `mac-5-redact.png`

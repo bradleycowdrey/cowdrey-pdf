@@ -20,20 +20,17 @@
   },
   "screenshots": {
     "APP_IPHONE_67": [
-      "iphone-01-edit-text.png",
-      "iphone-02-scans-to-text.png",
-      "iphone-03-fill-and-sign.png",
-      "iphone-04-comments.png",
-      "iphone-05-redact.png",
-      "iphone-06-organize-pages.png"
+      "iphone-1-edit-text.png",
+      "iphone-2-scans.png",
+      "iphone-3-fill-sign.png",
+      "iphone-4-comments.png",
+      "iphone-5-redact.png",
+      "iphone-6-pages.png"
     ],
     "APP_IPAD_PRO_3GEN_129": [
-      "ipad-01-edit-text.png",
-      "ipad-02-scans-to-text.png",
-      "ipad-03-fill-and-sign.png",
-      "ipad-04-comments.png",
-      "ipad-05-redact.png",
-      "ipad-06-organize-pages.png"
+      "ipad-1-edit-text.png",
+      "ipad-2-scans.png",
+      "ipad-3-fill-sign.png"
     ]
   },
   "whatsNew": "Cowdrey.PDF 2.1, still entirely on your iPhone or iPad:\n- Sign with a certificate (PAdES), with an optional timestamp, and check signatures: certificate chain, changes after signing, and revocation when you ask\n- Save as PDF/A or PDF/X, and edit document properties and metadata\n- Compare two PDFs side by side, with the changes marked\n- Extract tables to CSV or Excel, and run the same steps on many PDFs\n- Text in any language is saved in embedded fonts\n- Better OCR: cleaner scans, pages turned upright, up to three languages at once\n- A forms designer with formats, totals and tab order\n- Optimize replaces Compress and makes files smaller, never bigger\n- More thorough redaction, accessibility tags and a new app icon",
@@ -51,12 +48,11 @@
     },
     "screenshots": {
       "APP_DESKTOP": [
-        "mac-01-fill-and-sign.png",
-        "mac-02-edit-text.png",
-        "mac-03-scans-to-text.png",
-        "mac-04-comments.png",
-        "mac-05-redact.png",
-        "mac-06-organize-pages.png"
+        "mac-1-fill-sign.png",
+        "mac-2-edit-text.png",
+        "mac-3-scans.png",
+        "mac-4-comments.png",
+        "mac-5-redact.png"
       ]
     }
   },
