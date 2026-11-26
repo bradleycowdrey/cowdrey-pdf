@@ -7,10 +7,6 @@
  ],
  "captures": "../../../tests/.app-store-raw",
  "out": "../../../docs/app-store",
- "statusBar": {
-  "time": "9:41",
-  "date": "Wed Nov 25"
- },
  "iphone": [
   {
    "id": "edit-text",

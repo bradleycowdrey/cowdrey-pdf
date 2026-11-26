@@ -21,11 +21,13 @@ on:
       - docs/app-store/**
       - scripts/store-frames/**
       - tests/app-store-screens.mjs
+      - tests/app-store-stories.mjs
+      - tests/app-store-sim/**
       - .github/workflows/app-store-listing.yml
   workflow_dispatch:
     inputs:
       screenshots:
-        description: 'Capture the app again and frame the screenshots to the family standard (published for review as an artifact)'
+        description: 'Capture the app again (iPhone and iPad in the iOS Simulator, Mac in a browser) and frame the screenshots to the family standard (published for review as an artifact)'
         type: boolean
         default: false
       upload:
@@ -37,12 +39,101 @@ permissions:
   contents: write
 
 jobs:
-  # The screenshots in the family standard (scripts/store-frames): made again from the app when asked, then checked
-  # (exact sizes, RGB without alpha, type sizes and positions) and published as an artifact for review.
+  # The iPhone and iPad screenshots, taken in the iOS Simulator from the real app (built for the Simulator here,
+  # unsigned, from a capture build of the web app that plays the App Store stories), with the Simulator's own 9:41
+  # status bar. Only when asked; nothing is signed or uploaded, and no App Store Connect key is used.
+  simulator:
+    name: Capture the iPhone and iPad app in the iOS Simulator
+    runs-on: macos-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.screenshots
+    timeout-minutes: 120
+    env:
+      IPHONEOS_DEPLOYMENT_TARGET: '15.0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: ios-simulator
+
+      # desktop/dist with tests/app-store-sim/boot.js first in its head: this build is made only here.
+      - name: Make the capture build of the web app
+        run: |
+          set -o pipefail
+          (cd desktop && npm ci && node build.mjs)
+          node tests/app-store-sim/inject.mjs
+
+      - name: Build the app for the Simulator (unsigned)
+        working-directory: desktop
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/sim"
+          LOG="$RUNNER_TEMP/sim/build-log.txt"
+          npx tauri ios init --ci 2>&1 | tee -a "$LOG"
+          npx tauri icon src-tauri/icons/ios-source.png 2>&1 | tail -3 | tee -a "$LOG"
+          PLIST=$(find src-tauri/gen/apple -name Info.plist -path '*_iOS*' | head -1)
+          echo "Info.plist: $PLIST" | tee -a "$LOG"
+          # The capture build talks to run.mjs on this Mac over plain http on 127.0.0.1.
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST" || true
+          npx tauri ios build --target aarch64-sim 2>&1 | tee -a "$LOG" || echo "tauri ios build exited with an error; looking for the app it built" | tee -a "$LOG"
+          APP=""
+          for A in $(find src-tauri/gen/apple/build "$HOME/Library/Developer/Xcode/DerivedData" -type d -name '*.app' 2>/dev/null); do
+            [[ "$(/usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$A/Info.plist" 2>/dev/null)" == iphonesimulator ]] && APP="$A" && break
+          done
+          echo "Simulator app: ${APP:-none}" | tee -a "$LOG"
+          [[ -n "$APP" ]] || exit 1
+          cp -R "$APP" "$RUNNER_TEMP/Cowdrey.PDF.app"
+
+      - name: Capture the stories in the iOS Simulator
+        run: |
+          set -o pipefail
+          npm install --no-save playwright@1.56.1 && npx playwright install chromium
+          node tests/app-store-screens.mjs --docs="$(mkdir -p "$RUNNER_TEMP/docs" && echo "$RUNNER_TEMP/docs")"
+          node tests/app-store-sim/run.mjs --app "$RUNNER_TEMP/Cowdrey.PDF.app" --docs "$RUNNER_TEMP/docs" --raw "$RUNNER_TEMP/sim"
+
+      - name: Keep the captures for the frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-captures
+          path: ${{ runner.temp }}/sim
+          if-no-files-found: ignore
+
+      # From a branch other than main: the raw captures and the log on the appstore-simulator-preview branch too,
+      # so they can be looked at without signing in to GitHub. Nothing that main, the README or the listing uses.
+      - name: Publish the captures for review
+        if: always() && github.ref != 'refs/heads/main'
+        run: |
+          [[ -d "$RUNNER_TEMP/sim" ]] || exit 0
+          cd "$(mktemp -d)" && git init -q -b appstore-simulator-preview && cp -R "$RUNNER_TEMP/sim/." .
+          echo "${{ job.status }} · run ${{ github.run_id }} · ${{ github.ref_name }} · ${{ github.sha }}" > status.txt
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Simulator captures, run ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" appstore-simulator-preview
+
+  # The screenshots in the family standard (scripts/store-frames): made again when asked (iPhone and iPad from the
+  # Simulator captures above, the Mac in a browser), then checked (exact sizes, RGB without alpha, type sizes and
+  # positions) and published as an artifact for review.
   frames:
     name: Frame and check the App Store screenshots
     runs-on: ubuntu-24.04 # Playwright 1.56 supports this Ubuntu
-    if: github.event_name != 'workflow_run'
+    needs: simulator
+    if: >-
+      !cancelled() && github.event_name != 'workflow_run' &&
+      (needs.simulator.result == 'success' || needs.simulator.result == 'skipped')
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -51,14 +142,22 @@ jobs:
         with:
           node-version: 22
 
-      - name: Capture the app and frame the screenshots
+      - name: The Simulator captures
+        if: github.event_name == 'workflow_dispatch' && inputs.screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: simulator-captures
+          path: ${{ runner.temp }}/raw
+
+      - name: Capture the Mac app and frame the screenshots
         if: github.event_name == 'workflow_dispatch' && inputs.screenshots
         run: |
           set -o pipefail
           (cd desktop && npm ci)
           npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
           python3 build.py
-          node tests/app-store-screens.mjs --raw="$RUNNER_TEMP/raw"
+          node tests/app-store-screens.mjs --raw="$RUNNER_TEMP/raw" --only=mac
+          node tests/app-store-screens.mjs --raw="$RUNNER_TEMP/raw" --only=iphone,ipad --reuse
 
       - name: Check the screenshots against the family standard
         run: node scripts/store-frames/check.js
@@ -72,6 +171,18 @@ jobs:
             docs/app-store/measure.json
             docs/app-store/listing.json
           if-no-files-found: error
+
+      # From a branch other than main: the framed set on the appstore-screenshots-preview branch too, so it can be
+      # looked at without signing in to GitHub. Nothing that main, the README or the listing uses.
+      - name: Publish the screenshots on the preview branch
+        if: github.event_name == 'workflow_dispatch' && inputs.screenshots && github.ref != 'refs/heads/main'
+        run: |
+          D=$(mktemp -d) && cp docs/app-store/*.png docs/app-store/measure.json docs/app-store/listing.json "$D/"
+          cd "$D" && git init -q -b appstore-screenshots-preview
+          echo "run ${{ github.run_id }} · ${{ github.ref_name }} · ${{ github.sha }}" > status.txt
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "App Store screenshots for review, run ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" appstore-screenshots-preview
 
   listing:
     name: Fill in the App Store listing (submits only the version listing.json names)
