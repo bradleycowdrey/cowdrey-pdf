@@ -1,20 +1,25 @@
 // App Store screenshots for iPhone 6.9" (1320 x 2868), iPad 13" (2064 x 2752) and Mac (2880 x 1800), all from the
-// real app in dark mode, on the family template shared with Cowdrey.MD (tests/store-frame.mjs, the same file in both
-// repos, a word-for-word copy of the family master): a deep raspberry ground, a Fraunces headline, one line in
-// Instrument Sans, and the device with the app: the iPhone, the iPad, and on the Mac the app's window on the family's
-// MacBook desktop.
+// real app in dark mode, framed to the Cowdrey family standard by the family compositor
+// (scripts/store-frames/store-frames.js, its README and apps/cowdrey-pdf.json): Cowdrey.PDF's raspberry sky, an
+// eyebrow, a two-line Fraunces headline (one line on iPad and Mac) and a one-line subhead in Cowdrey One's type scale,
+// above the app in a drawn iPhone or iPad (with the 9:41 status bar) or a plain Mac window.
 //
 // Run: python3 build.py && (cd desktop && npm ci) && npm install --no-save playwright@1.56.1 &&
-//      node tests/app-store-screens.mjs [--only=iphone,ipad,mac] [--shots=1,2] [--raw=dir] [--docs=dir]
-//   -> docs/app-store/{iphone,ipad,mac}-0N-<slug>.png (RGB, no alpha, as App Store Connect wants them)
+//      node tests/app-store-screens.mjs [--only=iphone,ipad,mac] [--shots=1,2] [--raw=dir] [--reuse] [--docs=dir]
+//   1. captures the raw screens into --raw (default tests/.app-store-raw, not committed) as <device>-<story>.png;
+//      --reuse frames the raw screens already there without capturing again
+//   2. frames them: docs/app-store/<device>-<n>-<id>.png (RGB, no alpha, as App Store Connect wants them) and
+//      docs/app-store/measure.json (the type and positions as drawn)
+//   3. checks every picture listing.json names against the standard (scripts/store-frames/check.js)
+// Which stories each device shows, in which order and with which words, is set in scripts/store-frames/apps/cowdrey-pdf.json.
 //
 // Every document is fictional and made here with pdf-lib (or drawn in the page, for the scan). The phone and tablet
 // are the iPhone and iPad app (touch, their user agent, the safe areas of the real screens); the Mac is the Mac App
-// Store build in a window with the macOS title bar, on a MacBook's desktop. The app's clock is fixed at the family's
-// MAC_CLOCK time (Wed Nov 25 2026, 9:41 AM), so the dates it shows (a comment's day) never drift between runs.
+// Store build's window content at 16:10 (the compositor draws the title bar). The app's clock is fixed at
+// Wed Nov 25 2026, 9:41 AM, the time the drawn status bar shows, so the dates it shows (a comment's day) never drift.
 import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module'; import { fileURLToPath } from 'node:url';
-import { compose as frame, desktop, THEMES } from './store-frame.mjs';
+import { execFileSync } from 'node:child_process';
 const require = createRequire(import.meta.url);
 let pw; try { pw = require('playwright'); } catch { try { pw = require(path.join(process.cwd(), 'node_modules/playwright')); } catch { pw = require('/opt/node22/lib/node_modules/playwright'); } }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,7 +30,9 @@ const OUT = path.join(root, 'docs/app-store');
 const ARG = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, '').split('=')));
 const ONLY = ARG.only ? ARG.only.split(',') : ['iphone', 'ipad', 'mac'];
 const SHOTS = ARG.shots ? ARG.shots.split(',').map(Number) : null;
-const RAW = ARG.raw || null;
+const RAW = path.resolve(ARG.raw || path.join(root, 'tests/.app-store-raw'));
+const FRAMES = path.join(root, 'scripts/store-frames');
+const CONFIG = JSON.parse(fs.readFileSync(path.join(FRAMES, 'apps/cowdrey-pdf.json'), 'utf8'));
 
 /* ---------------- the devices ---------------- */
 // Screen sizes in points, and the safe areas of the real screens (iPhone 16 Pro Max and 13-inch iPad Pro).
@@ -34,11 +41,9 @@ const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1
 const DEVICES = {
   iphone: { w: 440, h: 956, scale: 3, touch: true, ua: IPHONE_UA, safe: { top: 62, bottom: 34 }, out: [1320, 2868] },
   ipad: { w: 1032, h: 1376, scale: 2, touch: true, ua: IPAD_UA, safe: { top: 24, bottom: 20 }, out: [2064, 2752] },
-  // The Mac window: 1380 x 851 points, the app's 1380 x 823 under the 28-point macOS title bar the template draws
-  // (the app has no title bar of its own). At this width the ribbon of every tab the stories use fits the window, and
-  // the window sits on the MacBook's 1512 x 982 pt desktop at its real size with 66 pt of wallpaper at each side and
-  // about 50 pt above and below it, under the 32 pt menu bar.
-  mac: { w: 1380, h: 823, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800], titlebar: 28 },
+  // The Mac window's content: 1380 x 863 points, the standard's 16:10 window (the compositor draws the 56 px title bar
+  // above it; the app has no title bar of its own). At this width the ribbon of every tab the stories use fits.
+  mac: { w: 1380, h: 863, scale: 2, touch: false, safe: { top: 0, bottom: 0 }, out: [2880, 1800] },
 };
 
 // The app's native side, as far as the page asks at start: nothing opened from Files or Finder.
@@ -349,7 +354,7 @@ async function selectWords(p, n, from, to) {
 }
 
 const STORIES = [
-  { slug: 'edit-text', title: 'Edit any PDF.\nRight on the page.', sub: 'Tap a line and type, in the PDF’s own font.', subMac: 'Click a line and type, in the PDF’s own font.',
+  { slug: 'edit-text',
     async shoot(p, docs) {
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Edit'); await run(p, 'txtEditLines'); await p.waitForTimeout(400);
@@ -387,7 +392,7 @@ const STORIES = [
       }
       await p.waitForTimeout(400);
     } },
-  { slug: 'scans-to-text', title: 'Scans become\nsearchable text.', sub: 'Search and copy words on scanned pages.',
+  { slug: 'scans-to-text',
     async shoot(p, docs) {
       await openDoc(p, docs.scan, 'Garden letter.pdf');
       if (p.kind === 'mac') await tab(p, 'Edit'); // where Recognize text is
@@ -406,7 +411,7 @@ const STORIES = [
       if (p.kind === 'mac') { await setZoom(p, 125); await lineTo(p, 0, 'Dear', 28); await p.evaluate(() => { const v = document.querySelector('#viewer'); v.scrollLeft = (v.scrollWidth - v.clientWidth) / 2; }); }
       else { await belowFind(p, 0); await selectWords(p, 0, 'Water', 'Please'); }
     } },
-  { slug: 'fill-and-sign', title: 'Fill in forms.\nSign in seconds.', sub: 'Type into any form, then sign it with your finger.', subMac: 'Type into any form, then add your signature.',
+  { slug: 'fill-and-sign',
     async shoot(p, docs) {
       await openDoc(p, docs.form.bytes, 'Membership 2027.pdf');
       await onePage(p);
@@ -430,7 +435,7 @@ const STORIES = [
       await run(p, 'tool_select'); await p.keyboard.press('Escape');
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'comments', title: 'Mark it up.\nTalk it through.', sub: 'Highlight, comment and reply.',
+  { slug: 'comments',
     async shoot(p, docs) {
       await openDoc(p, docs.review, 'Service review 2026.pdf');
       await tab(p, 'Comment'); await goPage(p, 1);
@@ -445,7 +450,7 @@ const STORIES = [
       await goPage(p, 1);
       await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     } },
-  { slug: 'redact', title: 'Redact for real.\nGone for good.', sub: 'Private details are removed, not covered.',
+  { slug: 'redact',
     async shoot(p, docs) {
       await openDoc(p, docs.letter, 'Tenant reference.pdf');
       await onePage(p);
@@ -460,7 +465,7 @@ const STORIES = [
       if (p.kind === 'mac') await pageAt(p, 0, .13);
       if (p.kind === 'iphone') { await phoneZoom(p); await centerOn(p, 0, 'Contact details we hold', .45); }
     } },
-  { slug: 'organize-pages', title: 'Put every page\nin its place.', sub: 'Move, turn, combine and split pages.',
+  { slug: 'organize-pages',
     async shoot(p, docs) {
       // A board pack of twelve pages, so the grid fills the screen, with two pages picked to move together.
       await openDoc(p, docs.pack, 'Board pack 2027.pdf');
@@ -502,26 +507,6 @@ async function capture(kind, story, docs) {
   if (p.errors.length) console.warn(kind, story.slug, p.errors);
   await p.ctx.close();
   return png;
-}
-
-/* ---------------- the template ---------------- */
-// The family template (tests/store-frame.mjs, the same file in Cowdrey.MD) in Cowdrey.PDF's raspberry.
-const b64 = (f) => fs.readFileSync(path.join(root, f)).toString('base64');
-const FONTS = { fraunces: b64('design/app-store/fraunces.woff2'), instrument: b64('fonts/instrument-sans-latin-wght-normal.woff2') };
-// The headline is a picture's first words: one or two lines, kept short enough to read in a search result.
-// The Mac: the window on the family desktop (the menu bar with the app's name and the clock, the Dock hidden), and
-// that desktop on the MacBook.
-async function compose(kind, story, raw, file) {
-  const sub = kind === 'mac' && story.subMac ? story.subMac : story.sub;
-  // Every headline in the set is two lines, so the iPhone sits where every family app's does, at the two-line height.
-  // The Mac's copy has room for one headline line and the sub-line only, so there the two lines run as one.
-  if (kind !== 'mac') return frame(browser, kind, { head: story.title, sub, png: raw, title: 'Cowdrey.PDF', file, lines: 2 }, THEMES.pdf, FONTS);
-  // The Mac: the window at its real point size, centred on the MacBook's desktop under the menu bar, with the
-  // template's title bar (the app's capture has none of its own), the family's clock and the Dock hidden.
-  const M = DEVICES.mac;
-  const screen = await desktop(browser, { theme: THEMES.pdf, app: 'Cowdrey.PDF', fonts: FONTS,
-    windows: [{ png: raw, w: M.w, h: M.h + M.titlebar, chrome: 'window' }] });
-  return frame(browser, kind, { head: story.title.replace(/\n/g, ' '), sub, device: 'macbook', png: screen, file }, THEMES.pdf, FONTS);
 }
 
 // The organize story's document: the review, the form, the letter and the scan in one file, with three of the
@@ -587,19 +572,21 @@ if (ARG.docs) {
 } else {
   const docs = { review: await review(), form: await form(), letter: await letter(), scan: await scan() };
   docs.pack = await pack(docs);
-  // The Mac leads with Fill in and sign: Edit text outlines every line on the page, busy as a first picture.
-  const ORDER = { mac: ['fill-and-sign', 'edit-text', 'scans-to-text', 'comments', 'redact', 'organize-pages'] };
+  fs.mkdirSync(RAW, { recursive: true });
+  // Each device's stories, in App Store order, from the config: frame n's capture is <device>-<story>.png.
   for (const kind of ONLY) {
-    const order = (ORDER[kind] || STORIES.map((s) => s.slug)).map((slug) => STORIES.find((s) => s.slug === slug));
-    for (const [k, story] of order.entries()) {
-      if (SHOTS && !SHOTS.includes(k + 1)) continue;
-      const rawFile = RAW && path.join(RAW, `${kind}-${story.slug}.png`);
-      const raw = ARG.reuse ? fs.readFileSync(rawFile) : await capture(kind, story, docs);
-      if (RAW && !ARG.reuse) fs.writeFileSync(rawFile, raw);
-      await launch();
-      const file = `${kind}-${String(k + 1).padStart(2, '0')}-${story.slug}.png`;
-      fs.writeFileSync(path.join(OUT, file), await compose(kind, story, raw, file)); console.log('wrote docs/app-store/' + file);
+    for (const [k, f] of (CONFIG[kind] || []).entries()) {
+      const slug = f.capture.replace(`${kind}-`, '').replace(/\.png$/, '');
+      const story = STORIES.find((s) => s.slug === slug);
+      if (!story) throw new Error(`${kind} ${f.id}: no story ${slug}`);
+      if (ARG.reuse || (SHOTS && !SHOTS.includes(k + 1))) continue;
+      fs.writeFileSync(path.join(RAW, f.capture), await capture(kind, story, docs)); console.log('captured ' + path.join(RAW, f.capture));
     }
   }
   await browser.close();
+  // Frame them to the family standard, then check what was written.
+  const node = process.execPath;
+  execFileSync(node, [path.join(FRAMES, 'store-frames.js'), '--config', path.join(FRAMES, 'apps/cowdrey-pdf.json'), '--captures', RAW, '--out', OUT, '--only', ONLY.join(',')], { stdio: 'inherit' });
+  execFileSync(node, [path.join(FRAMES, 'check.js'), OUT], { stdio: 'inherit' });
 }
+
