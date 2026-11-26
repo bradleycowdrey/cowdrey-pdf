@@ -1,0 +1,66 @@
+[16:35:46] listening on 8737
+[16:35:47] runtime iOS 26.5 com.apple.CoreSimulator.SimRuntime.iOS-26-5
+[16:35:47] app /Users/runner/work/_temp/Cowdrey.PDF.app com.bradcowdrey.cowdreypdf
+[16:35:47] iphone iPhone 17 Pro Max EB5D8393-517C-4A40-8B0F-569B002C7483
+[16:39:40] the app loaded the story player from its own address (tauri://localhost)
+[16:39:43] iphone edit-text: launching (edit-text, attempt 1)
+[16:39:54] app: job {"kind":"iphone","story":"edit-text","id":"edit-text"} tauri://localhost 440x956 dpr 3 __TAURI__ true
+[16:40:00] app: page rejection getTextContent@tauri://localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js:24:325868
+@tauri://localhost:2610:26
+contentMap@tauri://localhost:2691:5
+@tauri://localhost:2530:105
+forEach@[native code]
+[16:40:02] app ready: {"job":{"kind":"iphone","story":"edit-text","id":"edit-text"},"errors":["undefined is not a function (near '...t of e...')"]}
+[16:40:11] iphone edit-text: /Users/runner/work/_temp/sim/iphone-edit-text.png 1320 x 2868
+[16:40:11] iphone scans: launching (scans-to-text, attempt 1)
+[16:40:34] app: job {"kind":"iphone","story":"scans-to-text","id":"scans"} tauri://localhost 440x956 dpr 3 __TAURI__ true
+[16:40:55] app: page rejection getTextContent@tauri://localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js:24:325868
+textOf@tauri://localhost:4706:97
+[16:40:56] app ready: {"job":{"kind":"iphone","story":"scans-to-text","id":"scans"},"errors":["undefined is not a function (near '...t of e...')"]}
+[16:41:38] iphone scans: /Users/runner/work/_temp/sim/iphone-scans-to-text.png 1320 x 2868
+[16:41:38] iphone fill-sign: launching (fill-and-sign, attempt 1)
+[16:42:47] app: job {"kind":"iphone","story":"fill-and-sign","id":"fill-sign"} tauri://localhost 440x956 dpr 3 __TAURI__ true
+[16:42:55] app ready: {"job":{"kind":"iphone","story":"fill-and-sign","id":"fill-sign"},"errors":[]}
+[16:43:01] iphone fill-sign: /Users/runner/work/_temp/sim/iphone-fill-and-sign.png 1320 x 2868
+[16:43:01] iphone comments: launching (comments, attempt 1)
+[16:43:11] app: job {"kind":"iphone","story":"comments","id":"comments"} tauri://localhost 440x956 dpr 3 __TAURI__ true
+[16:43:17] app ready: {"job":{"kind":"iphone","story":"comments","id":"comments"},"errors":[]}
+[16:43:30] iphone comments: /Users/runner/work/_temp/sim/iphone-comments.png 1320 x 2868
+[16:43:30] iphone redact: launching (redact, attempt 1)
+[16:43:37] app: job {"kind":"iphone","story":"redact","id":"redact"} tauri://localhost 440x956 dpr 3 __TAURI__ true
+[16:43:41] app: page rejection getTextContent@tauri://localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js:24:325868
+protFind@tauri://localhost:19130:69
+[16:44:11] app fail: {"message":"waiting for #dialog[open] .dlg-foot button:has-text(\"Mark\"): timed out waiting for () => queryAll(sel).find(visible)","stack":"@tauri://localhost:324:136"}
+[16:44:13] iphone redact: failed ({"message":"waiting for #dialog[open] .dlg-foot button:has-text(\"Mark\"): timed out waiting for () => queryAll(sel).find(visible)","stack":"@tauri://localhost:324:136"}); screen in /Users/runner/work/_temp/sim/debug-iphone-redact-1.png
+[16:44:13] iphone redact: launching (redact, attempt 2)
+[16:44:23] app: job {"kind":"iphone","story":"redact","id":"redact"} tauri://localhost 440x861 dpr 3 __TAURI__ true
+[16:44:26] app: page rejection getTextContent@tauri://localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js:24:325868
+protFind@tauri://localhost:19130:69
+[16:44:56] app fail: {"message":"waiting for #dialog[open] .dlg-foot button:has-text(\"Mark\"): timed out waiting for () => queryAll(sel).find(visible)","stack":"@tauri://localhost:324:136"}
+[16:44:58] iphone redact: failed ({"message":"waiting for #dialog[open] .dlg-foot button:has-text(\"Mark\"): timed out waiting for () => queryAll(sel).find(visible)","stack":"@tauri://localhost:324:136"}); screen in /Users/runner/work/_temp/sim/debug-iphone-redact-2.png
+[16:44:58] iphone pages: launching (organize-pages, attempt 1)
+[16:45:04] app: job {"kind":"iphone","story":"organize-pages","id":"pages"} tauri://localhost 440x861 dpr 3 __TAURI__ true
+[16:45:11] app ready: {"job":{"kind":"iphone","story":"organize-pages","id":"pages"},"errors":[]}
+[16:45:14] iphone pages: /Users/runner/work/_temp/sim/iphone-organize-pages.png 1320 x 2868
+[16:45:19] ipad iPad Pro 13-inch (M5) 1C3BF5DD-1AED-4E2D-B143-CD643A12F27A
+[16:49:51] ipad edit-text: launching (edit-text, attempt 1)
+[16:49:57] app: job {"kind":"ipad","story":"edit-text","id":"edit-text"} tauri://localhost 1032x1325 dpr 2 __TAURI__ true
+[16:50:01] app: page rejection getTextContent@tauri://localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js:24:325868
+@tauri://localhost:2610:26
+contentMap@tauri://localhost:2691:5
+@tauri://localhost:2530:105
+forEach@[native code]
+[16:50:03] app ready: {"job":{"kind":"ipad","story":"edit-text","id":"edit-text"},"errors":["undefined is not a function (near '...t of e...')"]}
+[16:50:17] ipad edit-text: /Users/runner/work/_temp/sim/ipad-edit-text.png 2064 x 2752
+[16:50:17] ipad scans: launching (scans-to-text, attempt 1)
+[16:50:24] app: job {"kind":"ipad","story":"scans-to-text","id":"scans"} tauri://localhost 1032x1376 dpr 2 __TAURI__ true
+[16:50:35] app: page rejection getTextContent@tauri://localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js:24:325868
+textOf@tauri://localhost:4706:97
+[16:50:37] app ready: {"job":{"kind":"ipad","story":"scans-to-text","id":"scans"},"errors":["undefined is not a function (near '...t of e...')"]}
+[16:50:45] ipad scans: /Users/runner/work/_temp/sim/ipad-scans-to-text.png 2064 x 2752
+[16:50:45] ipad fill-sign: launching (fill-and-sign, attempt 1)
+[16:50:54] app: job {"kind":"ipad","story":"fill-and-sign","id":"fill-sign"} tauri://localhost 1032x1325 dpr 2 __TAURI__ true
+[16:51:00] app ready: {"job":{"kind":"ipad","story":"fill-and-sign","id":"fill-sign"},"errors":[]}
+[16:51:03] ipad fill-sign: /Users/runner/work/_temp/sim/ipad-fill-and-sign.png 2064 x 2752
+[16:51:07] FAILED:
+iphone-redact.png: {"message":"waiting for #dialog[open] .dlg-foot button:has-text(\"Mark\"): timed out waiting for () => queryAll(sel).find(visible)","stack":"@tauri://localhost:324:136"}
