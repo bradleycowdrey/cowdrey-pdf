@@ -60,5 +60,7 @@
       ]
     }
   },
-  "submitForReview": "2.1.0"
+  "submitForReview": "2.1.0",
+  "releaseMac": "0.3.2",
+  "submitForReviewMac": "2.1.0"
 }

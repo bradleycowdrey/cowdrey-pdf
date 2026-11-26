@@ -21,6 +21,9 @@ Apple reviews the two platforms separately, so when only an earlier macOS versio
 version goes ahead as usual, while the Mac version and the app information (shared by both platforms, and under review
 with the Mac version: category, subtitle, age rating, price, availability) are left exactly as they are.
 
+An approved version waiting for a manual release (Pending Developer Release) is released only when listing.json names
+it: releaseIOS for the iPhone and iPad, releaseMac for the Mac.
+
 Each step runs on its own and reports what happened, so one refusal doesn't stop the rest.
 Environment: APPLE_API_ISSUER, APPLE_API_KEY (key ID), P8 (private key text).
 """
@@ -142,6 +145,28 @@ def earlier_version_in_review():
           f'docs/app-store) to start App Store version {VERSION}.')
     sys.exit(0)
 
+
+def release_approved():
+    """Release an approved version that waits for a manual release (Pending Developer Release), but only the exact
+    version named for its platform in listing.json: releaseIOS for the iPhone and iPad, releaseMac for the Mac.
+    Keyed on the version string, so a later version is never released by mistake."""
+    for platform, key in (('IOS', 'releaseIOS'), ('MAC_OS', 'releaseMac')):
+        target = L.get(key)
+        if not target:
+            continue
+        vs = call('GET', f'/v1/apps/{APP}/appStoreVersions?filter[platform]={platform}&limit=20')['data']
+        v = next((x for x in vs if x['attributes']['versionString'] == target), None)
+        st = v and (v['attributes'].get('appStoreState') or v['attributes'].get('appVersionState'))
+        name = 'iOS' if platform == 'IOS' else 'macOS'
+        if st == 'PENDING_DEVELOPER_RELEASE':
+            call('POST', '/v1/appStoreVersionReleaseRequests', {'data': {'type': 'appStoreVersionReleaseRequests',
+                 'relationships': {'appStoreVersion': rel('appStoreVersions', v['id'])}}})
+            print(f'Release: {name} {target} was approved and waiting for release; it is now released to the App Store.')
+        else:
+            print(f'Release: {name} {target} is {st or "not found"}; nothing to release.')
+
+
+release_approved()
 
 # True while a different macOS version is in App Review: then only the iPhone and iPad version is touched.
 MAC_HELD = earlier_version_in_review()
