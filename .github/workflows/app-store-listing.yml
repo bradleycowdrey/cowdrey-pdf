@@ -14,19 +14,89 @@ on:
     workflows: ['iPhone app']
     types: [completed]
     branches: [main]
+  # A pull request that changes the screenshots or how they are made: check them against the family standard and
+  # publish them for review. Nothing is sent to App Store Connect.
+  pull_request:
+    paths:
+      - docs/app-store/**
+      - scripts/store-frames/**
+      - tests/app-store-screens.mjs
+      - .github/workflows/app-store-listing.yml
   workflow_dispatch:
+    inputs:
+      screenshots:
+        description: 'Capture the app again and frame the screenshots to the family standard (published for review as an artifact)'
+        type: boolean
+        default: false
+      upload:
+        description: 'Send the listing (and these screenshots) to App Store Connect. Only from main.'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  # The screenshots in the family standard (scripts/store-frames): made again from the app when asked, then checked
+  # (exact sizes, RGB without alpha, type sizes and positions) and published as an artifact for review.
+  frames:
+    name: Frame and check the App Store screenshots
+    runs-on: ubuntu-24.04 # Playwright 1.56 supports this Ubuntu
+    if: github.event_name != 'workflow_run'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Capture the app and frame the screenshots
+        if: github.event_name == 'workflow_dispatch' && inputs.screenshots
+        run: |
+          set -o pipefail
+          (cd desktop && npm ci)
+          npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
+          python3 build.py
+          node tests/app-store-screens.mjs --raw="$RUNNER_TEMP/raw"
+
+      - name: Check the screenshots against the family standard
+        run: node scripts/store-frames/check.js
+
+      - name: Publish the screenshots for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-screenshots
+          path: |
+            docs/app-store/*.png
+            docs/app-store/measure.json
+            docs/app-store/listing.json
+          if-no-files-found: error
+
   listing:
     name: Fill in the App Store listing (submits only the version listing.json names)
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: frames
+    # Only from main, and only when asked: a push to main that changes the listing, an iPhone build on main, or a
+    # run by hand with upload ticked. Never from a pull request or another branch, and never with unchecked frames.
+    if: >-
+      always() && !cancelled() &&
+      (needs.frames.result == 'success' || needs.frames.result == 'skipped') &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+       (github.event_name == 'workflow_dispatch' && inputs.upload))
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      # When this run made the screenshots again, upload those (checked above), not the committed ones.
+      - name: Use the screenshots made in this run
+        if: github.event_name == 'workflow_dispatch' && inputs.screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: app-store-screenshots
+          path: docs/app-store
 
       - name: Update App Store Connect
         env:

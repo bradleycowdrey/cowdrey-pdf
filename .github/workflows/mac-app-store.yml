@@ -101,7 +101,8 @@ jobs:
   mas:
     name: Build, sign and upload Cowdrey.PDF for the Mac App Store
     needs: gate
-    if: needs.gate.outputs.go == 'true'
+    # Never from another branch, even when run by hand: only main uploads to App Store Connect.
+    if: needs.gate.outputs.go == 'true' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 90
     env:
@@ -231,6 +232,10 @@ jobs:
 
       # The Mac version of the listing: Mac text and screenshots from docs/app-store/listing.json ("mac") and this
       # build. Submitted for review only if listing.json's submitForReviewMac names the version.
+      # The Mac screenshots must be the family standard's frames (scripts/store-frames) before they are uploaded.
+      - name: Check the Mac screenshots against the family standard
+        run: node scripts/store-frames/check.js 2>&1 | tee -a "$LOG"
+
       - name: Fill in the Mac App Store listing
         env:
           P8: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
