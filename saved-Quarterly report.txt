@@ -1,0 +1,13 @@
+Quarterly report, page 1
+Cowdrey.PDF opens this page, finds the word pelican, and keeps every highlight in place.
+The pelican count on page 1 is 7.
+Name:
+I agree
+
+Quarterly report, page 2
+Cowdrey.PDF opens this page, finds the word pelican, and keeps every highlight in place.
+The pelican count on page 2 is 14.
+
+Quarterly report, page 3
+Cowdrey.PDF opens this page, finds the word pelican, and keeps every highlight in place.
+The pelican count on page 3 is 21.

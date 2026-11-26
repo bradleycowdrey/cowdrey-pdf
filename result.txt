@@ -1,0 +1,48 @@
+ALL PASSED: 47/47
+PASS  open with: a VIEW intent with a content:// address opens the PDF (cold start)
+PASS  the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline
+PASS  open with: a second PDF while the app is open (onNewIntent), and Share to the app (SEND)
+PASS  open with: a file:// address the app may not read says so (instead of nothing happening)
+PASS  the file picker: Open shows Android's picker; the chosen PDF opens
+PASS  pages: a swipe scrolls to the next pages; the page number follows
+PASS  mark up with a finger: highlight text, draw, a note; undo and redo
+PASS  Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then
+PASS  Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited"
+PASS  Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)
+PASS  forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved
+PASS  forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved
+PASS  forms designer: a new text field drawn with a finger is saved as a real field
+PASS  redact: search, mark and apply; the word is gone from the saved PDF
+PASS  OCR with no network: a scanned page is read with the engine and English carried in the app
+PASS  certificate signing: import a .p12 through the picker, sign, save; the signature verifies
+PASS  timestamps: a timestamp server typed in Signing IDs; the signature saved with its timestamp from it (Android's network and certificate authorities)
+PASS  revocation: OCSP and CRL servers on plain http (on the machine running the emulator); not revoked, then revoked, asked again each time (Android's own network, not the web view)
+PASS  signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password
+PASS  PDF/A: saved through the save dialog, with its PDF/A-2b identification
+PASS  compare: the other PDF from the picker; the changes are found; the compare report saved through the save dialog
+PASS  insight: a table dragged out with a finger is saved as CSV through the save dialog
+PASS  batch: an action run on a PDF from the picker; the zip comes out through the save dialog
+PASS  split into files: one folder picked once, every part saved in it
+PASS  print: the PDF goes to Android's print service (its preview opens)
+PASS  Share…: Android's share sheet opens; the document stays "Edited" (sharing is not saving)
+PASS  read aloud: Android's text-to-speech reads the page, or the command is hidden when the phone has none
+PASS  back: Back closes an open dialog and keeps the app; with nothing open it leaves the app
+PASS  phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars
+PASS  touch: long-press and drag a page thumbnail to move the page
+PASS  comments: exported as XFDF through the save dialog, then imported into another copy through the picker
+PASS  attachments: a file attached through the picker is kept in the saved PDF and saved back out through the save dialog
+PASS  crop: a box dragged with a finger crops the page; the saved PDF has the smaller page
+PASS  signature: drawn with a finger and placed on the page; it is in the saved PDF
+PASS  large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file
+PASS  export: the text (.txt) and the page as a picture (.png) through the save dialog
+PASS  form data: an FDF file picked in Android's picker fills the form
+PASS  pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it)
+PASS  PDF/UA: tags added, saved as PDF/UA through the save dialog
+PASS  reading order: a tag dragged with a finger (long press) moves to the top; the saved PDF reads in the new order
+PASS  fonts: Japanese typed in Edit PDF says it needs a download when there is no network; online the fonts download and the saved PDF has the words
+PASS  OCR in French: the language is downloaded once; with no network, a language not downloaded yet says why
+PASS  update check (an APK not installed from Google Play): Check for updates asks GitHub; a newer release offers its APK, which Android opens
+PASS  memory: the app's memory after all of the above
+PASS  an edit made just before the app goes to the background and is closed by Android is kept
+PASS  relaunch: the library (IndexedDB) and the last document come back after the app is closed
+PASS  light mode: the app follows the system theme

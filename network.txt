@@ -1,0 +1,34 @@
+11-26 16:34:25.008   377   407 I netd    : tetherGetStats() -> {[]} <0.74ms>
+11-26 16:34:28.152   377   407 I netd    : tetherGetStats() -> {[]} <16.18ms>
+11-26 16:34:29.912   377   407 I netd    : tetherGetStats() -> {[]} <0.63ms>
+11-26 16:34:30.226   580  2676 D ConnectivityService: requestNetwork for uid/pid:10145/18552 activeRequest: null callbackRequest: 134 [NetworkRequest [ REQUEST id=135, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.android.chrome UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false
+11-26 16:34:30.236   580   867 D ConnectivityService: NetReassign [135 : null → 103] [c 0] [a 0] [i 1]
+11-26 16:34:30.270   580   867 D ConnectivityService: NetReassign [no changes] [c 0] [a 18] [i 1]
+11-26 16:34:30.300   580  2808 D ConnectivityService: requestNetwork for uid/pid:10145/18552 activeRequest: null callbackRequest: 137 [NetworkRequest [ REQUEST id=138, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.android.chrome UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false
+11-26 16:34:30.316   580   867 D ConnectivityService: NetReassign [138 : null → 103] [c 0] [a 2] [i 0]
+11-26 16:34:30.323   580   867 D ConnectivityService: NetReassign [no changes] [c 0] [a 0] [i 4]
+11-26 16:34:32.210   377   407 I netd    : tetherGetStats() -> {[]} <2.38ms>
+11-26 16:34:32.223   580   867 D ConnectivityService: releasing NetworkRequest [ REQUEST id=135, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.android.chrome UnderlyingNetworks: Null] ] (release request)
+11-26 16:34:32.223   580   867 D ConnectivityService: releasing NetworkRequest [ REQUEST id=138, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.android.chrome UnderlyingNetworks: Null] ] (release request)
+11-26 16:34:33.081   580   867 D ConnectivityService: releasing NetworkRequest [ REQUEST id=131, [ Transports: CELLULAR Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VPN&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Forbidden: LOCAL_NETWORK Uid: 10144 RequestorUid: 10144 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-26 16:34:33.204   377   407 I netd    : tetherGetStats() -> {[]} <0.26ms>
+11-26 16:34:33.207   580  3100 D ConnectivityService: requestNetwork for uid/pid:10168/15667 activeRequest: null callbackRequest: 140 [NetworkRequest [ REQUEST id=141, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10168 RequestorUid: 10168 RequestorPkg: com.google.android.apps.photos UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false
+11-26 16:34:33.208   580   867 D ConnectivityService: NetReassign [141 : null → 103] [c 0] [a 0] [i 1]
+11-26 16:34:36.839   580   867 D ConnectivityService: reportNetworkConnectivity(103, false) by 10143
+11-26 16:34:36.839  1029 18187 D NetworkMonitor/103: Forcing reevaluation for UID 10143. Dns signal count: 0
+11-26 16:34:36.857  1029 18843 D NetworkMonitor/103: PROBE_DNS www.google.com 15ms OK 142.251.154.119,142.251.153.119,142.251.151.119,142.251.150.119,142.251.157.119,142.251.156.119,142.251.152.119,142.251.155.119,2001:4860:4826:7700::,2001:4860:4829:7700::,2001:4860:482a:7700::,2001:4860:482c:7700::,2001:4860:4827:7700::,2001:4860:482d:7700::,2001:4860:482b:7700::,2001:4860:4828:7700::
+11-26 16:34:36.859  1029 18844 D NetworkMonitor/103: PROBE_DNS connectivitycheck.gstatic.com 17ms OK 142.251.150.120,2001:4860:4826:7800::
+11-26 16:34:37.370  1029 18844 D NetworkMonitor/103: PROBE_HTTP http://connectivitycheck.gstatic.com/generate_204 time=510ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Thu, 26 Nov 2026 16:34:37 GMT], X-Android-Received-Millis=[1795710877369], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1795710876869]}
+11-26 16:34:37.377  1029 18843 D NetworkMonitor/103: PROBE_HTTPS https://www.google.com/generate_204 time=518ms ret=204 request={Connection=[close], User-Agent=[Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.32 Safari/537.36]} headers={null=[HTTP/1.1 204 No Content], Alt-Svc=[h3=":443"; ma=2592000,h3-29=":443"; ma=2592000], Connection=[close], Content-Length=[0], Cross-Origin-Resource-Policy=[cross-origin], Date=[Thu, 26 Nov 2026 16:34:37 GMT], X-Android-Received-Millis=[1795710877376], X-Android-Response-Source=[NETWORK 204], X-Android-Selected-Protocol=[http/1.1], X-Android-Sent-Millis=[1795710877372]}
+11-26 16:34:37.378  1029 18842 D NetworkMonitor/103: isCaptivePortal: isSuccessful()=true isPortal()=false RedirectUrl=null isPartialConnectivity()=false Time=538ms
+11-26 16:34:37.380   580   867 D ConnectivityService: [103 WIFI] validation passed
+11-26 16:34:37.713   377   407 I netd    : tetherGetStats() -> {[]} <0.35ms>
+11-26 16:34:42.028   377   407 I netd    : tetherGetStats() -> {[]} <1.01ms>
+11-26 16:34:44.272   377   407 I netd    : tetherGetStats() -> {[]} <1.97ms>
+11-26 16:34:46.435   377   407 I netd    : tetherGetStats() -> {[]} <23.84ms>
+11-26 16:34:51.932   377   407 I netd    : tetherGetStats() -> {[]} <3.04ms>
+11-26 16:34:53.248   377   407 I netd    : tetherGetStats() -> {[]} <0.37ms>
+11-26 16:34:54.318   377   407 I netd    : tetherGetStats() -> {[]} <14.60ms>
+11-26 16:34:56.301   377   407 I netd    : tetherGetStats() -> {[]} <12.35ms>
+11-26 16:35:01.556   377   407 I netd    : tetherGetStats() -> {[]} <0.37ms>
+11-26 16:35:05.146   377   407 I netd    : tetherGetStats() -> {[]} <5.69ms>

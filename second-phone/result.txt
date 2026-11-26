@@ -1,0 +1,16 @@
+ALL PASSED: 15/15
+PASS  open with: a VIEW intent with a content:// address opens the PDF (cold start)
+PASS  the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline
+PASS  mark up with a finger: highlight text, draw, a note; undo and redo
+PASS  Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then
+PASS  Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited"
+PASS  Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)
+PASS  forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved
+PASS  forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved
+PASS  OCR with no network: a scanned page is read with the engine and English carried in the app
+PASS  phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars
+PASS  large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file
+PASS  pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it)
+PASS  OCR of a 50-page scan on a phone with 2 GB of memory: every page read, the app still running
+PASS  memory: the app's memory after all of the above
+PASS  light mode: the app follows the system theme

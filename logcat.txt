@@ -1,0 +1,400 @@
+11-26 16:34:49.774 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:49.774 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:34:49.827 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:49.827 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:49.827 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:34:49.911 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name radii_selector
+11-26 16:34:49.911 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name corner_and_radius_outsets
+11-26 16:34:49.911 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name aa_bloat_and_coverage
+11-26 16:34:49.911 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 3 name radii_x
+11-26 16:34:49.912 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 4 name radii_y
+11-26 16:34:49.912 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 5 name skew
+11-26 16:34:49.912 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 6 name translate_and_localrotate
+11-26 16:34:49.912 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 7 name color
+11-26 16:34:50.064 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:50.067 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:34:50.067 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name texSubset
+11-26 16:34:50.164 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:50.164 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:50.164 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:34:50.358 18935 18935 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: takeSharedFiles
+11-26 16:34:50.376 18935 18935 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: systemBars
+11-26 16:34:50.389 18983 19006 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:50.435 18983 19006 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:51.013 18935 19081 D ProfileInstaller: Installing profile for com.bradcowdrey.cowdreypdf
+11-26 16:34:51.257 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:51.258 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:51.461 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:51.461 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:51.676 18935 18935 W Tauri/Console: File: http://tauri.localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js - Line 24 - Msg: Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+11-26 16:34:51.699 18935 18935 W Tauri/Console: File: http://tauri.localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js - Line 24 - Msg: Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+11-26 16:34:51.788 18935 18935 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: ttsAvailable
+11-26 16:34:52.175 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:52.175 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:52.175 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:34:52.574 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:52.574 18935 18964 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:52.691   580  1307 I ActivityManager: Force stopping com.bradcowdrey.cowdreypdf appid=10210 user=0: from pid 19110
+11-26 16:34:52.698   580  1307 I ActivityManager: Killing 18935:com.bradcowdrey.cowdreypdf/u0a210 (adj 0): stop com.bradcowdrey.cowdreypdf due to from pid 19110
+11-26 16:34:52.703   580  1307 W ActivityTaskManager: Force removing ActivityRecord{5f2a205 u0 com.bradcowdrey.cowdreypdf/.MainActivity t11 f}}: app died, no saved state
+11-26 16:34:52.704   945  1027 V WindowManagerShell: Transition requested (#103): android.os.BinderProxy@17b2885 TransitionRequestInfo { type = CLOSE, triggerTask = TaskInfo{userId=0 taskId=11 displayId=0 isRunning=false baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } baseActivity=null topActivity=null origActivity=null realActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} numActivities=0 lastActiveTime=1264172 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@3a6f6da} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=null launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 103 }
+11-26 16:34:52.713   580  1307 I ActivityManager: Killing 18983:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0a210i5 (adj 0): isolated not needed
+11-26 16:34:52.741   580  1307 I AppsFilter: interaction: PackageSetting{a8b439f com.android.microdroid.empty_payload/10208} -> PackageSetting{1b72878 com.bradcowdrey.cowdreypdf/10210} BLOCKED
+11-26 16:34:52.743   580  2808 I WindowManager: WIN DEATH: Window{33d33e0 u0 com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity}
+11-26 16:34:52.743   580  2808 W InputManager-JNI: Input channel object '33d33e0 com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity (client)' was disposed without first being removed with the input manager!
+11-26 16:34:52.744   580  1607 V ActivityManager: Got obituary of 18935:com.bradcowdrey.cowdreypdf
+11-26 16:34:52.745   580  1607 I ImeTracker: com.bradcowdrey.cowdreypdf:7107d55e: onRequestHide at ORIGIN_SERVER reason HIDE_REMOVE_CLIENT fromUser false
+11-26 16:34:52.747   580  1607 I ImeTracker: com.bradcowdrey.cowdreypdf:7107d55e: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-26 16:34:52.750   580   894 I AppWidgetServiceImpl: Updating package stopped masked state for uid 10210 package com.bradcowdrey.cowdreypdf isStopped true
+11-26 16:34:52.762  1114  1114 D CarrierSvcBindHelper: onHandleForceStop: [com.bradcowdrey.cowdreypdf]
+11-26 16:34:52.822   580   606 W ActivityTaskManager: Unable to send transaction to client proc com.bradcowdrey.cowdreypdf: no app thread
+11-26 16:34:53.120   580   602 V WindowManager: Sent Transition (#103) createdAt=11-26 16:34:52.703 via request=TransitionRequestInfo { type = CLOSE, triggerTask = TaskInfo{userId=0 taskId=11 displayId=0 isRunning=false baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } baseActivity=null topActivity=null origActivity=null realActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} numActivities=0 lastActiveTime=1264172 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{6d3b757 Task{a8ab25a #11 type=standard A=10210:com.bradcowdrey.cowdreypdf}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=null launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 103 }
+11-26 16:34:53.130   580   602 V WindowManager:         {WCT{RemoteToken{6d3b757 Task{a8ab25a #11 type=standard A=10210:com.bradcowdrey.cowdreypdf}}} m=CLOSE f=NONE leash=Surface(name=Task=11)/@0xc11a4f1 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},
+11-26 16:34:53.265   580   606 W ActivityTaskManager: Unable to send transaction to client proc com.bradcowdrey.cowdreypdf: no app thread
+11-26 16:34:53.664   945   961 W ndroid.systemui: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.apk' with 2 weak references
+11-26 16:34:53.882   580  2273 W WindowManager: Exception thrown during dispatchAppVisibility Window{33d33e0 u0 com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity EXITING}
+11-26 16:34:54.399 19129 19129 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-26 16:34:54.405 19129 19129 I AndroidRuntime: Using default boot image
+11-26 16:34:54.405 19129 19129 I AndroidRuntime: Leaving lock profiling enabled
+11-26 16:34:54.488 19129 19129 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so
+11-26 16:34:54.523 19129 19129 D AndroidRuntime: Calling main entry com.android.commands.monkey.Monkey
+11-26 16:34:54.523 19129 19129 W Monkey  : args: [-p, com.bradcowdrey.cowdreypdf, -c, android.intent.category.LAUNCHER, 1]
+11-26 16:34:54.524 19129 19129 W Monkey  :  arg: "com.bradcowdrey.cowdreypdf"
+11-26 16:34:54.525 19129 19129 W Monkey  : data="com.bradcowdrey.cowdreypdf"
+11-26 16:34:54.551   945  1027 V WindowManagerShell: Transition requested (#104): android.os.BinderProxy@cceea88 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=12 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } baseActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} topActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} origActivity=null realActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} numActivities=1 lastActiveTime=1272939 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@cbf7c21} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 136 - 0, 0) topActivityInfo=ActivityInfo{7e01846 com.bradcowdrey.cowdreypdf.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= true isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2400 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 104 }
+11-26 16:34:54.552   580  2273 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-26 16:34:54.556   580  2273 I AppsFilter: interaction: PackageSetting{a8b439f com.android.microdroid.empty_payload/10208} -> PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} BLOCKED
+11-26 16:34:54.569  1247  1247 I TopTaskTracker: onTaskMovedToFront: (moved taskInfo to front) taskId=12, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity }
+11-26 16:34:54.574   580   894 I AppWidgetServiceImpl: Updating package stopped masked state for uid 10210 package com.bradcowdrey.cowdreypdf isStopped false
+11-26 16:34:54.579 19129 19129 I AndroidRuntime: VM exiting with result code 0.
+11-26 16:34:54.606   580   616 I ActivityManager: Start proc 19141:com.bradcowdrey.cowdreypdf/u0a210 for next-top-activity {com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity}
+11-26 16:34:54.661   580  3311 D CoreBackPreview: Window{bc00fd4 u0 Splash Screen com.bradcowdrey.cowdreypdf}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@b501c72, mPriority=0, mIsAnimationCallback=false}
+11-26 16:34:54.672 19141 19141 I drey.cowdreypdf: Late-enabling -Xcheck:jni
+11-26 16:34:54.737 19141 19141 I drey.cowdreypdf: Using CollectorTypeCMC GC.
+11-26 16:34:54.738 19141 19141 W drey.cowdreypdf: Unexpected CPU variant for x86: x86_64.
+11-26 16:34:54.738 19141 19141 W drey.cowdreypdf: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, default
+11-26 16:34:54.876   580  3311 D ActivityTaskManager: Skipping, user setup not complete: Task{925bf0d #12 type=standard A=10210:com.bradcowdrey.cowdreypdf}
+11-26 16:34:54.974   580   602 V WindowManager: Sent Transition (#104) createdAt=11-26 16:34:54.546 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=12 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } baseActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} topActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} origActivity=null realActivity=ComponentInfo{com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity} numActivities=1 lastActiveTime=1272939 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{288e26e Task{925bf0d #12 type=standard A=10210:com.bradcowdrey.cowdreypdf}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 136 - 0, 0) topActivityInfo=ActivityInfo{85a1d0f com.bradcowdrey.cowdreypdf.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= true isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2400 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 104 }
+11-26 16:34:54.987   580   602 V WindowManager:         {WCT{RemoteToken{288e26e Task{925bf0d #12 type=standard A=10210:com.bradcowdrey.cowdreypdf}}} m=OPEN f=NONE leash=Surface(name=Task=12)/@0xf11604 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},
+11-26 16:34:55.094 19141 19141 W ziparchive: Unable to open '/data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.dm': No such file or directory
+11-26 16:34:55.099 19141 19141 W ziparchive: Unable to open '/data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.dm': No such file or directory
+11-26 16:34:55.668 19141 19141 D nativeloader: Configuring clns-7 for other apk /data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.apk. target_sdk_version=37, uses_libraries=, library_path=/data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/lib/x86_64:/data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/com.bradcowdrey.cowdreypdf
+11-26 16:34:55.822 19141 19141 D nativeloader: Load /data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.apk!/lib/x86_64/libcowdrey_pdf_lib.so using ns clns-7 from class loader (caller=/data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.apk!classes9.dex): ok
+11-26 16:34:55.889 19141 19141 W drey.cowdreypdf: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (unsupported, reflection, allowed)
+11-26 16:34:55.955   580  3311 D CoreBackPreview: Window{a5c24a3 u0 com.bradcowdrey.cowdreypdf/com.bradcowdrey.cowdreypdf.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@6d72b59, mPriority=0, mIsAnimationCallback=false}
+11-26 16:34:56.195   580   602 W ziparchive: Unable to open '/data/app/~~BlF1cqhim1lO13zQhrePVQ==/com.bradcowdrey.cowdreypdf-epLM21YzfHpaoBNPZX1NiA==/base.dm': No such file or directory
+11-26 16:34:56.197   580   602 I ActivityTaskManager: Displayed com.bradcowdrey.cowdreypdf/.MainActivity for user 0: +1s650ms
+11-26 16:34:56.218 19141 19141 W drey.cowdreypdf: Entry not found
+11-26 16:34:56.232   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{735bfe1 com.android.cts.priv.ctsshim/10188} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{b5f7106 com.google.android.youtube/10167} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{cb723c7 com.android.internal.display.cutout.emulation.corner/10016} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9cb0df4 com.android.internal.display.cutout.emulation.double/10079} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{86d791d com.google.android.googlequicksearchbox/10144} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{af19792 com.google.android.onetimeinitializer/10128} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{1f83563 com.google.android.ext.shared/10117} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{4851560 com.android.virtualmachine.res/10207} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{16d8a19 com.android.managedprovisioning.auto_generated_rro_product__/10021} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{40d9ade com.android.carrierconfig.auto_generated_rro_vendor__/10088} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{4aec4bf com.google.android.server.deviceconfig.resources/10200} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{916278c com.android.systemui.emulation.pixel_3_xl/10046} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c3aed5 com.android.systemui.emulation.pixel_4_xl/10068} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5486ea com.android.systemui.emulation.pixel_fold/10019} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{814eddb com.android.providers.telephony.auto_generated_characteristics_rro/10017} BLOCKED
+11-26 16:34:56.235   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3c43078 com.android.simappdialog.auto_generated_rro_product__/10009} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{61d6351 com.android.htmlviewer/10116} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6c27b6 com.google.android.health.connect.backuprestore/10206} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{eea8cb7 com.android.systemui.auto_generated_rro_product__/10040} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{d47dc24 com.google.android.apps.messaging/10136} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{483e38d com.google.android.soundpicker/10163} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{78b0942 com.google.android.marvin.talkbackoverlay/10085} BLOCKED
+11-26 16:34:56.236   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e113d53 com.google.android.configupdater/10135} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{f389690 com.android.internal.emulation.pixel_3a_xl/10035} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c582b89 com.android.internal.emulation.pixel_6_pro/10065} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3c4778e com.android.internal.emulation.pixel_7_pro/10073} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{ce85baf com.android.internal.emulation.pixel_8_pro/10049} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3388bbc com.android.internal.emulation.pixel_9_pro/10011} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{90ef745 com.android.internal.emulation.pixel_3a/10006} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{f147e9a com.android.internal.emulation.pixel_4a/10039} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{f6903cb com.android.internal.emulation.pixel_6a/10080} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{8e0a7a8 com.android.internal.emulation.pixel_7a/10071} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{eacc2c1 com.android.internal.emulation.pixel_8a/10005} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{52bea66 com.google.android.overlay.googlewebview/10047} BLOCKED
+11-26 16:34:56.237   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{60211a7 com.google.android.apps.safetyhub/10129} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e6c9654 com.google.android.hotspot2.osulogin/10192} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{301c9fd com.android.simappdialog/10121} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9fc46f2 com.android.internal.display.cutout.emulation.hole/10052} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{f342143 com.android.internal.display.cutout.emulation.tall/10003} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{826c3c0 com.android.internal.systemui.navbar.threebutton/10062} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{ea608f9 com.android.camera2/10156} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{d03e03e com.android.internal.ranchu.commonoverlay/10055} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6ed8e9f com.android.systemui.auto_generated_rro_vendor__/10090} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{2945bec com.google.android.deskclock/10148} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{1b53bb5 com.android.internal.systemui.navbar.twobutton/10001} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{559c24a com.google.android.as/10137} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{fa675bb com.google.android.gm/10161} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{b614ad8 com.android.compos.payload/10204} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{84ade31 com.android.systemui.emulation.pixel_3/10024} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{279b916 com.android.systemui.emulation.pixel_4/10031} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{13cb297 com.android.systemui.emulation.pixel_5/10072} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{d0c3c84 com.android.systemui.emulation.pixel_6/10043} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{abe2c6d com.android.systemui.emulation.pixel_7/10032} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{dd050a2 com.android.systemui.emulation.pixel_8/10053} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{98fe133 com.android.systemui.emulation.pixel_9/10034} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9529cf0 com.android.printspooler/10126} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{59e2269 com.google.android.connectivity.resources.goldfish.overlay/10086} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{906d4ee com.android.dreams.basic/10114} BLOCKED
+11-26 16:34:56.238   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{add5d8f com.google.android.networkstack.tethering.emulator/10029} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e5c981c com.android.providers.settings.auto_generated_rro_product__/10078} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{56d7c25 com.google.android.as.oss/10131} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{50f51fa com.android.traceur.auto_generated_rro_product__/10028} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3dc43ab com.android.internal.emulation.pixel_9_pro_fold/10059} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{2a91a08 com.google.android.devicelockcontroller/10199} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{21eb5a1 com.google.android.dialer/10130} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{df093c6 com.android.internal.emulation.pixel_3/10014} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{d996f87 com.android.internal.emulation.pixel_4/10060} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3b9ceb4 com.android.internal.emulation.pixel_5/10058} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6500add com.android.internal.emulation.pixel_6/10036} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{7522652 com.android.internal.emulation.pixel_7/10015} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{b137d23 com.android.internal.emulation.pixel_8/10030} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{37f2220 com.android.internal.emulation.pixel_9/10056} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e4777d9 com.google.android.captiveportallogin/10119} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5c8559e android.auto_generated_characteristics_rro/10054} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{696c87f com.google.android.appsearch.apk/10198} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{84404c com.android.musicfx/10096} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{a1a2d1a com.google.android.apps.docs/10158} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{1c9dd09 com.google.android.apps.maps/10154} BLOCKED
+11-26 16:34:56.239   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e02daa com.google.android.markup/10150} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{8d96d9b com.google.android.rkpdapp/10185} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{4db1538 com.google.android.contacts/10162} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{30f4911 com.android.server.telecom.auto_generated_rro_product__/10037} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9eb7a76 com.android.phone.auto_generated_characteristics_rro/10042} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5d74877 com.google.android.overlay.googleconfig/10081} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{428bf6c com.android.chrome/10145} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{40e654d com.android.bips.auto_generated_rro_product__/10048} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{38cc802 com.google.android.apps.customization.pixel/10149} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{b6df513 com.google.android.tag/10099} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e2f5350 com.google.android.overlay.permissioncontroller/10057} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5690949 com.google.android.partnersetup/10132} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{603624e com.google.android.apps.wallpaper.nexus/10159} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{db8cf6f com.google.android.apps.nexuslauncher/10179} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5be547c com.android.theme.font.notoserifsource/10045} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3aff105 com.google.android.safetycenter.resources/10201} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c37555a com.android.internal.display.cutout.emulation.waterfall/10025} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{d2cf38b com.android.internal.systemui.navbar.transparent/10074} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6da3c68 com.google.android.connectivity.resources/10184} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9c39881 com.android.providers.contacts.auto_generated_rro_product__/10023} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5856d26 com.google.android.feedback/10171} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{2753d67 com.google.android.printservice.recommendation/10120} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{507e03a com.google.android.apps.photos/10168} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{2b57d0d com.google.android.calendar/10164} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6103bbd com.google.android.documentsui/10093} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{84b35b2 com.android.systemui.emulation.pixel_3a_xl/10082} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c0e4903 com.android.systemui.emulation.pixel_6_pro/10038} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{7a63080 com.android.systemui.emulation.pixel_7_pro/10061} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{789d6b9 com.android.systemui.emulation.pixel_8_pro/10076} BLOCKED
+11-26 16:34:56.241   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{132fafe com.android.systemui.emulation.pixel_9_pro/10022} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9a2725f com.android.carrierconfig.auto_generated_rro_product__/10004} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{d7dd4ac com.android.devicediagnostics.auto_generated_rro_product__/10066} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e682575 com.android.providers.partnerbookmarks/10113} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{b3fc90a com.android.wallpaper.livepicker/10097} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{125d57b com.android.providers.telephony.auto_generated_rro_product__/10033} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c498f98 com.android.phone.auto_generated_rro_vendor__/10089} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{ca2a3f1 com.android.imsserviceentitlement/10138} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c996bd6 com.android.internal.emulation.pixel_9_pro_xl/10020} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9b24e57 com.google.android.healthconnect.controller/10205} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3140d44 com.android.internal.emulation.pixel_2_xl/10000} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{22c8e2d com.android.internal.emulation.pixel_3_xl/10083} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{4186f62 com.android.internal.emulation.pixel_4_xl/10044} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{82378f3 com.android.internal.emulation.pixel_fold/10013} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{4e6b9b0 com.android.bookmarkprovider/10111} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{f0e029 com.google.android.overlay.pixelconfigcommon/10002} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{3921fae com.android.systemui.accessibility.accessibilitymenu.auto_generated_rro_product__/10041} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{972b14f com.android.systemui.emulation.pixel_3a/10077} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9f5c0dc com.android.systemui.emulation.pixel_4a/10050} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{48e55e5 com.android.systemui.emulation.pixel_6a/10075} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{2e488ba com.android.systemui.emulation.pixel_7a/10084} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6d3136b com.android.systemui.emulation.pixel_8a/10070} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{78c0ec8 com.google.android.settings.intelligence/10140} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{6ba85ed com.google.android.projection.gearhead/10134} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9d36b61 com.google.android.uwb.resources/10197} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{4876c22 com.android.cts.ctsshim/10189} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{7c27686 com.google.android.wifi.resources/10191} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{f8d7b47 com.google.android.wifi.dialog/10193} BLOCKED
+11-26 16:34:56.242   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{ab74f74 com.android.wallpaper/10177} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{a8b439f com.android.microdroid.empty_payload/10208} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{1fa5c9d com.google.android.apps.wallpaper/10176} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e3f7512 com.google.android.odad/10133} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{49c84e3 com.android.settings.auto_generated_rro_product__/10069} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{1b3eee0 com.android.systemui.emulation.pixel_9_pro_xl/10027} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{da52599 com.android.companiondevicemanager.auto_generated_characteristics_rro/10063} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{e1bd05e com.android.internal.systemui.navbar.gestural/10012} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{2088c3f com.google.android.apps.youtube.music/10157} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{19190c com.android.bluetoothmidiservice/10115} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{b998255 com.android.storagemanager.auto_generated_rro_product__/10018} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{8d0946a com.google.android.cellbroadcastreceiver/10203} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{203ad5b com.android.phone.auto_generated_rro_product__/10008} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{9c4b9f8 com.android.systemui.emulation.pixel_9_pro_fold/10026} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{73ceed1 android.auto_generated_rro_product__/10010} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{c5b8d36 com.google.android.inputmethod.latin/10152} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{5c5c437 android.auto_generated_rro_vendor__/10087} BLOCKED
+11-26 16:34:56.243   580  2273 I AppsFilter: interaction: PackageSetting{5ac810 com.bradcowdrey.cowdreypdf/10210} -> PackageSetting{877da4 com.google.android.apps.restore/10139} BLOCKED
+11-26 16:34:56.275   580  2273 D CoreBackPreview: Window{bc00fd4 u0 Splash Screen com.bradcowdrey.cowdreypdf}: Setting back callback null
+11-26 16:34:56.278   580  3311 W InputManager-JNI: Input channel object 'bc00fd4 Splash Screen com.bradcowdrey.cowdreypdf (client)' was disposed without first being removed with the input manager!
+11-26 16:34:56.311 19141 19141 D nativeloader: Load /system/lib64/libwebviewchromium_plat_support.so using ns clns-9 from class loader (caller=/data/app/~~nzIljIescgYCC5kOD1USAg==/com.google.android.webview-h8bKYZPEoHNnRAOdMLsx1A==/WebViewGoogle.apk): ok
+11-26 16:34:56.325 19141 19185 I chromium: [1126/163456.325120:INFO:variations_seed_loader.cc(66)] Failed to open file for reading.: No such file or directory (2)
+11-26 16:34:56.325 19141 19185 I cr_VariationsUtils: Failed reading seed file "/data/user/0/com.bradcowdrey.cowdreypdf/app_webview/variations_seed_new"
+11-26 16:34:56.331 19141 19171 I RustStdoutStderr: [1126/163456.325120:INFO:variations_seed_loader.cc(66)] Failed to open file for reading.: No such file or directory (2)
+11-26 16:34:56.415   580   616 I ActivityManager: Start proc 19189:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i6 for  {com.bradcowdrey.cowdreypdf/org.chromium.content.app.SandboxedProcessService0:0}
+11-26 16:34:56.428 19141 19201 W chromium: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+11-26 16:34:56.429 19141 19171 I RustStdoutStderr: [WARNING:dns_config_service_android.cc(81)] Failed to read DnsConfig.
+11-26 16:34:56.451 19141 19191 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.bradcowdrey.cowdreypdf/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-26 16:34:56.451 19141 19191 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-26 16:34:56.451 19141 19191 E chromium: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.bradcowdrey.cowdreypdf/cache/WebView/Default/HTTP Cache/Code Cache/wasm: No such file or directory (2)
+11-26 16:34:56.451 19141 19191 E chromium: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-26 16:34:56.451 19141 19171 I RustStdoutStderr: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.bradcowdrey.cowdreypdf/cache/WebView/Default/HTTP Cache/Code Cache/js: No such file or directory (2)
+11-26 16:34:56.451 19141 19171 I RustStdoutStderr: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-26 16:34:56.451 19141 19171 I RustStdoutStderr: [ERROR:simple_file_enumerator.cc(21)] opendir /data/user/0/com.bradcowdrey.cowdreypdf/cache/WebView/Default/HTTP Cache/Code Cache/wasm: No such file or directory (2)
+11-26 16:34:56.451 19141 19171 I RustStdoutStderr: [ERROR:simple_index_file.cc(614)] Could not reconstruct index from disk
+11-26 16:34:56.479 19189 19189 I cr_WebViewApkApp: Launched version=124.0.6367.219 minSdkVersion=29 isBundle=false processName=com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0
+11-26 16:34:56.624 19189 19216 W chromium: [WARNING:runtime_features.cc(694)] SharedStorage for M118+ cannot be enabled in this configuration. Use --enable-features=SharedStorageAPI,SharedStorageAPIM118 in addition.
+11-26 16:34:56.657   580   712 I ImeTracker: com.bradcowdrey.cowdreypdf:81276835: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-26 16:34:56.657   580   712 I ImeTracker: com.bradcowdrey.cowdreypdf:81276835: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-26 16:34:56.768  1371  1371 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=com.bradcowdrey.cowdreypdf, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, false)
+11-26 16:34:56.781   580  1233 W PackageConfigPersister: App-specific configuration not found for packageName: com.bradcowdrey.cowdreypdf and userId: 0
+11-26 16:34:57.070 19189 19216 I chromium: [INFO:viewport_data.cc(133)] E2E_Used ViewportFitCover
+11-26 16:34:57.096 19141 19147 I drey.cowdreypdf: Compiler allocated 5174KB to compile void android.view.ViewRootImpl.performTraversals()
+11-26 16:34:57.097 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:57.141 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:57.141 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:57.141 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-26 16:34:57.241 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:57.241 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:57.241 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inTextureCoords
+11-26 16:34:57.346 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:57.347 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:57.431 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:57.431 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:57.431 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-26 16:34:57.512 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:57.513 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:34:57.655 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:57.655 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:57.655 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-26 16:34:57.738 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:57.738 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:34:57.858 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:57.858 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:57.992 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: systemBars
+11-26 16:34:57.994 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: insets
+11-26 16:34:58.013 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: appInfo
+11-26 16:34:58.081 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: takeSharedFiles
+11-26 16:34:58.100 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name pts01Attr
+11-26 16:34:58.101 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name pts23Attr
+11-26 16:34:58.101 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name argsAttr
+11-26 16:34:58.108 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: systemBars
+11-26 16:34:58.112 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:58.120 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:58.158 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:58.165 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:34:59.044 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name radii_selector
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name corner_and_radius_outsets
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name aa_bloat_and_coverage
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 3 name radii_x
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 4 name radii_y
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 5 name skew
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 6 name translate_and_localrotate
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 7 name localrect
+11-26 16:34:59.045 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 8 name color
+11-26 16:34:59.214 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:59.214 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:59.214 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inEllipseOffset
+11-26 16:34:59.214 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 3 name inEllipseRadii
+11-26 16:34:59.317 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:34:59.317 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:34:59.317 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-26 16:34:59.363 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name resolveLevel_and_idx
+11-26 16:34:59.363 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name p01
+11-26 16:34:59.363 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name p23
+11-26 16:34:59.363 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 3 name fanPointAttrib
+11-26 16:34:59.503 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:59.503 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:59.592 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name fillBounds
+11-26 16:34:59.592 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:59.592 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name locations
+11-26 16:34:59.650 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:59.650 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:59.650 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:34:59.705 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:59.705 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:34:59.705 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name radii_selector
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name corner_and_radius_outsets
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name aa_bloat_and_coverage
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 3 name radii_x
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 4 name radii_y
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 5 name skew
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 6 name translate_and_localrotate
+11-26 16:34:59.816 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 7 name color
+11-26 16:34:59.985 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:34:59.985 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:34:59.985 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name texSubset
+11-26 16:35:00.135 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:00.135 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:00.135 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:35:00.770 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:00.770 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:00.906 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:00.906 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:01.046 19141 19141 W Tauri/Console: File: http://tauri.localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js - Line 24 - Msg: Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+11-26 16:35:01.140 19141 19141 W Tauri/Console: File: http://tauri.localhost/vendor/pdfjs-dist/legacy/build/pdf.min.js - Line 24 - Msg: Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+11-26 16:35:01.150 19141 19273 D ProfileInstaller: Installing profile for com.bradcowdrey.cowdreypdf
+11-26 16:35:01.296 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:01.296 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:01.296 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:35:01.393 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:01.509 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: ttsAvailable
+11-26 16:35:01.701 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:35:01.701 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:35:01.702 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inQuadEdge
+11-26 16:35:01.820 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:35:01.820 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:35:01.820 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name inCircleEdge
+11-26 16:35:01.881 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:01.891 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:35:02.070 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:02.070 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:35:02.278 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:02.278 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:02.379 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:02.379 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:02.546 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name inPosition
+11-26 16:35:02.546 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name inColor
+11-26 16:35:02.637 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:02.637 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:02.775 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:02.775 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:02.961 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:02.961 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name localCoord
+11-26 16:35:03.052 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 0 name position
+11-26 16:35:03.052 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 1 name color
+11-26 16:35:03.052 19141 19171 I RustStdoutStderr: s_glBindAttribLocation: bind attrib 2 name localCoord
+11-26 16:35:03.917 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: systemBars
+11-26 16:35:03.931 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:03.966 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:04.005  1371  1371 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=com.bradcowdrey.cowdreypdf, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, true)
+11-26 16:35:04.006   580  3100 W PackageConfigPersister: App-specific configuration not found for packageName: com.bradcowdrey.cowdreypdf and userId: 0
+11-26 16:35:04.037 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:04.112 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:06.392   580   692 D ActivityManager: freezing 2859 com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0
+11-26 16:35:06.988  1371  1371 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=com.bradcowdrey.cowdreypdf, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, true)
+11-26 16:35:06.991   580   677 W PackageConfigPersister: App-specific configuration not found for packageName: com.bradcowdrey.cowdreypdf and userId: 0
+11-26 16:35:07.034 19141 19141 V Tauri/Plugin: Tauri plugin: pluginId: sharekit, command: systemBars
+11-26 16:35:07.069 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:07.122 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:07.347 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:07.389 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:07.415 19141 19148 I drey.cowdreypdf: Background concurrent mark compact GC freed 4426KB AllocSpace bytes, 14(5284KB) LOS objects, 49% free, 4577KB/9155KB, paused 10.283ms,35.226ms total 547.997ms
+11-26 16:35:07.424 19141 19150 W drey.cowdreypdf: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~nzIljIescgYCC5kOD1USAg==/com.google.android.webview-h8bKYZPEoHNnRAOdMLsx1A==/WebViewGoogle.apk' with 2 weak references
+11-26 16:35:07.460 19141 19150 W drey.cowdreypdf: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/GoogleTTS/GoogleTTS.apk' with 1 weak references
+11-26 16:35:09.405 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom
+11-26 16:35:09.432 19189 19216 I chromium: [INFO:document_style_environment_variables.cc(104)] E2E_Used SafeAreaInsetBottom

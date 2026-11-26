@@ -1,0 +1,7 @@
+RELEASE PASSED: 6/6
+PASS  installs; a release build (not debuggable, no web view debugging compiled in)
+PASS  opens a PDF handed over by Android (VIEW, content:// from Downloads, cold start)
+PASS  a form field: tapped, typed into with the keyboard
+PASS  Save PDF: Android's save dialog; the file in Downloads has the typed value
+PASS  still running after all of that
+PASS  revocation over plain http in the release build: not revoked (OCSP), revoked (OCSP), revoked (CRL)

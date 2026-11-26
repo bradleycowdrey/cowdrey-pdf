@@ -1,0 +1,165 @@
+Package com.google.android.googlesdksetup new state: disabled-user
+Night mode: yes
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: wifi: Wifi is enabled Wifi scanning is only available when wifi is enabled ==== Primary ClientModeManager instance ==== 
+network: radio: mVoiceRegState=0(IN_SERVICE) mDataRegState=0(IN_SERVICE) mDataConnectionState=-1 
+network: emulator: gsm voice state: home gsm data state:  home OK 
+network: addresses: lo 127.0.0.1/8 
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: not yet (ping: unknown host freetsa.org ; Active default network: 100)
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: up (Active default network: 101; names resolve: PING freetsa.org (192.119.76.43) 56(84) bytes of data.  )
+network: by address: 
+network: dns  / DnsAddresses: [ /10.0.2.3 ] 
+Active default network: 101
+  NetworkAgentInfo{network{101}  handle{437197393933}  ni{MOBILE[LTE] CONNECTED extra: epc.tmobile.com} created=2026-11-26T16:37:51.715Z Score(Policies : TRANSPORT_PRIMARY&EVER_EVALUATED&EVER_VALIDATED&IS_VALIDATED ; KeepConnected : 0)  created 77423 firstValidated 80255 lastValidated 80255  lp{{Int
+no release APK in this run (quick run): device test only
+device: sdk_gphone64_x86_64 · Android 16 · API 36
+web view: Current WebView package (name, version): (com.google.android.webview, 133.0.6943.137)
+turn off com.google.android.googlesdksetup: Package com.google.android.googlesdksetup new state: disabled-user
+turn off com.google.android.setupwizard: 	at android.os.Binder.execTransact(Binder.java:1365)
+Performing Streamed Install
+Success
+test build: versionName=2.1.0
+launcher activity: com.bradcowdrey.cowdreypdf/.MainActivity
+
+== open with: a VIEW intent with a content:// address opens the PDF (cold start)
+  address: content://media/external/file/16
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Status: ok LaunchState: COLD Activity: com.bradcowdrey.cowdreypdf/.MainActivity TotalTime: 
+  connected to the web view of com.bradcowdrey.cowdreypdf pid 4250 http://tauri.localhost/
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+   {"pages":3,"ua":"Mozilla/5.0 (Linux; Android 16; sdk_gphone64_x86_64 Build/BE2A.250530.026.F3; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/133.0.6943.137 Mobile Safari/537.36","w":412,"h":915,"dpr":2.625,"fakeWorker":false}
+  screenshot 01-open-with-intent-dark.png
+PASS open with: a VIEW intent with a content:// address opens the PDF (cold start) (27 s)
+
+== the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline
+   {"ink":4232,"worker":true,"scripts":["http://tauri.localhost/vendor/lucide/dist/umd/lucide.min.js"]}
+PASS the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline (1 s)
+
+== mark up with a finger: highlight text, draw, a note; undo and redo
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  marks: hl, ink, note
+  screenshot 02-markup-dark.png
+PASS mark up with a finger: highlight text, draw, a note; undo and redo (24 s)
+
+== Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then
+  screenshot 03-save-pdf-dialog.png
+  saved Quarterly report.pdf (5923 bytes)
+  annotations: /Widget /Widget /Highlight /Ink /Text
+  screenshot 04-saved-dark.png
+PASS Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then (16 s)
+
+== Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited"
+PASS Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited" (15 s)
+
+== Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)
+  screenshot 05-edit-pdf-greek.png
+  text: Project Pelican: status report Prepared by the delivery team on 3 March. Budget approved for the whole year Ο πελεκάνος πετά ψηλά
+PASS Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts) (22 s)
+
+== forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  keyboard: mInputShown=true {"name":"name","bottom":384,"top":360,"vh":578,"ih":578,"kb":"up"}
+  screenshot 06-form-keyboard.png
+PASS forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved (12 s)
+
+== forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Warning: Ac
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  keyboard before Save: mInputShown=true
+  screenshot 07-typing-save-dialog.png
+  after saving: keyboard down · focus BODY
+  screenshot 08-typing-saved-keyboard-down.png
+PASS forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved (27 s)
+
+== OCR with no network: a scanned page is read with the engine and English carried in the app
+  [console.info] OCR: the worker loads the engine itself
+  the worker needed blob addresses: false
+  memory before OCR: MemAvailable: 839484 kB · app TOTAL PSS: 136464 TOTAL RSS: 242932 TOTAL SWAP PSS: 37196
+  screenshot 09-ocr-dialog.png
+  [console.info] OCR: the worker loads the engine itself
+  toast: Text recognized on 1 page
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  text layer: The quick brown fox jumps over the lazy pelican. Invoice 4471 due 12 March
+  memory after OCR: MemAvailable: 675380 kB · app TOTAL PSS: 198382 TOTAL RSS: 336220 TOTAL SWAP PSS: 38542
+  screenshot 10-ocr-done.png
+PASS OCR with no network: a scanned page is read with the engine and English carried in the app (83 s)
+
+== phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars
+   {"over":0,"tabs":"auto","dark":true,"media":false,"bg":"rgb(26, 23, 25)","sab":"max(0px, 24px)","pad":"28px","top":"60px"} insets {"bottom":24,"keyboard":0,"left":0,"right":0,"top":52}
+  screenshot 11-phone-ribbon-dark.png
+PASS phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars (3 s)
+
+== large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file
+  the PDF: 12589950 bytes
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Warning: Ac
+  opened in 0.7 s · 2 pages
+  screenshot 12-large-file-open.png
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 13-large-file-dialog.png
+  saved Big scan (1).pdf (12590288 bytes)
+  saved Big scan (1).pdf 12590288 bytes in 14.5 s · sizes of the copy in the cache as it was written: 4194304, 8388608, 12590288
+   {"pages":2,"imageIntact":true,"comments":["/Square"]}
+  saved again: {"pages":2,"imageIntact":true,"comments":["/Square","/Square"]}
+  memory: TOTAL PSS: 225572 TOTAL RSS: 366592 TOTAL SWAP PSS: 40354
+PASS large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file (34 s)
+
+== pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it)
+  pictures removed: ok
+  picker: mCurrentFocus=Window{895356b u0 com.google.android.photopicker/com.android.photopicker.PhotopickerGetContentActivity}
+  pictures listed: 1  "Photo taken on Nov 26, 2026 4:42 PM" [0,1226][358,1584]
+  screenshot 14-photo-picker-heic.png
+  screenshot 15-heic-dialog.png
+  opened as 25
+  [console.warning] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently
+  page 900x600 colours {"mid":[200,40,50],"corner":[245,200,59],"edge":[40,110,170]}
+  screenshot 16-heic-pdf.png
+PASS pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it) (17 s)
+
+== OCR of a 50-page scan on a phone with 2 GB of memory: every page read, the app still running
+  device memory: 2473 MB · low-RAM device: false
+  the scan: 1640082 bytes, 50 pages
+  web view processes: 4303, 4920
+  [console.info] OCR: the worker loads the engine itself
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+   {"words":1050,"pages":50,"skipped":[],"check":0,"turned":0,"replaced":0} in 77 s · peak memory: app 207 MB, app and web view 1040 MB · web view processes after: 4303, 4920
+  pages without their invoice number: []
+  screenshot 17-ocr-50-pages.png
+PASS OCR of a 50-page scan on a phone with 2 GB of memory: every page read, the app still running (93 s)
+
+== memory: the app's memory after all of the above
+   TOTAL PSS: 245273 TOTAL RSS: 431744 TOTAL SWAP PSS: 42074
+PASS memory: the app's memory after all of the above (0 s)
+
+== light mode: the app follows the system theme
+  light: {"theme":"","media":false,"bg":"rgb(248, 246, 246)"}
+  screenshot 18-light-mode.png
+  dark again: {"theme":"dark","media":false,"bg":"rgb(26, 23, 25)"}
+PASS light mode: the app follows the system theme (6 s)
+
+PASS  open with: a VIEW intent with a content:// address opens the PDF (cold start)
+PASS  the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline
+PASS  mark up with a finger: highlight text, draw, a note; undo and redo
+PASS  Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then
+PASS  Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited"
+PASS  Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)
+PASS  forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved
+PASS  forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved
+PASS  OCR with no network: a scanned page is read with the engine and English carried in the app
+PASS  phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars
+PASS  large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file
+PASS  pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it)
+PASS  OCR of a 50-page scan on a phone with 2 GB of memory: every page read, the app still running
+PASS  memory: the app's memory after all of the above
+PASS  light mode: the app follows the system theme
+
+ALL PASSED: 15/15
+device test exit code 0

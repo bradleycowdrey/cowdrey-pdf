@@ -1,0 +1,1042 @@
+Google Play: release build false (not main (claude/dazzling-tesla-oz5r6u))
+        Info Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+        Info Installing Android Rust targets...
+        Info Installing target i686-linux-android
+info: downloading component rust-std
+Generating Android Studio project...
+        Info "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri" relative to "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/cowdrey_pdf" is "../../../"
+victory: Project generated successfully!
+    Make cool apps! 🌻 🐕 🎉
+     Android Creating mipmap-xxhdpi/ic_launcher.png
+     Android Creating mipmap-xxxhdpi/ic_launcher_round.png
+     Android Creating mipmap-xxxhdpi/ic_launcher.png
+        Info Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+        Info Looking up installed tauri packages to check mismatched versions...
+[1m[92m    Updating[0m crates.io index
+[1m[92m   Compiling[0m tauri v2.12.4
+[1m[92m   Compiling[0m wry v0.57.0
+[1m[92m   Compiling[0m tauri-plugin-sharekit v0.3.1 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit)
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+[1m[92m   Compiling[0m tauri-plugin-fs v2.7.1
+[1m[92m   Compiling[0m tauri-plugin-dialog v2.8.3
+[1m[92m   Compiling[0m tauri-plugin-opener v2.7.2
+[1m[92m   Compiling[0m tauri-runtime-wry v2.12.2
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 01s
+        Info symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a"
+        Info "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+        Info "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+        Info "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+        Info "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+        Info "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+        Info symlink at "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/libcowdrey_pdf_lib.so" points to "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so"
+Fetching distribution.
+Downloading https://services.gradle.org/distributions/gradle-9.6.1-bin.zip
+.............10%.............20%..............30%.............40%..............50%.............60%.............70%..............80%.............90%..............100%
+WARNING: The option setting 'android.proguard.failOnMissingFiles=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: API 'applicationVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling applicationVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'testVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling testVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'unitTestVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling unitTestVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/build.gradle.kts:17:1: 'fun Project.android(configure: Action<BaseAppModuleExtension>): Unit' is deprecated. Replaced by com.android.build.api.dsl.ApplicationExtension.
+This class is not used for the public extensions in AGP when android.newDsl=true, which is the default in AGP 9.0, and will be removed in AGP 10.0.
+WARNING: API 'libraryVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling libraryVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/build.gradle.kts:8:1: 'fun Project.android(configure: Action<LibraryExtension>): Unit' is deprecated. Replaced by com.android.build.api.dsl.LibraryExtension.
+This class is not used for the public extensions in AGP when android.newDsl=true, which is the default in AGP 9.0, and will be removed in AGP 10.0.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-dialog-2.8.3/android/build.gradle.kts:8:1: 'fun Project.android(configure: Action<LibraryExtension>): Unit' is deprecated. Replaced by com.android.build.api.dsl.LibraryExtension.
+This class is not used for the public extensions in AGP when android.newDsl=true, which is the default in AGP 9.0, and will be removed in AGP 10.0.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/android/build.gradle.kts:8:1: 'fun Project.android(configure: Action<LibraryExtension>): Unit' is deprecated. Replaced by com.android.build.api.dsl.LibraryExtension.
+This class is not used for the public extensions in AGP when android.newDsl=true, which is the default in AGP 9.0, and will be removed in AGP 10.0.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-opener-2.7.2/android/build.gradle.kts:8:1: 'fun Project.android(configure: Action<LibraryExtension>): Unit' is deprecated. Replaced by com.android.build.api.dsl.LibraryExtension.
+This class is not used for the public extensions in AGP when android.newDsl=true, which is the default in AGP 9.0, and will be removed in AGP 10.0.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit/android/build.gradle.kts:8:1: 'fun Project.android(configure: Action<LibraryExtension>): Unit' is deprecated. Replaced by com.android.build.api.dsl.LibraryExtension.
+This class is not used for the public extensions in AGP when android.newDsl=true, which is the default in AGP 9.0, and will be removed in AGP 10.0.
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --release --target armv7
+
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --release --target x86_64
+
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --release --target aarch64
+
+        Info connection; remote_addr=127.0.0.1:40768 conn_id=0
+        Info connection; remote_addr=127.0.0.1:40784 conn_id=1
+        Info connection; remote_addr=127.0.0.1:40790 conn_id=2
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m   Compiling[0m tauri v2.12.4
+[1m[92m   Compiling[0m wry v0.57.0
+[1m[92m   Compiling[0m tauri-plugin-fs v2.7.1
+[1m[92m   Compiling[0m tauri-plugin-sharekit v0.3.1 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit)
+[1m[92m   Compiling[0m tauri-plugin-opener v2.7.2
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m tauri-plugin-dialog v2.8.3
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+[1m[92m   Compiling[0m tauri-runtime-wry v2.12.2
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/AppPlugin.kt:35:37 'fun onBackPressed(): Unit' is deprecated. Deprecated in Java.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/Plugin.kt:125:5 'fun onDestroy(): Unit' is deprecated. use onDestroy(activity: AppCompatActivity) instead.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/Plugin.kt:130:5 'fun onRestart(): Unit' is deprecated. use onRestart(activity: AppCompatActivity) instead.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/Plugin.kt:135:5 'fun onPause(): Unit' is deprecated. use onPause(activity: AppCompatActivity) instead.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/Plugin.kt:140:5 'fun onResume(): Unit' is deprecated. use onResume(activity: AppCompatActivity) instead.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/Plugin.kt:145:5 'fun onStop(): Unit' is deprecated. use onStop(activity: AppCompatActivity) instead.
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/PluginHandle.kt:159:22 Java type mismatch: inferred type is 'Class<in CapturedType(*)!>?', but 'Class<*>' was expected.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit/android/src/main/java/SharePlugin.kt:63:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/java/com/bradcowdrey/cowdreypdf/generated/RustWebView.kt:26:18 'var databaseEnabled: Boolean' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/java/com/bradcowdrey/cowdreypdf/generated/WryActivity.kt:66:46 'fun onBackPressed(): Unit' is deprecated. This method has been deprecated in favor of using the
+      {@link OnBackPressedDispatcher} via {@link #getOnBackPressedDispatcher()}.
+      The OnBackPressedDispatcher controls how back button events are dispatched
+      to one or more {@link OnBackPressedCallback} objects.
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 57.99s
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+[1m[92m   Compiling[0m tauri v2.12.4
+[1m[92m   Compiling[0m wry v0.57.0
+[1m[92m   Compiling[0m tauri-plugin-fs v2.7.1
+[1m[92m   Compiling[0m tauri-plugin-sharekit v0.3.1 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit)
+[1m[92m   Compiling[0m tauri-plugin-opener v2.7.2
+[1m[92m   Compiling[0m tauri-plugin-dialog v2.8.3
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+[1m[92m   Compiling[0m tauri-runtime-wry v2.12.2
+Supplied consumer proguard configuration does not exist: /home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit/android/consumer-rules.pro
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 2m 31s
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/x86_64"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+[1m[92m   Compiling[0m tauri v2.12.4
+[1m[92m   Compiling[0m wry v0.57.0
+[1m[92m   Compiling[0m tauri-plugin-fs v2.7.1
+[1m[92m   Compiling[0m tauri-plugin-sharekit v0.3.1 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit)
+[1m[92m   Compiling[0m tauri-plugin-opener v2.7.2
+[1m[92m   Compiling[0m tauri-plugin-dialog v2.8.3
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+[1m[92m   Compiling[0m tauri-runtime-wry v2.12.2
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 3m 29s
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/armeabi-v7a"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+Configuration cache entry stored.
+WARNING: The option setting 'android.proguard.failOnMissingFiles=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+Add android.sync.suppressAgpWarnings=UNSUPPORTED_PROJECT_OPTION_USE to the gradle.properties file to suppress this warning.
+WARNING: API 'applicationVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling applicationVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'testVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling testVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'unitTestVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling unitTestVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+WARNING: API 'libraryVariants' is obsolete and has been replaced with 'AndroidComponentsExtension'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+The legacy variant API is disabled by default in AGP 9.0, but can be re-enabled by adding 
+    android.newDsl=false
+to this project's gradle.properties file.
+For more information, see http://developer.android.com/build/r/new-dsl.
+
+To determine what is calling libraryVariants, use -Pandroid.debug.obsoleteApi=true on the command line to display more information.
+Add android.sync.suppressAgpWarnings=DEPRECATED_DSL to the gradle.properties file to suppress this warning.
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --release --target armv7
+
+        Info connection; remote_addr=127.0.0.1:49244 conn_id=3
+        Info connection; remote_addr=127.0.0.1:49248 conn_id=4
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --release --target aarch64
+
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --release --target x86_64
+
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+        Info connection; remote_addr=127.0.0.1:49254 conn_id=5
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on package cache
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m    Blocking[0m waiting for file lock on build directory
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 30.92s
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/x86_64"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 02s
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 02s
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/armeabi-v7a"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/armv7-linux-androideabi/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/aarch64-linux-android/release/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+Configuration cache entry stored.
+    Finished 1 APK at:
+        /home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+
+    Finished 1 AAB at:
+        /home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+
+Intent filters in src-tauri/gen/android/app/src/main/AndroidManifest.xml:
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- AndroidTV support -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- tauri-file-associations. AUTO-GENERATED. DO NOT REMOVE. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/pdf" />
+SDK levels:
+compileSdk = 37
+minSdk = 26
+targetSdk = 37
+Permissions:
+    <uses-permission android:name="android.permission.INTERNET" />
+Cleartext traffic:
+usesCleartextTraffic="${usesCleartextTraffic}"
+manifestPlaceholders["usesCleartextTraffic"] = "false"
+manifestPlaceholders["usesCleartextTraffic"] = "true"
+APK: desktop/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk · AAB: desktop/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+APK signed with the upload key
+App Bundle signed for Google Play
+w: file:///home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.12.4/mobile/android/src/main/java/app/tauri/plugin/PluginHandle.kt:159:22 Java type mismatch: inferred type is 'Class<in CapturedType(*)!>?', but 'Class<*>' was expected.
+
+> cowdrey-pdf-desktop@2.1.0 tauri
+> tauri android android-studio-script --target x86_64
+
+        Info connection; remote_addr=127.0.0.1:40534 conn_id=0
+[1m[32m        Info[0m Using installed NDK: /usr/local/lib/android/sdk/ndk/27.2.12479018
+[1m[92m   Compiling[0m cowdrey-pdf v2.1.0 (/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri)
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/plugins/sharekit/android/src/main/java/SharePlugin.kt:63:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/java/com/bradcowdrey/cowdreypdf/generated/RustWebView.kt:26:18 'var databaseEnabled: Boolean' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/java/com/bradcowdrey/cowdreypdf/generated/WryActivity.kt:66:46 'fun onBackPressed(): Unit' is deprecated. This method has been deprecated in favor of using the
+      {@link OnBackPressedDispatcher} via {@link #getOnBackPressedDispatcher()}.
+      The OnBackPressedDispatcher controls how back button events are dispatched
+      to one or more {@link OnBackPressedCallback} objects.
+[1m[33mwarning[0m[1m: struct `FolderFile` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:133:8
+    [1m[94m|[0m
+[1m[94m133[0m [1m[94m|[0m struct FolderFile {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: struct `FolderListing` is never constructed[0m
+   [1m[94m--> [0msrc/lib.rs:139:8
+    [1m[94m|[0m
+[1m[94m139[0m [1m[94m|[0m struct FolderListing {
+    [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `cowdrey-pdf` (lib) generated 2 warnings
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 22.11s
+[1m[32m        Info[0m symlinking lib "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/debug/libcowdrey_pdf_lib.so" in jniLibs dir "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/src/main/jniLibs/x86_64"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/debug/libcowdrey_pdf_lib.so" requires shared lib "libandroid.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/debug/libcowdrey_pdf_lib.so" requires shared lib "libdl.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/debug/libcowdrey_pdf_lib.so" requires shared lib "liblog.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/debug/libcowdrey_pdf_lib.so" requires shared lib "libm.so"
+[1m[32m        Info[0m "/home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/target/x86_64-linux-android/debug/libcowdrey_pdf_lib.so" requires shared lib "libc.so"
+Configuration cache entry stored.
+    Finished 1 APK at:
+        /home/runner/work/cowdrey-pdf/cowdrey-pdf/desktop/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+
+Test APK: src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+Package com.google.android.googlesdksetup new state: disabled-user
+Night mode: yes
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: wifi: Wifi is disabled Wifi scanning is only available when wifi is enabled 
+network: radio: mVoiceRegState=1(OUT_OF_SERVICE) mDataRegState=1(OUT_OF_SERVICE) mDataConnectionState=-1 
+network: emulator: gsm voice state: home gsm data state:  home OK 
+network: addresses: lo 127.0.0.1/8 
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: not yet (ping: unknown host freetsa.org ; Active default network: none)
+network: started again (modem, airplane mode, data, Wi-Fi)
+network: up (Active default network: 100; names resolve: PING freetsa.org (192.119.76.43) 56(84) bytes of data.  )
+network: by address: 
+network: dns  / DnsAddresses: [ /10.0.2.3,/10.0.2.4 ] 
+Active default network: 100
+  NetworkAgentInfo{network{100}  handle{432902426637}  ni{WIFI CONNECTED extra: } created=2026-11-26T16:15:05.117Z Score(Policies : TRANSPORT_PRIMARY&EVER_EVALUATED&IS_UNMETERED&EVER_USER_SELECTED&EVER_VALIDATED&IS_VALIDATED ; KeepConnected : 0)  created 83733 firstValidated 84211 lastValidated 8421
+
+== release: installs; a release build (not debuggable, no web view debugging compiled in)
+Performing Streamed Install
+Success
+   versionName=2.1.0 pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+  native libraries: lib/arm64-v8a/libcowdrey_pdf_lib.so, lib/armeabi-v7a/libcowdrey_pdf_lib.so, lib/x86_64/libcowdrey_pdf_lib.so · system image debuggable: 1
+  control: the test build (debug) has web view debugging; the release build has none
+  launcher activity: com.bradcowdrey.cowdreypdf/.MainActivity
+PASS release: installs; a release build (not debuggable, no web view debugging compiled in)
+
+== release: opens a PDF handed over by Android (VIEW, content:// from Downloads, cold start)
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Status: ok LaunchState: COLD Activity: com.bradcowdrey.cowdreypdf/.MainActivity TotalTime: 
+  screenshot 01-release-open-dark.png
+PASS release: opens a PDF handed over by Android (VIEW, content:// from Downloads, cold start)
+
+== release: a form field: tapped, typed into with the keyboard
+  screenshot 02-release-typed.png
+PASS release: a form field: tapped, typed into with the keyboard
+
+== release: Save PDF: Android's save dialog; the file in Downloads has the typed value
+  screenshot 03-release-save-dialog.png
+  saved Release test (1).pdf (4337 bytes)
+  pages 3 · producer Cowdrey.PDF 2.1.0 (bradcowdrey.com) · name Release Tester
+  keyboard after saving: mInputShown=false
+  screenshot 04-release-saved-dark.png
+PASS release: Save PDF: Android's save dialog; the file in Downloads has the typed value
+
+== release: still running after all of that
+PASS release: still running after all of that
+
+== release: revocation over plain http in the release build: not revoked (OCSP), revoked (OCSP), revoked (CRL)
+  the release app's flags: flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ] (the workflow's build log shows usesCleartextTraffic false for it)
+  OCSP responder http://10.0.2.2:44801/ · revocation list http://10.0.2.2:46583/inter.crl
+  10.0.2.2 from the emulator: 64 bytes from 10.0.2.2: icmp_seq=1 ttl=255 time=0.847 ms · Active default network: 100
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Warning: Activity not started, intent has been deli
+  not-revoked: Not revoked: “Device Test Signer” (OCSP from 10.0.2.2:44801). As of Nov 26, 2026, 04:16:31 PM.
+  screenshot 05-release-not-revoked.png
+  revoked-ocsp: Revoked: “Device Test Signer” was revoked on Nov 26, 2026, 04:16:34 PM (key compromise), and the signing time is not proven by a timestamp (OCSP from 10.0.2.2:44801). As of Nov 26, 2026, 04:16:40 PM.
+  screenshot 06-release-revoked-ocsp.png
+  revoked-crl: Revoked: “Device Test Signer” was revoked on Nov 26, 2026, 04:16:34 PM (key compromise), and the signing time is not proven by a timestamp (CRL from 10.0.2.2:46583). As of Nov 26, 2026, 04:16:49 PM.
+  screenshot 07-release-revoked-crl.png
+  the release app made these plain http requests itself, with cleartext traffic off
+PASS release: revocation over plain http in the release build: not revoked (OCSP), revoked (OCSP), revoked (CRL)
+release APK uninstalled (the test build uses the same package)
+RELEASE PASSED: 6/6
+PASS  installs; a release build (not debuggable, no web view debugging compiled in)
+PASS  opens a PDF handed over by Android (VIEW, content:// from Downloads, cold start)
+PASS  a form field: tapped, typed into with the keyboard
+PASS  Save PDF: Android's save dialog; the file in Downloads has the typed value
+PASS  still running after all of that
+PASS  revocation over plain http in the release build: not revoked (OCSP), revoked (OCSP), revoked (CRL)
+
+release test exit code 0
+device: sdk_gphone64_x86_64 · Android 15 · API 35
+web view: Current WebView package (name, version): (com.google.android.webview, 124.0.6367.219)
+turn off com.google.android.googlesdksetup: Package com.google.android.googlesdksetup new state: disabled-user
+turn off com.google.android.setupwizard: 	at android.os.Binder.execTransact(Binder.java:1444)
+Performing Streamed Install
+Success
+test build: versionName=2.1.0
+launcher activity: com.bradcowdrey.cowdreypdf/.MainActivity
+
+== open with: a VIEW intent with a content:// address opens the PDF (cold start)
+  address: content://media/external/downloads/1000000022
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Status: ok LaunchState: COLD Activity: com.bradcowdrey.cowdreypdf/.MainActivity TotalTime: 
+  connected to the web view of com.bradcowdrey.cowdreypdf pid 5179 http://tauri.localhost/
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+   {"pages":3,"ua":"Mozilla/5.0 (Linux; Android 15; sdk_gphone64_x86_64 Build/AE3A.240806.043; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.219 Mobile Safari/537.36","w":412,"h":915,"dpr":2.625,"fakeWorker":false}
+  screenshot 01-open-with-intent-dark.png
+PASS open with: a VIEW intent with a content:// address opens the PDF (cold start) (18 s)
+
+== the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline
+   {"ink":4232,"worker":true,"scripts":["http://tauri.localhost/vendor/lucide/dist/umd/lucide.min.js"]}
+PASS the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline (1 s)
+
+== open with: a second PDF while the app is open (onNewIntent), and Share to the app (SEND)
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Warning: Activity not started, intent has been deli
+  screenshot 02-open-with-running.png
+  am start SEND: Starting: Intent { act=android.intent.action.SEND typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity (has extras) } Warning: Activity not started, intent has been delivered to cu
+PASS open with: a second PDF while the app is open (onNewIntent), and Share to the app (SEND) (7 s)
+
+== open with: a file:// address the app may not read says so (instead of nothing happening)
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  toast: Could not open Old file manager.pdf. Open it from Files or with Open instead.
+PASS open with: a file:// address the app may not read says so (instead of nothing happening) (2 s)
+
+== the file picker: Open shows Android's picker; the chosen PDF opens
+  screenshot 03-picker-Picked-pdf.png
+  screenshot 04-picked-open.png
+PASS the file picker: Open shows Android's picker; the chosen PDF opens (11 s)
+
+== pages: a swipe scrolls to the next pages; the page number follows
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  page 1 → 3
+PASS pages: a swipe scrolls to the next pages; the page number follows (13 s)
+
+== mark up with a finger: highlight text, draw, a note; undo and redo
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  marks: hl, ink, note
+  screenshot 05-markup-dark.png
+PASS mark up with a finger: highlight text, draw, a note; undo and redo (21 s)
+
+== Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then
+  screenshot 06-save-pdf-dialog.png
+  saved Quarterly report.pdf (5965 bytes)
+  annotations: /Widget /Widget /Highlight /Ink /Text
+  screenshot 07-saved-dark.png
+PASS Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then (16 s)
+
+== Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited"
+PASS Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited" (17 s)
+
+== Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)
+  screenshot 08-edit-pdf-greek.png
+  text: Project Pelican: status report Prepared by the delivery team on 3 March. Budget approved for the whole year Ο πελεκάνος πετά ψηλά
+PASS Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts) (24 s)
+
+== forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  keyboard: mInputShown=true {"name":"name","bottom":384,"top":360,"vh":578,"ih":578,"kb":"up"}
+  screenshot 09-form-keyboard.png
+PASS forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved (13 s)
+
+== forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Warning: Ac
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  keyboard before Save: mInputShown=true
+  screenshot 10-typing-save-dialog.png
+  after saving: keyboard down · focus BODY
+  screenshot 11-typing-saved-keyboard-down.png
+PASS forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved (30 s)
+
+== forms designer: a new text field drawn with a finger is saved as a real field
+  fields: name, agree, Text1
+  screenshot 12-form-designer.png
+PASS forms designer: a new text field drawn with a finger is saved as a real field (7 s)
+
+== redact: search, mark and apply; the word is gone from the saved PDF
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 13-redacted.png
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+PASS redact: search, mark and apply; the word is gone from the saved PDF (13 s)
+
+== OCR with no network: a scanned page is read with the engine and English carried in the app
+  [console.info] OCR: the worker loads the engine itself
+  the worker needed blob addresses: false
+  memory before OCR: MemAvailable: 2003636 kB · app TOTAL PSS: 148318 TOTAL RSS: 345260 TOTAL SWAP (KB): 0
+  screenshot 14-ocr-dialog.png
+  [console.info] OCR: the worker loads the engine itself
+  toast: Text recognized on 1 page
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  text layer: The quick brown fox jumps over the lazy pelican. Invoice 4471 due 12 March
+  memory after OCR: MemAvailable: 1792644 kB · app TOTAL PSS: 192047 TOTAL RSS: 429692 TOTAL SWAP (KB): 0
+  screenshot 15-ocr-done.png
+PASS OCR with no network: a scanned page is read with the engine and English carried in the app (82 s)
+
+== certificate signing: import a .p12 through the picker, sign, save; the signature verifies
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 16-picker-Test-signer-p12.png
+  screenshot 17-signing-ids.png
+  screenshot 18-sign-dialog.png
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  saved Quarterly report (signed).pdf (37940 bytes)
+   {"digestOk":true,"sigOk":true,"signer":"CN=Android Signer\nO=Cowdrey Tests"}
+  screenshot 19-signed.png
+PASS certificate signing: import a .p12 through the picker, sign, save; the signature verifies (49 s)
+
+== timestamps: a timestamp server typed in Signing IDs; the signature saved with its timestamp from it (Android's network and certificate authorities)
+  network: up
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 20-timestamp-server.png
+  sign dialog: [true,"Add a timestamp from freetsa.org"]
+  screenshot 21-sign-with-timestamp.png
+  screenshot 22-timestamp-dialog.png
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  saved Timestamped (signed).pdf (48181 bytes)
+  signed with a timestamp from https://freetsa.org/tsr
+  signature: {"digestOk":true,"sigOk":true,"signer":"CN=Android Signer\nO=Cowdrey Tests"} timestamp: {"token":true,"eContentType":"1.2.840.113549.1.9.16.1.4","hash":"sha256","imprintOk":true,"genTime":"2026-11-26T16:22:48.000Z"}
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  the app reads: [{"status":"valid","ts":{"ok":true,"trusted":false,"why":"not trusted on this device","time":"2026-11-26T16:22:48.000Z","tsa":"www.freetsa.org","serial":"0AA52C03","policy":"1.2.3.4.1","hash":"SHA-256","imprint":"6119DA2B7F75A370C76832028BA8204AC1627DD9C303853DCDBFD2CF3FC2C6FF","tokenLength":4633,"tsaIssuer":"www.freetsa.org, Root CA, Free TSA, DE"}}]
+  screenshot 23-timestamped.png
+PASS timestamps: a timestamp server typed in Signing IDs; the signature saved with its timestamp from it (Android's network and certificate authorities) (39 s)
+
+== revocation: OCSP and CRL servers on plain http (on the machine running the emulator); not revoked, then revoked, asked again each time (Android's own network, not the web view)
+  OCSP responder http://10.0.2.2:39415/ · revocation list http://10.0.2.2:34465/inter.crl
+  10.0.2.2 from the emulator: 64 bytes from 10.0.2.2: icmp_seq=1 ttl=255 time=0.839 ms
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  signing ID: {"id":"g4skrt18h9u0","name":"Device Test Signer","chain":3,"hash":"SHA-256","alg":"RSASSA-PKCS1-v1_5"}
+  screenshot 24-revocation-dialog.png
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  saved Revocation (signed).pdf (37961 bytes)
+   {"digestOk":true,"sigOk":true,"signer":"CN=Device Test Signer"}
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  not-revoked: Not revoked: “Device Test Signer” (OCSP from 10.0.2.2:39415)
+  screenshot 25-revocation-not-revoked.png
+  the signer's certificate is revoked now
+  revoked-ocsp: Revoked: “Device Test Signer” was revoked on Nov 26, 2026, 04:23:30 PM (key compromise), and the signing time is not proven by a timestamp (OCSP from 10.0.2.2:39415)
+  screenshot 26-revocation-revoked-ocsp.png
+  revoked-crl: Revoked: “Device Test Signer” was revoked on Nov 26, 2026, 04:23:30 PM (key compromise), and the signing time is not proven by a timestamp (CRL from 10.0.2.2:34465)
+  screenshot 27-revocation-revoked-crl.png
+  the app reads: [{"status":"revoked","rev":"revoked"}]
+PASS revocation: OCSP and CRL servers on plain http (on the machine running the emulator); not revoked, then revoked, asked again each time (Android's own network, not the web view) (41 s)
+
+== signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password
+  screenshot 28-picker-Second-signer-pfx.png
+  screenshot 29-p12-export-dialog.png
+  saved Android Signer.p12 (2316 bytes)
+  saved Android Signer.p12 2316 bytes · certificates Android Signer · keys 1
+  screenshot 30-signing-ids-p12.png
+PASS signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password (49 s)
+
+== PDF/A: saved through the save dialog, with its PDF/A-2b identification
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 31-pdfa-dialog.png
+  saved Quarterly report (PDF-A).pdf (54647 bytes)
+PASS PDF/A: saved through the save dialog, with its PDF/A-2b identification (15 s)
+
+== compare: the other PDF from the picker; the changes are found; the compare report saved through the save dialog
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 32-picker-Invoice-v1-pdf.png
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  changes: replace:March>April | replace:urgent>due net 30 · 2 changes
+  screenshot 33-compare-phone.png
+  screenshot 34-compare-report-dialog.png
+  saved Invoice v2 compared.pdf (3795 bytes)
+  report: 2 pages, 2 comments
+PASS compare: the other PDF from the picker; the changes are found; the compare report saved through the save dialog (29 s)
+
+== insight: a table dragged out with a finger is saved as CSV through the save dialog
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 35-insight-table.png
+  screenshot 36-csv-dialog.png
+  saved Tables table p1.csv (77 bytes)
+  csv: "Name,City,Amount\r\nSmith,Leeds,\"1,250.50\"\r\nPatel,York,980\r\nOkafor,Bath,12\r\n"
+PASS insight: a table dragged out with a finger is saved as CSV through the save dialog (20 s)
+
+== batch: an action run on a PDF from the picker; the zip comes out through the save dialog
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 37-picker-Batch-one-pdf.png
+  screenshot 38-batch-dialog.png
+  saved Make smaller.zip (585245 bytes)
+  in the zip: Batch one.pdf
+PASS batch: an action run on a PDF from the picker; the zip comes out through the save dialog (31 s)
+
+== split into files: one folder picked once, every part saved in it
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 39-split-folder.png
+  screenshot 40-split-allow.png
+  files in Split parts: Quarterly report (part 1).pdf, Quarterly report (part 2).pdf, Quarterly report (part 3).pdf
+  toast: Saved 3 files in Split parts
+PASS split into files: one folder picked once, every part saved in it (35 s)
+
+== print: the PDF goes to Android's print service (its preview opens)
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  focus: mCurrentFocus=Window{a3e60bb u0 com.android.printspooler/com.android.printspooler.ui.PrintActivity}
+  mFocusedApp=ActivityRecord{45c2042 u0 com.android.printspooler/.ui.PrintActivity t9}
+  screenshot 41-print-preview.png
+PASS print: the PDF goes to Android's print service (its preview opens) (9 s)
+
+== Share…: Android's share sheet opens; the document stays "Edited" (sharing is not saving)
+  focus: mCurrentFocus=Window{287c2f9 u0 com.android.intentresolver/com.android.intentresolver.ChooserActivityLauncher}
+  mFocusedApp=ActivityRecord{19224ad u0 com.android.intentresolver/.ChooserActivityLauncher t9}
+  screenshot 42-share-sheet.png
+PASS Share…: Android's share sheet opens; the document stays "Edited" (sharing is not saving) (8 s)
+
+== read aloud: Android's text-to-speech reads the page, or the command is hidden when the phone has none
+   {"available":true,"engines":1,"language":"en-US"}
+   {"on":true,"k":1,"n":5}
+  screenshot 43-read-aloud.png
+PASS read aloud: Android's text-to-speech reads the page, or the command is hidden when the phone has none (10 s)
+
+== back: Back closes an open dialog and keeps the app; with nothing open it leaves the app
+PASS back: Back closes an open dialog and keeps the app; with nothing open it leaves the app (2 s)
+
+== phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars
+   {"over":0,"tabs":"auto","dark":true,"media":false,"bg":"rgb(26, 23, 25)","sab":"max(0px, 48px)","pad":"52px","top":"60px"} insets {"bottom":48,"keyboard":0,"left":0,"right":0,"top":52}
+  screenshot 44-phone-ribbon-dark.png
+PASS phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars (3 s)
+
+== touch: long-press and drag a page thumbnail to move the page
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  page order: 1,2,0
+  screenshot 45-thumb-moved.png
+PASS touch: long-press and drag a page thumbnail to move the page (10 s)
+
+== comments: exported as XFDF through the save dialog, then imported into another copy through the picker
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 46-xfdf-dialog.png
+  saved Comments out comments.xfdf (299 bytes)
+   Comments out comments.xfdf 299 bytes
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 47-picker-Comments-out-comments-xfdf.png
+  toast: 1 comment imported
+  screenshot 48-xfdf-imported.png
+PASS comments: exported as XFDF through the save dialog, then imported into another copy through the picker (29 s)
+
+== attachments: a file attached through the picker is kept in the saved PDF and saved back out through the save dialog
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 49-picker-Phone-notes-txt.png
+  toast: Attached Phone notes.txt
+  in the PDF: [["Phone notes.txt","Notes from the phone: 3 pelicans, 2 herons."]]
+  screenshot 50-attachments-panel.png
+  screenshot 51-attachment-dialog.png
+  saved Phone notes (1).txt (43 bytes)
+PASS attachments: a file attached through the picker is kept in the saved PDF and saved back out through the save dialog (39 s)
+
+== crop: a box dragged with a finger crops the page; the saved PDF has the smaller page
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 52-crop-dialog.png
+  crop box: {"x":60.09,"y":380.13,"width":491.81999999999994,"height":360}
+PASS crop: a box dragged with a finger crops the page; the saved PDF has the smaller page (14 s)
+
+== signature: drawn with a finger and placed on the page; it is in the saved PDF
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 53-signature-drawn.png
+  marks: img
+  pictures on page 1: 0 → 1
+  screenshot 54-signature-placed.png
+PASS signature: drawn with a finger and placed on the page; it is in the saved PDF (16 s)
+
+== large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file
+  the PDF: 12589950 bytes
+  am start: Starting: Intent { act=android.intent.action.VIEW dat=content://media/... typ=application/pdf flg=0x1 cmp=com.bradcowdrey.cowdreypdf/.MainActivity } Warning: Ac
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  opened in 0.9 s · 2 pages
+  screenshot 55-large-file-open.png
+  screenshot 56-large-file-dialog.png
+  saved Big scan (1).pdf (12590290 bytes)
+  saved Big scan (1).pdf 12590290 bytes in 15.2 s · sizes of the copy in the cache as it was written: 4194304, 8388608, 12582912, 12590290
+   {"pages":2,"imageIntact":true,"comments":["/Square"]}
+  saved again: {"pages":2,"imageIntact":true,"comments":["/Square","/Square"]}
+  memory: TOTAL PSS: 224544 TOTAL RSS: 467540 TOTAL SWAP (KB): 0
+PASS large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file (36 s)
+
+== export: the text (.txt) and the page as a picture (.png) through the save dialog
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 57-export-text-dialog.png
+  saved Quarterly report.txt (461 bytes)
+   Quarterly report.txt "Quarterly report, page 1\nCowdrey.PDF opens this page, finds the word pelican, and keeps every highli"
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 58-export-png-dialog.png
+  saved Quarterly report page 1.png (72640 bytes)
+   Quarterly report page 1.png 72640 bytes 1224x1584
+PASS export: the text (.txt) and the page as a picture (.png) through the save dialog (24 s)
+
+== form data: an FDF file picked in Android's picker fills the form
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  screenshot 59-picker-Form-data-fdf.png
+  toast: 1 field filled in
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+PASS form data: an FDF file picked in Android's picker fills the form (12 s)
+
+== pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it)
+  pictures removed: ok
+  picker: mCurrentFocus=Window{67a35d6 u0 com.google.android.providers.media.module/com.android.providers.media.photopicker.PhotoPickerGetContentActivity}
+  pictures listed: 2  "Photo taken on Nov 26, 2026, 4:30:14 PM" [0,648][354,1002] | com.google.android.providers.media.module:id/icon_thumbnail "" [0,648][354,1002]
+  screenshot 60-photo-picker-heic.png
+  screenshot 61-heic-dialog.png
+  opened as 1000000053
+  [console.warning] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently
+  page 900x600 colours {"mid":[200,40,50],"corner":[245,200,59],"edge":[40,110,170]}
+  screenshot 62-heic-pdf.png
+PASS pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it) (18 s)
+
+== PDF/UA: tags added, saved as PDF/UA through the save dialog
+  screenshot 63-pdfua-dialog.png
+  saved Access test (PDF-UA).pdf (28422 bytes)
+   Access test (PDF-UA).pdf 28422 bytes · StructTreeRoot true
+PASS PDF/UA: tags added, saved as PDF/UA through the save dialog (16 s)
+
+== reading order: a tag dragged with a finger (long press) moves to the top; the saved PDF reads in the new order
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  before: ["Quarterly report, page 1","Cowdrey.PDF opens this page, f","Name:","I agree"]
+  after: ["Name:","Quarterly report, page 1","Cowdrey.PDF opens this page, f","I agree"]
+  screenshot 64-reading-order-dragged.png
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  in the saved PDF: ["Name:","Quarterly report, page 1","Cowdrey.PDF opens this page, f","I agree","Form","Form"]
+PASS reading order: a tag dragged with a finger (long press) moves to the top; the saved PDF reads in the new order (15 s)
+
+== fonts: Japanese typed in Edit PDF says it needs a download when there is no network; online the fonts download and the saved PDF has the words
+  asked: Japanese letters need a font
+  screenshot 65-font-ask.png
+  [console.error] Failed to load resource: net::ERR_NAME_NOT_RESOLVED
+  with no network: The Japanese font could not be downloaded. Check the connection and try again.
+  screenshot 66-font-offline.png
+  network: up
+  asked: Thai letters need a font
+  asked on save: Japanese letters need a font
+  screenshot 67-font-save-dialog.png
+  saved Fonts test.pdf (599360 bytes)
+  text: Project Pelican: status report Prepared by the delivery team on 3 March. 予算は承認されました ประเทศไทย
+PASS fonts: Japanese typed in Edit PDF says it needs a download when there is no network; online the fonts download and the saved PDF has the words (111 s)
+
+== OCR in French: the language is downloaded once; with no network, a language not downloaded yet says why
+  network: up
+  download note: French: 691 KB, downloaded once.
+  screenshot 68-ocr-french-dialog.png
+  [console.info] OCR: the worker loads the engine itself
+  toast: Text recognized on 1 page
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  text layer: Le château de la reine Facture numéro 4471 Merci beaucoup
+  [console.error] Failed to load resource: net::ERR_ADDRESS_UNREACHABLE
+  [console.warning] OCR could not start TypeError: Failed to fetch
+    at ocrLangData (http://tauri.localhost/:28011:19)
+    at Object.start (http://tauri.localhost/:28089:28)
+  with no network: The text reader could not startRecognizing text needs a one-time download of the text reader and the language. Check the internet connection and try again.OK
+  screenshot 69-ocr-offline-message.png
+PASS OCR in French: the language is downloaded once; with no network, a language not downloaded yet says why (89 s)
+
+== update check (an APK not installed from Google Play): Check for updates asks GitHub; a newer release offers its APK, which Android opens
+  installed by: ""
+  network: up
+  GitHub: [["https://api.github.com/repos/bradleycowdrey/cowdrey-pdf/releases/latest",200]] · toast: You have the latest version (2.1.0).
+  dialog: Cowdrey.PDF 99.0.0 is availableYou have version 2.1.0. Download the new version and open it to install it. Your documents are kept.Skip this versionLaterDownload
+  screenshot 70-update-available.png
+  after Download: left the app: mCurrentFocus=Window{2e2acdc u0 com.android.chrome/org.chromium.chrome.browser.firstrun.FirstRunActivity} · 11-26 16:34:28.118   580  1307 I ActivityTaskManager: START u0 {act=android.intent.action.VIEW dat=https://github.com/... flg=0x10000000 cmp=com.android.chrome/com.google.android.apps.chrome.IntentDispatcher} with LAUNCH_MULTIPLE from uid 1
+  screenshot 71-update-download.png
+PASS update check (an APK not installed from Google Play): Check for updates asks GitHub; a newer release offers its APK, which Android opens (11 s)
+
+== memory: the app's memory after all of the above
+   TOTAL PSS: 227716 TOTAL RSS: 484780 TOTAL SWAP (KB): 0
+PASS memory: the app's memory after all of the above (0 s)
+
+== an edit made just before the app goes to the background and is closed by Android is kept
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  connected to the web view of com.bradcowdrey.cowdreypdf pid 18935 http://tauri.localhost/
+  boxes before: 1 after: 1
+  screenshot 72-kept-after-kill.png
+PASS an edit made just before the app goes to the background and is closed by Android is kept (19 s)
+
+== relaunch: the library (IndexedDB) and the last document come back after the app is closed
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  connected to the web view of com.bradcowdrey.cowdreypdf pid 19141 http://tauri.localhost/
+  [console.warning] Warning: Cannot load system font: Helvetica-Bold, installing it could help to improve PDF rendering.
+  [console.warning] Warning: Cannot load system font: Helvetica, installing it could help to improve PDF rendering.
+  documents in Recent: 45
+  screenshot 73-relaunch-library.png
+PASS relaunch: the library (IndexedDB) and the last document come back after the app is closed (12 s)
+
+== light mode: the app follows the system theme
+  light: {"theme":"","media":false,"bg":"rgb(248, 246, 246)"}
+  screenshot 74-light-mode.png
+  dark again: {"theme":"dark","media":false,"bg":"rgb(26, 23, 25)"}
+PASS light mode: the app follows the system theme (6 s)
+
+PASS  open with: a VIEW intent with a content:// address opens the PDF (cold start)
+PASS  the pages draw with pdf.js's own worker (not a fake one in the page), and pdf.js loads offline
+PASS  open with: a second PDF while the app is open (onNewIntent), and Share to the app (SEND)
+PASS  open with: a file:// address the app may not read says so (instead of nothing happening)
+PASS  the file picker: Open shows Android's picker; the chosen PDF opens
+PASS  pages: a swipe scrolls to the next pages; the page number follows
+PASS  mark up with a finger: highlight text, draw, a note; undo and redo
+PASS  Save PDF: Android's save dialog; the file in Downloads is the PDF with its comments; "Saved" only then
+PASS  Save again: goes straight to the same file; Save as copy and a cancelled save leave "Edited"
+PASS  Edit PDF: a line retyped in Latin and in Greek; the saved PDF has the new words (offline fonts)
+PASS  forms: tap a field, the keyboard comes up and the field stays in view; typed value and tick saved
+PASS  forms: Save PDF tapped while typing in a field (keyboard up), on a PDF opened from Android: the save dialog, the value saved
+PASS  forms designer: a new text field drawn with a finger is saved as a real field
+PASS  redact: search, mark and apply; the word is gone from the saved PDF
+PASS  OCR with no network: a scanned page is read with the engine and English carried in the app
+PASS  certificate signing: import a .p12 through the picker, sign, save; the signature verifies
+PASS  timestamps: a timestamp server typed in Signing IDs; the signature saved with its timestamp from it (Android's network and certificate authorities)
+PASS  revocation: OCSP and CRL servers on plain http (on the machine running the emulator); not revoked, then revoked, asked again each time (Android's own network, not the web view)
+PASS  signing IDs: a .pfx imported through the picker; an ID saved as .p12 through the save dialog opens with its password
+PASS  PDF/A: saved through the save dialog, with its PDF/A-2b identification
+PASS  compare: the other PDF from the picker; the changes are found; the compare report saved through the save dialog
+PASS  insight: a table dragged out with a finger is saved as CSV through the save dialog
+PASS  batch: an action run on a PDF from the picker; the zip comes out through the save dialog
+PASS  split into files: one folder picked once, every part saved in it
+PASS  print: the PDF goes to Android's print service (its preview opens)
+PASS  Share…: Android's share sheet opens; the document stays "Edited" (sharing is not saving)
+PASS  read aloud: Android's text-to-speech reads the page, or the command is hidden when the phone has none
+PASS  back: Back closes an open dialog and keeps the app; with nothing open it leaves the app
+PASS  phone layout in dark mode: the ribbon scrolls sideways, nothing wider than the screen, bars clear of the system bars
+PASS  touch: long-press and drag a page thumbnail to move the page
+PASS  comments: exported as XFDF through the save dialog, then imported into another copy through the picker
+PASS  attachments: a file attached through the picker is kept in the saved PDF and saved back out through the save dialog
+PASS  crop: a box dragged with a finger crops the page; the saved PDF has the smaller page
+PASS  signature: drawn with a finger and placed on the page; it is in the saved PDF
+PASS  large file: a 12 MB PDF opened from Android and saved back through the save dialog in parts of 4 MB; Save again updates the same file
+PASS  export: the text (.txt) and the page as a picture (.png) through the save dialog
+PASS  form data: an FDF file picked in Android's picker fills the form
+PASS  pictures: a HEIC photo picked in Android's photo picker becomes a PDF (Android decodes it)
+PASS  PDF/UA: tags added, saved as PDF/UA through the save dialog
+PASS  reading order: a tag dragged with a finger (long press) moves to the top; the saved PDF reads in the new order
+PASS  fonts: Japanese typed in Edit PDF says it needs a download when there is no network; online the fonts download and the saved PDF has the words
+PASS  OCR in French: the language is downloaded once; with no network, a language not downloaded yet says why
+PASS  update check (an APK not installed from Google Play): Check for updates asks GitHub; a newer release offers its APK, which Android opens
+PASS  memory: the app's memory after all of the above
+PASS  an edit made just before the app goes to the background and is closed by Android is kept
+PASS  relaunch: the library (IndexedDB) and the last document come back after the app is closed
+PASS  light mode: the app follows the system theme
+
+ALL PASSED: 47/47
+device test exit code 0
+Google Play App Bundle: com.bradcowdrey.cowdreypdf 2.1.0 (version code 2001000), targetSdkVersion 37, permissions: android.permission.INTERNET, com.bradcowdrey.cowdreypdf.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION

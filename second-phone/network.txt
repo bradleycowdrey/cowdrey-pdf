@@ -1,0 +1,300 @@
+11-26 16:38:09.809   444   475 I netd    : tetherGetStats() -> {[]} <1.14ms>
+11-26 16:38:09.873   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.10ms>
+11-26 16:38:10.483   627  2066 I WifiService: isScanAlwaysAvailable uid=1000
+11-26 16:38:10.625   444   475 I netd    : tetherGetStats() -> {[]} <0.47ms>
+11-26 16:38:11.106   444   475 I netd    : tetherGetStats() -> {[]} <2.53ms>
+11-26 16:38:11.781   444   475 I netd    : tetherGetStats() -> {[]} <0.50ms>
+11-26 16:38:11.903   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.09ms>
+11-26 16:38:11.928   444   475 I netd    : bandwidthRemoveInterfaceQuota(eth0) <1.40ms>
+11-26 16:38:11.935   444   475 I netd    : bandwidthSetInterfaceQuota(eth0, 9223372036854775807) <1.63ms>
+11-26 16:38:12.342   444   475 I netd    : tetherGetStats() -> {[]} <0.30ms>
+11-26 16:38:13.786   444   475 I netd    : tetherGetStats() -> {[]} <1.04ms>
+11-26 16:38:13.961   627  1873 D ConnectivityService: requestNetwork for uid/pid:1000/627 asUid: 10145 activeRequest: null callbackRequest: 119 [NetworkRequest [ TRACK_DEFAULT id=120, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 1000 RequestorPkg: android UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=121, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 1000 RequestorPkg: android UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|BLK
+11-26 16:38:13.963   627   942 D ConnectivityService: NetReassign [120 : null → 101] [c 0] [a 0] [i 0]
+11-26 16:38:14.784   627  1223 D ConnectivityService: requestNetwork for uid/pid:1000/627 asUid: 10137 activeRequest: null callbackRequest: 122 [NetworkRequest [ REQUEST id=123, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10137 RequestorUid: 1000 RequestorPkg: android UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|BLK
+11-26 16:38:14.807   627   942 D ConnectivityService: NetReassign [123 : null → 101] [c 4] [a 4] [i 7]
+11-26 16:38:14.883   627   701 I WifiService: isFeatureSupported uid=1000 returns [WIFI_FEATURE_INFRA, WIFI_FEATURE_P2P, WIFI_FEATURE_MOBILE_HOTSPOT, WIFI_FEATURE_WPA3_SAE, WIFI_FEATURE_WPA3_SUITE_B, WIFI_FEATURE_OWE, WIFI_FEATURE_DPP, WIFI_FEATURE_AP_RAND_MAC, WIFI_FEATURE_MBO, WIFI_FEATURE_FILS_SHA256, WIFI_FEATURE_FILS_SHA384, WIFI_FEATURE_SAE_PK, WIFI_FEATURE_DPP_ENROLLEE_RESPONDER, WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS, WIFI_FEATURE_WFD_R2, WIFI_FEATURE_DECORATED_IDENTITY, WIFI_FEATURE_TRUST_ON_FIRST_USE, WIFI_FEATURE_SET_TLS_MINIMUM_VERSION, WIFI_FEATURE_TLS_V1_3, WIFI_FEATURE_WEP, WIFI_FEATURE_WPA_PERSONAL]
+11-26 16:38:14.912   444   475 I netd    : tetherGetStats() -> {[]} <0.32ms>
+11-26 16:38:15.590   627  1934 D ConnectivityService: requestNetwork for uid/pid:10137/3768 activeRequest: null callbackRequest: 124 [NetworkRequest [ REQUEST id=125, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10137 RequestorUid: 10137 RequestorPkg: com.google.android.apps.safetyhub UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:38:15.597   627   942 D ConnectivityService: NetReassign [125 : null → 101] [c 0] [a 1] [i 0]
+11-26 16:38:15.624   444   475 I netd    : tetherGetStats() -> {[]} <1.97ms>
+11-26 16:38:15.701   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.10ms>
+11-26 16:38:16.316   627  1868 I WifiService: getWifiEnabledState uid=10147 state=3
+11-26 16:38:16.320   444   475 I netd    : tetherGetStats() -> {[]} <0.37ms>
+11-26 16:38:16.385   627  2872 I WifiService: getWifiEnabledState uid=10147 state=3
+11-26 16:38:16.747   627   754 D ConnectivityService: requestNetwork for uid/pid:10146/1918 activeRequest: null callbackRequest: 126 [NetworkRequest [ REQUEST id=127, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10146 RequestorUid: 10146 RequestorPkg: com.google.android.gms UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST
+11-26 16:38:16.786   627   942 D ConnectivityService: NetReassign [127 : null → 101] [c 0] [a 0] [i 26]
+11-26 16:38:17.433   444   475 I netd    : tetherGetStats() -> {[]} <0.32ms>
+11-26 16:38:17.779   627   754 D ConnectivityService: requestNetwork for uid/pid:10146/1918 activeRequest: null callbackRequest: 128 [NetworkRequest [ REQUEST id=129, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10146 RequestorUid: 10146 RequestorPkg: com.google.android.gms UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC|LP
+11-26 16:38:17.815   627   942 D ConnectivityService: NetReassign [129 : null → 101] [c 0] [a 7] [i 10]
+11-26 16:38:17.837   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 0] [i 22]
+11-26 16:38:17.939   627  1868 I WifiService: isScanAlwaysAvailable uid=1000
+11-26 16:38:18.143  1350  3046 W GLSUser : 	at m1.ng.onSucceeded(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):3)
+11-26 16:38:18.143  1350  3046 W GLSUser : 	at m1.md.run(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):21)
+11-26 16:38:18.143  1350  3046 W GLSUser : 	at m1.lx.run(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):31)
+11-26 16:38:18.176   444   475 I netd    : tetherGetStats() -> {[]} <0.29ms>
+11-26 16:38:18.238   444   475 I netd    : bandwidthRemoveInterfaceQuota(eth0) <0.49ms>
+11-26 16:38:18.239   444   475 I netd    : bandwidthSetInterfaceQuota(eth0, 9223372036854775807) <0.41ms>
+11-26 16:38:18.384   627  1873 D ConnectivityService: requestNetwork for uid/pid:10145/4068 activeRequest: null callbackRequest: 131 [NetworkRequest [ TRACK_DEFAULT id=132, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=133, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOSING|LOST|NC
+11-26 16:38:18.395   627   942 D ConnectivityService: NetReassign [132 : null → 101] [c 0] [a 0] [i 1]
+11-26 16:38:18.484   444   475 I netd    : tetherGetStats() -> {[]} <0.33ms>
+11-26 16:38:18.703   627  1883 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:38:18.786   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 0] [i 1]
+11-26 16:38:19.250   627  1868 D ConnectivityService: requestNetwork for uid/pid:10145/4068 activeRequest: null callbackRequest: 135 [NetworkRequest [ TRACK_DEFAULT id=136, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=137, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOSING|LOST|UNAVAIL|NC|LP|BLK
+11-26 16:38:19.251   627   942 D ConnectivityService: NetReassign [136 : null → 101] [c 1] [a 0] [i 0]
+11-26 16:38:19.361   627  2271 D ConnectivityService: requestNetwork for uid/pid:10145/4068 activeRequest: null callbackRequest: 138 [NetworkRequest [ TRACK_DEFAULT id=139, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=140, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOSING|LOST|NC
+11-26 16:38:19.362   627   942 D ConnectivityService: NetReassign [139 : null → 101] [c 0] [a 0] [i 0]
+11-26 16:38:19.502  1918  3214 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:19.671   444   475 I netd    : tetherGetStats() -> {[]} <0.87ms>
+11-26 16:38:19.761  1918  3462 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:21.373   444   475 I netd    : tetherGetStats() -> {[]} <0.53ms>
+11-26 16:38:21.514  1918  2733 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:22.613   444   475 I netd    : tetherGetStats() -> {[]} <1.87ms>
+11-26 16:38:24.279   444   475 I netd    : tetherGetStats() -> {[]} <0.89ms>
+11-26 16:38:24.748  1918  2303 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:24.983   627  2269 I WifiService: isScanAlwaysAvailable uid=10146
+11-26 16:38:24.986   627  2269 I WifiService: getWifiEnabledState uid=10146 state=3
+11-26 16:38:25.411   444   475 I netd    : tetherGetStats() -> {[]} <2.21ms>
+11-26 16:38:26.268   627  1445 D ConnectivityService: requestNetwork for uid/pid:1000/627 asUid: 10165 activeRequest: null callbackRequest: 141 [NetworkRequest [ REQUEST id=142, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10165 RequestorUid: 1000 RequestorPkg: android UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|BLK
+11-26 16:38:26.277   627   942 D ConnectivityService: NetReassign [142 : null → 101] [c 0] [a 3] [i 0]
+11-26 16:38:27.068   444   475 I netd    : tetherGetStats() -> {[]} <0.35ms>
+11-26 16:38:28.016   444   475 I netd    : tetherGetStats() -> {[]} <0.40ms>
+11-26 16:38:28.430   444   475 I netd    : tetherGetStats() -> {[]} <0.39ms>
+11-26 16:38:28.444   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.11ms>
+11-26 16:38:28.947   627  1884 D ConnectivityService: requestNetwork for uid/pid:1000/627 asUid: 10140 activeRequest: null callbackRequest: 143 [NetworkRequest [ REQUEST id=144, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10140 RequestorUid: 1000 RequestorPkg: android UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|BLK
+11-26 16:38:28.960   627   942 D ConnectivityService: NetReassign [144 : null → 101] [c 0] [a 1] [i 6]
+11-26 16:38:29.056   444   475 I netd    : tetherGetStats() -> {[]} <2.08ms>
+11-26 16:38:29.158   627  1873 D ConnectivityService: requestNetwork for uid/pid:10145/3751 activeRequest: null callbackRequest: 145 [NetworkRequest [ TRACK_DEFAULT id=146, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=147, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:38:29.163   627   942 D ConnectivityService: NetReassign [146 : null → 101] [c 1] [a 0] [i 3]
+11-26 16:38:29.292   627  1001 D ConnectivityService: requestNetwork for uid/pid:10145/3751 activeRequest: null callbackRequest: 148 [NetworkRequest [ TRACK_DEFAULT id=149, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=150, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC|LP
+11-26 16:38:29.364   627   942 D ConnectivityService: NetReassign [149 : null → 101] [c 0] [a 0] [i 0]
+11-26 16:38:29.407   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 1] [i 42]
+11-26 16:38:30.107   444   475 I netd    : tetherGetStats() -> {[]} <0.28ms>
+11-26 16:38:31.172   444   475 I netd    : tetherGetStats() -> {[]} <0.29ms>
+11-26 16:38:33.484   444   475 I netd    : tetherGetStats() -> {[]} <0.73ms>
+11-26 16:38:34.528   444   475 I netd    : tetherGetStats() -> {[]} <5.08ms>
+11-26 16:38:35.431   627  2271 D ConnectivityService: requestNetwork for uid/pid:10135/3016 activeRequest: null callbackRequest: 152 [NetworkRequest [ REQUEST id=153, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10135 RequestorUid: 10135 RequestorPkg: com.google.android.dialer UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:38:35.442   627   942 D ConnectivityService: NetReassign [153 : null → 101] [c 0] [a 1] [i 10]
+11-26 16:38:36.171   444   475 I netd    : tetherGetStats() -> {[]} <0.73ms>
+11-26 16:38:37.240   444   475 I netd    : tetherGetStats() -> {[]} <0.40ms>
+11-26 16:38:38.393   444   475 I netd    : tetherGetStats() -> {[]} <1.23ms>
+11-26 16:38:38.930   444   475 I netd    : tetherGetStats() -> {[]} <6.45ms>
+11-26 16:38:38.974   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.98ms>
+11-26 16:38:39.004   444   475 I netd    : bandwidthRemoveInterfaceQuota(eth0) <4.03ms>
+11-26 16:38:39.007   444   475 I netd    : bandwidthSetInterfaceQuota(eth0, 9223372036854775807) <2.59ms>
+11-26 16:38:39.047  1350  2539 W GLSUser : 	at m1.ng.onSucceeded(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):3)
+11-26 16:38:39.047  1350  2539 W GLSUser : 	at m1.md.run(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):21)
+11-26 16:38:39.047  1350  2539 W GLSUser : 	at m1.lx.run(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):31)
+11-26 16:38:39.444   444   475 I netd    : tetherGetStats() -> {[]} <0.29ms>
+11-26 16:38:40.160   444   475 I netd    : tetherGetStats() -> {[]} <0.36ms>
+11-26 16:38:40.170   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.11ms>
+11-26 16:38:40.395   444   475 I netd    : tetherGetStats() -> {[]} <0.63ms>
+11-26 16:38:41.369  1918  2980 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:41.412   444   475 I netd    : tetherGetStats() -> {[]} <0.54ms>
+11-26 16:38:41.419   444   476 I netd    : bandwidthRemoveInterfaceQuota(eth0) <0.44ms>
+11-26 16:38:41.420   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.10ms>
+11-26 16:38:41.423   444   475 I netd    : bandwidthSetInterfaceQuota(eth0, 9223372036854775807) <1.90ms>
+11-26 16:38:42.127   444   475 I netd    : tetherGetStats() -> {[]} <0.27ms>
+11-26 16:38:42.230   627  1337 I WifiService: getScanResults uid=10185
+11-26 16:38:42.233   627  1934 I WifiService: getScanResults uid=10185
+11-26 16:38:43.253   627  1334 D ConnectivityService: requestNetwork for uid/pid:10145/3751 activeRequest: null callbackRequest: 154 [NetworkRequest [ TRACK_DEFAULT id=155, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=156, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:38:43.261   627   942 D ConnectivityService: NetReassign [155 : null → 101] [c 5] [a 1] [i 1]
+11-26 16:38:43.340   444   475 I netd    : tetherGetStats() -> {[]} <0.37ms>
+11-26 16:38:44.746   444   475 I netd    : tetherGetStats() -> {[]} <0.40ms>
+11-26 16:38:45.592   444   475 I netd    : tetherGetStats() -> {[]} <1.07ms>
+11-26 16:38:45.603   444   475 I netd    : bandwidthSetGlobalAlert(2097152) <0.20ms>
+11-26 16:38:45.817   627  1337 I WifiService: getWifiEnabledState uid=10146 state=3
+11-26 16:38:45.817   627  1337 I WifiService: is5GHzBandSupported uid=10146
+11-26 16:38:45.817   627  1102 I WifiService: getWifiEnabledState uid=10146 state=3
+11-26 16:38:45.818   627  1102 I WifiService: is6GHzBandSupported uid=10146
+11-26 16:38:45.967   444   475 I netd    : tetherGetStats() -> {[]} <3.30ms>
+11-26 16:38:47.034  1918  2879 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:47.445   627  1871 I WifiService: getWifiEnabledState uid=10147 state=3
+11-26 16:38:47.508   444   475 I netd    : tetherGetStats() -> {[]} <0.33ms>
+11-26 16:38:47.600   627  1873 I WifiService: getWifiEnabledState uid=10147 state=3
+11-26 16:38:49.062   627  1929 D ConnectivityService: requestNetwork for uid/pid:10147/4863 activeRequest: null callbackRequest: 157 [NetworkRequest [ REQUEST id=158, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC|LP
+11-26 16:38:49.065   627   942 D ConnectivityService: NetReassign [158 : null → 101] [c 0] [a 0] [i 1]
+11-26 16:38:49.076   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 1] [i 0]
+11-26 16:38:49.625   627  1873 I WifiService: getWifiEnabledState uid=10147 state=3
+11-26 16:38:53.869   444   475 I netd    : tetherGetStats() -> {[]} <0.62ms>
+11-26 16:38:54.192   627  1334 D ConnectivityService: requestNetwork for uid/pid:10146/1350 activeRequest: null callbackRequest: 160 [NetworkRequest [ REQUEST id=161, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10146 RequestorUid: 10146 RequestorPkg: com.google.android.gms UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST
+11-26 16:38:54.197   627   942 D ConnectivityService: NetReassign [161 : null → 101] [c 0] [a 1] [i 3]
+11-26 16:38:57.089   444   475 I netd    : tetherGetStats() -> {[]} <1.24ms>
+11-26 16:38:57.605  1918  4816 I ModuleSetResolution: Computing pending module set with APKs: [[AdsFdrDynamite.integ:250505301100000], [Cronetdynamite:252635260800], [Dynamiteloader:252635260000], [Dynamitemodulesa:252635260000], [Dynamitemodulesc:252635260000], [Googlecertificates:252635260000], [Mapsdynamite:252635260000], [Measurementdynamite:252635260000]]
+11-26 16:38:58.225   444   475 I netd    : tetherGetStats() -> {[]} <0.32ms>
+11-26 16:38:59.699   444   475 I netd    : tetherGetStats() -> {[]} <0.38ms>
+11-26 16:39:05.335   444   475 I netd    : tetherGetStats() -> {[]} <0.37ms>
+11-26 16:39:05.440   627  1934 D ConnectivityService: requestNetwork for uid/pid:10145/3751 activeRequest: null callbackRequest: 162 [NetworkRequest [ TRACK_DEFAULT id=163, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=164, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:05.466   627   942 D ConnectivityService: NetReassign [163 : null → 101] [c 0] [a 3] [i 18]
+11-26 16:39:05.627   627  1337 D ConnectivityService: requestNetwork for uid/pid:10135/3016 activeRequest: null callbackRequest: 165 [NetworkRequest [ REQUEST id=166, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10135 RequestorUid: 10135 RequestorPkg: com.google.android.dialer UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:05.635   627   942 D ConnectivityService: NetReassign [166 : null → 101] [c 0] [a 7] [i 0]
+11-26 16:39:06.242   627  1932 D ConnectivityService: requestNetwork for uid/pid:10172/5203 activeRequest: null callbackRequest: 167 [NetworkRequest [ REQUEST id=168, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10172 RequestorUid: 10172 RequestorPkg: com.google.android.apps.docs UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|UNAVAIL|NC
+11-26 16:39:06.253   627   942 D ConnectivityService: NetReassign [168 : null → 101] [c 0] [a 0] [i 6]
+11-26 16:39:06.287   627  1334 D ConnectivityService: requestNetwork for uid/pid:1000/627 asUid: 10172 activeRequest: null callbackRequest: 169 [NetworkRequest [ REQUEST id=170, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10172 RequestorUid: 1000 RequestorPkg: android UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|BLK
+11-26 16:39:06.289   627   942 D ConnectivityService: NetReassign [170 : null → 101] [c 0] [a 0] [i 1]
+11-26 16:39:06.456   444   475 I netd    : tetherGetStats() -> {[]} <0.66ms>
+11-26 16:39:07.143   627  1102 I WifiService: addWifiStateChangedListener uid=1000
+11-26 16:39:07.143   627  1102 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:07.328   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 0] [i 1]
+11-26 16:39:07.339   627  1879 D ConnectivityService: requestNetwork for uid/pid:1000/1258 activeRequest: null callbackRequest: 172 [NetworkRequest [ REQUEST id=173, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 1000 RequestorUid: 1000 RequestorPkg: com.android.settings UnderlyingNetworks: Null] ]] callback flags: 1 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:07.372   627   942 D ConnectivityService: NetReassign [173 : null → 101] [c 0] [a 0] [i 32]
+11-26 16:39:07.449   627  1879 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:07.451   627  1934 I WifiService: getPrivilegedConfiguredNetworks uid=1000
+11-26 16:39:07.491   627  1934 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:07.491   627  1934 W WifiService: Attempt to retrieve WifiConfiguration with invalid scanResult List
+11-26 16:39:07.491   627  1934 I WifiService: getPasspointConfigurations uid=1000
+11-26 16:39:07.492   627  1934 I WifiService: getScanResults uid=1000
+11-26 16:39:07.492   627  1934 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:07.518   627  1934 I WifiService: getScanResults uid=1000
+11-26 16:39:07.519   627  1934 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:07.519   627  1934 W WifiService: Attempt to retrieve WifiConfiguration with invalid scanResult List
+11-26 16:39:07.730   627  1337 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:39:07.737   627  1337 E WifiService: Attempt to retrieve passpoint with invalid scanResult List
+11-26 16:39:07.763   627  1879 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:39:07.763   627  1879 W WifiService: Attempt to retrieve OsuProviders with invalid scanResult List
+11-26 16:39:07.767   627  1102 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:39:07.768   627  1102 I WifiService: getCurrentNetwork uid=1000
+11-26 16:39:07.774   627  1102 I WifiService: getCurrentNetwork uid=1000
+11-26 16:39:07.785   627  1102 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:07.788   627  1102 I WifiService: getConnectionInfo uid=1000
+11-26 16:39:07.820   627  1102 V WifiService: Clearing REDACT_FOR_LOCAL_MAC_ADDRESS for com.android.settings(uid=1000)
+11-26 16:39:07.820   627  1102 V WifiService: Clearing REDACT_FOR_NETWORK_SETTINGS for com.android.settings(uid=1000)
+11-26 16:39:07.820   627  1102 V WifiService: Clearing REDACT_FOR_ACCESS_FINE_LOCATION for com.android.settings(uid=1000)
+11-26 16:39:07.952   627  1929 I WifiService: removeWifiStateChangedListener uid=1000
+11-26 16:39:08.145   444   475 I netd    : tetherGetStats() -> {[]} <0.43ms>
+11-26 16:39:09.259   444   475 I netd    : tetherGetStats() -> {[]} <0.29ms>
+11-26 16:39:12.107   444   475 I netd    : tetherGetStats() -> {[]} <0.26ms>
+11-26 16:39:13.253   444   475 I netd    : tetherGetStats() -> {[]} <0.28ms>
+11-26 16:39:16.252   627   701 I WifiService: isFeatureSupported uid=1000 returns [WIFI_FEATURE_INFRA, WIFI_FEATURE_P2P, WIFI_FEATURE_MOBILE_HOTSPOT, WIFI_FEATURE_WPA3_SAE, WIFI_FEATURE_WPA3_SUITE_B, WIFI_FEATURE_OWE, WIFI_FEATURE_DPP, WIFI_FEATURE_AP_RAND_MAC, WIFI_FEATURE_MBO, WIFI_FEATURE_FILS_SHA256, WIFI_FEATURE_FILS_SHA384, WIFI_FEATURE_SAE_PK, WIFI_FEATURE_DPP_ENROLLEE_RESPONDER, WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS, WIFI_FEATURE_WFD_R2, WIFI_FEATURE_DECORATED_IDENTITY, WIFI_FEATURE_TRUST_ON_FIRST_USE, WIFI_FEATURE_SET_TLS_MINIMUM_VERSION, WIFI_FEATURE_TLS_V1_3, WIFI_FEATURE_WEP, WIFI_FEATURE_WPA_PERSONAL]
+11-26 16:39:17.392   444   475 I netd    : tetherGetStats() -> {[]} <0.43ms>
+11-26 16:39:19.819   444   475 I netd    : tetherGetStats() -> {[]} <0.41ms>
+11-26 16:39:22.523   444   475 I netd    : tetherGetStats() -> {[]} <0.47ms>
+11-26 16:39:24.192   444   475 I netd    : tetherGetStats() -> {[]} <0.63ms>
+11-26 16:39:26.205   627   942 D ConnectivityService: releasing NetworkRequest [ REQUEST id=95, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-26 16:39:26.206   627   942 D ConnectivityService: releasing NetworkRequest [ REQUEST id=73, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-26 16:39:26.206   627   942 D ConnectivityService: releasing NetworkRequest [ REQUEST id=82, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-26 16:39:26.206   627   942 D ConnectivityService: releasing NetworkRequest [ REQUEST id=91, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-26 16:39:26.206   627   942 D ConnectivityService: releasing NetworkRequest [ REQUEST id=106, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ] (release request)
+11-26 16:39:28.785   444   475 I netd    : tetherGetStats() -> {[]} <2.04ms>
+11-26 16:39:30.084   444   475 I netd    : tetherGetStats() -> {[]} <0.33ms>
+11-26 16:39:31.147   444   475 I netd    : tetherGetStats() -> {[]} <0.35ms>
+11-26 16:39:33.115   444   475 I netd    : tetherGetStats() -> {[]} <0.42ms>
+11-26 16:39:34.181   444   475 I netd    : tetherGetStats() -> {[]} <0.45ms>
+11-26 16:39:34.753   627  1102 I WifiService: getSoftApConfiguration uid=1000
+11-26 16:39:34.800   627  1870 I WifiService: getConfiguredNetworks uid=1000
+11-26 16:39:34.803   627  1870 I WifiService: getPasspointConfigurations uid=1000
+11-26 16:39:34.809   627  1868 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:34.825   627  1932 I WifiService: getSoftApConfiguration uid=1000
+11-26 16:39:35.094   627  1005 I WifiService: getConfiguredNetworks uid=1000
+11-26 16:39:35.097   627  1102 I WifiService: getPasspointConfigurations uid=1000
+11-26 16:39:35.097   627  1337 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.158   627  1337 I WifiService: getSoftApConfiguration uid=1000
+11-26 16:39:35.204   627  1102 I WifiService: getSoftApConfiguration uid=1000
+11-26 16:39:35.226   627  1102 I WifiService: getSoftApConfiguration uid=1000
+11-26 16:39:35.339   627  1102 I WifiService: getSoftApConfiguration uid=1000
+11-26 16:39:35.493   627  1337 I WifiService: addWifiStateChangedListener uid=1000
+11-26 16:39:35.493   627  1337 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.495   627  1005 D ConnectivityService: requestNetwork for uid/pid:1000/1258 activeRequest: null callbackRequest: 176 [NetworkRequest [ REQUEST id=177, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 1000 RequestorUid: 1000 RequestorPkg: com.android.settings UnderlyingNetworks: Null] ]] callback flags: 1 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:35.495   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 0] [i 0]
+11-26 16:39:35.499   627   942 D ConnectivityService: NetReassign [177 : null → 101] [c 0] [a 0] [i 4]
+11-26 16:39:35.500   627  1337 I WifiService: getPrivilegedConfiguredNetworks uid=1000
+11-26 16:39:35.501   627  1337 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:35.508   627  1102 I WifiService: getPasspointConfigurations uid=1000
+11-26 16:39:35.509   627  1102 I WifiService: getScanResults uid=1000
+11-26 16:39:35.510   627  1102 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.510   627  1337 I WifiService: getScanResults uid=1000
+11-26 16:39:35.511   627  1337 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:35.511   627  1337 W WifiService: Attempt to retrieve WifiConfiguration with invalid scanResult List
+11-26 16:39:35.512   627  1102 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:39:35.512   627  1102 E WifiService: Attempt to retrieve passpoint with invalid scanResult List
+11-26 16:39:35.512   627  1102 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:39:35.512   627  1102 W WifiService: Attempt to retrieve OsuProviders with invalid scanResult List
+11-26 16:39:35.512   627  1871 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:39:35.513   627  1871 I WifiService: getCurrentNetwork uid=1000
+11-26 16:39:35.513   627  1871 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.514   627  1871 I WifiService: getConnectionInfo uid=1000
+11-26 16:39:35.514   627  1871 V WifiService: Clearing REDACT_FOR_LOCAL_MAC_ADDRESS for com.android.settings(uid=1000)
+11-26 16:39:35.514   627  1871 V WifiService: Clearing REDACT_FOR_NETWORK_SETTINGS for com.android.settings(uid=1000)
+11-26 16:39:35.514   627  1871 V WifiService: Clearing REDACT_FOR_ACCESS_FINE_LOCATION for com.android.settings(uid=1000)
+11-26 16:39:35.596   627  1102 I WifiService: isScanAlwaysAvailable uid=1000
+11-26 16:39:35.655   627  1337 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.672   627  1128 I WifiService: removeWifiStateChangedListener uid=1000
+11-26 16:39:35.706   627  1870 I WifiService: isScanAlwaysAvailable uid=1000
+11-26 16:39:35.718   627  1128 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.729   627  1005 I WifiService: addWifiStateChangedListener uid=1000
+11-26 16:39:35.730   627  1005 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.736   627   942 D ConnectivityService: NetReassign [no changes] [c 0] [a 0] [i 0]
+11-26 16:39:35.737   627  1005 D ConnectivityService: requestNetwork for uid/pid:1000/1258 activeRequest: null callbackRequest: 180 [NetworkRequest [ REQUEST id=181, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 1000 RequestorUid: 1000 RequestorPkg: com.android.settings UnderlyingNetworks: Null] ]] callback flags: 1 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:35.740   627   942 D ConnectivityService: NetReassign [181 : null → 101] [c 0] [a 0] [i 1]
+11-26 16:39:35.742   627  1005 I WifiService: getPrivilegedConfiguredNetworks uid=1000
+11-26 16:39:35.742   627  1128 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:35.743   627  1128 I WifiService: getPasspointConfigurations uid=1000
+11-26 16:39:35.745   627  1005 I WifiService: getScanResults uid=1000
+11-26 16:39:35.745   627  1128 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.745   627  1128 I WifiService: getScanResults uid=1000
+11-26 16:39:35.746   627  1005 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:35.746   627  1005 W WifiService: Attempt to retrieve WifiConfiguration with invalid scanResult List
+11-26 16:39:35.746   627  1005 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:39:35.746   627  1005 E WifiService: Attempt to retrieve passpoint with invalid scanResult List
+11-26 16:39:35.746   627  1005 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:39:35.747   627  1005 W WifiService: Attempt to retrieve OsuProviders with invalid scanResult List
+11-26 16:39:35.747   627  1005 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:39:35.747   627  1005 I WifiService: getCurrentNetwork uid=1000
+11-26 16:39:35.748   627  1005 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:35.750   627  1128 I WifiService: getConnectionInfo uid=1000
+11-26 16:39:35.750   627  1128 V WifiService: Clearing REDACT_FOR_LOCAL_MAC_ADDRESS for com.android.settings(uid=1000)
+11-26 16:39:35.750   627  1128 V WifiService: Clearing REDACT_FOR_NETWORK_SETTINGS for com.android.settings(uid=1000)
+11-26 16:39:35.750   627  1128 V WifiService: Clearing REDACT_FOR_ACCESS_FINE_LOCATION for com.android.settings(uid=1000)
+11-26 16:39:35.788   444   475 I netd    : tetherGetStats() -> {[]} <0.31ms>
+11-26 16:39:36.365   627  1871 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:36.365   627  1871 I WifiService: getScanResults uid=1000
+11-26 16:39:36.376   627  1934 I WifiService: isFeatureSupported uid=1000 returns [WIFI_FEATURE_INFRA, WIFI_FEATURE_P2P, WIFI_FEATURE_MOBILE_HOTSPOT, WIFI_FEATURE_WPA3_SAE, WIFI_FEATURE_WPA3_SUITE_B, WIFI_FEATURE_OWE, WIFI_FEATURE_DPP, WIFI_FEATURE_AP_RAND_MAC, WIFI_FEATURE_MBO, WIFI_FEATURE_FILS_SHA256, WIFI_FEATURE_FILS_SHA384, WIFI_FEATURE_SAE_PK, WIFI_FEATURE_DPP_ENROLLEE_RESPONDER, WIFI_FEATURE_PASSPOINT_TERMS_AND_CONDITIONS, WIFI_FEATURE_WFD_R2, WIFI_FEATURE_DECORATED_IDENTITY, WIFI_FEATURE_TRUST_ON_FIRST_USE, WIFI_FEATURE_SET_TLS_MINIMUM_VERSION, WIFI_FEATURE_TLS_V1_3, WIFI_FEATURE_WEP, WIFI_FEATURE_WPA_PERSONAL]
+11-26 16:39:36.377   627  1934 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:36.377   627  1934 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:39:36.391   627  1934 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:39:36.391   627  1934 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:39:36.398   627  1934 I WifiService: startScan uid=1000
+11-26 16:39:36.510   627  1871 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:36.510   627  1871 I WifiService: getScanResults uid=1000
+11-26 16:39:36.607   627  1870 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:36.609   627  1871 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:39:36.611   627  1871 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:39:36.616   627  1870 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:39:36.638   627  1871 I WifiService: startScan uid=1000
+11-26 16:39:36.975   444   475 I netd    : tetherGetStats() -> {[]} <0.35ms>
+11-26 16:39:36.983   627  1929 D ConnectivityService: requestNetwork for uid/pid:10135/3016 activeRequest: null callbackRequest: 183 [NetworkRequest [ REQUEST id=184, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10135 RequestorUid: 10135 RequestorPkg: com.google.android.dialer UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:36.989   627   942 D ConnectivityService: NetReassign [184 : null → 101] [c 0] [a 3] [i 0]
+11-26 16:39:37.139   627  1337 D ConnectivityService: requestNetwork for uid/pid:10147/5736 activeRequest: null callbackRequest: 185 [NetworkRequest [ REQUEST id=186, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10147 RequestorUid: 10147 RequestorPkg: com.google.android.googlequicksearchbox UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:37.151   627   942 D ConnectivityService: NetReassign [186 : null → 101] [c 1] [a 7] [i 4]
+11-26 16:39:38.729   627  1337 D ConnectivityService: requestNetwork for uid/pid:10145/3751 activeRequest: null callbackRequest: 187 [NetworkRequest [ TRACK_DEFAULT id=188, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ], NetworkRequest [ REQUEST id=189, [ Transports: SATELLITE Capabilities: INTERNET&TRUSTED&NOT_VCN_MANAGED Uid: 10145 RequestorUid: 10145 RequestorPkg: com.google.android.apps.messaging UnderlyingNetworks: Null] ]] callback flags: 0 order: 2147483647 isUidTracked: false declaredMethods: AVAIL|LOST|NC
+11-26 16:39:38.731   627   942 D ConnectivityService: NetReassign [188 : null → 101] [c 0] [a 0] [i 2]
+11-26 16:39:39.671   444   475 I netd    : tetherGetStats() -> {[]} <0.30ms>
+11-26 16:39:40.323   627  1005 I WifiService: getScanResults uid=10185
+11-26 16:39:40.325   627  1873 I WifiService: getScanResults uid=10185
+11-26 16:39:40.345   627  1005 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:39:40.359   627  1873 I WifiService: getScanResults uid=1000
+11-26 16:39:40.373   627  1005 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:39:40.379   627  1005 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:39:40.416   627  1005 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:39:40.419   627  1005 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:39:41.129  1350  2283 W GLSUser : 	at m1.ng.onSucceeded(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):3)
+11-26 16:39:41.129  1350  2283 W GLSUser : 	at m1.md.run(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):21)
+11-26 16:39:41.129  1350  2283 W GLSUser : 	at m1.lx.run(:com.google.android.gms.dynamite_cronetdynamite@252635038@25.26.35 (260800-0):31)
+11-26 16:39:41.432   444   475 I netd    : tetherGetStats() -> {[]} <0.31ms>
+11-26 16:39:43.976   444   475 I netd    : tetherGetStats() -> {[]} <0.41ms>
+11-26 16:39:45.311   444   475 I netd    : tetherGetStats() -> {[]} <0.39ms>
+11-26 16:39:48.645   444   475 I netd    : tetherGetStats() -> {[]} <0.76ms>
+11-26 16:39:50.207   444   475 I netd    : tetherGetStats() -> {[]} <0.46ms>
+11-26 16:39:58.193   444   475 I netd    : tetherGetStats() -> {[]} <4.04ms>
+11-26 16:40:01.767   444   475 I netd    : tetherGetStats() -> {[]} <0.52ms>
+11-26 16:40:02.181   627  1871 I WifiService: getScanResults uid=10185
+11-26 16:40:02.181   627  1128 I WifiService: getScanResults uid=10185
+11-26 16:40:02.182   627  1735 I WifiService: getWifiEnabledState uid=1000 state=3
+11-26 16:40:02.182   627  1001 I WifiService: getScanResults uid=1000
+11-26 16:40:02.204   627  1001 I WifiService: getWifiConfigsForMatchedNetworkSuggestions uid=1000
+11-26 16:40:02.205   627  1001 I WifiService: getMatchingPasspointConfigurations uid=1000
+11-26 16:40:02.205   627  1001 I WifiService: getMatchingOsuProviders uid=1000
+11-26 16:40:02.205   627  1871 I WifiService: getMatchingPasspointConfigsForOsuProviders uid=1000
+11-26 16:40:04.819   444   475 I netd    : tetherGetStats() -> {[]} <0.40ms>
+11-26 16:40:10.839   444   475 I netd    : tetherGetStats() -> {[]} <0.40ms>
+11-26 16:40:16.417   444   475 I netd    : tetherGetStats() -> {[]} <0.38ms>
