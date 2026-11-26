@@ -12,11 +12,14 @@ If listing.json names a version in withdrawFromReview, that exact version is fir
 A platform whose version is already submitted, in review, approved or on sale is left alone (never edited, recreated
 or resubmitted); the log reports the state of the iOS and the macOS version either way.
 
-While an earlier version (say 0.3.2) is still in App Review on iOS or macOS (waiting, in review, approved but not yet
-released, or rejected) and the repository has moved on to a new version (say 1.0.0), every mode (the full listing,
---build-only and --mac-only) does nothing at all: it does not create the new version, attach builds, edit or submit
-anything. It prints the state of both platforms and that the new version waits until the earlier one is out of review,
-and exits successfully. New builds still go to TestFlight (ios-app.yml, testflight-public.yml) in the meantime.
+While an earlier iOS version (say 0.3.2) is still in App Review (waiting, in review, approved but not yet released, or
+rejected) and the repository has moved on to a new version (say 1.0.0), every mode (the full listing, --build-only and
+--mac-only) does nothing at all: it does not create the new version, attach builds, edit or submit anything. It prints
+the state of both platforms and that the new version waits until the earlier one is out of review, and exits
+successfully. New builds still go to TestFlight (ios-app.yml, testflight-public.yml) in the meantime.
+Apple reviews the two platforms separately, so when only an earlier macOS version is in review, the iPhone and iPad
+version goes ahead as usual, while the Mac version and the app information (shared by both platforms, and under review
+with the Mac version: category, subtitle, age rating, price, availability) are left exactly as they are.
 
 Each step runs on its own and reports what happened, so one refusal doesn't stop the rest.
 Environment: APPLE_API_ISSUER, APPLE_API_KEY (key ID), P8 (private key text).
@@ -99,9 +102,11 @@ IN_REVIEW_STATES = ('READY_FOR_REVIEW', 'WAITING_FOR_REVIEW', 'IN_REVIEW', 'PEND
 
 
 def earlier_version_in_review():
-    """Stop here, changing nothing, when an iOS or macOS version other than VERSION is still in App Review.
+    """Stop here, changing nothing, when an iOS version other than VERSION is still in App Review.
 
-    Prints a state line for each platform (the version in review, or else the newest one) and exits successfully."""
+    The two platforms are reviewed separately, so a macOS version in review holds back only the Mac: the iPhone and
+    iPad version goes ahead, and this returns True so that the Mac version and the app information (shared by both
+    platforms, and under review with the Mac version) are left alone. Prints a state line for each platform."""
     held, lines = [], []
     for platform, name in (('IOS', 'iOS'), ('MAC_OS', 'macOS')):
         vs = call('GET', f'/v1/apps/{APP}/appStoreVersions?filter[platform]={platform}&limit=20')['data']
@@ -121,9 +126,14 @@ def earlier_version_in_review():
         else:
             lines.append(f'State now: no {name} App Store version yet')
     if not held:
-        return
+        return False
     for line in lines:
         print(line)
+    if all(n == 'macOS' for n, _, _ in held):
+        _, v, st = held[0]
+        print(f'macOS {v} is {st}, so the Mac version and the app information are left alone this run; '
+              f'the iPhone and iPad version {VERSION} goes ahead.')
+        return True
     earlier = sorted({v for _, v, _ in held})
     print(f"Version {VERSION} waits until {' and '.join(earlier)} {'is' if len(earlier) == 1 else 'are'} out of review "
           f"({', '.join(f'{n} {v} is {st}' for n, v, st in held)}).")
@@ -133,7 +143,8 @@ def earlier_version_in_review():
     sys.exit(0)
 
 
-earlier_version_in_review()
+# True while a different macOS version is in App Review: then only the iPhone and iPad version is touched.
+MAC_HELD = earlier_version_in_review()
 
 
 @step('Content rights: no third-party content')
@@ -537,6 +548,9 @@ def mac_build_only():
 
 if '--mac-only' in sys.argv:
     # After a Mac App Store upload (mac-app-store.yml): only the Mac version's text, screenshots and build.
+    if MAC_HELD:
+        print('A macOS version is in App Review, so the Mac version is left alone.')
+        sys.exit(0)
     mac_listing()
     print('\nMac App Store listing for Cowdrey.PDF', VERSION)
     for p in ('IOS', 'MAC_OS'):
@@ -562,24 +576,30 @@ if '--build-only' in sys.argv:
     if v:
         version_fields(v)
         attach_build(v)
-    mac_build_only()
+    if not MAC_HELD:
+        mac_build_only()
     for status, name, detail in results:
         print(f"[{status}] {name}" + (f" — {detail}" if detail else ''))
     sys.exit(0)
 
-content_rights()
+if not MAC_HELD:
+    content_rights()
 withdraw_from_review()
 # An iPhone and iPad version that is already submitted, in review, approved or on sale is left exactly as it is
 # (and so is the app information under review with it): nothing is edited, created or submitted for iOS.
 if locked('IOS'):
     print(f'iOS {VERSION} is already submitted or approved: the iPhone and iPad version and app information are left alone.')
 else:
-    info = editable_app_info()
-    category(info)
-    info_text(info)
-    age_rating(info)
-    price()
-    availability()
+    if MAC_HELD:
+        # The app information is shared with the Mac version in review: leave it exactly as it is.
+        print('App information, price and availability are left as they are while the Mac version is in review.')
+    else:
+        info = editable_app_info()
+        category(info)
+        info_text(info)
+        age_rating(info)
+        price()
+        availability()
     v = editable_version()
     version_fields(v)
     attach_build(v)
@@ -594,7 +614,7 @@ else:
     except ApiError as e:
         print(f'Submit: Apple refused the submission: {e}')
 # The Mac version comes after the iPhone and iPad one, so nothing on the Mac can hold up their submission.
-if 'mac' in L:
+if 'mac' in L and not MAC_HELD:
     mac_listing()
 
 print('\nApp Store listing for Cowdrey.PDF', VERSION, '(iPhone, iPad and Mac)' if 'mac' in L else '')
